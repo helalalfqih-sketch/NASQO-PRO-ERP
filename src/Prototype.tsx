@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
   type ComponentType,
+  type DragEvent,
   type MutableRefObject,
 } from "react";
 import { createPortal } from "react-dom";
@@ -15,10 +16,14 @@ import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   ActivityLogIcon,
   ArchiveIcon,
+  ArrowDownIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowUpIcon,
   BackpackIcon,
   BellIcon,
+  BookmarkFilledIcon,
+  BookmarkIcon,
   CameraIcon,
   CardStackIcon,
   ChatBubbleIcon,
@@ -28,6 +33,7 @@ import {
   Cross2Icon,
   CubeIcon,
   DownloadIcon,
+  DragHandleDots2Icon,
   ExclamationTriangleIcon,
   FilePlusIcon,
   FileTextIcon,
@@ -47,6 +53,7 @@ import {
   PlusIcon,
   ReaderIcon,
   ReloadIcon,
+  ResetIcon,
   RulerHorizontalIcon,
   RulerSquareIcon,
   Share1Icon,
@@ -68,17 +75,26 @@ import {
 } from "./mobile";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { DashboardScreen } from "./components/DashboardScreen";
+import { ExpenseCategorySelector } from "./components/ExpenseCategorySelector";
+import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
+import { NotificationCenter } from "./components/NotificationCenter";
+import { QrScannerModal } from "./components/QrScannerModal";
+import { WhatsAppIcon } from "./components/WhatsAppIcon";
 import {
   accountMatchesQuery,
   buildCsvContent,
+  buildWhatsAppMessageUrl,
   computeAccountSummary,
   computeCategoryTotals,
   computeDashboardSummary,
   computeInventorySummary,
   computeStatementRows,
+  computeWorkspaceNotifications,
   formatAmount,
+  isBackupOverdue,
   normalizeArabicSearch,
   parseArabicNumber,
+  type WorkspaceNotification,
 } from "./accounting";
 import {
   auth,
@@ -93,6 +109,7 @@ import {
   signInWithGoogle,
   signOutUser,
   subscribeWorkspace,
+  updateInventoryItem,
   updateLedgerEntry,
 } from "./firebase";
 import {
@@ -105,6 +122,23 @@ import {
   type WarehouseRecord,
   type WorkspaceSettings,
 } from "./types";
+import { BRAND_COLOR_PRESETS, useBrandColor } from "./utils/brandColor";
+import {
+  DEFAULT_HOME_METRIC_ORDER,
+  readHomeMetricOrder,
+  readLastBackupIso,
+  readPinnedFavorites,
+  readWidgetOrder,
+  recordLastBackupNow,
+  writeHomeMetricOrder,
+  writePinnedFavorites,
+  writeWidgetOrder,
+  type DashboardWidgetId,
+  type HomeMetricId,
+  type PinnedFavoriteItem,
+} from "./utils/dashboardPrefs";
+import { readHapticsEnabled, triggerHaptic, writeHapticsEnabled } from "./utils/haptics";
+import { useThemeMode, type ThemeMode } from "./utils/theme";
 
 type IconComponent = ComponentType<{ className?: string }>;
 type SheetKind = "add-operation" | "filters" | "export" | "notifications" | null;
@@ -117,6 +151,8 @@ type OverlayKind =
   | "trash"
   | "settings"
   | "inventory-add"
+  | "notifications"
+  | "qr-scanner"
   | null;
 type AccountCreateMode = "compact" | "extended";
 type ExportKind = "statement" | "inventory" | "purchases";
@@ -160,6 +196,26 @@ type LiveWorkspaceState = {
   openInventoryAdd: () => void;
   openSettings: () => void;
   openTrash: () => void;
+  openNotifications: () => void;
+  openQrScanner: () => void;
+  openWhatsAppPicker: () => void;
+  unreadNotificationsCount: number;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  brandColor: string;
+  setBrandColor: (hex: string) => void;
+  resetBrandColor: () => void;
+  hapticsEnabled: boolean;
+  setHapticsEnabled: (enabled: boolean) => void;
+  widgetOrder: DashboardWidgetId[];
+  setWidgetOrder: (order: DashboardWidgetId[]) => void;
+  homeMetricOrder: HomeMetricId[];
+  setHomeMetricOrder: (order: HomeMetricId[]) => void;
+  favorites: PinnedFavoriteItem[];
+  pinFavorite: (item: PinnedFavoriteItem) => void;
+  unpinFavorite: (id: string) => void;
+  launchFavorite: (item: PinnedFavoriteItem) => void;
+  lastBackupIso: string | null;
   showToast: (message: string) => void;
   triggerJsonBackup: () => void;
   triggerJsonRestore: () => void;
@@ -210,6 +266,47 @@ async function shareOrCopyText(title: string, text: string, showToast: (msg: str
   showToast("تم تجهيز نص الملخص للمشاركة");
 }
 
+async function openWhatsAppChat(
+  account: AccountRecord | undefined,
+  message: string,
+  showToast: (msg: string) => void,
+) {
+  triggerHaptic("light");
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(message);
+    }
+  } catch {
+    // Ignore clipboard restriction inside sandboxed frames
+  }
+  const waUrl = buildWhatsAppMessageUrl(account?.phone, message);
+  if (typeof document !== "undefined") {
+    const link = document.createElement("a");
+    link.href = waUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+  if (account?.phone) {
+    showToast(`جاري فتح واتساب لمراسلة ${account.name}`);
+  } else {
+    showToast("تم تجهيز رسالة واتساب ونسخها — اختر جهة الاتصال داخل واتساب");
+  }
+}
+
+function buildAccountBalanceMessage(
+  account: AccountRecord,
+  balance: number,
+  tone: "credit" | "debit" | "neutral",
+  companyName?: string,
+): string {
+  const directionLabel = tone === "credit" ? "له" : tone === "debit" ? "عليه" : "متزن";
+  const signedText = `${formatAmount(Math.abs(balance))}${tone === "credit" ? "-" : ""}`;
+  return `السلام عليكم ${account.name}، تحية طيبة من ${companyName || "نسقو برو"}. صافي الرصيد الحالي: ${signedText} ${account.currency} (${directionLabel}).`;
+}
+
 function categoryTitle(category: AccountCategory): string {
   const map: Record<AccountCategory, string> = {
     purchases: "المشتريات",
@@ -236,6 +333,8 @@ function NasqoProductionShell() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
+  const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
@@ -347,10 +446,33 @@ function NasqoProductionShell() {
     );
   }
 
-  return <AuthenticatedWorkspace user={user} />;
+  return (
+    <AuthenticatedWorkspace
+      user={user}
+      themeMode={themeMode}
+      setThemeMode={setThemeMode}
+      brandColor={brandColor}
+      setBrandColor={setBrandColor}
+      resetBrandColor={resetBrandColor}
+    />
+  );
 }
 
-function AuthenticatedWorkspace({ user }: { user: User }) {
+function AuthenticatedWorkspace({
+  user,
+  themeMode,
+  setThemeMode,
+  brandColor,
+  setBrandColor,
+  resetBrandColor,
+}: {
+  user: User;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  brandColor: string;
+  setBrandColor: (hex: string) => void;
+  resetBrandColor: () => void;
+}) {
   const [workspace, setWorkspace] = useState<WorkspaceSettings | null>(null);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [ledger, setLedger] = useState<LedgerEntryRecord[]>([]);
@@ -361,7 +483,7 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [overlay, setOverlay] = useState<OverlayKind>(null);
-  const [pickerMode, setPickerMode] = useState<"statement" | "edit">("statement");
+  const [pickerMode, setPickerMode] = useState<"statement" | "edit" | "whatsapp">("statement");
   const [editingAccount, setEditingAccount] = useState<AccountRecord | undefined>();
   const [accountCreateCategory, setAccountCreateCategory] = useState<AccountCategory>("purchases");
   const [transactionTarget, setTransactionTarget] = useState<{
@@ -377,6 +499,7 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
   const [invoiceSeed, setInvoiceSeed] = useState<{
     account?: AccountRecord;
     intent: InvoiceIntent;
+    kindOverride?: "purchase" | "sale";
     revision: number;
   }>({ intent: "invoice", revision: 0 });
   const returnOverlay = useRef<OverlayKind>(null);
@@ -386,6 +509,63 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
   const keyboard = useKeyboard();
   const jsonRestoreInputRef = useRef<HTMLInputElement>(null);
   const csvImportInputRef = useRef<HTMLInputElement>(null);
+
+  const [hapticsEnabled, setHapticsEnabledState] = useState<boolean>(() => readHapticsEnabled());
+  const [widgetOrder, setWidgetOrderState] = useState<DashboardWidgetId[]>(() => readWidgetOrder());
+  const [homeMetricOrder, setHomeMetricOrderState] = useState<HomeMetricId[]>(() => readHomeMetricOrder());
+  const [favorites, setFavoritesState] = useState<PinnedFavoriteItem[]>(() => readPinnedFavorites());
+  const [lastBackupIso, setLastBackupIso] = useState<string | null>(() => readLastBackupIso());
+  const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => {
+    try {
+      const saved = window.localStorage.getItem("nasqo-read-notifs");
+      return new Set(saved ? (JSON.parse(saved) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const [dismissedNotifIds, setDismissedNotifIds] = useState<Set<string>>(() => {
+    try {
+      const saved = window.localStorage.getItem("nasqo-dismissed-notifs");
+      return new Set(saved ? (JSON.parse(saved) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  });
+
+  const setHapticsEnabled = useCallback((enabled: boolean) => {
+    writeHapticsEnabled(enabled);
+    setHapticsEnabledState(enabled);
+    if (enabled) triggerHaptic("light");
+  }, []);
+
+  const setWidgetOrder = useCallback((order: DashboardWidgetId[]) => {
+    writeWidgetOrder(order);
+    setWidgetOrderState(order);
+  }, []);
+
+  const setHomeMetricOrder = useCallback((order: HomeMetricId[]) => {
+    writeHomeMetricOrder(order);
+    setHomeMetricOrderState(order);
+  }, []);
+
+  const pinFavorite = useCallback((item: PinnedFavoriteItem) => {
+    triggerHaptic("pin");
+    setFavoritesState((prev) => {
+      if (prev.some((f) => f.id === item.id)) return prev;
+      const next = [item, ...prev];
+      writePinnedFavorites(next);
+      return next;
+    });
+  }, []);
+
+  const unpinFavorite = useCallback((id: string) => {
+    triggerHaptic("light");
+    setFavoritesState((prev) => {
+      const next = prev.filter((f) => f.id !== id);
+      writePinnedFavorites(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeWorkspace(user.uid, {
@@ -436,6 +616,14 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
     setOverlay("account-picker");
   }, [dismissKeyboard]);
 
+  const openWhatsAppPicker = useCallback(() => {
+    triggerHaptic("light");
+    dismissKeyboard();
+    setExportState((s) => ({ ...s, open: false }));
+    setPickerMode("whatsapp");
+    setOverlay("account-picker");
+  }, [dismissKeyboard]);
+
   const openAccountEdit = useCallback(
     (account?: AccountRecord) => {
       dismissKeyboard();
@@ -469,16 +657,33 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
     [dismissKeyboard],
   );
 
-  const openInvoice = useCallback(() => {
-    dismissKeyboard();
-    setInvoiceSeed((value) => ({ account: accounts[0], intent: "invoice", revision: value.revision + 1 }));
-    setOverlay("invoice");
-  }, [accounts, dismissKeyboard]);
+  const openInvoice = useCallback(
+    (defaultCategory?: AccountCategory) => {
+      dismissKeyboard();
+      const matchingAccount =
+        (defaultCategory ? accounts.find((a) => a.category === defaultCategory) : undefined) ?? accounts[0];
+      const kindOverride =
+        defaultCategory === "sales" ? "sale" : defaultCategory === "purchases" ? "purchase" : undefined;
+      setInvoiceSeed((value) => ({
+        account: matchingAccount,
+        intent: "invoice",
+        kindOverride,
+        revision: value.revision + 1,
+      }));
+      setOverlay("invoice");
+    },
+    [accounts, dismissKeyboard],
+  );
 
   const openVendorInvoice = useCallback(
     (account: AccountRecord, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
-      setInvoiceSeed((value) => ({ account, intent, revision: value.revision + 1 }));
+      setInvoiceSeed((value) => ({
+        account,
+        intent,
+        kindOverride: account.category === "sales" ? "sale" : "purchase",
+        revision: value.revision + 1,
+      }));
       setOverlay("invoice");
     },
     [dismissKeyboard],
@@ -517,6 +722,9 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
       JSON.stringify(payload, null, 2),
       "application/json;charset=utf-8",
     );
+    const savedIso = recordLastBackupNow(payload.exportedAt);
+    setLastBackupIso(savedIso);
+    triggerHaptic("success");
     showToast("تم تنزيل ملف النسخة الاحتياطية بنجاح");
   }, [accounts, inventory, ledger, showToast, warehouses, workspace]);
 
@@ -591,6 +799,101 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
 
   const syncing = !(syncFlags.accounts && syncFlags.ledger && syncFlags.inventory);
 
+  const notifications = useMemo(
+    () =>
+      computeWorkspaceNotifications(accounts, ledger, warehouses, inventory, workspace, new Date(), {
+        lastBackupIso,
+      }).filter((n) => !dismissedNotifIds.has(n.id)),
+    [accounts, dismissedNotifIds, inventory, lastBackupIso, ledger, warehouses, workspace],
+  );
+
+  const unreadNotificationsCount = useMemo(
+    () => notifications.filter((n) => !readNotifIds.has(n.id)).length,
+    [notifications, readNotifIds],
+  );
+
+  const handleMarkNotificationRead = useCallback((id: string) => {
+    setReadNotifIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        window.localStorage.setItem("nasqo-read-notifs", JSON.stringify([...next]));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const handleMarkAllNotificationsRead = useCallback(() => {
+    setReadNotifIds((prev) => {
+      const next = new Set(prev);
+      notifications.forEach((n) => next.add(n.id));
+      try {
+        window.localStorage.setItem("nasqo-read-notifs", JSON.stringify([...next]));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  }, [notifications]);
+
+  const handleDismissNotification = useCallback((id: string) => {
+    setDismissedNotifIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        window.localStorage.setItem("nasqo-dismissed-notifs", JSON.stringify([...next]));
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectNotification = useCallback(
+    (notif: WorkspaceNotification) => {
+      setOverlay(null);
+      if (notif.targetType === "invoice" && notif.targetId) {
+        flowRef.current?.push(cashInvoicePreviewScreen(notif.targetId));
+      } else if (notif.targetType === "account" && notif.targetId) {
+        flowRef.current?.push(supplierScreen(notif.targetId));
+      } else if (notif.targetType === "inventory") {
+        flowRef.current?.push(inventoryReportScreen());
+      } else if (notif.targetType === "settings") {
+        setOverlay("settings");
+      }
+    },
+    [],
+  );
+
+  const launchFavorite = useCallback(
+    (fav: PinnedFavoriteItem) => {
+      triggerHaptic("light");
+      const flow = flowRef.current;
+      const t = fav.target;
+      if (t.kind === "route" && flow) {
+        if (t.route === "inventory-report") flow.push(inventoryReportScreen());
+        else if (t.route === "daily-journal") flow.push(dailyJournalScreen());
+        else if (t.route === "purchases") flow.push(purchasesScreen("purchases"));
+        else if (t.route === "sales") flow.push(purchasesScreen("sales"));
+        else if (t.route === "currency") flow.push(currencyScreen());
+        else if (t.route === "shop") flow.push(shopScreen());
+      } else if (t.kind === "account" && flow) {
+        flow.push(supplierScreen(t.accountId));
+      } else if (t.kind === "action") {
+        if (t.action === "new-invoice") openInvoice("sales");
+        else if (t.action === "new-purchase") openInvoice("purchases");
+        else if (t.action === "new-contact") openAccountCreate("extended", "clients");
+        else if (t.action === "qr-scan") {
+          dismissKeyboard();
+          setOverlay("qr-scanner");
+        }
+      }
+    },
+    [dismissKeyboard, openAccountCreate, openInvoice],
+  );
+
   const ctx = useMemo<LiveWorkspaceState>(
     () => ({
       uid: user.uid,
@@ -613,8 +916,39 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
       openDashboardMenu,
       openExportMenu,
       openInventoryAdd: () => setOverlay("inventory-add"),
-      openSettings: () => setOverlay("settings"),
+      openSettings: () => {
+        dismissKeyboard();
+        setOverlay("settings");
+      },
       openTrash: () => setOverlay("trash"),
+      openNotifications: () => {
+        triggerHaptic("light");
+        dismissKeyboard();
+        setOverlay("notifications");
+      },
+      openQrScanner: () => {
+        triggerHaptic("light");
+        dismissKeyboard();
+        setOverlay("qr-scanner");
+      },
+      openWhatsAppPicker,
+      unreadNotificationsCount,
+      themeMode,
+      setThemeMode,
+      brandColor,
+      setBrandColor,
+      resetBrandColor,
+      hapticsEnabled,
+      setHapticsEnabled,
+      widgetOrder,
+      setWidgetOrder,
+      homeMetricOrder,
+      setHomeMetricOrder,
+      favorites,
+      pinFavorite,
+      unpinFavorite,
+      launchFavorite,
+      lastBackupIso,
       showToast,
       triggerJsonBackup,
       triggerJsonRestore,
@@ -623,8 +957,15 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
     }),
     [
       accounts,
+      brandColor,
+      dismissKeyboard,
+      favorites,
       handleSignOut,
+      hapticsEnabled,
+      homeMetricOrder,
       inventory,
+      lastBackupIso,
+      launchFavorite,
       ledger,
       openAccountCreate,
       openAccountEdit,
@@ -636,14 +977,26 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
       openSheet,
       openTransaction,
       openVendorInvoice,
+      openWhatsAppPicker,
+      pinFavorite,
+      resetBrandColor,
+      setBrandColor,
+      setHapticsEnabled,
+      setHomeMetricOrder,
+      setThemeMode,
+      setWidgetOrder,
       showToast,
       syncing,
+      themeMode,
       triggerCsvImport,
       triggerJsonBackup,
       triggerJsonRestore,
+      unpinFavorite,
+      unreadNotificationsCount,
       user.email,
       user.uid,
       warehouses,
+      widgetOrder,
       workspace,
     ],
   );
@@ -777,6 +1130,7 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
           key={invoiceSeed.revision}
           initialAccount={invoiceSeed.account}
           intent={invoiceSeed.intent}
+          kindOverride={invoiceSeed.kindOverride}
           open={overlay === "invoice"}
           onClose={closeOverlay}
           onAddAccount={() => {
@@ -786,13 +1140,29 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
         />
         <AccountPickerModal
           open={overlay === "account-picker"}
-          title={pickerMode === "edit" ? "تعديل بيانات حساب" : "كشف حساب"}
+          title={
+            pickerMode === "edit"
+              ? "تعديل بيانات حساب"
+              : pickerMode === "whatsapp"
+                ? "مراسلة عبر واتساب"
+                : "كشف حساب"
+          }
           onClose={() => setOverlay(null)}
           onAddAccount={() => openAccountCreate("compact")}
           onConfirm={(account) => {
             if (pickerMode === "edit") {
               setEditingAccount(account);
               setOverlay("account-create-compact");
+            } else if (pickerMode === "whatsapp") {
+              setOverlay(null);
+              const s = computeAccountSummary(account, ledger);
+              const msg = buildAccountBalanceMessage(
+                account,
+                s.netBalance,
+                s.tone,
+                workspace?.companyName,
+              );
+              void openWhatsAppChat(account, msg, showToast);
             } else {
               setOverlay(null);
               flowRef.current?.push(supplierScreen(account.id));
@@ -823,6 +1193,28 @@ function AuthenticatedWorkspace({ user }: { user: User }) {
         <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} />
         <WorkspaceSettingsModal open={overlay === "settings"} onClose={() => setOverlay(null)} />
         <InventoryItemModal open={overlay === "inventory-add"} onClose={() => setOverlay(null)} />
+        <NotificationCenter
+          open={overlay === "notifications"}
+          onClose={() => setOverlay(null)}
+          notifications={notifications}
+          readIds={readNotifIds}
+          onMarkRead={handleMarkNotificationRead}
+          onMarkAllRead={handleMarkAllNotificationsRead}
+          onDismiss={handleDismissNotification}
+          onSelectNotification={handleSelectNotification}
+        />
+        <QrScannerModal
+          open={overlay === "qr-scanner"}
+          onClose={() => setOverlay(null)}
+          uid={user.uid}
+          inventory={inventory}
+          warehouses={warehouses}
+          onNotify={showToast}
+          onOpenInventoryReport={() => {
+            setOverlay(null);
+            flowRef.current?.push(inventoryReportScreen());
+          }}
+        />
 
         <input
           ref={jsonRestoreInputRef}
@@ -873,10 +1265,6 @@ function dashboardScreen(): FlowScreen {
 
 function DashboardHeader() {
   const ctx = useWorkspace();
-  const alertCount = ctx.accounts.filter((a) => {
-    const s = computeAccountSummary(a, ctx.ledger);
-    return a.creditLimit > 0 && s.netBalance > a.creditLimit;
-  }).length;
   return (
     <AppHeader
       className="dashboard-header"
@@ -888,8 +1276,8 @@ function DashboardHeader() {
         {
           label: "التنبيهات",
           icon: BellIcon,
-          badge: alertCount > 0 ? String(alertCount) : undefined,
-          onClick: () => ctx.openSheet("notifications"),
+          badge: ctx.unreadNotificationsCount > 0 ? String(ctx.unreadNotificationsCount) : undefined,
+          onClick: ctx.openNotifications,
         },
         {
           label: "مزامنة",
@@ -1464,7 +1852,28 @@ function InventoryReportPage({
   ctx.flowRef.current = flow;
   const [period, setPeriod] = useState("الكل");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(initialWarehouseId ?? "");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const summary = computeInventorySummary(ctx.inventory, selectedWarehouseId || undefined);
+
+  const toggleItem = (id: string) => {
+    triggerHaptic("light");
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    const visibleIds = summary.items.map((i) => i.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visibleIds));
+    }
+  };
 
   return (
     <MobileScroll className="inventory-report-scroll">
@@ -1475,7 +1884,10 @@ function InventoryReportPage({
             <select
               aria-label="المخزن"
               value={selectedWarehouseId}
-              onChange={(event) => setSelectedWarehouseId(event.target.value)}
+              onChange={(event) => {
+                setSelectedWarehouseId(event.target.value);
+                setSelectedIds(new Set());
+              }}
             >
               <option value="">جميع المخازن</option>
               {ctx.warehouses.map((w) => (
@@ -1513,24 +1925,50 @@ function InventoryReportPage({
             <ArrowLeftIcon />
           </div>
         </section>
+
+        <InventoryBulkEditBar
+          uid={ctx.uid}
+          items={summary.items}
+          selectedIds={selectedIds}
+          onToggleSelectAll={toggleAll}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onNotify={ctx.showToast}
+        />
+
         <table className="inventory-table">
           <thead>
             <tr>
+              <th scope="col" style={{ width: "36px" }}>تحديد</th>
               <th scope="col">الصنف</th>
               <th scope="col">الوحدة</th>
               <th scope="col">الكمية / التكلفة</th>
             </tr>
           </thead>
           <tbody>
-            {summary.items.map((item) => (
-              <tr key={item.id}>
-                <td>{item.name}</td>
-                <td>{item.unit}</td>
-                <td>
-                  {formatAmount(item.quantity)} ({formatAmount(item.avgCost)})
-                </td>
-              </tr>
-            ))}
+            {summary.items.map((item) => {
+              const checked = selectedIds.has(item.id);
+              return (
+                <tr key={item.id} className={checked ? "inv-row-selected" : undefined}>
+                  <td style={{ textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      aria-label={`تحديد ${item.name}`}
+                      checked={checked}
+                      onChange={() => toggleItem(item.id)}
+                      data-testid={`inv-checkbox-${item.id}`}
+                    />
+                  </td>
+                  <td>
+                    {item.name}
+                    {item.sku ? <small className="inv-sku-meta"> ({item.sku})</small> : null}
+                  </td>
+                  <td>{item.unit}</td>
+                  <td>
+                    {formatAmount(item.quantity)} ({formatAmount(item.avgCost)})
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </main>
@@ -1550,6 +1988,7 @@ function analyticsDashboardScreen(): FlowScreen {
 function AnalyticsDashboardPage({ flow }: { flow: FlowControls }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
+
   return (
     <DashboardScreen
       companyName={ctx.workspace?.companyName || "نسقو برو"}
@@ -1559,12 +1998,40 @@ function AnalyticsDashboardPage({ flow }: { flow: FlowControls }) {
       warehouses={ctx.warehouses}
       inventory={ctx.inventory}
       loading={ctx.syncing}
+      themeMode={ctx.themeMode}
+      onChangeThemeMode={ctx.setThemeMode}
+      brandColor={ctx.brandColor}
+      onChangeBrandColor={ctx.setBrandColor}
+      onResetBrandColor={ctx.resetBrandColor}
+      hapticsEnabled={ctx.hapticsEnabled}
+      onToggleHaptics={ctx.setHapticsEnabled}
+      widgetOrder={ctx.widgetOrder}
+      onChangeWidgetOrder={ctx.setWidgetOrder}
+      favorites={ctx.favorites}
+      onPinFavorite={ctx.pinFavorite}
+      onUnpinFavorite={ctx.unpinFavorite}
+      onLaunchFavorite={ctx.launchFavorite}
+      lastBackupIso={ctx.lastBackupIso}
+      onTriggerBackupNow={ctx.triggerJsonBackup}
+      unreadNotificationsCount={ctx.unreadNotificationsCount}
+      onOpenNotifications={ctx.openNotifications}
       onOpenSales={() => flow.push(purchasesScreen("sales"))}
-      onCreateInvoice={ctx.openInvoice}
+      onOpenSupplier={(accountId) => flow.push(supplierScreen(accountId))}
+      onCreateInvoice={() => ctx.openInvoice("sales")}
+      onCreatePurchase={() => ctx.openInvoice("purchases")}
+      onCreateContact={() => ctx.openAccountCreate("extended", "clients")}
+      onOpenQrScanner={ctx.openQrScanner}
       onPreviewInvoice={(entryId) => flow.push(cashInvoicePreviewScreen(entryId))}
       onAddInventoryItem={ctx.openInventoryAdd}
+      onUpdateItemThreshold={async (item, newThreshold) => {
+        await updateInventoryItem(ctx.uid, item.id, {
+          ...item,
+          minThreshold: newThreshold,
+        });
+      }}
       onOpenInventoryReport={() => flow.push(inventoryReportScreen())}
       onOpenDailyJournal={() => flow.push(dailyJournalScreen())}
+      onNotify={ctx.showToast}
     />
   );
 }
@@ -1649,23 +2116,28 @@ function InvoiceModal({
   open,
   initialAccount,
   intent,
+  kindOverride,
   onClose,
   onAddAccount,
 }: {
   open: boolean;
   initialAccount?: AccountRecord;
   intent: InvoiceIntent;
+  kindOverride?: "purchase" | "sale";
   onClose: () => void;
   onAddAccount: () => void;
 }) {
   const ctx = useWorkspace();
   const [content, setContent] = useState<"items" | "free">("items");
   const [payment, setPayment] = useState<"cash" | "credit">(initialAccount?.isCashAccount ? "cash" : "credit");
-  const [kind, setKind] = useState<"purchase" | "sale">(initialAccount?.category === "sales" ? "sale" : "purchase");
+  const [kind, setKind] = useState<"purchase" | "sale">(
+    kindOverride ?? (initialAccount?.category === "sales" ? "sale" : "purchase"),
+  );
   const [isReturn, setReturn] = useState(intent === "return");
   const [search, setSearch] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("");
   const [currency, setCurrency] = useState<CurrencyCode>("ريال");
   const [exchangeRate, setExchangeRate] = useState("1");
   const [warehouseId, setWarehouseId] = useState(
@@ -1685,11 +2157,13 @@ function InvoiceModal({
 
   const handleSave = async () => {
     if (!selectedAccount) {
+      triggerHaptic("warning");
       ctx.showToast("أضف حسابًا أولًا قبل إنشاء الفاتورة");
       return;
     }
     const parsedAmount = parseArabicNumber(amount);
     if (parsedAmount <= 0) {
+      triggerHaptic("warning");
       ctx.showToast("أدخل مبلغ الفاتورة أكبر من صفر");
       return;
     }
@@ -1729,7 +2203,9 @@ function InvoiceModal({
         entryNumber: nextNum,
         deleted: false,
         entryDate: new Date().toISOString().slice(0, 10),
+        ...(kind === "purchase" && expenseCategory ? { expenseCategory } : {}),
       });
+      triggerHaptic("success");
       onClose();
       ctx.showToast(`تم حفظ ${typeLabel} رقم #${nextNum} في قاعدة البيانات`);
     } finally {
@@ -1914,6 +2390,18 @@ function InvoiceModal({
             <SpeakerLoudIcon />
           </button>
         </div>
+        {kind === "purchase" ? (
+          <ExpenseCategorySelector
+            value={expenseCategory}
+            onChange={setExpenseCategory}
+            description={note}
+            vendorName={selectedAccount?.name ?? ""}
+            accountCategory={selectedAccount?.category}
+            amount={amount}
+            currency={currency}
+            entryType={payment === "cash" ? "فاتورة شراء نقدي" : "فاتورة شراء آجلة"}
+          />
+        ) : null}
         <div className="form-modal-actions">
           <button className="cancel" onClick={onClose}>
             إلغاء
@@ -2034,6 +2522,11 @@ function TransferArrowsIcon() {
 function DashboardPage({ flow }: { flow: FlowControls }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
+  const [pinPickerOpen, setPinPickerOpen] = useState(false);
+  const [reorderMode, setReorderMode] = useState(false);
+  const [draggedMetric, setDraggedMetric] = useState<HomeMetricId | null>(null);
+  const [dragOverMetric, setDragOverMetric] = useState<HomeMetricId | null>(null);
+
   const totals = useMemo(() => computeCategoryTotals(ctx.accounts, ctx.ledger), [ctx.accounts, ctx.ledger]);
   const liveSummary = useMemo(
     () =>
@@ -2043,26 +2536,128 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       }),
     [ctx.accounts, ctx.inventory, ctx.ledger, ctx.warehouses],
   );
+  const backupStatus = useMemo(() => isBackupOverdue(ctx.lastBackupIso), [ctx.lastBackupIso]);
+
+  const candidatePins = useMemo<PinnedFavoriteItem[]>(() => {
+    const presets: PinnedFavoriteItem[] = [
+      {
+        id: "fav_inventory",
+        label: "تقرير المخزون",
+        subtitle: "جرد والأرصدة",
+        target: { kind: "route", route: "inventory-report" },
+      },
+      {
+        id: "fav_journal",
+        label: "الحركة اليومية",
+        subtitle: "كشف القيود",
+        target: { kind: "route", route: "daily-journal" },
+      },
+      {
+        id: "fav_purchases",
+        label: "حسابات الموردين",
+        subtitle: "المشتريات",
+        target: { kind: "route", route: "purchases" },
+      },
+      {
+        id: "fav_sales",
+        label: "حسابات المبيعات",
+        subtitle: "المبيعات",
+        target: { kind: "route", route: "sales" },
+      },
+      {
+        id: "fav_qr",
+        label: "ماسح QR",
+        subtitle: "مسح سريع",
+        target: { kind: "action", action: "qr-scan" },
+      },
+    ];
+    const topAccounts: PinnedFavoriteItem[] = ctx.accounts.slice(0, 5).map((acc) => ({
+      id: `fav_acc_${acc.id}`,
+      label: acc.name,
+      subtitle: acc.category === "purchases" ? "مورد" : acc.category === "sales" ? "مبيعات" : "حساب",
+      target: { kind: "account", accountId: acc.id },
+    }));
+    return [...presets, ...topAccounts];
+  }, [ctx.accounts]);
 
   const quickActions: { label: string; icon: IconComponent; action: () => void; accent?: boolean }[] = [
-    { label: "سند جديد", icon: FilePlusIcon, action: () => ctx.openTransaction() },
-    { label: "حوالة جديدة", icon: PaperPlaneIcon, action: () => flow.push(simpleEntryScreen()) },
-    { label: "كشف حساب", icon: ReaderIcon, action: ctx.openAccountPicker },
-    { label: "قيد بسيط", icon: MixIcon, action: () => flow.push(simpleEntryScreen()), accent: true },
-    { label: "الحركة اليومية", icon: ActivityLogIcon, action: () => flow.push(dailyJournalScreen()), accent: true },
+    {
+      label: "سند جديد",
+      icon: FilePlusIcon,
+      action: () => {
+        triggerHaptic("light");
+        ctx.openTransaction();
+      },
+    },
+    {
+      label: "حوالة جديدة",
+      icon: PaperPlaneIcon,
+      action: () => {
+        triggerHaptic("light");
+        flow.push(simpleEntryScreen());
+      },
+    },
+    {
+      label: "كشف حساب",
+      icon: ReaderIcon,
+      action: () => {
+        triggerHaptic("light");
+        ctx.openAccountPicker();
+      },
+    },
+    {
+      label: "قيد بسيط",
+      icon: MixIcon,
+      action: () => {
+        triggerHaptic("light");
+        flow.push(simpleEntryScreen());
+      },
+      accent: true,
+    },
+    {
+      label: "الحركة اليومية",
+      icon: ActivityLogIcon,
+      action: () => {
+        triggerHaptic("light");
+        flow.push(dailyJournalScreen());
+      },
+      accent: true,
+    },
     {
       label: "صناديق النقدية",
       icon: BackpackIcon,
       action: () => {
+        triggerHaptic("light");
         const cashAcc = ctx.accounts.find((a) => a.isCashAccount);
         if (cashAcc) flow.push(supplierScreen(cashAcc.id));
         else flow.push(purchasesScreen("purchases"));
       },
       accent: true,
     },
-    { label: "فاتورة جديدة", icon: FileTextIcon, action: ctx.openInvoice },
-    { label: "صرف عملات", icon: ReloadIcon, action: () => flow.push(currencyScreen()) },
-    { label: "البحث السريع", icon: MagnifyingGlassIcon, action: () => flow.push(purchasesScreen("purchases")) },
+    {
+      label: "فاتورة جديدة",
+      icon: FileTextIcon,
+      action: () => {
+        triggerHaptic("light");
+        ctx.openInvoice();
+      },
+    },
+    {
+      label: "صرف عملات",
+      icon: ReloadIcon,
+      action: () => {
+        triggerHaptic("light");
+        flow.push(currencyScreen());
+      },
+    },
+    {
+      label: "البحث السريع",
+      icon: MagnifyingGlassIcon,
+      action: () => {
+        triggerHaptic("light");
+        flow.push(purchasesScreen("purchases"));
+      },
+    },
   ];
 
   const formatMetric = (signed: number) => {
@@ -2072,58 +2667,149 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
 
   const toneOf = (signed: number): "credit" | "debit" => (signed >= 0 ? "credit" : "debit");
 
-  const metrics: {
-    label: string;
-    value?: string;
-    icon: IconComponent;
-    tone?: "credit" | "debit";
-    action: () => void;
-  }[] = [
+  const metricsMap: Record<
+    HomeMetricId,
     {
+      id: HomeMetricId;
+      label: string;
+      value?: string;
+      icon: IconComponent;
+      tone?: "credit" | "debit";
+      action: () => void;
+    }
+  > = {
+    sales: {
+      id: "sales",
       label: "المبيعات",
       value: formatMetric(totals.sales.netSigned),
       icon: PersonIcon,
       tone: toneOf(totals.sales.netSigned),
-      action: () => flow.push(purchasesScreen("sales")),
+      action: () => {
+        triggerHaptic("light");
+        flow.push(purchasesScreen("sales"));
+      },
     },
-    {
+    purchases: {
+      id: "purchases",
       label: "المشتريات",
       value: formatMetric(totals.purchases.netSigned),
       icon: PersonIcon,
       tone: toneOf(totals.purchases.netSigned),
-      action: () => flow.push(purchasesScreen("purchases")),
+      action: () => {
+        triggerHaptic("light");
+        flow.push(purchasesScreen("purchases"));
+      },
     },
-    {
+    clients: {
+      id: "clients",
       label: "العملاء",
       value: formatMetric(totals.clients.netSigned),
       icon: PersonIcon,
       tone: toneOf(totals.clients.netSigned),
-      action: () => flow.push(purchasesScreen("clients")),
+      action: () => {
+        triggerHaptic("light");
+        flow.push(purchasesScreen("clients"));
+      },
     },
-    {
+    employees: {
+      id: "employees",
       label: "الموظفين",
       value: formatMetric(totals.employees.netSigned),
       icon: PersonIcon,
       tone: toneOf(totals.employees.netSigned),
-      action: () => flow.push(purchasesScreen("employees")),
+      action: () => {
+        triggerHaptic("light");
+        flow.push(purchasesScreen("employees"));
+      },
     },
-    {
+    transfers: {
+      id: "transfers",
       label: "الحوالات",
       value: formatMetric(totals.transfers.netSigned),
       icon: PersonIcon,
       tone: toneOf(totals.transfers.netSigned),
-      action: () => flow.push(purchasesScreen("transfers")),
+      action: () => {
+        triggerHaptic("light");
+        flow.push(purchasesScreen("transfers"));
+      },
     },
-    {
+    shop: {
+      id: "shop",
       label: "المحل",
       value: formatMetric(totals.shop.netSigned),
       icon: PersonIcon,
       tone: toneOf(totals.shop.netSigned),
-      action: () => flow.push(shopScreen()),
+      action: () => {
+        triggerHaptic("light");
+        flow.push(shopScreen());
+      },
     },
-    { label: "المخازن والأصناف", icon: RulerHorizontalIcon, action: () => flow.push(inventoryReportScreen()) },
-    { label: "حساب جديد", icon: RulerSquareIcon, action: () => ctx.openAccountCreate("extended") },
-  ];
+    inventory: {
+      id: "inventory",
+      label: "المخازن والأصناف",
+      icon: RulerHorizontalIcon,
+      action: () => {
+        triggerHaptic("light");
+        flow.push(inventoryReportScreen());
+      },
+    },
+    "new-account": {
+      id: "new-account",
+      label: "حساب جديد",
+      icon: RulerSquareIcon,
+      action: () => {
+        triggerHaptic("light");
+        ctx.openAccountCreate("extended");
+      },
+    },
+  };
+
+  const orderedMetrics = ctx.homeMetricOrder.map((id) => metricsMap[id]).filter(Boolean);
+
+  const reorderMetrics = (sourceId: HomeMetricId, targetId: HomeMetricId) => {
+    if (sourceId === targetId) return;
+    const next = [...ctx.homeMetricOrder];
+    const fromIdx = next.indexOf(sourceId);
+    const toIdx = next.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    ctx.setHomeMetricOrder(next);
+    triggerHaptic("drop");
+  };
+
+  const moveMetricBy = (id: HomeMetricId, delta: -1 | 1) => {
+    const idx = ctx.homeMetricOrder.indexOf(id);
+    const nextIdx = idx + delta;
+    if (idx === -1 || nextIdx < 0 || nextIdx >= ctx.homeMetricOrder.length) return;
+    const next = [...ctx.homeMetricOrder];
+    const [moved] = next.splice(idx, 1);
+    next.splice(nextIdx, 0, moved);
+    ctx.setHomeMetricOrder(next);
+    triggerHaptic("drop");
+  };
+
+  const handleMetricDragStart = (e: DragEvent<HTMLDivElement>, id: HomeMetricId) => {
+    setDraggedMetric(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+    triggerHaptic("light");
+  };
+
+  const handleMetricDragOver = (e: DragEvent<HTMLDivElement>, id: HomeMetricId) => {
+    e.preventDefault();
+    if (dragOverMetric !== id) setDragOverMetric(id);
+  };
+
+  const handleMetricDrop = (e: DragEvent<HTMLDivElement>, targetId: HomeMetricId) => {
+    e.preventDefault();
+    const sourceId = (draggedMetric || e.dataTransfer.getData("text/plain")) as HomeMetricId;
+    if (sourceId && DEFAULT_HOME_METRIC_ORDER.includes(sourceId)) {
+      reorderMetrics(sourceId, targetId);
+    }
+    setDraggedMetric(null);
+    setDragOverMetric(null);
+  };
 
   return (
     <>
@@ -2132,7 +2818,10 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
           <button
             type="button"
             className="home-summary-banner"
-            onClick={() => flow.push(analyticsDashboardScreen())}
+            onClick={() => {
+              triggerHaptic("light");
+              flow.push(analyticsDashboardScreen());
+            }}
             data-testid="open-analytics-dashboard-btn"
           >
             <div className="home-summary-head">
@@ -2153,6 +2842,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
               </span>
             </div>
           </button>
+
           <section className="section-block quick-section">
             <div className="quick-grid">
               {quickActions.map((item) => (
@@ -2166,29 +2856,220 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
                 </button>
               ))}
             </div>
+            <div className="home-quick-cta-row">
+              <button
+                type="button"
+                className="home-qr-quick-btn"
+                onClick={ctx.openQrScanner}
+                data-testid="home-qr-scanner-btn"
+              >
+                <CameraIcon />
+                <span>مسح رمز QR</span>
+              </button>
+              <button
+                type="button"
+                className="home-whatsapp-quick-btn"
+                onClick={ctx.openWhatsAppPicker}
+                data-testid="home-whatsapp-btn"
+              >
+                <WhatsAppIcon variant="glyph" />
+                <span>إرسال واتساب</span>
+              </button>
+            </div>
           </section>
+
+          <section className="home-favorites-bar" aria-label="المفضلة المثبتة" data-testid="home-favorites-bar">
+            <div className="exec-favorites-head">
+              <div className="exec-favorites-title">
+                <BookmarkFilledIcon />
+                <strong>المفضلة</strong>
+              </div>
+              <button
+                type="button"
+                className="exec-action-link"
+                onClick={() => {
+                  triggerHaptic("light");
+                  setPinPickerOpen((prev) => !prev);
+                }}
+              >
+                <BookmarkIcon />
+                <span>{pinPickerOpen ? "إغلاق" : "تثبيت مهمة"}</span>
+              </button>
+            </div>
+            {ctx.favorites.length === 0 ? (
+              <p className="exec-favorites-empty">لم يتم تثبيت مهام بعد — اضغط «تثبيت مهمة».</p>
+            ) : (
+              <div className="exec-favorites-rail">
+                {ctx.favorites.map((fav) => (
+                  <div className="exec-favorite-chip" key={fav.id}>
+                    <button
+                      type="button"
+                      className="exec-favorite-launch"
+                      onClick={() => ctx.launchFavorite(fav)}
+                    >
+                      <strong>{fav.label}</strong>
+                      {fav.subtitle ? <small>{fav.subtitle}</small> : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="exec-favorite-unpin"
+                      aria-label={`إزالة ${fav.label} من المفضلة`}
+                      onClick={() => ctx.unpinFavorite(fav.id)}
+                    >
+                      <Cross2Icon />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {pinPickerOpen ? (
+              <div className="exec-pin-picker" role="group" aria-label="اختر مهمة لتثبيتها في الرئيسية">
+                {candidatePins.map((cand) => {
+                  const isPinned = ctx.favorites.some((f) => f.id === cand.id);
+                  return (
+                    <button
+                      key={cand.id}
+                      type="button"
+                      className={`exec-pin-option ${isPinned ? "pinned" : ""}`}
+                      onClick={() => {
+                        if (isPinned) {
+                          ctx.unpinFavorite(cand.id);
+                        } else {
+                          ctx.pinFavorite(cand);
+                        }
+                      }}
+                    >
+                      {isPinned ? <BookmarkFilledIcon /> : <BookmarkIcon />}
+                      <span>{cand.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+
+          {backupStatus.overdue ? (
+            <div className="home-backup-alert" role="status" data-testid="home-backup-banner">
+              <div className="home-backup-alert-copy">
+                <ExclamationTriangleIcon />
+                <span>
+                  {backupStatus.daysSince === null
+                    ? "لم يتم إنشاء نسخة احتياطية كاملة بعد"
+                    : `مضى ${backupStatus.daysSince} يومًا على آخر نسخة احتياطية`}
+                </span>
+              </div>
+              <button type="button" className="exec-action-primary" onClick={ctx.triggerJsonBackup}>
+                تصدير الآن
+              </button>
+            </div>
+          ) : null}
+
           <section className="section-block metrics-section">
-            <div className="metrics-grid">
-              {metrics.map((metric) => (
+            <div className="home-metrics-toolbar">
+              <strong>بطاقات الملخص</strong>
+              <div className="home-metrics-toolbar-actions">
                 <button
-                  key={metric.label}
-                  className={`metric-card ${metric.tone ?? "measurement"}`}
-                  onClick={metric.action}
+                  type="button"
+                  className={`exec-action-secondary ${reorderMode ? "active" : ""}`}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    setReorderMode((prev) => !prev);
+                  }}
+                  data-testid="home-reorder-btn"
                 >
-                  <span className="metric-icon">
-                    <metric.icon />
-                  </span>
-                  <span className="metric-copy">
-                    <small>{metric.label}</small>
-                    {metric.value ? <strong>{metric.value}</strong> : null}
-                  </span>
+                  <DragHandleDots2Icon />
+                  <span>{reorderMode ? "تم الترتيب" : "إعادة ترتيب"}</span>
                 </button>
+                {reorderMode ? (
+                  <button
+                    type="button"
+                    className="exec-action-link"
+                    onClick={() => {
+                      ctx.setHomeMetricOrder([...DEFAULT_HOME_METRIC_ORDER]);
+                      triggerHaptic("light");
+                    }}
+                  >
+                    <ResetIcon />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="exec-action-secondary"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      ctx.openSettings();
+                    }}
+                    data-testid="home-settings-shortcut"
+                  >
+                    <GearIcon />
+                    <span>المظهر واللون</span>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="metrics-grid">
+              {orderedMetrics.map((metric, index) => (
+                <div
+                  key={metric.id}
+                  draggable
+                  onDragStart={(e) => handleMetricDragStart(e, metric.id)}
+                  onDragOver={(e) => handleMetricDragOver(e, metric.id)}
+                  onDragLeave={() => setDragOverMetric(null)}
+                  onDrop={(e) => handleMetricDrop(e, metric.id)}
+                  onDragEnd={() => {
+                    setDraggedMetric(null);
+                    setDragOverMetric(null);
+                  }}
+                  className={`home-metric-slot ${draggedMetric === metric.id ? "dragging" : ""} ${
+                    dragOverMetric === metric.id ? "drag-over" : ""
+                  }`}
+                >
+                  {reorderMode ? (
+                    <div className="home-metric-move-bar">
+                      <button
+                        type="button"
+                        aria-label={`نقل ${metric.label} لأعلى`}
+                        disabled={index === 0}
+                        onClick={() => moveMetricBy(metric.id, -1)}
+                      >
+                        <ArrowUpIcon />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`نقل ${metric.label} لأسفل`}
+                        disabled={index === orderedMetrics.length - 1}
+                        onClick={() => moveMetricBy(metric.id, 1)}
+                      >
+                        <ArrowDownIcon />
+                      </button>
+                    </div>
+                  ) : null}
+                  <button
+                    className={`metric-card ${metric.tone ?? "measurement"}`}
+                    onClick={metric.action}
+                  >
+                    <span className="metric-icon">
+                      <metric.icon />
+                    </span>
+                    <span className="metric-copy">
+                      <small>{metric.label}</small>
+                      {metric.value ? <strong>{metric.value}</strong> : null}
+                    </span>
+                  </button>
+                </div>
               ))}
             </div>
           </section>
         </main>
       </MobileScroll>
-      <button className="fab dashboard-fab" onClick={() => ctx.openSheet("add-operation")} aria-label="إضافة عملية">
+      <button
+        className="fab dashboard-fab"
+        onClick={() => {
+          triggerHaptic("light");
+          ctx.openSheet("add-operation");
+        }}
+        aria-label="إضافة عملية"
+      >
         <PlusIcon />
       </button>
     </>
@@ -2392,6 +3273,26 @@ function PurchasesPage({ flow, category }: { flow: FlowControls; category: Accou
                         <ChatBubbleIcon />
                       </button>
                       <button
+                        type="button"
+                        className="vendor-whatsapp"
+                        data-testid={`vendor-whatsapp-${vendor.codeNumber}`}
+                        aria-label={`واتساب ${vendor.name}`}
+                        onClick={() =>
+                          void openWhatsAppChat(
+                            vendor,
+                            buildAccountBalanceMessage(
+                              vendor,
+                              summary.netBalance,
+                              summary.tone,
+                              ctx.workspace?.companyName,
+                            ),
+                            ctx.showToast,
+                          )
+                        }
+                      >
+                        <WhatsAppIcon />
+                      </button>
+                      <button
                         className="vendor-operation-add"
                         aria-label={`عمليات ${vendor.name}`}
                         onClick={() => openVendorMenu(vendor)}
@@ -2511,10 +3412,33 @@ function SupplierPage({
               </strong>
               <small>سقف المديونية: {formatAmount(account.creditLimit)} {account.currency}</small>
             </div>
-            <button onClick={() => ctx.openExportMenu("statement", account)}>
-              <DownloadIcon />
-              <span>تصدير</span>
-            </button>
+            <div className="supplier-summary-actions">
+              <button
+                type="button"
+                className="supplier-whatsapp-btn"
+                data-testid="supplier-whatsapp-btn"
+                aria-label={`إرسال الرصيد عبر واتساب إلى ${account.name}`}
+                onClick={() =>
+                  void openWhatsAppChat(
+                    account,
+                    buildAccountBalanceMessage(
+                      account,
+                      statement.netBalance,
+                      statement.netBalance >= 0 ? "credit" : "debit",
+                      ctx.workspace?.companyName,
+                    ),
+                    ctx.showToast,
+                  )
+                }
+              >
+                <WhatsAppIcon variant="glyph" />
+                <span>واتساب</span>
+              </button>
+              <button onClick={() => ctx.openExportMenu("statement", account)}>
+                <DownloadIcon />
+                <span>تصدير</span>
+              </button>
+            </div>
           </section>
           <section className="statement-controls">
             <select
@@ -2628,6 +3552,20 @@ function SupplierPage({
                       }
                     >
                       <Share1Icon />
+                    </button>
+                    <button
+                      type="button"
+                      className="tx-whatsapp"
+                      aria-label={`إرسال #${item.entryNumber} عبر واتساب`}
+                      onClick={() =>
+                        void openWhatsAppChat(
+                          account,
+                          `${item.typeLabel} #${item.entryNumber} - ${account.name}: ${formatAmount(item.amount)} ${item.currency} (${item.details || item.typeLabel})`,
+                          ctx.showToast,
+                        )
+                      }
+                    >
+                      <WhatsAppIcon variant="glyph" />
                     </button>
                   </div>
                 </article>
@@ -2922,6 +3860,20 @@ function CashSupplierPage({
                   >
                     <Share1Icon />
                   </button>
+                  <button
+                    type="button"
+                    className="tx-whatsapp"
+                    aria-label={`إرسال #${item.entryNumber} عبر واتساب`}
+                    onClick={() =>
+                      void openWhatsAppChat(
+                        account,
+                        `فاتورة #${item.entryNumber} - ${account.name}: ${formatAmount(item.amount)} ${item.currency} (${item.details})`,
+                        ctx.showToast,
+                      )
+                    }
+                  >
+                    <WhatsAppIcon variant="glyph" />
+                  </button>
                 </div>
               </div>
             </article>
@@ -3073,14 +4025,17 @@ function SimpleEntryPage({
     keyboard.hide();
     const numericAmount = parseArabicNumber(amount);
     if (!fromAcc || !toAcc) {
+      triggerHaptic("warning");
       setError("اختر حساب المصدر وحساب الوجهة أولًا.");
       return;
     }
     if (fromAcc.id === toAcc.id) {
+      triggerHaptic("warning");
       setError("اختر حسابين مختلفين للقيد.");
       return;
     }
     if (numericAmount <= 0) {
+      triggerHaptic("warning");
       setError("أدخل مبلغًا أكبر من صفر.");
       return;
     }
@@ -3106,6 +4061,7 @@ function SimpleEntryPage({
         deleted: false,
         entryDate: new Date().toISOString().slice(0, 10),
       });
+      triggerHaptic("success");
       ctx.showToast(`تم حفظ القيد البسيط رقم #${nextNum} بنجاح`);
       flow.pop();
     } finally {
@@ -3347,6 +4303,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
 
   const saveExchange = async () => {
     if (!selectedAccount || parsedAmount <= 0) {
+      triggerHaptic("warning");
       ctx.showToast("أدخل المبلغ واختر الحساب أولًا");
       return;
     }
@@ -3368,6 +4325,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
         deleted: false,
         entryDate: new Date().toISOString().slice(0, 10),
       });
+      triggerHaptic("success");
       ctx.showToast(`تم حفظ عملية الصرف رقم #${nextNum}`);
       flow.pop();
     } finally {
@@ -3658,7 +4616,7 @@ function BottomNav() {
           <GlobeIcon />
         </button>
         <button aria-label="واتساب" onClick={() => ctx.flowRef.current?.push(whatsappSettingsScreen())}>
-          <ChatBubbleIcon />
+          <WhatsAppIcon variant="glyph" />
         </button>
       </div>
       <span>
@@ -4059,6 +5017,7 @@ function TransactionModal({
     editingEntry?.payment === "balance" ? "balance" : "cash",
   );
   const [direction, setDirection] = useState<"debit" | "credit">(editingEntry?.direction ?? "debit");
+  const [expenseCategory, setExpenseCategory] = useState(editingEntry?.expenseCategory ?? "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -4068,6 +5027,7 @@ function TransactionModal({
       setNote(editingEntry?.details ?? "");
       setPayment(editingEntry?.payment === "balance" ? "balance" : "cash");
       setDirection(editingEntry?.direction ?? "debit");
+      setExpenseCategory(editingEntry?.expenseCategory ?? "");
     }
   }, [ctx.accounts, editingEntry, initialAccount, open]);
 
@@ -4083,11 +5043,13 @@ function TransactionModal({
 
   const save = async () => {
     if (!selectedAccount) {
+      triggerHaptic("warning");
       ctx.showToast("اختر حسابًا أولًا");
       return;
     }
     const parsedAmount = parseArabicNumber(amount);
     if (parsedAmount <= 0) {
+      triggerHaptic("warning");
       ctx.showToast("أدخل مبلغًا أكبر من صفر");
       return;
     }
@@ -4106,7 +5068,9 @@ function TransactionModal({
           typeLabel,
           amount: parsedAmount,
           details: note || typeLabel,
+          ...(expenseCategory ? { expenseCategory } : {}),
         });
+        triggerHaptic("success");
         ctx.showToast(`تم تعديل السند #${editingEntry.entryNumber}`);
       } else {
         await createLedgerEntry(ctx.uid, {
@@ -4123,7 +5087,9 @@ function TransactionModal({
           entryNumber: nextNum,
           deleted: false,
           entryDate: new Date().toISOString().slice(0, 10),
+          ...(expenseCategory ? { expenseCategory } : {}),
         });
+        triggerHaptic("success");
         ctx.showToast(`تم حفظ السند رقم #${nextNum} بنجاح`);
       }
       onClose();
@@ -4262,6 +5228,16 @@ function TransactionModal({
             عليه
           </label>
         </div>
+        <ExpenseCategorySelector
+          value={expenseCategory}
+          onChange={setExpenseCategory}
+          description={note}
+          vendorName={selectedAccount?.name ?? ""}
+          accountCategory={selectedAccount?.category}
+          amount={amount}
+          currency={selectedAccount?.currency ?? "ريال"}
+          entryType={direction === "credit" ? "سند له" : "سند عليه / مصروف"}
+        />
         <div className="form-modal-actions">
           <button className="cancel" onClick={onClose}>
             إلغاء
@@ -4326,6 +5302,7 @@ function AccountCreateModal({
   const submitAccount = async () => {
     keyboard.hide();
     if (!name.trim()) {
+      triggerHaptic("warning");
       ctx.showToast("أدخل اسم الحساب أولًا");
       return;
     }
@@ -4355,6 +5332,7 @@ function AccountCreateModal({
         },
         initialAccount?.id,
       );
+      triggerHaptic("success");
       ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : "تم إنشاء الحساب وحفظه في السحابة");
       onClose();
     } finally {
@@ -4481,7 +5459,7 @@ function AccountCreateModal({
                 aria-label="تصنيف الحساب الموسع"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as AccountCategory)}
-                style={{ border: "1px solid #b9d1e6", borderRadius: 5, padding: "2px 8px" }}
+                style={{ border: "1px solid var(--nasqo-line)", borderRadius: 5, padding: "2px 8px" }}
               >
                 <option value="purchases">المشتريات</option>
                 <option value="sales">المبيعات</option>
@@ -4677,7 +5655,7 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "8px 10px",
-                  border: "1px solid #d5e0eb",
+                  border: "1px solid var(--nasqo-line)",
                   borderRadius: 6,
                   fontSize: 12,
                 }}
@@ -4686,7 +5664,7 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                   <strong>
                     #{item.entryNumber} · {item.accountName}
                   </strong>
-                  <div style={{ color: "#566a7b" }}>
+                  <div style={{ color: "var(--nasqo-muted)" }}>
                     {formatAmount(item.amount)} {item.currency}
                   </div>
                 </div>
@@ -4753,6 +5731,8 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
 
   if (!open) return null;
 
+  const backupStatus = isBackupOverdue(ctx.lastBackupIso);
+
   const save = async () => {
     if (!ctx.workspace || !companyName.trim()) return;
     setSaving(true);
@@ -4762,6 +5742,7 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
         companyName: companyName.trim(),
         defaultCurrency,
       });
+      triggerHaptic("success");
       ctx.showToast("تم حفظ إعدادات المنشأة بنجاح");
       onClose();
     } finally {
@@ -4786,7 +5767,7 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
           onChange={(e) => setDefaultCurrency(e.target.value as CurrencyCode)}
           style={{
             height: 36,
-            border: "1px solid #b9d1e6",
+            border: "1px solid var(--nasqo-line)",
             borderRadius: 6,
             padding: "0 10px",
           }}
@@ -4795,15 +5776,103 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
             <option key={c}>{c}</option>
           ))}
         </select>
+
+        <div className="settings-appearance-box">
+          <div className="settings-subhead">المظهر ولون العلامة والاهتزاز</div>
+          <div className="exec-segmented" role="group" aria-label="وضع الألوان">
+            {(
+              [
+                ["light", "فاتح"],
+                ["dark", "داكن"],
+                ["system", "النظام"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                className={ctx.themeMode === m ? "active" : ""}
+                onClick={() => {
+                  triggerHaptic("light");
+                  ctx.setThemeMode(m);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="exec-color-swatches" style={{ marginTop: 6 }}>
+            {BRAND_COLOR_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={`exec-color-swatch ${ctx.brandColor === preset.hex ? "active" : ""}`}
+                style={{ background: preset.hex }}
+                aria-label={preset.label}
+                onClick={() => {
+                  triggerHaptic("light");
+                  ctx.setBrandColor(preset.hex);
+                }}
+              />
+            ))}
+            <input
+              type="color"
+              aria-label="لون مخصص"
+              value={ctx.brandColor}
+              onChange={(e) => ctx.setBrandColor(e.target.value)}
+              style={{ width: 28, height: 28, padding: 0, border: 0 }}
+            />
+            <button
+              type="button"
+              className="settings-reset-color-btn"
+              onClick={() => {
+                triggerHaptic("light");
+                ctx.resetBrandColor();
+              }}
+            >
+              الافتراضي
+            </button>
+          </div>
+          <label className="exec-haptic-toggle" style={{ marginTop: 4 }}>
+            <input
+              type="checkbox"
+              checked={ctx.hapticsEnabled}
+              onChange={(e) => ctx.setHapticsEnabled(e.target.checked)}
+            />
+            <span>تفعيل ردود الفعل اللمسية (الاهتزاز) عند التفاعل</span>
+          </label>
+        </div>
+
+        <div
+          className={`settings-backup-freshness ${backupStatus.overdue ? "overdue" : "healthy"}`}
+          data-testid="settings-backup-banner"
+        >
+          <strong>
+            {backupStatus.overdue
+              ? backupStatus.daysSince === null
+                ? "تنبيه: لم يتم أخذ نسخة احتياطية JSON بعد"
+                : `تنبيه: آخر نسخة احتياطية منذ ${backupStatus.daysSince} يومًا`
+              : `النسخة الاحتياطية محدثة (منذ ${backupStatus.daysSince ?? 0} يوم)`}
+          </strong>
+          {ctx.lastBackupIso ? (
+            <div style={{ fontSize: 11, marginTop: 3 }}>
+              آخر تصدير: <bdi>{new Date(ctx.lastBackupIso).toLocaleString("en-GB")}</bdi>
+            </div>
+          ) : null}
+        </div>
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
-            onClick={ctx.triggerJsonBackup}
+            onClick={() => {
+              triggerHaptic("light");
+              ctx.triggerJsonBackup();
+            }}
             style={{
               flex: 1,
               padding: "8px 10px",
               borderRadius: 6,
-              background: "#edf5fc",
-              color: "#075da8",
+              background: "var(--nasqo-surface-alt)",
+              border: "1px solid var(--nasqo-line)",
+              color: "var(--nasqo-blue)",
               fontSize: 12,
               fontWeight: 700,
             }}
@@ -4811,13 +5880,17 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
             تنزيل نسخة احتياطية
           </button>
           <button
-            onClick={ctx.triggerJsonRestore}
+            onClick={() => {
+              triggerHaptic("light");
+              ctx.triggerJsonRestore();
+            }}
             style={{
               flex: 1,
               padding: "8px 10px",
               borderRadius: 6,
-              background: "#edf5fc",
-              color: "#075da8",
+              background: "var(--nasqo-surface-alt)",
+              border: "1px solid var(--nasqo-line)",
+              color: "var(--nasqo-blue)",
               fontSize: 12,
               fontWeight: 700,
             }}
@@ -4856,6 +5929,7 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
 
   const save = async () => {
     if (!name.trim() || !warehouseId) {
+      triggerHaptic("warning");
       ctx.showToast("أدخل اسم الصنف والمخزن أولًا");
       return;
     }
@@ -4868,6 +5942,7 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
         avgCost: parseArabicNumber(avgCost),
         warehouseId,
       });
+      triggerHaptic("success");
       ctx.showToast("تمت إضافة الصنف إلى المخزن");
       setName("");
       setAvgCost("");
@@ -4914,7 +5989,7 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
           aria-label="المخزن المستهدف"
           value={warehouseId}
           onChange={(e) => setWarehouseId(e.target.value)}
-          style={{ height: 36, border: "1px solid #b9d1e6", borderRadius: 6, padding: "0 10px" }}
+          style={{ height: 36, border: "1px solid var(--nasqo-line)", borderRadius: 6, padding: "0 10px" }}
         >
           {ctx.warehouses.map((w) => (
             <option key={w.id} value={w.id}>
@@ -4991,8 +6066,8 @@ function SheetContent({
                 style={{
                   padding: "10px 12px",
                   borderRadius: 8,
-                  background: "#fde7e7",
-                  color: "#a13434",
+                  background: "var(--nasqo-warning-bg)",
+                  color: "var(--nasqo-red)",
                   fontSize: 12,
                   marginBottom: 6,
                 }}

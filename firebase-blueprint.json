@@ -243,6 +243,17 @@
           "minLength": 1,
           "maxLength": 40
         },
+        "dueDate": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "expenseCategory": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "deliveryDays": {
+          "type": "number"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
@@ -346,6 +357,13 @@
         },
         "avgCost": {
           "type": "number"
+        },
+        "minThreshold": {
+          "type": "number"
+        },
+        "sku": {
+          "type": "string",
+          "maxLength": 64
         },
         "warehouseId": {
           "type": "string",

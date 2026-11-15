@@ -102,7 +102,8 @@ service cloud.firestore {
           'ownerId', 'accountId', 'accountName', 'counterpartAccountId', 'counterpartAccountName',
           'kind', 'typeLabel', 'payment', 'direction', 'amount', 'currency', 'exchangeRate',
           'details', 'documentNumber', 'warehouseId', 'warehouseName', 'invoiceContent',
-          'entryNumber', 'deleted', 'entryDate', 'createdAt', 'updatedAt'
+          'entryNumber', 'deleted', 'entryDate', 'dueDate', 'expenseCategory', 'deliveryDays',
+          'createdAt', 'updatedAt'
         ])
         && data.ownerId is string && data.ownerId == request.auth.uid && data.ownerId.size() <= 128
         && data.accountId is string && data.accountId.size() >= 1 && data.accountId.size() <= 128
@@ -124,6 +125,9 @@ service cloud.firestore {
         && data.entryNumber is number
         && data.deleted is bool
         && data.entryDate is string && data.entryDate.size() >= 1 && data.entryDate.size() <= 40
+        && (!('dueDate' in data) || (data.dueDate is string && data.dueDate.size() <= 40))
+        && (!('expenseCategory' in data) || (data.expenseCategory is string && data.expenseCategory.size() <= 60))
+        && (!('deliveryDays' in data) || (data.deliveryDays is number && data.deliveryDays >= 0 && data.deliveryDays <= 365))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -149,13 +153,15 @@ service cloud.firestore {
           'ownerId', 'name', 'unit', 'quantity', 'avgCost', 'warehouseId', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'ownerId', 'name', 'unit', 'quantity', 'avgCost', 'warehouseId', 'createdAt', 'updatedAt'
+          'ownerId', 'name', 'unit', 'quantity', 'avgCost', 'minThreshold', 'sku', 'warehouseId', 'createdAt', 'updatedAt'
         ])
         && data.ownerId is string && data.ownerId == request.auth.uid && data.ownerId.size() <= 128
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
         && data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 32
         && data.quantity is number && data.quantity >= 0
         && data.avgCost is number && data.avgCost >= 0
+        && (!('minThreshold' in data) || (data.minThreshold is number && data.minThreshold >= 0))
+        && (!('sku' in data) || (data.sku is string && data.sku.size() <= 64))
         && data.warehouseId is string && data.warehouseId.size() >= 1 && data.warehouseId.size() <= 128
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
@@ -230,7 +236,7 @@ service cloud.firestore {
               'accountId', 'accountName', 'counterpartAccountId', 'counterpartAccountName',
               'kind', 'typeLabel', 'payment', 'direction', 'amount', 'currency',
               'exchangeRate', 'details', 'documentNumber', 'warehouseId', 'warehouseName',
-              'invoiceContent', 'entryDate', 'updatedAt'
+              'invoiceContent', 'entryDate', 'dueDate', 'expenseCategory', 'deliveryDays', 'updatedAt'
             ]) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['deleted', 'updatedAt'])
           );
@@ -273,7 +279,9 @@ service cloud.firestore {
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
           && incoming().updatedAt == request.time
-          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'unit', 'quantity', 'avgCost', 'warehouseId', 'updatedAt']);
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'unit', 'quantity', 'avgCost', 'minThreshold', 'sku', 'warehouseId', 'updatedAt'
+          ]);
         allow delete: if isValidId(workspaceId) && isValidId(itemId) && isWorkspaceOwner(workspaceId);
       }
     }

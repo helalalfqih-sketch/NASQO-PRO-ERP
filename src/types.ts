@@ -24,6 +24,18 @@ export const LEDGER_KINDS = [
 ] as const;
 export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
+export const EXPENSE_CATEGORIES = [
+  "مشتريات بضائع",
+  "مصروفات تشغيلية",
+  "شحن ونقل",
+  "رواتب وأجور",
+  "صيانة ومرافق",
+  "تسويق ومبيعات",
+  "إيجار ومقر",
+  "أخرى",
+] as const;
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
 export const SCHEMA_LIMITS = {
   ownerIdMax: 128,
   companyNameMax: 100,
@@ -34,10 +46,12 @@ export const SCHEMA_LIMITS = {
   documentNumberMax: 64,
   typeLabelMax: 60,
   entryDateMax: 40,
+  expenseCategoryMax: 60,
   warehouseNameMax: 100,
   warehouseDetailsMax: 300,
   inventoryNameMax: 120,
   inventoryUnitMax: 32,
+  skuMax: 64,
 } as const;
 
 export type WorkspaceSettings = {
@@ -93,6 +107,9 @@ export type LedgerEntryRecord = {
   entryNumber: number;
   deleted: boolean;
   entryDate: string;
+  dueDate?: string;
+  expenseCategory?: string;
+  deliveryDays?: number;
   createdAtMs: number;
 };
 
@@ -112,6 +129,8 @@ export type InventoryItemRecord = {
   unit: string;
   quantity: number;
   avgCost: number;
+  minThreshold?: number;
+  sku?: string;
   warehouseId: string;
 };
 

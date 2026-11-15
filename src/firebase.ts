@@ -174,13 +174,13 @@ export async function ensureWorkspaceSeeded(uid: string, displayName?: string | 
   }
 
   const starterItems = [
-    { id: "inv_1", name: "ابجورة شكل قمر", unit: "حبة", quantity: 40, avgCost: 2200, warehouseId: "wh_3" },
-    { id: "inv_2", name: "توصيلة تايب سي 2 متر", unit: "حبة", quantity: 120, avgCost: 1500, warehouseId: "wh_1" },
-    { id: "inv_3", name: "بطارية جهاز كشف الذهب", unit: "حبة", quantity: 25, avgCost: 1500, warehouseId: "wh_1" },
-    { id: "inv_4", name: "فواحة عطرية خازن", unit: "حبة", quantity: 35, avgCost: 3400, warehouseId: "wh_3" },
-    { id: "inv_5", name: "مكينة خياطة كبير", unit: "حبة", quantity: 12, avgCost: 10000, warehouseId: "wh_1" },
-    { id: "inv_6", name: "عازل سطوح 10 كيلو", unit: "كيلو", quantity: 18, avgCost: 33000, warehouseId: "wh_1" },
-    { id: "inv_7", name: "فرامة لحم", unit: "حبة", quantity: 15, avgCost: 3000, warehouseId: "wh_4" },
+    { id: "inv_1", name: "ابجورة شكل قمر", unit: "حبة", quantity: 40, avgCost: 2200, minThreshold: 25, sku: "SKU-1001", warehouseId: "wh_3" },
+    { id: "inv_2", name: "توصيلة تايب سي 2 متر", unit: "حبة", quantity: 120, avgCost: 1500, minThreshold: 30, sku: "SKU-1002", warehouseId: "wh_1" },
+    { id: "inv_3", name: "بطارية جهاز كشف الذهب", unit: "حبة", quantity: 25, avgCost: 1500, minThreshold: 25, sku: "SKU-1003", warehouseId: "wh_1" },
+    { id: "inv_4", name: "فواحة عطرية خازن", unit: "حبة", quantity: 35, avgCost: 3400, minThreshold: 20, sku: "SKU-1004", warehouseId: "wh_3" },
+    { id: "inv_5", name: "مكينة خياطة كبير", unit: "حبة", quantity: 12, avgCost: 10000, minThreshold: 25, sku: "SKU-1005", warehouseId: "wh_1" },
+    { id: "inv_6", name: "عازل سطوح 10 كيلو", unit: "كيلو", quantity: 18, avgCost: 33000, minThreshold: 25, sku: "SKU-1006", warehouseId: "wh_1" },
+    { id: "inv_7", name: "فرامة لحم", unit: "حبة", quantity: 15, avgCost: 3000, minThreshold: 25, sku: "SKU-1007", warehouseId: "wh_4" },
   ];
   for (const item of starterItems) {
     const payload = sanitizeInventoryPayload({ ...item, ownerId: uid });
@@ -210,13 +210,20 @@ export async function ensureWorkspaceSeeded(uid: string, displayName?: string | 
     });
   }
 
+  const daysAgoIso = (days: number) =>
+    new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
   const starterLedger: Omit<LedgerEntryRecord, "ownerId" | "createdAtMs">[] = [
-    { id: "ent_1108", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه", payment: "cash", direction: "debit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "تسوية حساب مورد", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1108, deleted: false, entryDate: "2025-12-25" },
-    { id: "ent_1136", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 4000, currency: "ريال", exchangeRate: 1, details: "زينة منازل شكل شجرة | 1 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1136, deleted: false, entryDate: "2025-12-26" },
-    { id: "ent_1178", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 33000, currency: "ريال", exchangeRate: 1, details: "عازل سطوح 10 كيلو | 1 كيلو", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1178, deleted: false, entryDate: "2025-12-28" },
-    { id: "ent_1090", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 17000, currency: "ريال", exchangeRate: 1, details: "فواحة عطرية خازن | 5 حبة", documentNumber: "", warehouseId: "wh_3", warehouseName: "مخازن بينون", invoiceContent: "items", entryNumber: 1090, deleted: false, entryDate: "2025-12-24" },
-    { id: "ent_1140", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 3000, currency: "ريال", exchangeRate: 1, details: "توصيلة تايب سي 2 متر | 1 حبة\nبطارية جهاز كشف الذهب | 1 حبة", documentNumber: "1140", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1140, deleted: false, entryDate: "2025-12-26" },
-    { id: "ent_1218", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "محلات بن عوضة\nمكينة خياطة كبير | 2 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1218, deleted: false, entryDate: "2025-12-29" },
+    { id: "ent_1108", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه", payment: "cash", direction: "debit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "تسوية حساب مورد", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1108, deleted: false, entryDate: daysAgoIso(18), expenseCategory: "مشتريات بضائع", deliveryDays: 3 },
+    { id: "ent_1136", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 4000, currency: "ريال", exchangeRate: 1, details: "زينة منازل شكل شجرة | 1 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1136, deleted: false, entryDate: daysAgoIso(11), expenseCategory: "مشتريات بضائع", deliveryDays: 2 },
+    { id: "ent_1178", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 33000, currency: "ريال", exchangeRate: 1, details: "عازل سطوح 10 كيلو | 1 كيلو", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1178, deleted: false, entryDate: daysAgoIso(5), dueDate: daysAgoIso(-3), expenseCategory: "مشتريات بضائع", deliveryDays: 4 },
+    { id: "ent_1090", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 17000, currency: "ريال", exchangeRate: 1, details: "فواحة عطرية خازن | 5 حبة", documentNumber: "", warehouseId: "wh_3", warehouseName: "مخازن بينون", invoiceContent: "items", entryNumber: 1090, deleted: false, entryDate: daysAgoIso(14), expenseCategory: "مشتريات بضائع", deliveryDays: 1 },
+    { id: "ent_1140", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 3000, currency: "ريال", exchangeRate: 1, details: "توصيلة تايب سي 2 متر | 1 حبة\nبطارية جهاز كشف الذهب | 1 حبة", documentNumber: "1140", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1140, deleted: false, entryDate: daysAgoIso(6), expenseCategory: "مشتريات بضائع", deliveryDays: 2 },
+    { id: "ent_1218", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "محلات بن عوضة\nمكينة خياطة كبير | 2 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1218, deleted: false, entryDate: daysAgoIso(3), expenseCategory: "شحن ونقل", deliveryDays: 2 },
+    { id: "ent_1225", accountId: "acc_shop_main", accountName: "حساب المحل", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 6500, currency: "ريال", exchangeRate: 1, details: "فاتورة كهرباء وصيانة مستودع", documentNumber: "1225", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1225, deleted: false, entryDate: daysAgoIso(4), expenseCategory: "صيانة ومرافق" },
+    { id: "ent_1230", accountId: "acc_emp_1", accountName: "رواتب الموظفين", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 12000, currency: "ريال", exchangeRate: 1, details: "دفعة رواتب شهرية", documentNumber: "1230", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1230, deleted: false, entryDate: daysAgoIso(2), expenseCategory: "رواتب وأجور" },
+    { id: "ent_1235", accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 24500, currency: "ريال", exchangeRate: 1, details: "مبيعات أجهزة وتجهيزات", documentNumber: "1235", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1235, deleted: false, entryDate: daysAgoIso(1) },
+    { id: "ent_1236", accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 18500, currency: "ريال", exchangeRate: 1, details: "مبيعات الجملة اليومية", documentNumber: "1236", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1236, deleted: false, entryDate: daysAgoIso(0) },
   ];
   for (const entry of starterLedger) {
     const payload = sanitizeLedgerPayload({ ...entry, ownerId: uid });
@@ -332,6 +339,11 @@ export function subscribeWorkspace(
             entryNumber: Number(data.entryNumber ?? 1),
             deleted: Boolean(data.deleted),
             entryDate: String(data.entryDate ?? ""),
+            ...(typeof data.dueDate === "string" && data.dueDate ? { dueDate: data.dueDate } : {}),
+            ...(typeof data.expenseCategory === "string" && data.expenseCategory
+              ? { expenseCategory: data.expenseCategory }
+              : {}),
+            ...(typeof data.deliveryDays === "number" ? { deliveryDays: data.deliveryDays } : {}),
             createdAtMs: ts,
           };
         });
@@ -376,6 +388,8 @@ export function subscribeWorkspace(
             unit: String(data.unit ?? "حبة"),
             quantity: Number(data.quantity ?? 0),
             avgCost: Number(data.avgCost ?? 0),
+            minThreshold: typeof data.minThreshold === "number" ? data.minThreshold : 25,
+            ...(typeof data.sku === "string" && data.sku ? { sku: data.sku } : {}),
             warehouseId: String(data.warehouseId ?? ""),
           };
         });
@@ -497,6 +511,9 @@ export async function updateLedgerEntry(
       warehouseName: clean.warehouseName,
       invoiceContent: clean.invoiceContent,
       entryDate: clean.entryDate,
+      ...(clean.dueDate ? { dueDate: clean.dueDate } : {}),
+      ...(clean.expenseCategory ? { expenseCategory: clean.expenseCategory } : {}),
+      ...(clean.deliveryDays !== undefined ? { deliveryDays: clean.deliveryDays } : {}),
       updatedAt: serverTimestamp(),
     });
   } catch (err) {
@@ -585,3 +602,66 @@ export async function createInventoryItem(
     handleFirestoreError(err, OperationType.CREATE, path);
   }
 }
+
+export async function updateInventoryItem(
+  uid: string,
+  itemId: string,
+  item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
+): Promise<void> {
+  const path = `workspaces/${uid}/inventory/${itemId}`;
+  const clean = sanitizeInventoryPayload({ ...item, ownerId: uid });
+  try {
+    await updateDoc(doc(db, "workspaces", uid, "inventory", itemId), {
+      name: clean.name,
+      unit: clean.unit,
+      quantity: clean.quantity,
+      avgCost: clean.avgCost,
+      minThreshold: clean.minThreshold,
+      ...(clean.sku ? { sku: clean.sku } : {}),
+      warehouseId: clean.warehouseId,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+export async function batchUpdateInventoryItems(
+  uid: string,
+  updates: readonly {
+    item: InventoryItemRecord;
+    quantity?: number;
+    avgCost?: number;
+    minThreshold?: number;
+  }[],
+): Promise<void> {
+  if (updates.length === 0) return;
+  const path = `workspaces/${uid}/inventory/batch`;
+  try {
+    const batch = writeBatch(db);
+    for (const entry of updates) {
+      const clean = sanitizeInventoryPayload({
+        ...entry.item,
+        ownerId: uid,
+        quantity: entry.quantity ?? entry.item.quantity,
+        avgCost: entry.avgCost ?? entry.item.avgCost,
+        minThreshold: entry.minThreshold ?? entry.item.minThreshold,
+      });
+      batch.update(doc(db, "workspaces", uid, "inventory", entry.item.id), {
+        name: clean.name,
+        unit: clean.unit,
+        quantity: clean.quantity,
+        avgCost: clean.avgCost,
+        minThreshold: clean.minThreshold,
+        ...(clean.sku ? { sku: clean.sku } : {}),
+        warehouseId: clean.warehouseId,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, path);
+  }
+}
+
+

@@ -1,11 +1,13 @@
 import {
   ACCOUNT_CATEGORIES,
   CURRENCIES,
+  EXPENSE_CATEGORIES,
   LEDGER_KINDS,
   SCHEMA_LIMITS,
   type AccountCategory,
   type AccountRecord,
   type CurrencyCode,
+  type ExpenseCategory,
   type InventoryItemRecord,
   type LedgerEntryRecord,
   type LedgerKind,
@@ -106,6 +108,16 @@ export function sanitizeLedgerPayload(
 ) {
   const safeAmount = Math.max(0, parseArabicNumber(input.amount));
   const safeRate = Math.max(0.0001, parseArabicNumber(input.exchangeRate) || 1);
+  const dueDate = clampString(input.dueDate ?? "", SCHEMA_LIMITS.entryDateMax);
+  const expenseCategory = clampString(input.expenseCategory ?? "", SCHEMA_LIMITS.expenseCategoryMax);
+  const rawDelivery =
+    input.deliveryDays !== undefined && input.deliveryDays !== null
+      ? parseArabicNumber(input.deliveryDays)
+      : undefined;
+  const deliveryDays =
+    rawDelivery !== undefined && Number.isFinite(rawDelivery)
+      ? Math.min(365, Math.max(0, Math.round(rawDelivery)))
+      : undefined;
   return {
     ownerId: clampString(input.ownerId, SCHEMA_LIMITS.ownerIdMax),
     accountId: clampString(input.accountId, SCHEMA_LIMITS.ownerIdMax),
@@ -130,6 +142,9 @@ export function sanitizeLedgerPayload(
     entryDate:
       clampString(input.entryDate || new Date().toISOString().slice(0, 10), SCHEMA_LIMITS.entryDateMax) ||
       new Date().toISOString().slice(0, 10),
+    ...(dueDate ? { dueDate } : {}),
+    ...(expenseCategory ? { expenseCategory } : {}),
+    ...(deliveryDays !== undefined ? { deliveryDays } : {}),
   };
 }
 
@@ -146,12 +161,17 @@ export function sanitizeWarehousePayload(input: Partial<WarehouseRecord> & { own
 export function sanitizeInventoryPayload(
   input: Partial<InventoryItemRecord> & { ownerId: string; name: string; warehouseId: string },
 ) {
+  const minThreshold =
+    input.minThreshold !== undefined ? Math.max(0, parseArabicNumber(input.minThreshold)) : 25;
+  const sku = clampString(input.sku ?? "", SCHEMA_LIMITS.skuMax);
   return {
     ownerId: clampString(input.ownerId, SCHEMA_LIMITS.ownerIdMax),
     name: clampString(input.name, SCHEMA_LIMITS.inventoryNameMax),
     unit: clampString(input.unit || "حبة", SCHEMA_LIMITS.inventoryUnitMax) || "حبة",
     quantity: Math.max(0, parseArabicNumber(input.quantity)),
     avgCost: Math.max(0, parseArabicNumber(input.avgCost)),
+    minThreshold,
+    ...(sku ? { sku } : {}),
     warehouseId: clampString(input.warehouseId, SCHEMA_LIMITS.ownerIdMax),
   };
 }
@@ -418,6 +438,8 @@ export function computeInventorySummary(items: readonly InventoryItemRecord[], w
 
 export type LowStockAlertItem = InventoryItemRecord & {
   warehouseName: string;
+  effectiveThreshold: number;
+  shortage: number;
   severity: "critical" | "warning";
   stockValue: number;
 };
@@ -434,6 +456,46 @@ export type DashboardSummary = {
   lowStockThreshold: number;
 };
 
+export type SalesTrendPoint = {
+  dateIso: string;
+  shortLabel: string;
+  weekdayLabel: string;
+  salesTotal: number;
+  invoiceCount: number;
+};
+
+export type NotificationCategory = "due-invoice" | "low-stock" | "system";
+
+export type WorkspaceNotification = {
+  id: string;
+  category: NotificationCategory;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  message: string;
+  dateLabel: string;
+  targetType?: "invoice" | "inventory" | "account" | "settings";
+  targetId?: string;
+};
+
+export type ParsedQrStockPayload = {
+  raw: string;
+  lookupKey: string;
+  sku?: string;
+  name?: string;
+  quantity?: number;
+  unit?: string;
+  avgCost?: number;
+  minThreshold?: number;
+};
+
+function isSaleLedgerEntry(entry: LedgerEntryRecord, salesAccountIds: ReadonlySet<string>): boolean {
+  return (
+    salesAccountIds.has(entry.accountId) ||
+    (entry.kind === "invoice" && entry.direction === "debit") ||
+    (entry.kind === "return" && entry.direction === "credit" && salesAccountIds.has(entry.accountId))
+  );
+}
+
 export function computeDashboardSummary(
   accounts: readonly AccountRecord[],
   entries: readonly LedgerEntryRecord[],
@@ -441,12 +503,14 @@ export function computeDashboardSummary(
   inventory: readonly InventoryItemRecord[],
   options: {
     lowStockThreshold?: number;
+    useItemThresholds?: boolean;
     recentInvoicesLimit?: number;
     period?: "all" | "month" | "week";
     referenceDate?: Date;
   } = {},
 ): DashboardSummary {
-  const lowStockThreshold = options.lowStockThreshold ?? 25;
+  const defaultThreshold = options.lowStockThreshold ?? 25;
+  const useItemThresholds = options.useItemThresholds ?? true;
   const recentInvoicesLimit = options.recentInvoicesLimit ?? 6;
   const period = options.period ?? "all";
   const refDate = options.referenceDate ?? new Date();
@@ -486,12 +550,7 @@ export function computeDashboardSummary(
       }
     }
 
-    const isSaleEntry =
-      salesAccountIds.has(entry.accountId) ||
-      (entry.kind === "invoice" && entry.direction === "debit") ||
-      (entry.kind === "return" && entry.direction === "credit" && salesAccountIds.has(entry.accountId));
-
-    if (isSaleEntry) {
+    if (isSaleLedgerEntry(entry, salesAccountIds)) {
       if (entry.kind === "return") {
         totalSales = Math.max(0, totalSales - entry.amount);
       } else if (entry.kind === "invoice" || entry.kind === "voucher") {
@@ -511,14 +570,30 @@ export function computeDashboardSummary(
   );
 
   const lowStockItems: LowStockAlertItem[] = inventory
-    .filter((item) => item.quantity <= lowStockThreshold)
-    .map((item) => ({
-      ...item,
-      warehouseName: warehouseMap.get(item.warehouseId) ?? "مخزن عام",
-      severity: item.quantity <= Math.max(15, Math.floor(lowStockThreshold * 0.6)) ? ("critical" as const) : ("warning" as const),
-      stockValue: item.quantity * item.avgCost,
-    }))
-    .sort((a, b) => a.quantity - b.quantity || a.name.localeCompare(b.name, "ar"));
+    .map((item) => {
+      const effectiveThreshold = useItemThresholds
+        ? typeof item.minThreshold === "number"
+          ? item.minThreshold
+          : defaultThreshold
+        : defaultThreshold;
+      const shortage = Math.max(0, effectiveThreshold - item.quantity);
+      const isBelow = effectiveThreshold > 0 && item.quantity < effectiveThreshold;
+      return {
+        ...item,
+        warehouseName: warehouseMap.get(item.warehouseId) ?? "مخزن عام",
+        effectiveThreshold,
+        shortage,
+        severity:
+          item.quantity <= Math.max(5, Math.floor(effectiveThreshold * 0.5))
+            ? ("critical" as const)
+            : ("warning" as const),
+        stockValue: item.quantity * item.avgCost,
+        isBelow,
+      };
+    })
+    .filter((item) => item.isBelow)
+    .map(({ isBelow: _discard, ...rest }) => rest)
+    .sort((a, b) => b.shortage - a.shortage || a.quantity - b.quantity || a.name.localeCompare(b.name, "ar"));
 
   return {
     totalSales,
@@ -529,7 +604,501 @@ export function computeDashboardSummary(
     totalInvoicesVolume,
     lowStockItems,
     totalInventoryItems: inventory.length,
-    lowStockThreshold,
+    lowStockThreshold: defaultThreshold,
   };
 }
 
+export function computeSalesTrend7Days(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  referenceDate: Date = new Date(),
+): SalesTrendPoint[] {
+  const salesAccountIds = new Set(accounts.filter((a) => a.category === "sales").map((a) => a.id));
+  const endUtc = Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), referenceDate.getUTCDate());
+  const dayBuckets = new Map<string, { salesTotal: number; invoiceCount: number }>();
+
+  const orderedDates: string[] = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const dayDate = new Date(endUtc - offset * 86_400_000);
+    const iso = dayDate.toISOString().slice(0, 10);
+    orderedDates.push(iso);
+    dayBuckets.set(iso, { salesTotal: 0, invoiceCount: 0 });
+  }
+
+  for (const entry of entries) {
+    if (entry.deleted) continue;
+    const bucket = dayBuckets.get(entry.entryDate);
+    if (!bucket) continue;
+    if (!isSaleLedgerEntry(entry, salesAccountIds)) continue;
+
+    if (entry.kind === "return") {
+      bucket.salesTotal = Math.max(0, bucket.salesTotal - entry.amount);
+    } else if (entry.kind === "invoice" || entry.kind === "voucher") {
+      bucket.salesTotal += entry.amount;
+      if (entry.kind === "invoice") {
+        bucket.invoiceCount += 1;
+      }
+    }
+  }
+
+  const weekdayFormatter = new Intl.DateTimeFormat("ar", { weekday: "short", timeZone: "UTC" });
+
+  return orderedDates.map((iso) => {
+    const dateObj = new Date(`${iso}T00:00:00Z`);
+    const bucket = dayBuckets.get(iso)!;
+    return {
+      dateIso: iso,
+      shortLabel: iso.slice(5).replace("-", "/"),
+      weekdayLabel: weekdayFormatter.format(dateObj),
+      salesTotal: bucket.salesTotal,
+      invoiceCount: bucket.invoiceCount,
+    };
+  });
+}
+
+function addDaysIso(isoDate: string, days: number): string {
+  const parsed = Date.parse(`${isoDate}T00:00:00Z`);
+  if (!Number.isFinite(parsed)) return isoDate;
+  return new Date(parsed + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+export function isBackupOverdue(
+  lastBackupIso: string | null | undefined,
+  referenceDate: Date = new Date(),
+  maxDays: number = 7,
+): { lastBackupIso: string | null; daysSince: number | null; overdue: boolean } {
+  if (!lastBackupIso) {
+    return { lastBackupIso: null, daysSince: null, overdue: true };
+  }
+  const parsed = Date.parse(lastBackupIso);
+  if (!Number.isFinite(parsed)) {
+    return { lastBackupIso: null, daysSince: null, overdue: true };
+  }
+  const diffDays = Math.max(0, Math.floor((referenceDate.getTime() - parsed) / 86_400_000));
+  return {
+    lastBackupIso,
+    daysSince: diffDays,
+    overdue: diffDays > maxDays,
+  };
+}
+
+export function computeWorkspaceNotifications(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  warehouses: readonly WarehouseRecord[],
+  inventory: readonly InventoryItemRecord[],
+  workspace: WorkspaceSettings | null,
+  referenceDate: Date = new Date(),
+  options: { lastBackupIso?: string | null } = {},
+): WorkspaceNotification[] {
+  const notifications: WorkspaceNotification[] = [];
+  const todayIso = referenceDate.toISOString().slice(0, 10);
+  const todayMs = Date.parse(`${todayIso}T00:00:00Z`);
+  const warehouseMap = new Map(warehouses.map((w) => [w.id, w.name]));
+
+  // 1. Upcoming / overdue credit invoice due dates & over-credit-limit accounts
+  for (const entry of entries) {
+    if (entry.deleted) continue;
+    if (entry.kind !== "invoice" || entry.payment !== "credit") continue;
+    const dueIso = entry.dueDate?.trim() || addDaysIso(entry.entryDate, 30);
+    const dueMs = Date.parse(`${dueIso}T00:00:00Z`);
+    if (!Number.isFinite(dueMs)) continue;
+    const daysLeft = Math.round((dueMs - todayMs) / 86_400_000);
+    if (daysLeft <= 10) {
+      const overdue = daysLeft < 0;
+      notifications.push({
+        id: `due_${entry.id}`,
+        category: "due-invoice",
+        severity: overdue || daysLeft <= 2 ? "critical" : "warning",
+        title: overdue
+          ? `فاتورة آجلة متأخرة السداد (#${entry.entryNumber})`
+          : `موعد استحقاق فاتورة قريب (#${entry.entryNumber})`,
+        message: `${entry.accountName} · ${formatAmount(entry.amount)} ${entry.currency} · ${
+          overdue ? `متأخرة منذ ${Math.abs(daysLeft)} يوم` : daysLeft === 0 ? "تستحق اليوم" : `بعد ${daysLeft} يوم`
+        }`,
+        dateLabel: dueIso,
+        targetType: "invoice",
+        targetId: entry.id,
+      });
+    }
+  }
+
+  for (const acc of accounts) {
+    if (acc.creditLimit <= 0) continue;
+    const s = computeAccountSummary(acc, entries);
+    if (s.netBalance > acc.creditLimit) {
+      notifications.push({
+        id: `limit_${acc.id}`,
+        category: "due-invoice",
+        severity: "critical",
+        title: `تجاوز سقف المديونية: ${acc.name}`,
+        message: `الرصيد الحالي ${formatAmount(s.netBalance)} يتجاوز السقف ${formatAmount(acc.creditLimit)} ${acc.currency}`,
+        dateLabel: todayIso,
+        targetType: "account",
+        targetId: acc.id,
+      });
+    }
+  }
+
+  // 2. Low-stock updates for items below their defined minimum threshold
+  for (const item of inventory) {
+    const threshold = typeof item.minThreshold === "number" ? item.minThreshold : 25;
+    if (threshold > 0 && item.quantity < threshold) {
+      const whName = warehouseMap.get(item.warehouseId) ?? "مخزن عام";
+      notifications.push({
+        id: `stock_${item.id}`,
+        category: "low-stock",
+        severity: item.quantity <= Math.max(5, Math.floor(threshold * 0.5)) ? "critical" : "warning",
+        title: `انخفاض مخزون: ${item.name}`,
+        message: `المتوفر ${formatAmount(item.quantity)} من الحد الأدنى ${formatAmount(threshold)} ${item.unit} · ${whName}`,
+        dateLabel: todayIso,
+        targetType: "inventory",
+        targetId: item.id,
+      });
+    }
+  }
+
+  // 3. Important system messages & backup freshness check
+  const backupStatus = isBackupOverdue(options.lastBackupIso, referenceDate, 7);
+  if (backupStatus.overdue) {
+    notifications.push({
+      id: "sys_backup_overdue",
+      category: "system",
+      severity: "warning",
+      title: "النسخة الاحتياطية بحاجة للتحديث",
+      message:
+        backupStatus.daysSince === null
+          ? "لم يتم إنشاء نسخة احتياطية JSON بعد. يُنصح بتنزيل نسخة احتياطية لحماية بياناتك."
+          : `مضى ${backupStatus.daysSince} يومًا على آخر نسخة احتياطية (أكثر من 7 أيام).`,
+      dateLabel: todayIso,
+      targetType: "settings",
+    });
+  }
+
+  if (workspace && !workspace.whatsappInstantEnabled) {
+    notifications.push({
+      id: "sys_whatsapp_disabled",
+      category: "system",
+      severity: "info",
+      title: "تنبيهات واتساب التلقائية غير مفعلة",
+      message: "فعّل إشعارات واتساب الفورية من الإعدادات لإرسال إشعارات الفواتير تلقائيًا.",
+      dateLabel: todayIso,
+      targetType: "settings",
+    });
+  }
+
+  notifications.push({
+    id: "sys_cloud_sync",
+    category: "system",
+    severity: "info",
+    title: "المزامنة السحابية نشطة ومؤمنة",
+    message: `يتم حفظ ${accounts.length} حساب و${entries.filter((e) => !e.deleted).length} قيد في Firestore تلقائيًا.`,
+    dateLabel: todayIso,
+    targetType: "settings",
+  });
+
+  const severityRank: Record<WorkspaceNotification["severity"], number> = {
+    critical: 0,
+    warning: 1,
+    info: 2,
+  };
+  return notifications.sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
+}
+
+export function parseQrStockPayload(rawInput: string): ParsedQrStockPayload {
+  const raw = String(rawInput ?? "").trim();
+  if (!raw) {
+    return { raw: "", lookupKey: "" };
+  }
+
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const sku = typeof parsed.sku === "string" ? parsed.sku.trim() : typeof parsed.code === "string" ? parsed.code.trim() : undefined;
+      const name = typeof parsed.name === "string" ? parsed.name.trim() : undefined;
+      const unit = typeof parsed.unit === "string" ? parsed.unit.trim() : undefined;
+      const qtyRaw = parsed.quantity ?? parsed.qty;
+      const costRaw = parsed.avgCost ?? parsed.cost ?? parsed.price;
+      const threshRaw = parsed.minThreshold ?? parsed.min;
+      return {
+        raw,
+        lookupKey: sku || name || (typeof parsed.id === "string" ? parsed.id.trim() : "") || raw,
+        ...(sku ? { sku } : {}),
+        ...(name ? { name } : {}),
+        ...(qtyRaw !== undefined ? { quantity: Math.max(0, parseArabicNumber(String(qtyRaw))) } : {}),
+        ...(unit ? { unit } : {}),
+        ...(costRaw !== undefined ? { avgCost: Math.max(0, parseArabicNumber(String(costRaw))) } : {}),
+        ...(threshRaw !== undefined ? { minThreshold: Math.max(0, parseArabicNumber(String(threshRaw))) } : {}),
+      };
+    } catch {
+      // Fall through to structured key=value or plain lookup parsing
+    }
+  }
+
+  if (raw.includes("=") && (raw.includes(";") || raw.includes("\n"))) {
+    const map = new Map<string, string>();
+    for (const part of raw.split(/[;\n]+/)) {
+      const idx = part.indexOf("=");
+      if (idx > 0) {
+        map.set(part.slice(0, idx).trim().toLowerCase(), part.slice(idx + 1).trim());
+      }
+    }
+    const sku = map.get("sku") || map.get("code");
+    const name = map.get("name");
+    const unit = map.get("unit");
+    const qty = map.get("qty") ?? map.get("quantity");
+    const cost = map.get("cost") ?? map.get("avgcost");
+    const min = map.get("min") ?? map.get("minthreshold");
+    return {
+      raw,
+      lookupKey: sku || name || raw,
+      ...(sku ? { sku } : {}),
+      ...(name ? { name } : {}),
+      ...(qty !== undefined ? { quantity: Math.max(0, parseArabicNumber(qty)) } : {}),
+      ...(unit ? { unit } : {}),
+      ...(cost !== undefined ? { avgCost: Math.max(0, parseArabicNumber(cost)) } : {}),
+      ...(min !== undefined ? { minThreshold: Math.max(0, parseArabicNumber(min)) } : {}),
+    };
+  }
+
+  const cleaned = raw.replace(/^(sku:|item:|product:)/i, "").trim();
+  return {
+    raw,
+    lookupKey: cleaned,
+    sku: /^[a-zA-Z0-9_-]{3,32}$/.test(cleaned) ? cleaned : undefined,
+    name: /^[a-zA-Z0-9_-]{3,32}$/.test(cleaned) ? undefined : cleaned,
+  };
+}
+
+export function inferExpenseCategory(
+  description: string,
+  accountName: string = "",
+  accountCategory?: AccountCategory,
+): ExpenseCategory {
+  const haystack = normalizeArabicSearch(`${description} ${accountName}`);
+  if (/راتب|رواتب|اجور|مكاف|حوافز|موظف/.test(haystack) || accountCategory === "employees") {
+    return "رواتب وأجور";
+  }
+  if (/شحن|توصيل|نقل|بوليصة|جمرك|تخليص|لوجست|سيارة|سائق/.test(haystack)) {
+    return "شحن ونقل";
+  }
+  if (/صيانة|كهرباء|ماء|مياه|انترنت|نت|اتصال|طاقة|وقود|ديزل|بنزين/.test(haystack)) {
+    return "صيانة ومرافق";
+  }
+  if (/ايجار|إيجار|مستودع|مكتب|معرض|عقد/.test(haystack)) {
+    return "إيجار ومقر";
+  }
+  if (/اعلان|تسويق|حملة|تصميم|مطبوع|دعاية|سوشيال/.test(haystack)) {
+    return "تسويق ومبيعات";
+  }
+  if (/محل|تشغيل|قرطاسية|تغليف|اكواب|مستلزمات|ضيافة|نظافة/.test(haystack) || accountCategory === "shop") {
+    return "مصروفات تشغيلية";
+  }
+  if (
+    /فاتورة|توريد|بضاعة|صنف|حبة|كيلو|كرتون|ابجورة|توصيلة|بطارية|فواحة|مكينة|عازل|فرامة|شراء|مشتريات/.test(
+      haystack,
+    ) ||
+    accountCategory === "purchases"
+  ) {
+    return "مشتريات بضائع";
+  }
+  return "أخرى";
+}
+
+export function normalizeExpenseCategory(raw?: string): ExpenseCategory | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if ((EXPENSE_CATEGORIES as readonly string[]).includes(trimmed)) {
+    return trimmed as ExpenseCategory;
+  }
+  return null;
+}
+
+export type SupplierPerformanceMetric = {
+  accountId: string;
+  name: string;
+  totalSpend: number;
+  orderCount: number;
+  avgOrderCost: number;
+  avgDeliveryDays: number;
+  onTimeScore: number;
+};
+
+export function computeSupplierPerformance(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+): SupplierPerformanceMetric[] {
+  const supplierAccounts = accounts.filter((a) => a.category === "purchases");
+  const results: SupplierPerformanceMetric[] = [];
+
+  for (const supplier of supplierAccounts) {
+    const supplierEntries = entries
+      .filter((e) => !e.deleted && (e.accountId === supplier.id || e.counterpartAccountId === supplier.id))
+      .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+
+    const purchaseDocs = supplierEntries.filter(
+      (e) => e.kind === "invoice" || e.kind === "order" || (e.kind === "voucher" && e.direction === "credit"),
+    );
+
+    const totalSpendFromDocs = purchaseDocs.reduce((sum, e) => sum + e.amount * (e.exchangeRate || 1), 0);
+    const totalSpend =
+      totalSpendFromDocs > 0 ? totalSpendFromDocs : supplier.openingDirection === "credit" ? supplier.openingBalance : 0;
+    const orderCount = Math.max(purchaseDocs.length, totalSpend > 0 ? 1 : 0);
+    if (totalSpend <= 0 && orderCount === 0) continue;
+
+    const avgOrderCost = orderCount > 0 ? Math.round((totalSpend / orderCount) * 100) / 100 : 0;
+
+    const explicitDelivery = purchaseDocs
+      .map((e) => e.deliveryDays)
+      .filter((d): d is number => typeof d === "number" && Number.isFinite(d) && d >= 0);
+
+    let avgDeliveryDays = 3;
+    if (explicitDelivery.length > 0) {
+      avgDeliveryDays =
+        Math.round((explicitDelivery.reduce((s, d) => s + d, 0) / explicitDelivery.length) * 10) / 10;
+    } else if (purchaseDocs.length >= 2) {
+      const gaps: number[] = [];
+      for (let i = 1; i < purchaseDocs.length; i += 1) {
+        const prev = Date.parse(`${purchaseDocs[i - 1].entryDate}T00:00:00Z`);
+        const cur = Date.parse(`${purchaseDocs[i].entryDate}T00:00:00Z`);
+        if (Number.isFinite(prev) && Number.isFinite(cur)) {
+          gaps.push(Math.min(14, Math.max(1, Math.round(Math.abs(cur - prev) / 86_400_000))));
+        }
+      }
+      if (gaps.length > 0) {
+        avgDeliveryDays = Math.round((gaps.reduce((s, g) => s + g, 0) / gaps.length) * 10) / 10;
+      }
+    } else {
+      // Deterministic baseline when only opening balance / single cash supplier record exists
+      avgDeliveryDays = supplier.isCashAccount ? 1.5 : 3 + (supplier.codeNumber % 4);
+    }
+
+    const onTimeScore = Math.max(35, Math.min(99, Math.round(100 - avgDeliveryDays * 6)));
+
+    results.push({
+      accountId: supplier.id,
+      name: supplier.name,
+      totalSpend,
+      orderCount,
+      avgOrderCost,
+      avgDeliveryDays,
+      onTimeScore,
+    });
+  }
+
+  return results.sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 6);
+}
+
+export type ExpenseTrendRange = "month" | "quarter" | "all";
+
+export type ExpenseCategorySlice = {
+  category: ExpenseCategory;
+  total: number;
+  count: number;
+  percentage: number;
+  color: string;
+};
+
+const EXPENSE_PALETTE: Record<ExpenseCategory, string> = {
+  "مشتريات بضائع": "#0b5ca8",
+  "مصروفات تشغيلية": "#f39a16",
+  "شحن ونقل": "#0d9488",
+  "رواتب وأجور": "#6366f1",
+  "صيانة ومرافق": "#e11d48",
+  "تسويق ومبيعات": "#0284c7",
+  "إيجار ومقر": "#7c3aed",
+  "أخرى": "#64748b",
+};
+
+export function computeExpenseTrendsByCategory(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  range: ExpenseTrendRange = "month",
+  referenceDate: Date = new Date(),
+): {
+  totalSpend: number;
+  entryCount: number;
+  slices: ExpenseCategorySlice[];
+} {
+  const accountMap = new Map(accounts.map((a) => [a.id, a]));
+  const cutoffMs =
+    range === "month"
+      ? referenceDate.getTime() - 30 * 86_400_000
+      : range === "quarter"
+        ? referenceDate.getTime() - 90 * 86_400_000
+        : 0;
+  const cutoffIso = cutoffMs > 0 ? new Date(cutoffMs).toISOString().slice(0, 10) : "";
+
+  const bucketMap = new Map<ExpenseCategory, { total: number; count: number }>();
+  let totalSpend = 0;
+  let entryCount = 0;
+
+  for (const entry of entries) {
+    if (entry.deleted) continue;
+    if (entry.kind === "quote" || entry.kind === "order" || entry.kind === "return") continue;
+    if (cutoffIso && entry.entryDate < cutoffIso) continue;
+
+    const account = accountMap.get(entry.accountId);
+    const isExpenseOrPurchase =
+      account?.category === "purchases" ||
+      account?.category === "shop" ||
+      account?.category === "employees" ||
+      (entry.kind === "invoice" && entry.direction === "credit") ||
+      Boolean(entry.expenseCategory);
+
+    if (!isExpenseOrPurchase) continue;
+
+    const category =
+      normalizeExpenseCategory(entry.expenseCategory) ??
+      inferExpenseCategory(entry.details, entry.accountName, account?.category);
+    const amount = entry.amount * (entry.exchangeRate || 1);
+    if (amount <= 0) continue;
+
+    const current = bucketMap.get(category) ?? { total: 0, count: 0 };
+    current.total += amount;
+    current.count += 1;
+    bucketMap.set(category, current);
+    totalSpend += amount;
+    entryCount += 1;
+  }
+
+  const slices: ExpenseCategorySlice[] = Array.from(bucketMap.entries())
+    .map(([category, data]) => ({
+      category,
+      total: data.total,
+      count: data.count,
+      percentage: totalSpend > 0 ? Math.round((data.total / totalSpend) * 1000) / 10 : 0,
+      color: EXPENSE_PALETTE[category] ?? "#0b5ca8",
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    totalSpend,
+    entryCount,
+    slices,
+  };
+}
+
+export function normalizeWhatsAppPhone(raw: string | undefined | null): string {
+  if (!raw) return "";
+  const asciiDigits = String(raw)
+    .replace(/[٠-٩]/g, (ch) => String(ch.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (ch) => String(ch.charCodeAt(0) - 0x06f0))
+    .replace(/[^0-9]/g, "");
+  if (asciiDigits.startsWith("00")) {
+    return asciiDigits.slice(2);
+  }
+  return asciiDigits;
+}
+
+export function buildWhatsAppMessageUrl(
+  phone: string | undefined | null,
+  message: string,
+): string {
+  const digits = normalizeWhatsAppPhone(phone);
+  const encodedText = encodeURIComponent(message);
+  if (digits.length >= 7) {
+    return `https://wa.me/${digits}?text=${encodedText}`;
+  }
+  return `https://wa.me/?text=${encodedText}`;
+}

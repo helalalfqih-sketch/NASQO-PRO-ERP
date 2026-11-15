@@ -107,12 +107,44 @@
   --nasqo-blue: #0b5ca8;
   --nasqo-navy: #07365d;
   --nasqo-orange: #f39a16;
+  --nasqo-brand-tint: #eaf3fc;
   --nasqo-canvas: #f4f7fb;
+  --nasqo-surface: #ffffff;
+  --nasqo-surface-alt: #f8fbff;
+  --nasqo-surface-hover: #f1f6fc;
   --nasqo-ink: #132238;
   --nasqo-muted: #6d7c90;
-  --nasqo-line: #dce5ef;
+  --nasqo-line: #d5e0eb;
+  --nasqo-row-line: #edf2f7;
   --nasqo-green: #169b62;
   --nasqo-red: #d84949;
+  --nasqo-warning: #b45309;
+  --nasqo-warning-bg: #fffbeb;
+  --nasqo-warning-border: #fde68a;
+  --nasqo-chart-grid: #e2eaf3;
+  --nasqo-chart-axis: #64748b;
+  --nasqo-chart-area: rgba(11, 92, 168, 0.12);
+  --nasqo-table-stripe: #baf0f8;
+}
+
+:root.dark {
+  --nasqo-canvas: #0b0e14;
+  --nasqo-surface: #141820;
+  --nasqo-surface-alt: #1b2230;
+  --nasqo-surface-hover: #212a3b;
+  --nasqo-ink: #f1f5f9;
+  --nasqo-muted: #94a3b8;
+  --nasqo-line: #283244;
+  --nasqo-row-line: #1f2937;
+  --nasqo-green: #22c55e;
+  --nasqo-red: #ef4444;
+  --nasqo-warning: #fbbf24;
+  --nasqo-warning-bg: #2a1d06;
+  --nasqo-warning-border: #92400e;
+  --nasqo-chart-grid: #283244;
+  --nasqo-chart-axis: #cbd5e1;
+  --nasqo-chart-area: rgba(56, 189, 248, 0.16);
+  --nasqo-table-stripe: #162436;
 }
 
 .nasqo-app,
@@ -1857,5 +1889,1730 @@ select.select-box.currency-select {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Dark theme paired surface rules (semantic tokens matched to dark screenshot) */
+:root.dark .exec-dashboard-scroll,
+:root.dark .app-screen,
+:root.dark .dashboard-scroll,
+:root.dark .purchases-layout,
+:root.dark .purchases-list-scroll,
+:root.dark .warehouse-scroll,
+:root.dark .inventory-report-scroll,
+:root.dark .cash-statement-layout,
+:root.dark .cash-statement-scroll,
+:root.dark .simple-entry-scroll,
+:root.dark .simple-entry-page,
+:root.dark .currency-page-scroll,
+:root.dark .currency-page,
+:root.dark .auth-gate-shell,
+:root.dark .drawer-scroll,
+:root.dark .app-drawer {
+  background: var(--nasqo-canvas);
+  color: var(--nasqo-ink);
+}
+
+:root.dark .drawer-brand-hero {
+  background: var(--nasqo-surface);
+  border-color: var(--nasqo-line);
+}
+
+:root.dark .drawer-hero-mark {
+  background: var(--nasqo-surface-alt);
+}
+
+:root.dark .drawer-sections section {
+  border-bottom-color: var(--nasqo-line);
+}
+
+:root.dark .drawer-sections h3,
+:root.dark .drawer-sections button > svg,
+:root.dark .drawer-brand-hero small {
+  color: var(--nasqo-muted);
+}
+
+:root.dark .drawer-sections button {
+  color: var(--nasqo-ink);
+}
+
+:root.dark .drawer-sections button:active {
+  background: var(--nasqo-surface-hover);
+}
+
+:root.dark .home-summary-banner,
+:root.dark .welcome-strip,
+:root.dark .metric-card,
+:root.dark .vendor-card,
+:root.dark .filter-panel,
+:root.dark .purchases-filter-panel,
+:root.dark .statement-controls,
+:root.dark .cash-statement-filters,
+:root.dark .transaction-card,
+:root.dark .export-side-menu,
+:root.dark .export-side-menu button,
+:root.dark .dashboard-add-menu,
+:root.dark .vendor-operations-menu,
+:root.dark .purchase-create-menu,
+:root.dark .purchase-create-menu button,
+:root.dark .cash-currency-menu,
+:root.dark .cash-search-menu,
+:root.dark .cash-search-form,
+:root.dark .exec-panel,
+:root.dark .exec-kpi-card,
+:root.dark .exec-segmented,
+:root.dark .exec-threshold-group,
+:root.dark .exec-action-secondary,
+:root.dark .exec-customize-panel,
+:root.dark .exec-favorites-bar,
+:root.dark .home-favorites-bar,
+:root.dark .exec-quick-btn:not(.primary),
+:root.dark .inv-bulk-card,
+:root.dark .inventory-filters,
+:root.dark .warehouse-card,
+:root.dark .shop-filters,
+:root.dark .shop-account-card,
+:root.dark .auth-card,
+:root.dark .exec-modal,
+:root.dark .warehouse-modal,
+:root.dark .invoice-modal,
+:root.dark .transaction-modal,
+:root.dark .account-form-modal,
+:root.dark .account-picker-modal,
+:root.dark .activation-modal,
+:root.dark .activation-body,
+:root.dark .whatsapp-settings-card,
+:root.dark .bottom-sheet {
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  border-color: var(--nasqo-line);
+}
+
+:root.dark .purchases-page .vendor-card {
+  background: var(--nasqo-surface);
+  border: 1px solid var(--nasqo-line);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+:root.dark .purchases-page .vendor-call {
+  box-shadow: inset 0 0 0 2px var(--nasqo-surface);
+}
+
+:root.dark .purchases-page .vendor-main em.cash-vendor-phone {
+  color: #38bdf8;
+}
+
+:root.dark .purchases-periods button,
+:root.dark .purchases-sort-row button,
+:root.dark .purchases-sort-row > select,
+:root.dark .cash-statement-options > button,
+:root.dark .select-box,
+:root.dark select.select-box.currency-select,
+:root.dark .sort-toggle button,
+:root.dark .currency-toggle,
+:root.dark .profit-select,
+:root.dark .warehouse-search,
+:root.dark .form-select,
+:root.dark .choice-row button,
+:root.dark .sheet-form .mobile-field input,
+:root.dark .account-image-row,
+:root.dark .account-check-row,
+:root.dark .currency-choice,
+:root.dark .currency-account-select,
+:root.dark .transaction-fund,
+:root.dark .account-picker-search input,
+:root.dark .account-options,
+:root.dark .account-options button,
+:root.dark .account-search-empty,
+:root.dark .provider-choice,
+:root.dark .settings-toggle,
+:root.dark .settings-input {
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  border-color: var(--nasqo-line);
+}
+
+:root.dark .period-radio-mark,
+:root.dark .invoice-radio-bar input,
+:root.dark .reference-radio-row input,
+:root.dark .shop-sort input,
+:root.dark .provider-choice .radio-dot {
+  background: var(--nasqo-surface);
+  border-color: #64748b;
+}
+
+:root.dark button[aria-pressed="true"] > .period-radio-mark,
+:root.dark .invoice-radio-bar input:checked,
+:root.dark .reference-radio-row input:checked,
+:root.dark .shop-sort input:checked {
+  border-color: var(--nasqo-orange);
+  background: var(--nasqo-orange);
+  box-shadow: inset 0 0 0 3px var(--nasqo-surface);
+}
+
+:root.dark .dashboard-page .metric-icon {
+  background: var(--nasqo-surface-alt);
+  color: #60a5fa;
+  border-color: var(--nasqo-blue);
+}
+
+:root.dark .dashboard-page .metric-copy small {
+  color: #60a5fa;
+}
+
+:root.dark .date-range strong,
+:root.dark .reference-date-strip b,
+:root.dark .reference-date-strip > button,
+:root.dark .statement-date strong,
+:root.dark .statement-date button,
+:root.dark .cash-statement-date-strip bdi,
+:root.dark .cash-statement-date-strip button {
+  background: var(--nasqo-surface);
+  color: #f1f5f9;
+}
+
+:root.dark .dashboard-add-menu > button,
+:root.dark .vendor-operations-menu > button,
+:root.dark .cash-search-menu > button,
+:root.dark .cash-currency-menu > button,
+:root.dark .sheet-action-list > button {
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  border-color: var(--nasqo-row-line);
+}
+
+:root.dark .dashboard-add-menu > button:hover,
+:root.dark .vendor-operations-menu > button:hover,
+:root.dark .cash-search-menu > button:hover,
+:root.dark .cash-currency-menu > button:hover,
+:root.dark .purchase-create-menu button:active,
+:root.dark .account-options button[aria-selected="true"] {
+  background: var(--nasqo-surface-hover);
+  color: #ffffff;
+}
+
+:root.dark .cash-statement-row {
+  border-bottom-color: var(--nasqo-line);
+}
+
+:root.dark .cash-statement-type,
+:root.dark .cash-statement-amount,
+:root.dark .cash-statement-row-bottom time {
+  color: #60a5fa;
+}
+
+:root.dark .cash-statement-detail,
+:root.dark .cash-statement-options > label,
+:root.dark .whatsapp-settings-card h2,
+:root.dark .provider-choice button,
+:root.dark .show-password,
+:root.dark .account-info strong,
+:root.dark .inline-radio-group label,
+:root.dark .settlement-group label,
+:root.dark .wide-toggle,
+:root.dark .account-check-row label,
+:root.dark .currency-result strong {
+  color: var(--nasqo-ink);
+}
+
+:root.dark .cash-statement-previous {
+  background: var(--nasqo-surface-alt);
+  color: #60a5fa;
+  border-bottom-color: var(--nasqo-line);
+}
+
+:root.dark .transaction-actions button:not(.tx-whatsapp),
+:root.dark .cash-statement-actions button:not(.cash-statement-pdf):not(.tx-whatsapp),
+:root.dark .vendor-actions button:not(.vendor-operation-add):not(.vendor-count):not(.vendor-whatsapp):not(:first-child) {
+  background: var(--nasqo-surface-alt);
+  color: #60a5fa;
+}
+
+:root.dark .form-modal-actions .cancel,
+:root.dark .account-picker-actions .cancel,
+:root.dark .simple-entry-actions .cancel,
+:root.dark .sheet-buttons .secondary {
+  background: var(--nasqo-surface-alt);
+  color: #60a5fa;
+  border-color: var(--nasqo-blue);
+}
+
+:root.dark .exec-toolbar-copy h1,
+:root.dark .exec-panel-head h2,
+:root.dark .exec-kpi-value,
+:root.dark .exec-amount,
+:root.dark .exec-qty,
+:root.dark .home-summary-head strong,
+:root.dark .auth-card h1,
+:root.dark .exec-modal-header h2,
+:root.dark .warehouse-modal h2,
+:root.dark .invoice-modal h2,
+:root.dark .transaction-modal h2,
+:root.dark .account-form-modal h2,
+:root.dark .account-picker-modal h2 {
+  color: var(--nasqo-ink);
+}
+
+:root.dark .exec-panel-head,
+:root.dark .exec-panel-foot,
+:root.dark .exec-modal-header,
+:root.dark .exec-widget-drag-bar {
+  border-color: var(--nasqo-row-line);
+}
+
+:root.dark .exec-panel-foot,
+:root.dark .exec-widget-drag-bar,
+:root.dark .exec-favorite-chip,
+:root.dark .exec-supplier-focus,
+:root.dark .exec-qr-result,
+:root.dark .ai-category-box,
+:root.dark .settings-appearance-box {
+  background: var(--nasqo-surface-alt);
+  border-color: var(--nasqo-line);
+  color: var(--nasqo-ink);
+}
+
+:root.dark .exec-list > li + li {
+  border-top-color: var(--nasqo-row-line);
+}
+
+:root.dark .exec-row:hover,
+:root.dark .exec-legend-row:hover,
+:root.dark .exec-notif-main:hover {
+  background: var(--nasqo-surface-hover);
+}
+
+:root.dark .exec-row-detail,
+:root.dark .cash-empty {
+  color: var(--nasqo-muted);
+}
+
+:root.dark .inventory-table {
+  color: var(--nasqo-ink);
+}
+
+:root.dark .inventory-table td {
+  border-bottom-color: var(--nasqo-row-line);
+}
+
+:root.dark .inventory-table tbody tr:nth-child(even) {
+  background: var(--nasqo-table-stripe);
+}
+
+:root.dark .exec-threshold-inline input,
+:root.dark .exec-select,
+:root.dark .inv-bulk-field select,
+:root.dark .inv-bulk-field input,
+:root.dark .ai-category-label select,
+:root.dark .warehouse-modal select,
+:root.dark .warehouse-modal input:not([type="checkbox"]):not([type="radio"]),
+:root.dark .invoice-modal select,
+:root.dark .invoice-modal input:not([type="radio"]),
+:root.dark .transaction-modal input:not([type="radio"]),
+:root.dark .account-form-modal select,
+:root.dark .account-form-modal input:not([type="checkbox"]):not([type="radio"]),
+:root.dark .simple-entry-account-select,
+:root.dark .simple-entry-currency,
+:root.dark .simple-entry-search input,
+:root.dark .simple-entry-note-row input,
+:root.dark .simple-entry-document,
+:root.dark .simple-entry-amount-field input,
+:root.dark .purchases-currency-row > select,
+:root.dark .cash-statement-currency select,
+:root.dark .cash-statement-currency > button,
+:root.dark .cash-search-form input,
+:root.dark .currency-search-field input,
+:root.dark .currency-entry input,
+:root.dark .settings-input input {
+  color: var(--nasqo-ink);
+  background: var(--nasqo-surface-alt);
+  border-color: var(--nasqo-line);
+}
+
+/* Dashboard toolbar controls & PDF actions */
+.exec-toolbar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.exec-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.exec-action-secondary.active {
+  border-color: var(--nasqo-blue) !important;
+  color: var(--nasqo-blue);
+  background: var(--nasqo-brand-tint);
+}
+
+.exec-unread-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--nasqo-red);
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-pdf-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Backup Freshness Banner */
+.exec-backup-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--nasqo-warning-border);
+  border-radius: 12px;
+  background: var(--nasqo-warning-bg);
+  color: var(--nasqo-ink);
+}
+
+.exec-backup-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.exec-backup-copy > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--nasqo-warning);
+}
+
+.exec-backup-copy strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.exec-backup-copy span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--nasqo-muted);
+}
+
+/* Customize Brand Color / Reorder / Haptics Panel */
+.exec-customize-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 12px;
+  background: var(--nasqo-surface);
+}
+
+.exec-customize-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.exec-customize-block {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.exec-customize-block > strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+}
+
+.exec-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.exec-color-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  transition: transform 120ms ease;
+}
+
+.exec-color-swatch.active {
+  border-color: var(--nasqo-ink) !important;
+  transform: scale(1.12);
+}
+
+.exec-color-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.exec-color-custom input[type="color"] {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.exec-customize-toggles,
+.exec-backup-status-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--nasqo-muted);
+}
+
+.exec-haptic-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nasqo-ink);
+  cursor: pointer;
+}
+
+/* Favorites / Pinned Tasks Bar */
+.exec-favorites-bar {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 12px;
+  background: var(--nasqo-surface);
+}
+
+.exec-favorites-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.exec-favorites-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--nasqo-navy);
+}
+
+.exec-favorites-title svg {
+  color: var(--nasqo-blue);
+}
+
+.exec-favorites-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--nasqo-muted);
+}
+
+.exec-favorites-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exec-favorite-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 9px;
+  background: var(--nasqo-surface-alt);
+  overflow: hidden;
+}
+
+.exec-favorite-launch {
+  display: grid;
+  padding: 6px 10px;
+  text-align: right;
+  background: transparent;
+  color: var(--nasqo-ink);
+}
+
+.exec-favorite-launch:hover {
+  background: var(--nasqo-surface-hover);
+}
+
+.exec-favorite-launch strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.exec-favorite-launch small {
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+}
+
+.exec-favorite-unpin {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  border-inline-start: 1px solid var(--nasqo-line) !important;
+  background: transparent;
+  color: var(--nasqo-muted);
+}
+
+.exec-favorite-unpin:hover {
+  color: var(--nasqo-red);
+}
+
+.exec-pin-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--nasqo-row-line);
+}
+
+.exec-pin-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--nasqo-line) !important;
+  border-radius: 8px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.exec-pin-option.pinned {
+  border-color: var(--nasqo-blue) !important;
+  background: var(--nasqo-brand-tint);
+  color: var(--nasqo-blue);
+}
+
+/* Quick Actions Row (4 distinct cards) */
+.exec-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (min-width: 720px) {
+  .exec-quick-actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.exec-quick-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid var(--nasqo-line) !important;
+  border-radius: 12px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  text-align: right;
+  transition: border-color 130ms ease, transform 110ms ease;
+}
+
+.exec-quick-btn:hover {
+  border-color: var(--nasqo-blue) !important;
+}
+
+.exec-quick-btn:active {
+  transform: translateY(1px);
+}
+
+.exec-quick-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--nasqo-blue);
+}
+
+.exec-quick-btn > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.exec-quick-btn strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.exec-quick-btn small {
+  font-size: 11px;
+  color: var(--nasqo-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.exec-quick-btn.primary {
+  background: var(--nasqo-blue);
+  border-color: var(--nasqo-blue) !important;
+  color: #ffffff;
+}
+
+.exec-quick-btn.primary svg {
+  color: #ffffff;
+}
+
+.exec-quick-btn.primary small {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* Drag-and-Drop Widget Slots */
+.exec-widgets-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.exec-widget-slot {
+  display: grid;
+  gap: 6px;
+  border-radius: 14px;
+  transition: opacity 140ms ease, outline-color 140ms ease;
+}
+
+.exec-widget-slot.dragging {
+  opacity: 0.55;
+}
+
+.exec-widget-slot.drag-over {
+  outline: 2px dashed var(--nasqo-blue);
+  outline-offset: 4px;
+}
+
+.exec-widget-drag-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 9px;
+  background: var(--nasqo-surface);
+}
+
+.exec-widget-slot.reordering .exec-widget-drag-bar {
+  border-color: var(--nasqo-blue);
+  background: var(--nasqo-brand-tint);
+}
+
+.exec-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--nasqo-muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.exec-widget-move-btns {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.exec-widget-move-btns button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+}
+
+.exec-widget-move-btns button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* D3 Charts (Sales Trend + Supplier Performance + Expense Donut) */
+.exec-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-chart-wrap {
+  padding: 10px 14px 14px;
+}
+
+.exec-d3-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.exec-chart-grid {
+  stroke: var(--nasqo-chart-grid);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.exec-chart-axis-text {
+  fill: var(--nasqo-chart-axis);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-chart-area {
+  fill: var(--nasqo-chart-area);
+}
+
+.exec-chart-line {
+  fill: none;
+  stroke: var(--nasqo-blue);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.exec-chart-dot {
+  fill: var(--nasqo-surface);
+  stroke: var(--nasqo-blue);
+  stroke-width: 2.2;
+}
+
+.exec-chart-dot.active {
+  fill: var(--nasqo-orange);
+  stroke: var(--nasqo-surface);
+}
+
+.exec-chart-cursor {
+  stroke: var(--nasqo-blue);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.exec-supplier-focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--nasqo-row-line);
+  background: var(--nasqo-surface-alt);
+  font-size: 11.5px;
+  color: var(--nasqo-muted);
+}
+
+.exec-supplier-focus b,
+.exec-supplier-focus strong {
+  color: var(--nasqo-ink);
+}
+
+.exec-bar {
+  cursor: pointer;
+  transition: opacity 130ms ease, filter 130ms ease;
+}
+
+.exec-bar.delivery {
+  fill: var(--nasqo-blue);
+}
+
+.exec-bar.cost {
+  fill: var(--nasqo-orange);
+}
+
+.exec-bar.active,
+.exec-bar:hover {
+  filter: brightness(0.88);
+}
+
+.exec-bar-val {
+  fill: var(--nasqo-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Expense Trends Donut Widget & Long-Press Gesture */
+.exec-expense-body {
+  padding: 14px 16px;
+}
+
+.exec-donut-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
+@media (min-width: 660px) {
+  .exec-donut-layout {
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+}
+
+.exec-donut-interactive {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  padding: 6px;
+  border-radius: 14px;
+  user-select: none;
+  touch-action: pan-y;
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.exec-donut-interactive.long-pressing {
+  transform: scale(0.96);
+  background: var(--nasqo-brand-tint);
+}
+
+.exec-donut-slice {
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.exec-donut-slice:hover {
+  opacity: 0.9;
+}
+
+.exec-donut-center {
+  position: absolute;
+  top: 114px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  pointer-events: none;
+  width: 112px;
+}
+
+.exec-donut-center small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--nasqo-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.exec-donut-center strong {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--nasqo-ink);
+}
+
+.exec-donut-center span {
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+}
+
+.exec-gesture-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--nasqo-muted);
+  text-align: center;
+}
+
+.exec-donut-legend {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.exec-legend-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nasqo-muted);
+}
+
+.exec-legend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.exec-legend-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font-size: 12.5px;
+  text-align: right;
+}
+
+.exec-legend-row.active {
+  background: var(--nasqo-brand-tint);
+}
+
+.exec-legend-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.exec-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.exec-legend-metrics {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.exec-legend-metrics small {
+  color: var(--nasqo-muted);
+  font-size: 11px;
+}
+
+/* Low-Stock Inline Threshold Editor */
+.exec-stock-li {
+  display: grid;
+}
+
+.exec-stock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.exec-stock-main-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: transparent;
+  color: var(--nasqo-ink);
+  text-align: right;
+}
+
+.exec-threshold-edit-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-inline-end: 10px;
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-blue);
+}
+
+.exec-threshold-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 12px;
+  background: var(--nasqo-surface-alt);
+  border-top: 1px dashed var(--nasqo-line);
+}
+
+.exec-threshold-inline label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--nasqo-muted);
+}
+
+.exec-threshold-inline input {
+  width: 84px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Notification Center & QR Scanner Modals */
+.exec-modal {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  left: 14px;
+  max-width: 520px;
+  max-height: 86dvh;
+  margin-inline: auto;
+  transform: translateY(-50%);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 14px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
+}
+
+.exec-qr-modal {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.exec-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--nasqo-row-line);
+}
+
+.exec-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.exec-modal-title-wrap > svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--nasqo-blue);
+}
+
+.exec-modal-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.exec-modal-header p {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--nasqo-muted);
+}
+
+.exec-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.exec-icon-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+}
+
+.exec-notif-tabs {
+  margin: 10px 16px 0;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.exec-notif-body,
+.exec-qr-body {
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+}
+
+.exec-notif-item.unread {
+  background: var(--nasqo-brand-tint);
+}
+
+.exec-notif-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.exec-notif-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 11px 4px;
+  background: transparent;
+  color: var(--nasqo-ink);
+  text-align: right;
+}
+
+.exec-notif-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.exec-notif-top .exec-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.exec-notif-dismiss {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  background: transparent;
+  color: var(--nasqo-muted);
+}
+
+.exec-notif-dismiss:hover {
+  color: var(--nasqo-red);
+}
+
+.exec-qr-body {
+  display: grid;
+  gap: 12px;
+}
+
+.exec-qr-camera-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed var(--nasqo-line);
+  border-radius: 10px;
+  background: var(--nasqo-surface-alt);
+}
+
+.exec-qr-camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.exec-qr-video-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.exec-qr-video {
+  width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  background: #000000;
+  object-fit: cover;
+}
+
+.exec-qr-lookup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.exec-qr-result {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 10px;
+  background: var(--nasqo-surface-alt);
+}
+
+.exec-qr-result-head {
+  display: grid;
+  gap: 3px;
+}
+
+.exec-qr-result-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--nasqo-green);
+}
+
+.exec-qr-specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--nasqo-muted);
+}
+
+.exec-qr-specs b {
+  color: var(--nasqo-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.exec-qr-restock-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.exec-qr-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.exec-select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+/* Inventory Bulk Edit Bar & Table Selection */
+.inv-bulk-card {
+  margin: 0 9px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 10px;
+  background: var(--nasqo-surface);
+  display: grid;
+  gap: 8px;
+}
+
+.inv-bulk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inv-bulk-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+  cursor: pointer;
+}
+
+.inv-bulk-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--nasqo-red);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.inv-bulk-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.inv-bulk-field {
+  display: grid;
+  gap: 4px;
+}
+
+.inv-bulk-field label {
+  display: grid;
+  gap: 3px;
+}
+
+.inv-bulk-field span {
+  font-size: 11px;
+  color: var(--nasqo-muted);
+}
+
+.inv-bulk-field select,
+.inv-bulk-field input {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 7px;
+  background: var(--nasqo-surface-alt);
+  font: inherit;
+  font-size: 12px;
+}
+
+.inv-bulk-apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--nasqo-blue);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inv-bulk-apply:disabled {
+  opacity: 0.6;
+}
+
+.inv-bulk-hint {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--nasqo-muted);
+}
+
+.inv-row-selected {
+  background: var(--nasqo-brand-tint) !important;
+}
+
+.inv-sku-meta {
+  color: var(--nasqo-muted);
+  font-size: 10.5px;
+}
+
+/* AI Auto-Categorization Selector */
+.ai-category-box {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+}
+
+.ai-category-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.ai-category-label {
+  display: grid;
+  gap: 3px;
+}
+
+.ai-category-label span {
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+}
+
+.ai-category-label select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 6px;
+  background: var(--nasqo-surface);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ai-suggest-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--nasqo-blue);
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.ai-suggest-btn:disabled {
+  opacity: 0.6;
+}
+
+.ai-category-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--nasqo-green);
+}
+
+.ai-category-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--nasqo-warning);
+}
+
+/* Workspace Settings Modal Appearance & Backup Banner */
+.settings-appearance-box {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+}
+
+.settings-subhead {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+}
+
+.settings-backup-freshness {
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.settings-backup-freshness.overdue {
+  border: 1px solid var(--nasqo-warning-border);
+  background: var(--nasqo-warning-bg);
+  color: var(--nasqo-warning);
+}
+
+.settings-backup-freshness.healthy {
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-brand-tint);
+  color: var(--nasqo-green);
+}
+
+/* Home Dashboard: QR Quick Action, WhatsApp CTA, Favorites Row, Backup Alert & Drag-and-Drop Metrics */
+.home-quick-cta-row {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.home-qr-quick-btn,
+.home-whatsapp-quick-btn {
+  width: 100%;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.home-qr-quick-btn {
+  border: 1.5px solid var(--nasqo-blue) !important;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-blue);
+}
+
+.home-qr-quick-btn:hover {
+  background: var(--nasqo-brand-tint);
+}
+
+.home-whatsapp-quick-btn {
+  border: 1.5px solid #16a34a !important;
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.home-whatsapp-quick-btn:hover {
+  background: #16a34a;
+}
+
+.home-qr-quick-btn svg,
+.home-whatsapp-quick-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* Account Card, Statement & Transaction WhatsApp Buttons */
+.vendor-actions button.vendor-whatsapp,
+.purchases-page .vendor-actions button.vendor-whatsapp {
+  background: transparent;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.vendor-actions button.vendor-whatsapp svg,
+.purchases-page .vendor-actions button.vendor-whatsapp svg {
+  width: 24px;
+  height: 24px;
+}
+
+.supplier-summary-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.supplier-summary .supplier-whatsapp-btn {
+  background: #22c55e;
+  color: #ffffff;
+  justify-content: center;
+}
+
+.supplier-summary .supplier-whatsapp-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.transaction-actions button.tx-whatsapp,
+.cash-statement-actions button.tx-whatsapp {
+  background: #22c55e;
+  color: #ffffff;
+}
+
+.home-favorites-bar {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 11px;
+  background: var(--nasqo-surface);
+  display: grid;
+  gap: 8px;
+}
+
+.home-metrics-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.home-metrics-toolbar strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+}
+
+.home-metrics-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-metric-slot {
+  position: relative;
+  display: grid;
+  border-radius: 11px;
+  transition: opacity 120ms ease;
+}
+
+.home-metric-slot.dragging {
+  opacity: 0.55;
+}
+
+.home-metric-slot.drag-over {
+  outline: 2px dashed var(--nasqo-blue);
+  outline-offset: 2px;
+}
+
+.home-metric-slot .metric-card {
+  width: 100%;
+}
+
+.home-metric-move-bar {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 3;
+  display: inline-flex;
+  gap: 3px;
+}
+
+.home-metric-move-bar button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--nasqo-blue);
+  color: #ffffff;
+}
+
+.home-backup-alert {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--nasqo-warning-border);
+  border-radius: 10px;
+  background: var(--nasqo-warning-bg);
+  color: var(--nasqo-ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.home-backup-alert-copy {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.home-backup-alert-copy svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--nasqo-warning);
+}
+
+.settings-reset-color-btn {
+  padding: 4px 8px;
+  border: 1px solid var(--nasqo-line) !important;
+  border-radius: 7px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:root.dark .home-qr-quick-btn {
+  background: var(--nasqo-surface);
+  color: #60a5fa;
+  border-color: var(--nasqo-blue) !important;
+}
+
+:root.dark .settings-reset-color-btn {
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+}
+
+
 
 
