@@ -664,4 +664,34 @@ export async function batchUpdateInventoryItems(
   }
 }
 
+export async function createCloudBackupRecord(
+  uid: string,
+  payload: {
+    name: string;
+    accountsCount: number;
+    ledgerCount: number;
+    warehousesCount: number;
+    inventoryCount: number;
+    exportedAtIso: string;
+  },
+): Promise<string> {
+  const id = makeDocId("bkp");
+  const path = `workspaces/${uid}/backups/${id}`;
+  try {
+    await setDoc(doc(db, "workspaces", uid, "backups", id), {
+      ownerId: uid,
+      name: String(payload.name || "نسخة احتياطية").trim().slice(0, 120) || "نسخة احتياطية",
+      accountsCount: Math.max(0, Math.round(payload.accountsCount)),
+      ledgerCount: Math.max(0, Math.round(payload.ledgerCount)),
+      warehousesCount: Math.max(0, Math.round(payload.warehousesCount)),
+      inventoryCount: Math.max(0, Math.round(payload.inventoryCount)),
+      exportedAtIso: String(payload.exportedAtIso).slice(0, 40),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return id;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+  }
+}
 

@@ -389,6 +389,59 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "CloudBackup": {
+      "title": "CloudBackup",
+      "description": "Named cloud backup snapshot metadata saved by the workspace owner.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "accountsCount": {
+          "type": "number"
+        },
+        "ledgerCount": {
+          "type": "number"
+        },
+        "warehousesCount": {
+          "type": "number"
+        },
+        "inventoryCount": {
+          "type": "number"
+        },
+        "exportedAtIso": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "name",
+        "accountsCount",
+        "ledgerCount",
+        "warehousesCount",
+        "inventoryCount",
+        "exportedAtIso",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -421,6 +474,13 @@
         "$ref": "#/entities/InventoryItem"
       },
       "description": "Inventory items subcollection belonging to the workspace."
+    },
+    "/workspaces/{workspaceId}/backups/{backupId}": {
+      "schema": {
+        "$ref": "#/entities/CloudBackup"
+      },
+      "description": "Named cloud backup metadata records belonging to the workspace."
     }
   }
 }
+

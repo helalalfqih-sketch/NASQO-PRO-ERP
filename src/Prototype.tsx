@@ -74,11 +74,15 @@ import {
   type FlowScreen,
 } from "./mobile";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { BackupNameModal } from "./components/BackupNameModal";
 import { DashboardScreen } from "./components/DashboardScreen";
 import { ExpenseCategorySelector } from "./components/ExpenseCategorySelector";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
+import { PrintOptionsModal } from "./components/PrintOptionsModal";
 import { QrScannerModal } from "./components/QrScannerModal";
+import { SystemSettingsPage } from "./components/SystemSettingsPage";
+import { TransferModal } from "./components/TransferModal";
 import { WhatsAppIcon } from "./components/WhatsAppIcon";
 import {
   accountMatchesQuery,
@@ -98,6 +102,7 @@ import {
 } from "./accounting";
 import {
   auth,
+  createCloudBackupRecord,
   createInventoryItem,
   createLedgerEntry,
   createOrUpdateAccount,
@@ -122,7 +127,13 @@ import {
   type WarehouseRecord,
   type WorkspaceSettings,
 } from "./types";
+import {
+  readExtendedSettings,
+  writeExtendedSettings,
+  type ExtendedAppSettings,
+} from "./utils/appSettings";
 import { BRAND_COLOR_PRESETS, useBrandColor } from "./utils/brandColor";
+import { exportSummaryAsPngImage } from "./utils/canvasExport";
 import {
   DEFAULT_HOME_METRIC_ORDER,
   readHomeMetricOrder,
@@ -153,6 +164,9 @@ type OverlayKind =
   | "inventory-add"
   | "notifications"
   | "qr-scanner"
+  | "print-options"
+  | "backup-name"
+  | "transfer"
   | null;
 type AccountCreateMode = "compact" | "extended";
 type ExportKind = "statement" | "inventory" | "purchases";
@@ -193,6 +207,9 @@ type LiveWorkspaceState = {
   openVendorInvoice: (account: AccountRecord, intent?: InvoiceIntent) => void;
   openDashboardMenu: () => void;
   openExportMenu: (kind?: ExportKind, account?: AccountRecord) => void;
+  openPrintOptions: (kind?: ExportKind, account?: AccountRecord) => void;
+  openBackupModal: () => void;
+  openTransferModal: (accountId?: string) => void;
   openInventoryAdd: () => void;
   openSettings: () => void;
   openTrash: () => void;
@@ -207,6 +224,8 @@ type LiveWorkspaceState = {
   resetBrandColor: () => void;
   hapticsEnabled: boolean;
   setHapticsEnabled: (enabled: boolean) => void;
+  extendedSettings: ExtendedAppSettings;
+  setExtendedSettings: (next: ExtendedAppSettings) => void;
   widgetOrder: DashboardWidgetId[];
   setWidgetOrder: (order: DashboardWidgetId[]) => void;
   homeMetricOrder: HomeMetricId[];
@@ -301,10 +320,18 @@ function buildAccountBalanceMessage(
   balance: number,
   tone: "credit" | "debit" | "neutral",
   companyName?: string,
+  ext?: ExtendedAppSettings,
 ): string {
-  const directionLabel = tone === "credit" ? "له" : tone === "debit" ? "عليه" : "متزن";
-  const signedText = `${formatAmount(Math.abs(balance))}${tone === "credit" ? "-" : ""}`;
-  return `السلام عليكم ${account.name}، تحية طيبة من ${companyName || "نسقو برو"}. صافي الرصيد الحالي: ${signedText} ${account.currency} (${directionLabel}).`;
+  const creditLabel = ext?.creditBalanceLabel?.trim() || "له";
+  const debitLabel = ext?.debitBalanceLabel?.trim() || "عليه";
+  const directionLabel = tone === "credit" ? creditLabel : tone === "debit" ? debitLabel : "متزن";
+  const formattedAbs = ext?.useTwoDecimals
+    ? `${formatAmount(Math.abs(balance))}.00`
+    : formatAmount(Math.abs(balance));
+  const signedText = `${formattedAbs}${tone === "credit" ? "-" : ""}`;
+  const intro = ext?.messageIntro?.trim() ? `${ext.messageIntro.trim()}\n` : "";
+  const outro = ext?.messageOutro?.trim() ? `\n${ext.messageOutro.trim()}` : "";
+  return `${intro}السلام عليكم ${account.name}، تحية طيبة من ${companyName || "نسقو برو"}. صافي الرصيد الحالي: ${signedText} ${account.currency} (${directionLabel}).${outro}`;
 }
 
 function categoryTitle(category: AccountCategory): string {
@@ -510,6 +537,14 @@ function AuthenticatedWorkspace({
   const jsonRestoreInputRef = useRef<HTMLInputElement>(null);
   const csvImportInputRef = useRef<HTMLInputElement>(null);
 
+  const [printContext, setPrintContext] = useState<{
+    kind: ExportKind;
+    account?: AccountRecord;
+  }>({ kind: "statement" });
+  const [transferAccountId, setTransferAccountId] = useState<string | undefined>();
+  const [extendedSettings, setExtendedSettingsState] = useState<ExtendedAppSettings>(() =>
+    readExtendedSettings(),
+  );
   const [hapticsEnabled, setHapticsEnabledState] = useState<boolean>(() => readHapticsEnabled());
   const [widgetOrder, setWidgetOrderState] = useState<DashboardWidgetId[]>(() => readWidgetOrder());
   const [homeMetricOrder, setHomeMetricOrderState] = useState<HomeMetricId[]>(() => readHomeMetricOrder());
@@ -531,6 +566,11 @@ function AuthenticatedWorkspace({
       return new Set();
     }
   });
+
+  const setExtendedSettings = useCallback((next: ExtendedAppSettings) => {
+    writeExtendedSettings(next);
+    setExtendedSettingsState(next);
+  }, []);
 
   const setHapticsEnabled = useCallback((enabled: boolean) => {
     writeHapticsEnabled(enabled);
@@ -708,25 +748,77 @@ function AuthenticatedWorkspace({
     [dismissKeyboard],
   );
 
+  const openPrintOptions = useCallback(
+    (kind: ExportKind = "statement", account?: AccountRecord) => {
+      dismissKeyboard();
+      setExportState((s) => ({ ...s, open: false }));
+      setPrintContext({ kind, account });
+      setOverlay("print-options");
+    },
+    [dismissKeyboard],
+  );
+
+  const openBackupModal = useCallback(() => {
+    dismissKeyboard();
+    setOverlay("backup-name");
+  }, [dismissKeyboard]);
+
+  const openTransferModal = useCallback(
+    (accountId?: string) => {
+      dismissKeyboard();
+      setTransferAccountId(accountId);
+      setOverlay("transfer");
+    },
+    [dismissKeyboard],
+  );
+
+  const saveLocalNamedBackup = useCallback(
+    (backupName: string) => {
+      const exportedAt = new Date().toISOString();
+      const payload = {
+        name: backupName,
+        exportedAt,
+        workspace,
+        accounts,
+        ledger,
+        warehouses,
+        inventory,
+      };
+      const safeFile = backupName.replace(/[\\/:*?"<>|]/g, "-").trim() || "nasqo-backup";
+      downloadFile(
+        `${safeFile}.json`,
+        JSON.stringify(payload, null, 2),
+        "application/json;charset=utf-8",
+      );
+      const savedIso = recordLastBackupNow(exportedAt);
+      setLastBackupIso(savedIso);
+      triggerHaptic("success");
+      showToast(`تم تنزيل النسخة الاحتياطية: ${backupName}`);
+    },
+    [accounts, inventory, ledger, showToast, warehouses, workspace],
+  );
+
+  const saveCloudNamedBackup = useCallback(
+    async (backupName: string) => {
+      const exportedAtIso = new Date().toISOString();
+      await createCloudBackupRecord(user.uid, {
+        name: backupName,
+        accountsCount: accounts.length,
+        ledgerCount: ledger.length,
+        warehousesCount: warehouses.length,
+        inventoryCount: inventory.length,
+        exportedAtIso,
+      });
+      const savedIso = recordLastBackupNow(exportedAtIso);
+      setLastBackupIso(savedIso);
+      showToast(`تم حفظ النسخة الاحتياطية في جوجل (السحابة): ${backupName}`);
+    },
+    [accounts.length, inventory.length, ledger.length, showToast, user.uid, warehouses.length],
+  );
+
   const triggerJsonBackup = useCallback(() => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      workspace,
-      accounts,
-      ledger,
-      warehouses,
-      inventory,
-    };
-    downloadFile(
-      `nasqo-backup-${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify(payload, null, 2),
-      "application/json;charset=utf-8",
-    );
-    const savedIso = recordLastBackupNow(payload.exportedAt);
-    setLastBackupIso(savedIso);
-    triggerHaptic("success");
-    showToast("تم تنزيل ملف النسخة الاحتياطية بنجاح");
-  }, [accounts, inventory, ledger, showToast, warehouses, workspace]);
+    openBackupModal();
+  }, [openBackupModal]);
 
   const triggerJsonRestore = useCallback(() => {
     jsonRestoreInputRef.current?.click();
@@ -861,7 +953,7 @@ function AuthenticatedWorkspace({
       } else if (notif.targetType === "inventory") {
         flowRef.current?.push(inventoryReportScreen());
       } else if (notif.targetType === "settings") {
-        setOverlay("settings");
+        flowRef.current?.push(systemSettingsScreen());
       }
     },
     [],
@@ -915,10 +1007,17 @@ function AuthenticatedWorkspace({
       openVendorInvoice,
       openDashboardMenu,
       openExportMenu,
+      openPrintOptions,
+      openBackupModal,
+      openTransferModal,
       openInventoryAdd: () => setOverlay("inventory-add"),
       openSettings: () => {
         dismissKeyboard();
-        setOverlay("settings");
+        if (flowRef.current) {
+          flowRef.current.push(systemSettingsScreen());
+        } else {
+          setOverlay("settings");
+        }
       },
       openTrash: () => setOverlay("trash"),
       openNotifications: () => {
@@ -940,6 +1039,8 @@ function AuthenticatedWorkspace({
       resetBrandColor,
       hapticsEnabled,
       setHapticsEnabled,
+      extendedSettings,
+      setExtendedSettings,
       widgetOrder,
       setWidgetOrder,
       homeMetricOrder,
@@ -959,6 +1060,7 @@ function AuthenticatedWorkspace({
       accounts,
       brandColor,
       dismissKeyboard,
+      extendedSettings,
       favorites,
       handleSignOut,
       hapticsEnabled,
@@ -970,17 +1072,21 @@ function AuthenticatedWorkspace({
       openAccountCreate,
       openAccountEdit,
       openAccountPicker,
+      openBackupModal,
       openDashboardMenu,
       openDrawer,
       openExportMenu,
       openInvoice,
+      openPrintOptions,
       openSheet,
       openTransaction,
+      openTransferModal,
       openVendorInvoice,
       openWhatsAppPicker,
       pinFavorite,
       resetBrandColor,
       setBrandColor,
+      setExtendedSettings,
       setHapticsEnabled,
       setHomeMetricOrder,
       setThemeMode,
@@ -1052,9 +1158,87 @@ function AuthenticatedWorkspace({
       return;
     }
     if (target === "settings") {
-      setOverlay("settings");
+      flowRef.current?.push(systemSettingsScreen());
       return;
     }
+  };
+
+  const executeExcelExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
+    if (kind === "inventory") {
+      const csv = buildCsvContent(
+        ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
+        inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
+      );
+      downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
+      showToast("تم تصدير تقرير المخزون بصيغة CSV");
+    } else if (kind === "purchases") {
+      const csv = buildCsvContent(
+        ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
+        accounts
+          .filter((a) => a.category === "purchases")
+          .map((a) => {
+            const s = computeAccountSummary(a, ledger);
+            return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
+          }),
+      );
+      downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
+      showToast("تم تصدير حسابات المشتريات بصيغة CSV");
+    } else {
+      const targetAcc = targetAccount ?? accounts[0];
+      const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
+      const csv = buildCsvContent(
+        ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
+        (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
+      );
+      downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
+      showToast("تم تصدير كشف الحساب بصيغة CSV");
+    }
+  };
+
+  const handlePrintPngExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
+    const company = workspace?.companyName || "نسقو برو";
+    if (kind === "inventory") {
+      const invSummary = computeInventorySummary(inventory);
+      exportSummaryAsPngImage({
+        filename: "nasqo-inventory-report.png",
+        companyName: company,
+        title: "تقرير حركة المخزون",
+        subtitle: `عدد الأصناف: ${invSummary.items.length} | إجمالي القيمة: ${formatAmount(invSummary.totalValue)}`,
+        accentColor: extendedSettings.reportColor || brandColor,
+        rows: inventory.slice(0, 10).map((i) => [i.name, `${formatAmount(i.quantity)} ${i.unit}`]),
+        footerNote: extendedSettings.statementFooterNote,
+      });
+    } else if (kind === "purchases") {
+      const list = accounts.filter((a) => a.category === "purchases");
+      exportSummaryAsPngImage({
+        filename: "nasqo-purchases-summary.png",
+        companyName: company,
+        title: "ملخص حسابات المشتريات والموردين",
+        subtitle: `إجمالي الحسابات: ${list.length}`,
+        accentColor: extendedSettings.reportColor || brandColor,
+        rows: list.slice(0, 10).map((a) => {
+          const s = computeAccountSummary(a, ledger);
+          return [a.name, `${formatAmount(s.netBalance)} ${a.currency}`];
+        }),
+        footerNote: extendedSettings.statementFooterNote,
+      });
+    } else {
+      const targetAcc = targetAccount ?? accounts[0];
+      const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
+      exportSummaryAsPngImage({
+        filename: `statement-${targetAcc?.codeNumber ?? "all"}.png`,
+        companyName: company,
+        title: `كشف حساب: ${targetAcc?.name ?? ""}`,
+        subtitle: `الصافي: ${formatAmount(statement?.netBalance ?? 0)} ${targetAcc?.currency ?? "ريال"}`,
+        accentColor: extendedSettings.reportColor || brandColor,
+        rows: (statement?.rows ?? []).slice(0, 10).map((r) => [
+          `${r.typeLabel} (#${r.entryNumber})`,
+          `${formatAmount(r.amount)} ${r.currency}`,
+        ]),
+        footerNote: extendedSettings.statementFooterNote,
+      });
+    }
+    showToast("تم تصدير التقرير كصورة PNG بنجاح");
   };
 
   const handleExportAction = (kind: ExportKind, action: "pdf-print" | "pdf-share" | "excel" | "excel-share" | "balance" | "import") => {
@@ -1063,40 +1247,16 @@ function AuthenticatedWorkspace({
       triggerCsvImport();
       return;
     }
-    if (action === "pdf-print" || action === "balance") {
+    if (action === "pdf-print") {
+      openPrintOptions(kind, exportState.account);
+      return;
+    }
+    if (action === "balance") {
       window.print();
       return;
     }
     if (action === "excel" || action === "excel-share") {
-      if (kind === "inventory") {
-        const csv = buildCsvContent(
-          ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
-          inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
-        );
-        downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
-        showToast("تم تصدير تقرير المخزون بصيغة CSV");
-      } else if (kind === "purchases") {
-        const csv = buildCsvContent(
-          ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
-          accounts
-            .filter((a) => a.category === "purchases")
-            .map((a) => {
-              const s = computeAccountSummary(a, ledger);
-              return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
-            }),
-        );
-        downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
-        showToast("تم تصدير حسابات المشتريات بصيغة CSV");
-      } else {
-        const targetAcc = exportState.account ?? accounts[0];
-        const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-        const csv = buildCsvContent(
-          ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
-          (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
-        );
-        downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
-        showToast("تم تصدير كشف الحساب بصيغة CSV");
-      }
+      executeExcelExport(kind, exportState.account);
       return;
     }
     if (action === "pdf-share") {
@@ -1161,6 +1321,7 @@ function AuthenticatedWorkspace({
                 s.netBalance,
                 s.tone,
                 workspace?.companyName,
+                extendedSettings,
               );
               void openWhatsAppChat(account, msg, showToast);
             } else {
@@ -1193,6 +1354,81 @@ function AuthenticatedWorkspace({
         <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} />
         <WorkspaceSettingsModal open={overlay === "settings"} onClose={() => setOverlay(null)} />
         <InventoryItemModal open={overlay === "inventory-add"} onClose={() => setOverlay(null)} />
+        <PrintOptionsModal
+          open={overlay === "print-options"}
+          subjectLabel={
+            printContext.account
+              ? `كشف حساب: ${printContext.account.name}`
+              : printContext.kind === "inventory"
+                ? "تقرير حركة المخزون"
+                : printContext.kind === "purchases"
+                  ? "تقرير المشتريات والموردين"
+                  : undefined
+          }
+          onClose={() => setOverlay(null)}
+          onPrintPdf={(allCurrencies) => {
+            window.print();
+            showToast(allCurrencies ? "تم فتح معاينة PDF لجميع العملات" : "تم فتح معاينة PDF");
+          }}
+          onExportExcel={() => executeExcelExport(printContext.kind, printContext.account)}
+          onExportImage={() => handlePrintPngExport(printContext.kind, printContext.account)}
+          onShare={() => {
+            const targetAcc = printContext.account ?? accounts[0];
+            const summary = targetAcc ? computeAccountSummary(targetAcc, ledger) : null;
+            const text = targetAcc
+              ? `كشف حساب: ${targetAcc.name} | الرصيد: ${formatAmount(summary?.netBalance ?? 0)} ${targetAcc.currency}`
+              : `تقرير ${workspace?.companyName ?? "نسقو برو"}`;
+            void shareOrCopyText("تقرير نسقو برو", text, showToast);
+          }}
+          onSendWhatsApp={() => {
+            const targetAcc = printContext.account ?? accounts[0];
+            if (targetAcc) {
+              const summary = computeAccountSummary(targetAcc, ledger);
+              const msg = buildAccountBalanceMessage(
+                targetAcc,
+                summary.netBalance,
+                summary.tone,
+                workspace?.companyName,
+                extendedSettings,
+              );
+              void openWhatsAppChat(targetAcc, msg, showToast);
+            } else {
+              void openWhatsAppChat(undefined, `تقرير ${workspace?.companyName ?? "نسقو برو"}`, showToast);
+            }
+          }}
+        />
+        <BackupNameModal
+          open={overlay === "backup-name"}
+          onClose={() => setOverlay(null)}
+          onSaveLocal={saveLocalNamedBackup}
+          onSaveToGoogle={saveCloudNamedBackup}
+        />
+        <TransferModal
+          open={overlay === "transfer"}
+          uid={user.uid}
+          accounts={accounts}
+          ledger={ledger}
+          defaultAccountId={transferAccountId}
+          onClose={() => setOverlay(null)}
+          onCreateAccount={() => {
+            returnOverlay.current = "transfer";
+            openAccountCreate("extended");
+          }}
+          onNotify={showToast}
+          onSendWhatsApp={(account, message) => void openWhatsAppChat(account, message, showToast)}
+          onGenerateImage={(data) => {
+            exportSummaryAsPngImage({
+              filename: `nasqo-transfer-${Date.now()}.png`,
+              companyName: workspace?.companyName || "نسقو برو",
+              title: data.title,
+              subtitle: data.subtitle,
+              accentColor: extendedSettings.reportColor || brandColor,
+              rows: data.rows,
+              footerNote: extendedSettings.statementFooterNote,
+            });
+            showToast("تم تنزيل صورة سند الحوالة بنجاح");
+          }}
+        />
         <NotificationCenter
           open={overlay === "notifications"}
           onClose={() => setOverlay(null)}
@@ -1309,6 +1545,7 @@ function PurchasesHeader({ flow, category }: { flow: FlowControls; category: Acc
       subtitle=""
       onBack={flow.pop}
       actions={[
+        { label: "طباعة", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("purchases") },
         { label: "تصفية", icon: MixerHorizontalIcon, onClick: () => ctx.openSheet("filters") },
         { label: "تصدير المشتريات", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases") },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: ctx.openAccountPicker },
@@ -1391,6 +1628,7 @@ function SupplierHeader({
       className={isCashAccount ? "cash-statement-header" : ""}
       onBack={flow.pop}
       actions={[
+        { label: "طباعة الكشف", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("statement", account) },
         { label: "تصفية", icon: MixerHorizontalIcon, onClick: () => ctx.openSheet("filters") },
         { label: "تصدير", icon: DownloadIcon, onClick: () => ctx.openExportMenu("statement", account) },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: onSearch },
@@ -1818,6 +2056,7 @@ function InventoryHeader({ flow }: { flow: FlowControls }) {
       subtitle=""
       onBack={flow.pop}
       actions={[
+        { label: "طباعة التقرير", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("inventory") },
         { label: "إضافة صنف", icon: PlusIcon, onClick: ctx.openInventoryAdd },
         { label: "تصدير", icon: DownloadIcon, onClick: () => ctx.openExportMenu("inventory") },
       ]}
@@ -2594,7 +2833,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       icon: PaperPlaneIcon,
       action: () => {
         triggerHaptic("light");
-        flow.push(simpleEntryScreen());
+        ctx.openTransferModal();
       },
     },
     {
@@ -3093,6 +3332,7 @@ function PurchasesPage({ flow, category }: { flow: FlowControls; category: Accou
   const createActions: { label: string; action: () => void }[] = [
     { label: "حساب جديد", action: () => ctx.openAccountCreate("extended", category) },
     { label: "سند جديد", action: () => ctx.openTransaction() },
+    { label: "حوالة جديدة", action: () => ctx.openTransferModal() },
     { label: "فاتورة جديدة", action: ctx.openInvoice },
     { label: "قيد بسيط", action: () => flow.push(simpleEntryScreen()) },
     { label: "صرف عملات", action: () => flow.push(currencyScreen()) },
@@ -3120,6 +3360,7 @@ function PurchasesPage({ flow, category }: { flow: FlowControls; category: Accou
         { label: "فاتورة جديدة", action: () => ctx.openVendorInvoice(operationVendor) },
         { label: "مردود جديد", action: () => ctx.openVendorInvoice(operationVendor, "return") },
         { label: "سند جديد", action: () => ctx.openTransaction(operationVendor) },
+        { label: "حوالة جديدة", action: () => ctx.openTransferModal(operationVendor.id) },
         { label: "قيد بسيط", action: () => flow.push(simpleEntryScreen(operationVendor.id)) },
         { label: "صرف عملات", action: () => flow.push(currencyScreen(operationVendor.id)) },
         { label: "عرض سعر", action: () => ctx.openVendorInvoice(operationVendor, "quote") },
@@ -3285,6 +3526,7 @@ function PurchasesPage({ flow, category }: { flow: FlowControls; category: Accou
                               summary.netBalance,
                               summary.tone,
                               ctx.workspace?.companyName,
+                              ctx.extendedSettings,
                             ),
                             ctx.showToast,
                           )
@@ -3426,6 +3668,7 @@ function SupplierPage({
                       statement.netBalance,
                       statement.netBalance >= 0 ? "credit" : "debit",
                       ctx.workspace?.companyName,
+                      ctx.extendedSettings,
                     ),
                     ctx.showToast,
                   )
@@ -3949,6 +4192,7 @@ function CashOperationsMenu({ account, onClose }: { account: AccountRecord; onCl
     { label: "فاتورة جديدة", action: () => ctx.openVendorInvoice(account) },
     { label: "مردود جديد", action: () => ctx.openVendorInvoice(account, "return") },
     { label: "سند جديد", action: () => ctx.openTransaction(account) },
+    { label: "حوالة جديدة", action: () => ctx.openTransferModal(account.id) },
     { label: "صرف عملات", action: () => ctx.flowRef.current?.push(currencyScreen(account.id)) },
     { label: "عرض سعر", action: () => ctx.openVendorInvoice(account, "quote") },
     { label: "طلبية جديدة", action: () => ctx.openVendorInvoice(account, "order") },
@@ -4725,7 +4969,7 @@ function AppDrawer({
     {
       title: "النسخ الاحتياطي",
       items: [
-        { label: "تنزيل نسخة احتياطية (JSON)", icon: ArchiveIcon, action: () => { onClose(); ctx.triggerJsonBackup(); } },
+        { label: "تسمية وحفظ نسخة احتياطية (محلي / جوجل)", icon: ArchiveIcon, action: () => { onClose(); ctx.openBackupModal(); } },
         { label: "استعادة نسخة احتياطية", icon: UploadIconShim, action: () => { onClose(); ctx.triggerJsonRestore(); } },
       ],
     },
@@ -4798,6 +5042,7 @@ function DashboardAddMenu({ open, onClose }: { open: boolean; onClose: () => voi
     { label: "إضافة حساب جديد", action: () => ctx.openAccountCreate("extended") },
     { label: "تعديل بيانات حساب", action: () => ctx.openAccountEdit() },
     { label: "سند جديد", action: () => ctx.openTransaction() },
+    { label: "حوالة جديدة", action: () => ctx.openTransferModal() },
     { label: "فاتورة جديدة", action: () => ctx.openInvoice() },
     { label: "إضافة مردود جديد", action: () => ctx.accounts[0] && ctx.openVendorInvoice(ctx.accounts[0], "return") },
     { label: "إضافة عرض سعر", action: () => ctx.accounts[0] && ctx.openVendorInvoice(ctx.accounts[0], "quote") },
@@ -5714,6 +5959,43 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   );
 }
 
+function systemSettingsScreen(): FlowScreen {
+  return {
+    id: "system-settings",
+    headerHeight: 50,
+    header: (flow) => <SimpleAppHeader title="الإعدادات" onBack={flow.pop} />,
+    render: (flow) => <SystemSettingsScreenBody flow={flow} />,
+  };
+}
+
+function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
+  const ctx = useWorkspace();
+  ctx.flowRef.current = flow;
+  return (
+    <SystemSettingsPage
+      uid={ctx.uid}
+      userEmail={ctx.userEmail}
+      workspace={ctx.workspace}
+      extended={ctx.extendedSettings}
+      onChangeExtended={ctx.setExtendedSettings}
+      themeMode={ctx.themeMode}
+      onChangeThemeMode={ctx.setThemeMode}
+      brandColor={ctx.brandColor}
+      onChangeBrandColor={ctx.setBrandColor}
+      onResetBrandColor={ctx.resetBrandColor}
+      hapticsEnabled={ctx.hapticsEnabled}
+      onChangeHaptics={ctx.setHapticsEnabled}
+      lastBackupIso={ctx.lastBackupIso}
+      onOpenBackupModal={ctx.openBackupModal}
+      onRestoreJson={ctx.triggerJsonRestore}
+      onOpenTrash={ctx.openTrash}
+      onSignOut={ctx.handleSignOut}
+      onNotify={ctx.showToast}
+      onBack={flow.pop}
+    />
+  );
+}
+
 function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ctx = useWorkspace();
   const [companyName, setCompanyName] = useState(ctx.workspace?.companyName ?? "نسقو برو");
@@ -6243,6 +6525,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
               entry={entry}
               generatedAt={generatedAt}
               scale={scale}
+              footerNote={ctx.extendedSettings.salesInvoiceFooterNote}
             />
           </div>
         </div>
@@ -6256,11 +6539,13 @@ function CashInvoiceDocument({
   entry,
   generatedAt,
   scale,
+  footerNote,
 }: {
   companyName: string;
   entry: LedgerEntryRecord;
   generatedAt: Date;
   scale: number;
+  footerNote?: string;
 }) {
   const stamp = `${generatedAt.getFullYear()}-${String(generatedAt.getMonth() + 1).padStart(2, "0")}-${String(
     generatedAt.getDate(),
@@ -6356,6 +6641,7 @@ function CashInvoiceDocument({
       </div>
       <p className="cash-invoice-total-words">
         صافي المبلغ: {formatAmount(entry.amount)} {entry.currency}
+        {footerNote ? ` — ${footerNote}` : ""}
       </p>
       <footer className="cash-invoice-document-footer">
         <time dateTime={generatedAt.toISOString()}>{stamp}</time>

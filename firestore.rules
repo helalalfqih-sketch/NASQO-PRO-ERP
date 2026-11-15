@@ -167,6 +167,28 @@ service cloud.firestore {
         && data.updatedAt is timestamp;
     }
 
+    function isValidCloudBackup(data) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'accountsCount', 'ledgerCount',
+          'warehousesCount', 'inventoryCount', 'exportedAtIso',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'accountsCount', 'ledgerCount',
+          'warehousesCount', 'inventoryCount', 'exportedAtIso',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId == request.auth.uid && data.ownerId.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.accountsCount is number && data.accountsCount >= 0
+        && data.ledgerCount is number && data.ledgerCount >= 0
+        && data.warehousesCount is number && data.warehousesCount >= 0
+        && data.inventoryCount is number && data.inventoryCount >= 0
+        && data.exportedAtIso is string && data.exportedAtIso.size() >= 1 && data.exportedAtIso.size() <= 40
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     match /workspaces/{workspaceId} {
       allow get: if isVerified() && isValidId(workspaceId) && request.auth.uid == workspaceId;
       allow list: if isVerified() && request.auth.uid == workspaceId && existing().ownerId == request.auth.uid;
@@ -283,6 +305,19 @@ service cloud.firestore {
             'name', 'unit', 'quantity', 'avgCost', 'minThreshold', 'sku', 'warehouseId', 'updatedAt'
           ]);
         allow delete: if isValidId(workspaceId) && isValidId(itemId) && isWorkspaceOwner(workspaceId);
+      }
+
+      match /backups/{backupId} {
+        allow get: if isValidId(workspaceId) && isValidId(backupId) && isWorkspaceOwner(workspaceId);
+        allow list: if isVerified() && request.auth.uid == workspaceId && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(workspaceId)
+          && isValidId(backupId)
+          && isValidCloudBackup(incoming())
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && isWorkspaceOwner(workspaceId);
+        allow update: if false;
+        allow delete: if isValidId(workspaceId) && isValidId(backupId) && isWorkspaceOwner(workspaceId);
       }
     }
   }

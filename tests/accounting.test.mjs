@@ -670,4 +670,17 @@ test("normalizeWhatsAppPhone and buildWhatsAppMessageUrl format Arabic/internati
   );
 });
 
+import { DEFAULT_EXTENDED_SETTINGS, readExtendedSettings } from "../src/utils/appSettings.ts";
+
+test("appSettings returns safe Arabic defaults and bounds in non-DOM contexts", () => {
+  const settings = readExtendedSettings();
+  assert.deepEqual(settings, DEFAULT_EXTENDED_SETTINGS);
+  assert.equal(settings.usageMode, "sync");
+  assert.equal(settings.syncMode, "auto");
+  assert.equal(settings.creditBalanceLabel, "الرصيد لكم");
+  assert.equal(settings.debitBalanceLabel, "الرصيد عليكم");
+  assert.equal(settings.invoicePrintTemplate, "1");
+});
+
+
 

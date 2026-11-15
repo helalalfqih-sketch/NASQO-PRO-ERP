@@ -3613,6 +3613,780 @@ select.select-box.currency-select {
   color: var(--nasqo-ink);
 }
 
+/* Reference Dialog Cards, Action Bars, Print Options, Backup Name & Transfer Modals */
+.ref-dialog-card {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  left: 16px;
+  max-width: 440px;
+  max-height: 88dvh;
+  margin-inline: auto;
+  transform: translateY(-50%);
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  padding: 16px 14px 14px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 10px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35);
+}
+
+.ref-dialog-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+  text-align: center;
+}
+
+.ref-dialog-sub {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--nasqo-muted);
+  text-align: center;
+}
+
+.ref-action-bar {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ref-action-bar.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ref-action-bar.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.ref-btn {
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: filter 120ms ease, transform 100ms ease;
+}
+
+.ref-btn:active {
+  transform: translateY(1px);
+}
+
+.ref-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.ref-btn.blue {
+  background: #1780e3;
+}
+
+.ref-btn.green {
+  background: #1ca34d;
+}
+
+.ref-btn.purple {
+  background: #6c4bc4;
+}
+
+/* Custom Radio & Checkbox Ring Matching Dark/Light Mobile UI */
+.print-options-check-row input[type="checkbox"],
+.print-options-radio-row input[type="radio"],
+.transfer-close-check input[type="checkbox"],
+.transfer-direction-row input[type="radio"],
+.sys-radios input[type="radio"],
+.sys-check-row input[type="checkbox"]:not(.nasqo-switch):not(.account-form-switch),
+.sys-inline-check input[type="checkbox"] {
+  accent-color: #7c63c9;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.print-options-modal {
+  max-width: 390px;
+}
+
+.print-options-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.print-options-radio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 10px 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+}
+
+.print-options-radio-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Backup Name Modal */
+.backup-name-modal {
+  max-width: 400px;
+}
+
+.ref-outlined-input {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px 6px;
+  border: 1.5px solid var(--nasqo-blue);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+}
+
+.ref-outlined-input > span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--nasqo-blue);
+}
+
+.ref-outlined-input input {
+  width: 100%;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+  outline: none;
+}
+
+/* Add Transfer Modal (Screenshot 5430dd4f) */
+.transfer-modal {
+  gap: 8px;
+  padding: 12px 12px 14px;
+}
+
+.transfer-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.transfer-modal-head h2 {
+  font-size: 15px;
+  text-align: right;
+}
+
+.transfer-close-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--nasqo-muted);
+  cursor: pointer;
+}
+
+.transfer-stamp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.transfer-stamp-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #1780e3;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.transfer-icon-btn,
+.transfer-square-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: #1780e3;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.transfer-account-box {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 4px 6px;
+  padding: 6px 8px;
+  border: 1px solid #1780e3;
+  border-radius: 7px;
+  background: var(--nasqo-surface-alt);
+  align-items: center;
+}
+
+.transfer-plus-btn {
+  grid-row: span 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #1780e3;
+  color: #ffffff;
+}
+
+.transfer-account-box input,
+.transfer-account-box select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.transfer-account-box input {
+  border-bottom: 1px solid var(--nasqo-line);
+}
+
+.transfer-select-chevron {
+  position: absolute;
+  left: 10px;
+  bottom: 11px;
+  pointer-events: none;
+  color: var(--nasqo-muted);
+}
+
+.transfer-balance-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  border-radius: 5px;
+  background: #1780e3;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transfer-amount-commission-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.transfer-money-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
+  gap: 4px;
+  padding: 5px 6px;
+  border: 1px solid #1780e3;
+  border-radius: 7px;
+  background: var(--nasqo-surface-alt);
+  align-items: center;
+}
+
+.transfer-money-cell input,
+.transfer-money-cell select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: center;
+  outline: none;
+}
+
+.transfer-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.transfer-grid-2 input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 7px;
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+}
+
+.transfer-details-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  gap: 6px;
+  align-items: center;
+}
+
+.transfer-details-row input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid var(--nasqo-line);
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.transfer-cashbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid #1780e3;
+  border-radius: 7px;
+  background: var(--nasqo-surface-alt);
+}
+
+.transfer-cashbox-row span {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--nasqo-muted);
+  white-space: nowrap;
+}
+
+.transfer-cashbox-row select {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.transfer-direction-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 4px 0;
+}
+
+.transfer-direction-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Full System Settings Screen (Screenshots 6aff411b, ad5884ae, 823a8f7e, 5fd06363) */
+.sys-settings-scroll {
+  background: var(--nasqo-canvas);
+}
+
+.sys-settings-page {
+  padding: 10px 10px calc(var(--mobile-safe-area-height, 0px) + 32px);
+  display: grid;
+  gap: 8px;
+}
+
+.sys-activation-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border-radius: 99px;
+  background: #1780e3;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sys-update-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sys-email-bar {
+  padding: 8px 12px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.sys-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sys-row-label.accent-red,
+.accent-red {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.sys-blue-label {
+  color: #38bdf8;
+  font-weight: 700;
+}
+
+:root:not(.dark) .sys-blue-label {
+  color: #0b5ca8;
+}
+
+.sys-radios-with-icons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sys-radios {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sys-radios label,
+.sys-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sys-inline-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sys-mini-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: #1780e3;
+}
+
+.sys-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.sys-btn-grid button {
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #1780e3;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sys-btn-grid button.danger {
+  background: #dc2626;
+}
+
+.sys-faq-row {
+  display: flex;
+  justify-content: center;
+}
+
+.sys-faq-link {
+  padding: 4px 12px;
+  background: transparent;
+  color: #38bdf8;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+:root:not(.dark) .sys-faq-link {
+  color: var(--nasqo-blue);
+}
+
+.sys-faq-card {
+  padding: 10px 12px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+  font-size: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.sys-faq-card p {
+  margin: 0;
+  color: var(--nasqo-muted);
+}
+
+.sys-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 10px;
+  background: var(--nasqo-surface);
+}
+
+.sys-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sys-logo-thumb {
+  width: 64px;
+  height: 50px;
+  border: 1px dashed var(--nasqo-blue);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-blue);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sys-logo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sys-logo-clear {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.sys-bilingual-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.sys-field-box {
+  display: grid;
+  gap: 3px;
+  padding: 6px 10px;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+}
+
+.sys-field-box.full {
+  width: 100%;
+}
+
+.sys-field-box > span {
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+  text-align: center;
+}
+
+.sys-field-box input,
+.sys-field-box select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+  outline: none;
+}
+
+.sys-backup-btns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sys-color-bar-row {
+  gap: 10px;
+}
+
+.sys-color-chip {
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--nasqo-line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sys-report-color-label {
+  flex: 1;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #1780e3;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.sys-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sys-stepper button {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--nasqo-surface-alt);
+  border: 1px solid var(--nasqo-line) !important;
+  color: var(--nasqo-ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sys-stepper b {
+  min-width: 24px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.sys-section-banner {
+  padding: 8px 14px;
+  border-radius: 99px;
+  background: #1780e3;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.sys-dual-checks {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.sys-inline-tag {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--nasqo-brand-tint);
+  color: var(--nasqo-blue);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sys-important-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--nasqo-warning-bg);
+  border: 1px solid var(--nasqo-warning-border);
+  color: var(--nasqo-warning);
+  font-size: 11.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.sys-save-footer {
+  display: grid;
+  grid-template-columns: 1fr 0.6fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+:root.dark .sys-field-box select option,
+:root.dark .transfer-account-box select option,
+:root.dark .transfer-money-cell select option,
+:root.dark .transfer-cashbox-row select option {
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+}
+
+
 
 
 
