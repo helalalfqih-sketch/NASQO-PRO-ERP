@@ -1,6 +1,8 @@
 name: Deploy NASQO mobile web to waha-shopify-test
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
@@ -28,11 +30,12 @@ jobs:
       - name: Prepare release
         run: |
           mkdir -p release/dist
-          cp package.json server.ts Dockerfile.deploy release/
+          cp package.json package-lock.json server.ts Dockerfile.deploy release/
           cp -a dist/client release/dist/client
           cp deploy/deploy.sh release/deploy.sh
           tar -czf "$RUNNER_TEMP/nsqo-release.tar.gz" -C release .
       - name: Configure SSH (host key pinned)
+        if: github.event_name != 'pull_request'
         env:
           SSH_KEY: ${{ secrets.NASQO_DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.NASQO_DEPLOY_KNOWN_HOSTS }}
@@ -45,6 +48,7 @@ jobs:
           printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/nasqo_deploy" "$HOME/.ssh/known_hosts"
       - name: Upload and promote verified release
+        if: github.event_name != 'pull_request'
         env:
           HOST: ${{ secrets.NASQO_DEPLOY_HOST }}
           USER: ${{ secrets.NASQO_DEPLOY_USER }}
