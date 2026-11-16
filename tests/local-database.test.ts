@@ -17,7 +17,7 @@ import { createDefaultErpData, saveErpWorkspaceData } from "../src/erp";
 
 test("localDatabase metadata and non-browser guards behave safely in Node", async () => {
   assert.equal(LOCAL_DB_NAME, "nasqo_pro_erp_db");
-  assert.equal(LOCAL_DB_VERSION, 1);
+  assert.equal(LOCAL_DB_VERSION, 2);
   assert.equal(isIndexedDbAvailable(), false);
 
   const snap = await readSnapshotFromIndexedDb("local-erp-workspace");
@@ -32,7 +32,7 @@ test("localDatabase metadata and non-browser guards behave safely in Node", asyn
 
   const dump = await exportIndexedDbSnapshot("local-erp-workspace");
   assert.equal(dump.dbName, LOCAL_DB_NAME);
-  assert.equal(dump.version, 1);
+  assert.equal(dump.version, 2);
   assert.equal(dump.workspaceSnapshot, null);
 
   await saveErpDataToIndexedDb("local-erp-workspace", { test: true });

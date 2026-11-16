@@ -7,7 +7,12 @@ import type {
 } from "../types.ts";
 
 export const LOCAL_DB_NAME = "nasqo_pro_erp_db";
-export const LOCAL_DB_VERSION = 1;
+export const LOCAL_DB_VERSION = 2;
+
+// v1 stores are retained read-only for non-destructive migration. The v2
+// compound keys let two authenticated workspaces share original document IDs.
+const SCOPED_STORES = ["accounts_v2", "ledger_v2", "warehouses_v2", "inventory_v2"] as const;
+type ScopedStoreName = (typeof SCOPED_STORES)[number];
 
 export type LocalDbStoreName =
   | "workspaces"
@@ -15,7 +20,8 @@ export type LocalDbStoreName =
   | "ledger"
   | "warehouses"
   | "inventory"
-  | "erp_modules";
+  | "erp_modules"
+  | ScopedStoreName;
 
 export type LocalWorkspaceDbSnapshot = {
   workspace: WorkspaceSettings;
@@ -74,9 +80,15 @@ function openLocalDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains("erp_modules")) {
         db.createObjectStore("erp_modules", { keyPath: "uid" });
       }
+      for (const name of SCOPED_STORES) {
+        if (db.objectStoreNames.contains(name)) continue;
+        const scoped = db.createObjectStore(name, { keyPath: ["ownerId", "id"] });
+        scoped.createIndex("byOwner", "ownerId", { unique: false });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("Failed opening IndexedDB"));
+    req.onblocked = () => reject(new Error("أغلق علامات التبويب الأخرى لنسق برو ثم أعد فتح التطبيق لإكمال تحديث التخزين."));
   });
 }
 
@@ -88,82 +100,95 @@ function readAllFromStore<T>(store: IDBObjectStore): Promise<T[]> {
   });
 }
 
+function replaceOwnedRows<T extends { id: string; ownerId: string }>(
+  tx: IDBTransaction,
+  storeName: ScopedStoreName,
+  uid: string,
+  items: readonly T[],
+): void {
+  const store = tx.objectStore(storeName);
+  const request = store.index("byOwner").getAllKeys(IDBKeyRange.only(uid));
+  request.onsuccess = () => {
+    // Atomic replacement of exactly one workspace; never delete other owners.
+    for (const key of request.result) store.delete(key);
+    for (const item of items) store.put({ ...item, ownerId: uid });
+  };
+}
+
+/** Store one workspace atomically without clearing records of other accounts. */
 export async function writeSnapshotToIndexedDb(
   snapshot: LocalWorkspaceDbSnapshot,
 ): Promise<void> {
   if (!isIndexedDbAvailable()) return;
   const db = await openLocalDb();
   try {
+    const uid = snapshot.workspace.id;
+    if (!uid || snapshot.workspace.ownerId !== uid) {
+      throw new Error("معرف مساحة العمل غير متطابق؛ تم إيقاف الحفظ لحماية البيانات.");
+    }
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(
-        ["workspaces", "accounts", "ledger", "warehouses", "inventory"],
-        "readwrite",
-      );
+      const tx = db.transaction(["workspaces", ...SCOPED_STORES], "readwrite");
       tx.oncomplete = () => {
         lastSyncedAtIso = new Date().toISOString();
         resolve();
       };
+      tx.onabort = () => reject(tx.error ?? new Error("Failed saving workspace in IndexedDB"));
       tx.onerror = () => reject(tx.error ?? new Error("Failed writing IndexedDB"));
-
-      const wsStore = tx.objectStore("workspaces");
-      wsStore.put({ ...snapshot.workspace, backups: snapshot.backups });
-
-      const accStore = tx.objectStore("accounts");
-      accStore.clear();
-      for (const acc of snapshot.accounts) accStore.put(acc);
-
-      const ledStore = tx.objectStore("ledger");
-      ledStore.clear();
-      for (const entry of snapshot.ledger) ledStore.put(entry);
-
-      const whStore = tx.objectStore("warehouses");
-      whStore.clear();
-      for (const wh of snapshot.warehouses) whStore.put(wh);
-
-      const invStore = tx.objectStore("inventory");
-      invStore.clear();
-      for (const item of snapshot.inventory) invStore.put(item);
+      tx.objectStore("workspaces").put({ ...snapshot.workspace, backups: snapshot.backups, snapshotVersion: 2 });
+      replaceOwnedRows(tx, "accounts_v2", uid, snapshot.accounts);
+      replaceOwnedRows(tx, "ledger_v2", uid, snapshot.ledger);
+      replaceOwnedRows(tx, "warehouses_v2", uid, snapshot.warehouses);
+      replaceOwnedRows(tx, "inventory_v2", uid, snapshot.inventory);
     });
   } finally {
     db.close();
   }
 }
 
+/** Read only the requested workspace. Old v1 rows remain readable until that
+ * specific workspace is first saved into v2; no background destructive copy. */
 export async function readSnapshotFromIndexedDb(
   uid: string,
 ): Promise<LocalWorkspaceDbSnapshot | null> {
   if (!isIndexedDbAvailable()) return null;
   const db = await openLocalDb();
   try {
-    const tx = db.transaction(
-      ["workspaces", "accounts", "ledger", "warehouses", "inventory"],
-      "readonly",
-    );
-    const [workspaces, accounts, ledger, warehouses, inventory] = await Promise.all([
-      readAllFromStore<WorkspaceSettings & { backups?: { id: string; name: string; exportedAtIso: string }[] }>(
-        tx.objectStore("workspaces"),
-      ),
-      readAllFromStore<AccountRecord>(tx.objectStore("accounts")),
-      readAllFromStore<LedgerEntryRecord>(tx.objectStore("ledger")),
-      readAllFromStore<WarehouseRecord>(tx.objectStore("warehouses")),
-      readAllFromStore<InventoryItemRecord>(tx.objectStore("inventory")),
-    ]);
+    const wsRequest = db.transaction("workspaces", "readonly").objectStore("workspaces").get(uid);
+    const ws = await new Promise<(WorkspaceSettings & { backups?: LocalWorkspaceDbSnapshot["backups"]; snapshotVersion?: number }) | undefined>((resolve, reject) => {
+      wsRequest.onsuccess = () => resolve(wsRequest.result);
+      wsRequest.onerror = () => reject(wsRequest.error ?? new Error("Failed reading workspace"));
+    });
+    if (!ws) return null;
 
-    const ws = workspaces.find((w) => w.id === uid) ?? workspaces[0];
-    if (!ws || accounts.length === 0) return null;
-
-    const { backups = [], ...workspaceFields } = ws;
-    return {
-      workspace: workspaceFields,
-      accounts,
-      ledger,
-      warehouses,
-      inventory,
-      backups,
+    const usesV2 = ws.snapshotVersion === 2;
+    const storeNames = usesV2 ? [...SCOPED_STORES] : ["accounts", "ledger", "warehouses", "inventory"];
+    const tx = db.transaction(storeNames, "readonly");
+    const readStore = async <T extends { ownerId: string }>(name: string): Promise<T[]> => {
+      const store = tx.objectStore(name);
+      const records = usesV2
+        ? await readAllFromIndex<T>(store.index("byOwner"), IDBKeyRange.only(uid))
+        : await readAllFromStore<T>(store);
+      return records.filter((record) => record.ownerId === uid);
     };
+    const [accounts, ledger, warehouses, inventory] = await Promise.all([
+      readStore<AccountRecord>(storeNames[0]),
+      readStore<LedgerEntryRecord>(storeNames[1]),
+      readStore<WarehouseRecord>(storeNames[2]),
+      readStore<InventoryItemRecord>(storeNames[3]),
+    ]);
+    const { backups = [], snapshotVersion: _version, ...workspaceFields } = ws;
+    return { workspace: workspaceFields, accounts, ledger, warehouses, inventory, backups };
   } finally {
     db.close();
   }
+}
+
+function readAllFromIndex<T>(index: IDBIndex, range: IDBKeyRange): Promise<T[]> {
+  return new Promise((resolve, reject) => {
+    const request = index.getAll(range);
+    request.onsuccess = () => resolve((request.result as T[]) ?? []);
+    request.onerror = () => reject(request.error ?? new Error("Failed reading scoped records"));
+  });
 }
 
 export async function saveErpDataToIndexedDb(uid: string, data: unknown): Promise<void> {
@@ -224,65 +249,55 @@ export async function exportIndexedDbSnapshot(uid: string): Promise<{
 export async function getLocalDatabaseStats(uid: string): Promise<LocalDatabaseStats> {
   if (!isIndexedDbAvailable()) {
     return {
-      engine: "localStorage",
-      dbName: "nasqo-local-workspace-v1",
-      accountsCount: 0,
-      ledgerCount: 0,
-      warehousesCount: 0,
-      inventoryCount: 0,
-      erpModulesSaved: false,
-      lastSyncedAt: lastSyncedAtIso,
+      engine: "localStorage", dbName: "nasqo-local-workspace-v1",
+      accountsCount: 0, ledgerCount: 0, warehousesCount: 0,
+      inventoryCount: 0, erpModulesSaved: false, lastSyncedAt: lastSyncedAtIso,
     };
   }
-  const db = await openLocalDb();
-  try {
-    const tx = db.transaction(
-      ["accounts", "ledger", "warehouses", "inventory", "erp_modules"],
-      "readonly",
-    );
-    const [accounts, ledger, warehouses, inventory, erpModules] = await Promise.all([
-      readAllFromStore<AccountRecord>(tx.objectStore("accounts")),
-      readAllFromStore<LedgerEntryRecord>(tx.objectStore("ledger")),
-      readAllFromStore<WarehouseRecord>(tx.objectStore("warehouses")),
-      readAllFromStore<InventoryItemRecord>(tx.objectStore("inventory")),
-      readAllFromStore<{ uid: string }>(tx.objectStore("erp_modules")),
-    ]);
-
-    return {
-      engine: "IndexedDB",
-      dbName: LOCAL_DB_NAME,
-      accountsCount: accounts.length,
-      ledgerCount: ledger.length,
-      warehousesCount: warehouses.length,
-      inventoryCount: inventory.length,
-      erpModulesSaved: erpModules.some((m) => m.uid === (uid || "local")),
-      lastSyncedAt: lastSyncedAtIso,
-    };
-  } finally {
-    db.close();
-  }
+  const [snap, erp] = await Promise.all([readSnapshotFromIndexedDb(uid), readErpDataFromIndexedDb(uid)]);
+  return {
+    engine: "IndexedDB", dbName: LOCAL_DB_NAME,
+    accountsCount: snap?.accounts.length ?? 0,
+    ledgerCount: snap?.ledger.length ?? 0,
+    warehousesCount: snap?.warehouses.length ?? 0,
+    inventoryCount: snap?.inventory.length ?? 0,
+    erpModulesSaved: erp !== null,
+    lastSyncedAt: lastSyncedAtIso,
+  };
 }
 
-export async function clearLocalDatabase(): Promise<void> {
+/** Reset only the local workspace; never remove another Google workspace's cache. */
+export async function clearLocalDatabase(uid = "local-erp-workspace"): Promise<void> {
   if (!isIndexedDbAvailable()) return;
   const db = await openLocalDb();
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(
-        ["workspaces", "accounts", "ledger", "warehouses", "inventory", "erp_modules"],
+        ["workspaces", ...SCOPED_STORES, "accounts", "ledger", "warehouses", "inventory", "erp_modules"],
         "readwrite",
       );
       tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error("Failed clearing this workspace"));
       tx.onerror = () => reject(tx.error ?? new Error("Failed clearing IndexedDB"));
-      for (const name of [
-        "workspaces",
-        "accounts",
-        "ledger",
-        "warehouses",
-        "inventory",
-        "erp_modules",
-      ] as const) {
-        tx.objectStore(name).clear();
+      tx.objectStore("workspaces").delete(uid);
+      tx.objectStore("erp_modules").delete(uid);
+      for (const scoped of SCOPED_STORES) {
+        const store = tx.objectStore(scoped);
+        const request = store.index("byOwner").getAllKeys(IDBKeyRange.only(uid));
+        request.onsuccess = () => {
+          for (const key of request.result) store.delete(key);
+        };
+      }
+      // Non-destructive compatibility cleanup for owned v1 rows only.
+      for (const legacy of ["accounts", "ledger", "warehouses", "inventory"]) {
+        const store = tx.objectStore(legacy);
+        const cursorRequest = store.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          if (cursor.value?.ownerId === uid) cursor.delete();
+          cursor.continue();
+        };
       }
     });
   } finally {
