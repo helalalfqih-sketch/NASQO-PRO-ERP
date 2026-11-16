@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { describeGoogleSignInError } from "../src/utils/authError.ts";
@@ -25,4 +26,20 @@ test("Google sign-in errors do not expose SDK messages or tokens", () => {
     assert.equal(describeGoogleSignInError(error).includes(secretMessage), false);
   }
   assert.match(describeGoogleSignInError({ code: "auth/unknown-new-error" }), /auth\/unknown-new-error/);
+});
+
+
+test("regular Google login never requests Drive scopes", () => {
+  const firebaseSource = readFileSync(new URL("../src/firebase.ts", import.meta.url), "utf8");
+  const signInBody = firebaseSource
+    .split("export async function signInWithGoogle(): Promise<User> {")[1]
+    ?.split("\n}")[0];
+  assert.ok(signInBody, "Expected signInWithGoogle implementation");
+  assert.match(signInBody, /new GoogleAuthProvider\(\)/);
+  assert.doesNotMatch(signInBody, /buildGoogleDriveProvider|GOOGLE_WORKSPACE_SCOPES|\.addScope\(/);
+  const driveBody = firebaseSource
+    .split("export async function connectGoogleDrive():")[1]
+    ?.split("\n}")[0];
+  assert.ok(driveBody, "Expected separate Google Drive connection");
+  assert.match(driveBody, /buildGoogleDriveProvider\(\)/);
 });
