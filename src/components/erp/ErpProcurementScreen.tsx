@@ -17,6 +17,7 @@ import type {
   WarehouseRecord,
 } from "../../types";
 import { triggerHaptic } from "../../utils/haptics";
+import { canReceiveAgainstExistingStock } from "../../legacy/liveSafety";
 
 export function ErpProcurementScreen({
   uid,
@@ -50,7 +51,7 @@ export function ErpProcurementScreen({
   );
   const [itemId, setItemId] = useState(() => inventory[0]?.id ?? "");
   const [qty, setQty] = useState("10");
-  const [unitCost, setUnitCost] = useState(() => String(inventory[0]?.avgCost ?? 1500));
+  const [unitCost, setUnitCost] = useState(() => inventory[0]?.legacyRef ? "" : String(inventory[0]?.avgCost ?? ""));
   const [notes, setNotes] = useState("");
   const [receivingPoId, setReceivingPoId] = useState<string | null>(null);
 
@@ -72,6 +73,10 @@ export function ErpProcurementScreen({
       return;
     }
     const parsedQty = Math.max(1, Math.round(parsePositiveNumber(qty)));
+    if (!unitCost.trim() || !Number.isFinite(Number(unitCost)) || Number(unitCost) <= 0) {
+      onToast("أدخل تكلفة شراء معتمدة وصريحة؛ تكلفة الصنف التاريخي ليست سعرًا معتمدًا لأمر جديد.");
+      return;
+    }
     const parsedCost = parsePositiveNumber(unitCost);
     const nextNum = 101 + erpData.purchaseOrders.length;
 
@@ -121,12 +126,20 @@ export function ErpProcurementScreen({
   const handleReceivePo = async (po: ErpPurchaseOrder) => {
     keyboard.hide();
     if (po.status === "received") return;
+    // Validate every line before the first write. Never merge a new receipt
+    // into a legacy stock balance that has not been counted and approved.
+    const unsafe = po.lines.find((line) => {
+      const match = inventory.find((item) => item.id === line.inventoryItemId);
+      return !match || !canReceiveAgainstExistingStock(match);
+    });
+    if (unsafe) {
+      onToast(`تعذر استلام ${po.poNumber}: الصنف «${unsafe.itemName}» يحتاج جردًا معتمدًا أو لم يعد موجودًا. لم تُرحّل أي حركة.`);
+      return;
+    }
     setReceivingPoId(po.id);
     try {
       for (const line of po.lines) {
-        const existing = inventory.find(
-          (i) => i.id === line.inventoryItemId || i.name === line.itemName,
-        );
+        const existing = inventory.find((i) => i.id === line.inventoryItemId);
         if (existing) {
           const avg = computeWeightedAvgCost(
             existing.quantity,
@@ -260,12 +273,12 @@ export function ErpProcurementScreen({
                   onChange={(e) => {
                     setItemId(e.target.value);
                     const found = inventory.find((i) => i.id === e.target.value);
-                    if (found) setUnitCost(String(found.avgCost));
+                    if (found) setUnitCost(found.legacyRef ? "" : String(found.avgCost));
                   }}
                 >
                   {inventory.map((i) => (
                     <option key={i.id} value={i.id}>
-                      {i.name} (متاح: {i.quantity})
+                      {i.name} ({i.quantityUnverified ? "بحاجة إلى تسوية" : `متاح: ${i.quantity}`})
                     </option>
                   ))}
                 </select>

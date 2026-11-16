@@ -17,6 +17,7 @@ import type {
 } from "../../types";
 import { triggerHaptic } from "../../utils/haptics";
 import { InvoiceForm } from "../InvoiceForm";
+import { approvedLiveSellingPrice, canSellFromVerifiedStock } from "../../legacy/liveSafety";
 
 type CrmPosTab = "pos" | "crm";
 
@@ -90,7 +91,7 @@ export function ErpCrmPosScreen({
       .filter((item) => (cart[item.id] ?? 0) > 0)
       .map((item) => {
         const qty = cart[item.id] ?? 0;
-        const unitSellPrice = Math.round(item.avgCost * 1.25);
+        const unitSellPrice = approvedLiveSellingPrice(item) ?? 0;
         return {
           item,
           qty,
@@ -111,6 +112,7 @@ export function ErpCrmPosScreen({
     triggerHaptic("light");
     setCart((prev) => {
       const current = prev[item.id] ?? 0;
+      if (!canSellFromVerifiedStock(item)) return prev;
       const next = Math.max(0, Math.min(item.quantity, current + delta));
       if (next === 0) {
         const copy = { ...prev };
@@ -125,6 +127,10 @@ export function ErpCrmPosScreen({
     keyboard.hide();
     if (cartLines.length === 0) {
       onToast("أضف صنفًا واحدًا على الأقل لسلة نقطة البيع");
+      return;
+    }
+    if (cartLines.some((line) => !canSellFromVerifiedStock(line.item) || line.qty > line.item.quantity)) {
+      onToast("لا يمكن إتمام بيع صنف برصيد غير مسوى أو بسعر بيع غير معتمد. راجع جرد المخزون وسعر البيع أولًا.");
       return;
     }
     const targetAccount =
@@ -391,13 +397,14 @@ export function ErpCrmPosScreen({
               <div className="erp-list">
                 {inventory.map((item) => {
                   const qtyInCart = cart[item.id] ?? 0;
-                  const sellPrice = Math.round(item.avgCost * 1.25);
+                  const sellPrice = approvedLiveSellingPrice(item);
+                  const saleBlocked = !canSellFromVerifiedStock(item);
                   return (
                     <div key={item.id} className="erp-pos-item">
                       <div className="erp-pos-item-info">
                         <strong>{item.name}</strong>
                         <small>
-                          السعر: <bdi>{formatAmount(sellPrice)}</bdi> {currency} · المتاح:{" "}
+                          السعر: {sellPrice === null ? <b style={{ color: "#b45309" }}>بحاجة لاعتماد سعر البيع</b> : <><bdi>{formatAmount(sellPrice)}</bdi> {currency}</>} · المتاح:{" "}
                           {item.quantityUnverified ? (
                             <bdi style={{ color: "#b45309" }}>بحاجة إلى تسوية</bdi>
                           ) : (
@@ -421,7 +428,8 @@ export function ErpCrmPosScreen({
                           type="button"
                           aria-label={`إضافة ${item.name}`}
                           data-testid={`pos-add-${item.id}`}
-                          disabled={qtyInCart >= item.quantity}
+                          disabled={saleBlocked || qtyInCart >= item.quantity}
+                          title={saleBlocked ? "يتطلب الصنف تسوية كمية المخزون واعتماد سعر البيع" : undefined}
                           onClick={() => adjustCart(item, 1)}
                         >
                           +

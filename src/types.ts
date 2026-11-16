@@ -133,6 +133,8 @@ export type InventoryItemRecord = {
   unit: string;
   quantity: number;
   avgCost: number;
+  /** Explicitly approved selling price; legacy products never receive an inferred value. */
+  sellingPrice?: number;
   minThreshold?: number;
   sku?: string;
   warehouseId: string;

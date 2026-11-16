@@ -58,7 +58,6 @@ import { CURRENCIES, type AccountCategory, type AccountRecord, type InventoryIte
 import {
   mergeLegacyMasterBatch,
   postLegacyLedgerBatch,
-  rollbackLegacyLivePrefix,
 } from "../firebase";
 import { LegacyReconciliationView } from "./LegacyReconciliationView";
 
@@ -306,6 +305,39 @@ export function FullSqliteImportModal({
     } finally {
       setBusy(false);
     }
+  };
+
+  // Saved original bytes never need to be exposed as a public website asset.
+  const handleReopenSavedSource = async (sha256: string) => {
+    if (busy) return;
+    try {
+      const db = await openCenterDb();
+      let source;
+      try { source = await getSource(db, sha256); } finally { db.close(); }
+      if (!source) throw new Error("النسخة الأصلية غير موجودة في مخزن هذا المتصفح.");
+      await loadSqliteBytes(new Uint8Array(source.bytes), source.fileName);
+      setTab("overview");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر إعادة فتح النسخة الأصلية.");
+    }
+  };
+
+  const handleLinkArchivedBatch = async (batch: BatchRecord) => {
+    if (busy || batch.kind !== "archive" || batch.status !== "complete") return;
+    setBusy(true);
+    setError("");
+    try {
+      const db = await openCenterDb();
+      try {
+        await putSetting(db, `activeArchive:${workspaceId}`, batch.sha256);
+        await addJournal(db, { batchId: batch.batchId, level: "info", message: "ربط المستخدم الأرشيف التاريخي صراحة بمساحة العمل الحالية للبحث والعرض دون ترحيل مالي." });
+      } finally { db.close(); }
+      setNotice("تم ربط هذا الأرشيف بمساحة العمل الحالية. يمكنك الآن البحث عن الفواتير والقيود التاريخية من الشاشات.");
+      onNotify("تم ربط الأرشيف بمساحة العمل الحالية دون ترحيل مالي.");
+      await refreshCenterHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر ربط الأرشيف.");
+    } finally { setBusy(false); }
   };
 
   // Export Exact Original Replica
@@ -588,32 +620,37 @@ export function FullSqliteImportModal({
     }
   };
 
-  // Rollback batch
+  // Never delete a live account/ledger entry by a shared prefix: later user edits
+  // could share that prefix. Historical archive rollback is allowed only when
+  // no completed master/posting batch still depends on its rows.
   const handleRollbackBatch = async (batch: BatchRecord) => {
     if (busy) return;
+    if (batch.kind !== "archive") {
+      setError("التراجع الجماعي عن الحسابات أو القيود الحية غير آمن بعد التعديل عليها. لم تُحذف أي بيانات. يجب تدقيق معرفات الدفعة والتغييرات اللاحقة قبل التراجع.");
+      return;
+    }
+    const sourcePrefix = `${batch.sha256.slice(0, 12)}:`;
+    const hasLinkedLiveData = [...liveAccounts, ...liveWarehouses, ...liveInventory, ...liveLedger]
+      .some((record) => record.legacyRef?.startsWith(sourcePrefix));
+    const dependent = hasLinkedLiveData || batches.some((other) => other.sha256 === batch.sha256 && other.status !== "rolled_back" && (other.kind === "master" || other.kind === "posting"));
+    if (dependent) {
+      setError("لا يمكن حذف هذا الأرشيف بينما توجد بيانات أساسية أو قيود مرتبطة به. لم تُحذف أي بيانات.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const db = await openCenterDb();
       try {
-        await rollbackBatch(db, batch.batchId);
-      } finally {
-        db.close();
-      }
-      if (batch.kind === "master" || batch.kind === "posting") {
-        const removed = await rollbackLegacyLivePrefix(workspaceId, livePrefix(batch.sha256));
-        setNotice(
-          `تم التراجع عن الدفعة دون المساس ببيانات المستخدم: حُذف ${removed.accountsRemoved} حساب، ${removed.warehousesRemoved} مخزن، ${removed.inventoryRemoved} صنف، ${removed.ledgerRemoved} قيد.`,
-        );
-      } else {
-        setNotice(`تم التراجع عن دفعة الأرشيف ${batch.batchId} بنجاح.`);
-      }
+        const removed = await rollbackBatch(db, batch.batchId);
+        const active = await getSetting<string>(db, `activeArchive:${workspaceId}`);
+        if (active === batch.sha256) await putSetting(db, `activeArchive:${workspaceId}`, "");
+        setNotice(`أُزيلت ${removed.removedRecords} سجلات تاريخية من الدفعة غير المرتبطة، دون تغيير الأستاذ العام.`);
+      } finally { db.close(); }
       await refreshCenterHistory();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل التراجع عن الدفعة.");
-    } finally {
-      setBusy(false);
-    }
+      setError(err instanceof Error ? err.message : "فشل التراجع الآمن عن الأرشيف.");
+    } finally { setBusy(false); }
   };
 
   // Export Audit Report
@@ -1156,9 +1193,14 @@ export function FullSqliteImportModal({
                       <b>{s.fileName}</b> ({s.size.toLocaleString("en-US")} بايت • {s.totalRows.toLocaleString("en-US")} سجل)
                       <div style={{ fontFamily: "monospace", fontSize: 11, color: "#64748b" }}>SHA-256: {s.sha256}</div>
                     </div>
-                    <button type="button" onClick={() => handleExportOriginalSource(s.sha256)} style={{ background: "#059669", color: "#fff", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>
-                      تنزيل SQLite
-                    </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <button type="button" onClick={() => handleReopenSavedSource(s.sha256)} disabled={busy} style={{ background: "#0369a1", color: "#fff", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>
+                        فتح النسخة المحفوظة للاستيراد
+                      </button>
+                      <button type="button" onClick={() => handleExportOriginalSource(s.sha256)} disabled={busy} style={{ background: "#059669", color: "#fff", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 12, cursor: "pointer" }}>
+                        تنزيل SQLite
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1170,11 +1212,18 @@ export function FullSqliteImportModal({
                     <div>
                       <b>{b.batchId}</b> — الحالة: <b>{b.status}</b> • السجلات: {b.total.toLocaleString("en-US")}
                     </div>
-                    {b.status !== "rolled_back" ? (
-                      <button type="button" onClick={() => handleRollbackBatch(b)} style={{ background: "#dc2626", color: "#fff", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer" }}>
-                        تراجع عن الدفعة
-                      </button>
-                    ) : null}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {b.kind === "archive" && b.status === "complete" ? (
+                        <button type="button" onClick={() => handleLinkArchivedBatch(b)} disabled={busy} style={{ background: "#0369a1", color: "#fff", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer" }}>
+                          عرض هذا الأرشيف في مساحة العمل الحالية
+                        </button>
+                      ) : null}
+                      {b.kind === "archive" && b.status !== "rolled_back" ? (
+                        <button type="button" onClick={() => handleRollbackBatch(b)} disabled={busy} style={{ background: "#dc2626", color: "#fff", border: "none", padding: "5px 10px", borderRadius: 6, fontSize: 11, cursor: "pointer" }}>
+                          تراجع عن الأرشيف غير المرتبط
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>
