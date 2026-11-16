@@ -25,6 +25,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check:runtime
           npm run lint
+          npx tsx --test tests/legacy-search-binding.test.ts
           node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs
           npm run build
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
@@ -35,7 +36,7 @@ jobs:
       - name: Verify Android Back navigation in Chromium
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/android-back-navigation.spec.ts --reporter=line
+          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts --reporter=line
       - name: Prepare release
         run: |
           mkdir -p release/dist

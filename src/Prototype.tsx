@@ -262,7 +262,7 @@ type LiveWorkspaceState = {
   openGoogleDriveModal: () => void;
   openLegacyFinancialImport: () => void;
   openFullSqliteImport: () => void;
-  openLegacyArchiveExplorer: (roleFilter?: string) => void;
+  openLegacyArchiveExplorer: (roleFilter?: string, search?: string) => void;
   openTransferModal: (accountId?: string) => void;
   openInventoryAdd: () => void;
   openSettings: () => void;
@@ -898,10 +898,12 @@ function AuthenticatedWorkspace({
   }, [dismissKeyboard]);
 
   const [legacyExplorerFilter, setLegacyExplorerFilter] = useState<string>("all");
+  const [legacyExplorerQuery, setLegacyExplorerQuery] = useState("");
   const openLegacyArchiveExplorer = useCallback(
-    (roleFilter: string = "all") => {
+    (roleFilter: string = "all", search: string = "") => {
       dismissKeyboard();
       setLegacyExplorerFilter(roleFilter);
+      setLegacyExplorerQuery(search);
       setOverlay("legacy-archive-explorer");
     },
     [dismissKeyboard],
@@ -1826,6 +1828,8 @@ function AuthenticatedWorkspace({
           open={overlay === "legacy-archive-explorer"}
           onClose={() => setOverlay(null)}
           initialRoleFilter={legacyExplorerFilter}
+          initialSearch={legacyExplorerQuery}
+          workspaceId={user.uid}
         />
         <GoogleDriveModal
           open={overlay === "google-drive"}
@@ -2543,7 +2547,7 @@ function InventoryReportPage({
     const q = normalizeArabicSearch(searchQuery);
     if (!q) return rawSummary.items;
     return rawSummary.items.filter((item) =>
-      normalizeArabicSearch(`${item.name} ${item.sku ?? ""} ${item.unit}`).includes(q),
+      normalizeArabicSearch(`${item.name} ${item.sku ?? ""} ${item.unit} ${item.legacyRef ?? ""} ${item.id}`).includes(q),
     );
   }, [rawSummary.items, searchQuery]);
   const summary = { ...rawSummary, items: filteredItems };
@@ -2662,6 +2666,16 @@ function InventoryReportPage({
                   <td>
                     {item.name}
                     {item.sku ? <small className="inv-sku-meta"> ({item.sku})</small> : null}
+                    {item.legacyRef ? (
+                      <button
+                        type="button"
+                        onClick={() => ctx.openLegacyArchiveExplorer("all", item.name)}
+                        aria-label={`بحث في فواتير الصنف ${item.name}`}
+                        style={{ display: "block", padding: "3px 0", color: "#0369a1", background: "transparent", border: 0, fontSize: 11, cursor: "pointer" }}
+                      >
+                        عرض فواتير الصنف التاريخية
+                      </button>
+                    ) : null}
                   </td>
                   <td>{item.unit}</td>
                   <td>
@@ -4230,7 +4244,7 @@ function PurchasesPage({ flow, category }: { flow: FlowControls; category: Accou
       </section>
       <MobileScroll className="app-screen purchases-list-scroll">
         <main className="purchases-page page-with-footer" data-testid="purchases-screen">
-          {(category === "sales" || category === "purchases") && ctx.accounts.some((a) => Boolean(a.legacyRef)) ? (
+          {(category === "sales" || category === "purchases") ? (
             <div style={{ padding: "8px 10px 0" }}>
               <button
                 type="button"

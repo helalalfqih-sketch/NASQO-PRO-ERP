@@ -644,6 +644,7 @@ export function subscribeWorkspace(
             openingBalance: Number(data.openingBalance ?? 0),
             openingDirection: data.openingDirection === "credit" ? "credit" : "debit",
             codeNumber: Number(data.codeNumber ?? 1),
+            ...(typeof data.legacyRef === "string" ? { legacyRef: data.legacyRef } : {}),
           };
         });
         list.sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
@@ -677,6 +678,7 @@ export function subscribeWorkspace(
             details: String(data.details ?? ""),
             isDefault: Boolean(data.isDefault),
             codeNumber: Number(data.codeNumber ?? 1),
+            ...(typeof data.legacyRef === "string" ? { legacyRef: data.legacyRef } : {}),
           };
         });
         list.sort((a, b) => a.codeNumber - b.codeNumber);
@@ -702,6 +704,8 @@ export function subscribeWorkspace(
             minThreshold: typeof data.minThreshold === "number" ? data.minThreshold : 25,
             ...(typeof data.sku === "string" && data.sku ? { sku: data.sku } : {}),
             warehouseId: String(data.warehouseId ?? ""),
+            quantityUnverified: Boolean(data.quantityUnverified),
+            ...(typeof data.legacyRef === "string" ? { legacyRef: data.legacyRef } : {}),
           };
         });
         list.sort((a, b) => a.name.localeCompare(b.name, "ar"));
@@ -1272,28 +1276,57 @@ export async function mergeLegacyMasterBatch(
         inventoryAdded += 1;
       }
     }
-    writeLocalSnapshot(snap);
+    // Await the durable IndexedDB commit before reporting an import as successful.
+    // Fire-and-forget snapshot writes could race with reload and lose imported rows.
+    if (!isIndexedDbAvailable()) throw new Error("IndexedDB مطلوب لحفظ الحسابات والأصناف المستوردة على الهاتف.");
+    await writeSnapshotToIndexedDb(snap);
+    try {
+      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(snap));
+    } catch { /* IndexedDB is authoritative if localStorage quota is exceeded. */ }
+    notifyLocalListeners(snap);
     return { accountsAdded, warehousesAdded, inventoryAdded };
   }
 
-  // Firestore chunked batch write (up to 400 ops per batch)
+  // Read existing IDs once per collection. Re-import must never overwrite a
+  // previously imported record that the user subsequently edited.
+  const [existingAccountDocs, existingWarehouseDocs, existingInventoryDocs] = await Promise.all([
+    getDocs(query(collection(db, "workspaces", uid, "accounts"), where("ownerId", "==", uid))),
+    getDocs(query(collection(db, "workspaces", uid, "warehouses"), where("ownerId", "==", uid))),
+    getDocs(query(collection(db, "workspaces", uid, "inventory"), where("ownerId", "==", uid))),
+  ]);
+  const accIds = new Set(existingAccountDocs.docs.map((document) => document.id));
+  const whIds = new Set(existingWarehouseDocs.docs.map((document) => document.id));
+  const invIds = new Set(existingInventoryDocs.docs.map((document) => document.id));
   const ops: { col: "accounts" | "warehouses" | "inventory"; id: string; data: Record<string, unknown> }[] = [];
-  for (const a of payload.accounts) ops.push({ col: "accounts", id: a.id, data: { ...a, ownerId: uid, updatedAt: serverTimestamp() } });
-  for (const w of payload.warehouses) ops.push({ col: "warehouses", id: w.id, data: { ...w, ownerId: uid, updatedAt: serverTimestamp() } });
-  for (const i of payload.inventory) ops.push({ col: "inventory", id: i.id, data: { ...i, ownerId: uid, updatedAt: serverTimestamp() } });
-
+  let accountsAdded = 0;
+  let warehousesAdded = 0;
+  let inventoryAdded = 0;
+  for (const a of payload.accounts) {
+    if (accIds.has(a.id)) continue;
+    accIds.add(a.id);
+    ops.push({ col: "accounts", id: a.id, data: { ...a, ownerId: uid, updatedAt: serverTimestamp() } });
+    accountsAdded += 1;
+  }
+  for (const w of payload.warehouses) {
+    if (whIds.has(w.id)) continue;
+    whIds.add(w.id);
+    ops.push({ col: "warehouses", id: w.id, data: { ...w, ownerId: uid, updatedAt: serverTimestamp() } });
+    warehousesAdded += 1;
+  }
+  for (const i of payload.inventory) {
+    if (invIds.has(i.id)) continue;
+    invIds.add(i.id);
+    ops.push({ col: "inventory", id: i.id, data: { ...i, ownerId: uid, updatedAt: serverTimestamp() } });
+    inventoryAdded += 1;
+  }
   for (let start = 0; start < ops.length; start += 400) {
     const batch = writeBatch(db);
     for (const op of ops.slice(start, start + 400)) {
-      batch.set(doc(db, "workspaces", uid, op.col, op.id), op.data, { merge: true });
+      batch.set(doc(db, "workspaces", uid, op.col, op.id), op.data);
     }
     await batch.commit();
   }
-  return {
-    accountsAdded: payload.accounts.length,
-    warehousesAdded: payload.warehouses.length,
-    inventoryAdded: payload.inventory.length,
-  };
+  return { accountsAdded, warehousesAdded, inventoryAdded };
 }
 
 /**

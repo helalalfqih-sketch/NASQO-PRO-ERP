@@ -13,6 +13,7 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
   const [moves, setMoves] = useState<Row[]>([]);
   const [invoicesCount, setInvoicesCount] = useState(0);
   const [vouchersCount, setVouchersCount] = useState(0);
+  const [invoiceIds, setInvoiceIds] = useState<Set<number>>(() => new Set());
   const [expanded, setExpanded] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<LegacyInvoice | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState(false);
@@ -26,14 +27,18 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
     let active = true;
     void (async () => {
       try {
-        const info = await getActiveArchiveInfo();
-        if (!info || !active) return;
-        const res = await loadCustomerHistoricalMoves(info.sha256, account.codeNumber);
+        const info = await getActiveArchiveInfo(account.ownerId, account.legacyRef);
+        if (!active) return;
+        if (!info) { setSha256(null); setMoves([]); return; }
+        const legacyId = Number(account.legacyRef?.split(":").at(-1));
+        if (!Number.isInteger(legacyId)) return;
+        const res = await loadCustomerHistoricalMoves(info.sha256, legacyId);
         if (!active) return;
         setSha256(info.sha256);
         setMoves([...res.moves].reverse());
         setInvoicesCount(res.invoicesCount);
         setVouchersCount(res.vouchersCount);
+        setInvoiceIds(new Set(res.invoiceIds));
       } catch {
         // ignore if IndexedDB unavailable
       }
@@ -177,7 +182,7 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
                   <tr key={String(m.id)} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td style={{ padding: "5px 6px", fontWeight: 700 }}>{String(m.id)}</td>
                     <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>{dateStr}</td>
-                    <td style={{ padding: "5px 6px" }}>{bt === 1 ? "سند" : `فاتورة (${bt})`}</td>
+                    <td style={{ padding: "5px 6px" }}>{invoiceIds.has(Number(m.id)) ? `فاتورة (${bt})` : `حركة (${bt})`}</td>
                     <td style={{ padding: "5px 6px", whiteSpace: "nowrap" }}>
                       {String(m.dain)} / {String(m.madin)}
                     </td>
@@ -185,7 +190,7 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
                       {String(m.details || "—")}
                     </td>
                     <td style={{ padding: "5px 6px" }}>
-                      {bt !== 1 ? (
+                      {invoiceIds.has(Number(m.id)) ? (
                         <button
                           type="button"
                           onClick={() => void openInvoiceDetail(Number(m.id))}

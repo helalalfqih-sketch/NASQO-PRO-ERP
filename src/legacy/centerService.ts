@@ -32,12 +32,31 @@ export type ActiveArchiveInfo = {
   batch: BatchRecord;
 };
 
-export async function getActiveArchiveInfo(): Promise<ActiveArchiveInfo | null> {
+export async function getActiveArchiveInfo(
+  workspaceId?: string,
+  legacyReference?: string,
+): Promise<ActiveArchiveInfo | null> {
   if (typeof indexedDB === "undefined") return null;
   const db = await openCenterDb();
   try {
     const batches = await listBatches(db);
-    const active = batches.find((b) => b.kind === "archive" && b.status === "complete");
+    // A workspace cannot browse a different user's local historical archive.
+    // For a linked account, the source ref is stronger than "most recent import".
+    let requestedSha: string | null = null;
+    if (legacyReference) {
+      const match = /^([a-f0-9]{12}):customers:(\d+)$/.exec(legacyReference);
+      if (!match) return null;
+      requestedSha = batches.find((b) =>
+        b.kind === "archive" && b.status === "complete" && b.sha256.startsWith(match[1]),
+      )?.sha256 ?? null;
+      if (!requestedSha) return null;
+    } else if (workspaceId) {
+      requestedSha = await getSetting<string>(db, `activeArchive:${workspaceId}`);
+      if (!requestedSha) return null;
+    }
+    const active = batches.find((b) =>
+      b.kind === "archive" && b.status === "complete" && (!requestedSha || b.sha256 === requestedSha),
+    );
     if (!active) return null;
     return { sha256: active.sha256, batchId: active.batchId, batch: active };
   } finally {
@@ -131,14 +150,19 @@ export async function loadCustomerHistoricalMoves(
   moves: Row[];
   invoicesCount: number;
   vouchersCount: number;
+  invoiceIds: number[];
 }> {
   const db = await openCenterDb();
   try {
     const batchId = archiveBatchId(sha256);
     const moves = await rowsByFk(db, batchId, "input_move", legacyCustomerId);
-    const invoicesCount = moves.filter((m) => Number(m.bill_type) !== 1).length;
-    const vouchersCount = moves.filter((m) => Number(m.bill_type) === 1).length;
-    return { moves, invoicesCount, vouchersCount };
+    const priced = await allRows(db, batchId, "bill_details");
+    const free = await allRows(db, batchId, "bill_details2");
+    const idsWithLines = new Set([...priced, ...free].map((l) => String(l.bill_id)));
+    const invoiceIds = moves.filter((m) => idsWithLines.has(String(m.id))).map((m) => Number(m.id));
+    const invoicesCount = invoiceIds.length;
+    const vouchersCount = moves.length - invoicesCount;
+    return { moves, invoicesCount, vouchersCount, invoiceIds };
   } finally {
     db.close();
   }

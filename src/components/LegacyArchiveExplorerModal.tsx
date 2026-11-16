@@ -11,6 +11,8 @@ type Props = {
   onClose: () => void;
   initialMode?: "moves" | "invoices";
   initialRoleFilter?: string;
+  initialSearch?: string;
+  workspaceId: string;
 };
 
 export function LegacyArchiveExplorerModal({
@@ -18,6 +20,8 @@ export function LegacyArchiveExplorerModal({
   onClose,
   initialMode = "invoices",
   initialRoleFilter = "all",
+  initialSearch = "",
+  workspaceId,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,13 +34,17 @@ export function LegacyArchiveExplorerModal({
   } | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      // Release 26k archived rows and invoice reconciliation in mobile RAM.
+      setData(null);
+      return;
+    }
     let active = true;
     setLoading(true);
     setError("");
     void (async () => {
       try {
-        const info = await getActiveArchiveInfo();
+        const info = await getActiveArchiveInfo(workspaceId);
         if (!info) {
           if (active) setData(null);
           return;
@@ -63,7 +71,7 @@ export function LegacyArchiveExplorerModal({
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [open, workspaceId]);
 
   if (!open) return null;
 
@@ -99,7 +107,7 @@ export function LegacyArchiveExplorerModal({
           {error ? <p style={{ color: "#991b1b" }}>⚠️ {error}</p> : null}
           {!loading && !error && !data ? (
             <p style={{ color: "#64748b", fontSize: 13 }}>
-              لا يوجد أرشيف تاريخي مستورد بعد. افتح «مركز استيراد وترحيل قواعد البيانات» من الإعدادات أو القائمة الجانبية لاستيراد ملف SQLite أولًا.
+              لا يوجد أرشيف تاريخي مربوط بمساحة العمل الحالية على هذا المتصفح. افتح «مركز استيراد وترحيل قواعد البيانات» من الإعدادات أو القائمة الجانبية لاستيراد ملف SQLite أولًا.
             </p>
           ) : null}
           {!loading && data ? (
@@ -111,6 +119,7 @@ export function LegacyArchiveExplorerModal({
               policy={data.policy}
               initialMode={initialMode}
               initialRoleFilter={initialRoleFilter}
+              initialSearch={initialSearch}
               onClose={onClose}
             />
           ) : null}
