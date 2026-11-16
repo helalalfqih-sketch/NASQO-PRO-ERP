@@ -1,0 +1,56 @@
+name: Deploy NASQO mobile web to waha-shopify-test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: nasqo-mobile-production
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install and test
+        run: |
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run lint
+          npm run build
+          npm run test:sites
+      - name: Prepare release
+        run: |
+          mkdir -p release/dist
+          cp package.json server.ts Dockerfile.deploy release/
+          cp -a dist/client release/dist/client
+          cp deploy/deploy.sh release/deploy.sh
+          tar -czf "$RUNNER_TEMP/nsqo-release.tar.gz" -C release .
+      - name: Configure SSH (host key pinned)
+        env:
+          SSH_KEY: ${{ secrets.NASQO_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.NASQO_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.NASQO_DEPLOY_HOST }}
+          USER: ${{ secrets.NASQO_DEPLOY_USER }}
+        run: |
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$HOST" && test -n "$USER"
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/nasqo_deploy"
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/nasqo_deploy" "$HOME/.ssh/known_hosts"
+      - name: Upload and promote verified release
+        env:
+          HOST: ${{ secrets.NASQO_DEPLOY_HOST }}
+          USER: ${{ secrets.NASQO_DEPLOY_USER }}
+        run: |
+          SSH=(ssh -i "$HOME/.ssh/nasqo_deploy" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          SCP=(scp -i "$HOME/.ssh/nasqo_deploy" -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          "${SSH[@]}" "$USER@$HOST" 'mkdir -p "$HOME/apps/nsqo-mobile/releases"'
+          "${SCP[@]}" "$RUNNER_TEMP/nsqo-release.tar.gz" "$USER@$HOST:/tmp/nsqo-${GITHUB_SHA}.tar.gz"
+          "${SSH[@]}" "$USER@$HOST" "set -e; mkdir -p \"\$HOME/apps/nsqo-mobile/releases/${GITHUB_SHA}\"; tar -xzf '/tmp/nsqo-${GITHUB_SHA}.tar.gz' -C \"\$HOME/apps/nsqo-mobile/releases/${GITHUB_SHA}\"; rm -f '/tmp/nsqo-${GITHUB_SHA}.tar.gz'; bash \"\$HOME/apps/nsqo-mobile/releases/${GITHUB_SHA}/deploy.sh\" '${GITHUB_SHA}'"
