@@ -37,6 +37,8 @@ import {
 import {
   addJournal,
   archiveBatchId,
+  getBatch,
+  getSetting,
   getSource,
   importArchive,
   listBatches,
@@ -151,6 +153,18 @@ export function FullSqliteImportModal({
       setError("");
       setNotice("");
       setConfirmPosting(false);
+      // IndexedDB is authoritative. Do not pin ~26k source rows and SQLite
+      // bytes in mobile RAM for the entire lifetime of the app after closing.
+      setRawBytes(null);
+      setSchema(null);
+      setTables(null);
+      setRelations([]);
+      setDistincts([]);
+      setEvidence([]);
+      setDuplicates(null);
+      setReviews([]);
+      setGroupSuggestions([]);
+      setRestoreVerification(null);
     }
   }, [open]);
 
@@ -182,9 +196,15 @@ export function FullSqliteImportModal({
         setEvidence(ev);
         setDuplicates(dup);
         setReviews(rev);
-        setRoles(suggestedRoleMapping(ev));
+        // Reopening the same database must retain user-reviewed mappings.
+        const centerDb = await openCenterDb();
+        try {
+          setRoles((await getSetting<RoleMapping>(centerDb, `roles:${sc.sha256}`)) ?? suggestedRoleMapping(ev));
+          setGroupCategories((await getSetting<Record<string, AccountCategory>>(centerDb, `groups:${sc.sha256}`)) ?? defaultCats);
+        } finally {
+          centerDb.close();
+        }
         setGroupSuggestions(grp);
-        setGroupCategories(defaultCats);
         setSelectedTable(sc.tables.find((t) => t.name === "input_move")?.name ?? sc.tables[0]?.name ?? "");
         setPreviewPage(0);
         setNotice(`تم فتح قاعدة البيانات بنجاح: ${sc.tableCount} جدولًا و ${sc.totalRows.toLocaleString("en-US")} سجل (السلامة: ${sc.integrity}).`);
@@ -336,6 +356,7 @@ export function FullSqliteImportModal({
           onProgress: ({ written, total }) =>
             setProgressText(`تمت أرشفة ${written.toLocaleString("en-US")} من ${total.toLocaleString("en-US")} سجلًا...`),
         });
+        await putSetting(db, `activeArchive:${workspaceId}`, schema.sha256);
         setNotice(
           res.duplicate
             ? "هذا الأرشيف التاريخي مستورد مسبقًا ومكتمل (منع التكرار)."
@@ -354,6 +375,85 @@ export function FullSqliteImportModal({
     }
   };
 
+  // Explicit one-click non-posting import. Each stage is restartable by stable source IDs.
+  // A failed step leaves the original bytes and the completed archive untouched.
+  const handleImportAndShow = async () => {
+    if (!schema || !tables || !rawBytes || !masterPreview || busy) return;
+    setBusy(true);
+    setError("");
+    setProgressText("1/3: حفظ الملف الأصلي واستيراد سجلات الأرشيف...");
+    try {
+      const db = await openCenterDb();
+      try {
+        await putSource(db, {
+          sha256: schema.sha256,
+          fileName: schema.fileName,
+          size: rawBytes.byteLength,
+          bytes: rawBytes,
+          savedAt: new Date().toISOString(),
+          integrity: schema.integrity,
+          tableCounts: Object.fromEntries(schema.tables.map((t) => [t.name, t.rowCount])),
+          totalRows: schema.totalRows,
+        });
+        await putSetting(db, `roles:${schema.sha256}`, roles);
+        await putSetting(db, `groups:${schema.sha256}`, groupCategories);
+        await importArchive(db, schema.sha256, tables, {
+          chunkSize: 2000,
+          note: schema.fileName,
+          onProgress: ({ written, total }) => setProgressText(`1/3: أرشفة ${written.toLocaleString("en-US")} من ${total.toLocaleString("en-US")} سجلًا...`),
+        });
+        await putSetting(db, `activeArchive:${workspaceId}`, schema.sha256);
+      } finally { db.close(); }
+
+      setProgressText("2/3: إظهار الحسابات والأصناف والمخازن في شاشات نسق برو...");
+      const master = masterPreview.master;
+      const result = await mergeLegacyMasterBatch(workspaceId, {
+        accounts: master.accounts, warehouses: master.warehouses, inventory: master.inventory,
+      });
+
+      setProgressText("3/3: توثيق المعرفات ونتيجة الاستيراد...");
+      const audit = await openCenterDb();
+      try {
+        const batchId = `master:${schema.sha256}`;
+        await putIdMap(audit, batchId, master.idMap.map((r) => ({ kind: r.kind, legacyId: r.legacyId, liveId: r.liveId })));
+        await putBatch(audit, {
+          batchId, kind: "master", sha256: schema.sha256, status: "complete",
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+          total: master.accounts.length + master.warehouses.length + master.inventory.length,
+          nextIndex: master.accounts.length + master.warehouses.length + master.inventory.length,
+          tableCounts: { accounts: result.accountsAdded, warehouses: result.warehousesAdded, inventory: result.inventoryAdded },
+          counts: result,
+        });
+        await addJournal(audit, { batchId, level: "info", message: `استيراد آمن ومتكامل: ${schema.totalRows} سجلًا تاريخيًا، ${result.accountsAdded} حسابًا، ${result.inventoryAdded} صنفًا، ${result.warehousesAdded} مخزنًا. القيود غير مرحّلة.` });
+      } finally { audit.close(); }
+      setNotice(`تم حفظ الأرشيف وإظهار البيانات: ${result.accountsAdded} حسابًا جديدًا، ${result.inventoryAdded} صنفًا، ${result.warehousesAdded} مخزنًا. يمكن إعادة الاستيراد دون تكرار. جميع القيود والفواتير غير مُرحّلة محاسبيًا.`);
+      onNotify("تم حفظ الأرشيف وربط الحسابات والمخازن والأصناف بواجهات التطبيق.");
+      await refreshCenterHistory();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر إكمال الاستيراد المتكامل. يمكن إعادة المحاولة دون حذف بياناتك.");
+    } finally {
+      setBusy(false);
+      setProgressText("");
+    }
+  };
+
+  // Save reviewed classifications independently of re-importing the same source.
+  const handleSaveMappings = async () => {
+    if (!schema || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const db = await openCenterDb();
+      try {
+        await putSetting(db, `roles:${schema.sha256}`, roles);
+        await putSetting(db, `groups:${schema.sha256}`, groupCategories);
+        setNotice("حُفظت تصنيفات المستندات والحسابات في هذا المتصفح. لم يُرحَّل أي قيد مالي.");
+      } finally { db.close(); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "فشل حفظ التصنيفات.");
+    } finally { setBusy(false); }
+  };
+
   // Mode C1: Migrate Master Data (Customers, Stores, Products)
   const handleMigrateMasterData = async () => {
     if (!masterPreview || !schema || busy) return;
@@ -361,6 +461,14 @@ export function FullSqliteImportModal({
     setError("");
     setProgressText("جاري ترحيل العملاء والمخازن والأصناف إلى وحدات نسق برو...");
     try {
+      // Require a complete historical archive before publishing master records.
+      const center = await openCenterDb();
+      try {
+        const archive = await getBatch(center, archiveBatchId(schema.sha256));
+        if (!archive || archive.status !== "complete") {
+          throw new Error("استورد الأرشيف التاريخي (الزر ب) أولًا، ثم أظهر العملاء والأصناف والمخازن.");
+        }
+      } finally { center.close(); }
       const { master } = masterPreview;
       const result = await mergeLegacyMasterBatch(workspaceId, {
         accounts: master.accounts,
@@ -371,6 +479,7 @@ export function FullSqliteImportModal({
       const db = await openCenterDb();
       try {
         const batchId = `master:${schema.sha256}`;
+        await putSetting(db, `activeArchive:${workspaceId}`, schema.sha256);
         await putIdMap(
           db,
           batchId,
@@ -715,7 +824,7 @@ export function FullSqliteImportModal({
                 ب. استيراد الأرشيف التاريخي ({schema.totalRows.toLocaleString("en-US")})
               </button>
               <button type="button" onClick={handleMigrateMasterData} disabled={busy} style={{ background: "#7c3aed", color: "#fff", border: "none", padding: "7px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                ج. ترحيل العملاء والأصناف والمخازن
+                ج. إظهار العملاء والأصناف والمخازن في واجهات التطبيق
               </button>
               <button type="button" onClick={handleExportAuditReport} style={{ background: "#475569", color: "#fff", border: "none", padding: "7px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                 تصدير تقرير التدقيق
@@ -723,6 +832,24 @@ export function FullSqliteImportModal({
             </div>
           ) : null}
 
+          {schema ? (
+            <p role="status" style={{ margin: "0 0 12px", color: "#475569", fontSize: 12 }}>
+              لإظهار البيانات في قوائم الحسابات والمخزون: نفّذ (ب) ثم (ج). حفظ المصدر أو استيراد الأرشيف وحده لا يملأ الشاشات الحية. الفواتير والقيود تبقى تاريخية غير مُرحّلة حتى المطابقة.
+            </p>
+          ) : null}
+          {schema ? (
+            <div style={{ marginBottom: 10 }}>
+              <button
+                type="button"
+                data-testid="legacy-import-and-show"
+                onClick={handleImportAndShow}
+                disabled={busy || !masterPreview}
+                style={{ width: "100%", padding: "12px", border: 0, borderRadius: 9, background: "#0f766e", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+              >
+                استيراد آمن وإظهار الحسابات والأصناف والمخازن بضغطة واحدة (دون ترحيل مالي)
+              </button>
+            </div>
+          ) : null}
           {/* Tabs */}
           <div style={{ display: "flex", gap: 4, borderBottom: "2px solid #e2e8f0", marginBottom: 12, flexWrap: "wrap" }}>
             {[
@@ -943,6 +1070,10 @@ export function FullSqliteImportModal({
                   ))}
                 </div>
               </div>
+
+              <button type="button" onClick={handleSaveMappings} disabled={busy} style={{ alignSelf: "flex-start", padding: "8px 14px", border: 0, borderRadius: 8, background: "#0369a1", color: "#fff", cursor: "pointer", fontWeight: 700 }}>
+                حفظ تصنيفات المستندات والحسابات للبحث والعرض
+              </button>
 
               <div style={{ padding: 12, borderRadius: 10, background: "#f8fafc", border: "1px solid #cbd5e1" }}>
                 <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>3. سياسة التفسير المحاسبي لترحيل القيود المتوازنة فقط:</h4>

@@ -13,6 +13,8 @@ import {
   type RoleMapping,
 } from "../legacy/analysis";
 import type { Row, Tables } from "../legacy/adapter";
+import { indexHistoricalInvoices, searchHistoricalInvoices } from "../legacy/search";
+import { normalizeArabicSearch } from "../accounting";
 
 type Props = {
   tables: Tables;
@@ -22,6 +24,7 @@ type Props = {
   policy: DirectionPolicy | null;
   initialMode?: "moves" | "invoices";
   initialRoleFilter?: string;
+  initialSearch?: string;
   onClose?: () => void;
 };
 
@@ -40,12 +43,13 @@ export function LegacyReconciliationView({
   policy,
   initialMode = "moves",
   initialRoleFilter = "all",
+  initialSearch = "",
   onClose,
 }: Props) {
   const [mode, setMode] = useState<"moves" | "invoices">(initialMode);
   const [statusFilter, setStatusFilter] = useState<"all" | MoveStatus>("all");
   const [roleFilter, setRoleFilter] = useState<string>(initialRoleFilter);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [page, setPage] = useState(0);
   const [selectedInvoice, setSelectedInvoice] = useState<LegacyInvoice | null>(null);
   const pageSize = 40;
@@ -53,38 +57,26 @@ export function LegacyReconciliationView({
   const summary = useMemo(() => summarizeReview(reviews), [reviews]);
 
   const filteredMoves = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = normalizeArabicSearch(search);
     return reviews.filter((r) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (!q) return true;
       return (
         String(r.id).includes(q) ||
-        r.personName.toLowerCase().includes(q) ||
-        r.details.toLowerCase().includes(q) ||
-        r.groupRef.includes(q)
+        normalizeArabicSearch(`${r.documentNumber} ${r.personId} ${r.personName} ${r.details} ${r.groupRef}`).includes(q)
       );
     });
   }, [reviews, statusFilter, search]);
 
-  const invoiceMoves = useMemo(() => {
-    const invoiceTypes = new Set(evidence.filter((e) => e.withPricedLines + e.withFreeLines > 0).map((e) => e.billType));
-    const q = search.trim().toLowerCase();
-    const list: { row: Row; table: "input_move" | "bin"; role: string; personName: string }[] = [];
-    const custMap = new Map((tables.customers ?? []).map((c) => [String(c.id), String(c.name ?? "")]));
-
-    for (const m of tables.input_move ?? []) {
-      const bt = Number(m.bill_type);
-      if (!invoiceTypes.has(bt)) continue;
-      const role = roles[String(bt)]?.role ?? "unknown";
-      if (roleFilter !== "all" && role !== roleFilter) continue;
-      const pname = custMap.get(String(m.per_id)) ?? "";
-      if (q && !String(m.id).includes(q) && !pname.toLowerCase().includes(q) && !String(m.details ?? "").toLowerCase().includes(q)) {
-        continue;
-      }
-      list.push({ row: m, table: "input_move", role, personName: pname });
-    }
-    return list;
-  }, [tables, evidence, roles, roleFilter, search]);
+  const allInvoices = useMemo(() => indexHistoricalInvoices(tables, roles), [tables, roles]);
+  const invoiceMoves = useMemo(
+    () => searchHistoricalInvoices(allInvoices, search, roleFilter),
+    [allInvoices, search, roleFilter],
+  );
+  const unclassifiedInvoices = useMemo(
+    () => allInvoices.filter((invoice) => !invoice.roleConfirmed).length,
+    [allInvoices],
+  );
 
   const openInvoice = (moveRow: Row, table: "input_move" | "bin") => {
     const id = String(moveRow.id);
@@ -214,7 +206,7 @@ export function LegacyReconciliationView({
           type="search"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-          placeholder="بحث برقم الحركة، اسم العميل، المرجع أو البيان..."
+          placeholder="بحث برقم الفاتورة أو المستند أو العميل أو الصنف أو الباركود..."
           style={{ flex: "1 1 220px", padding: "7px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 }}
         />
         {mode === "moves" ? (
@@ -231,11 +223,12 @@ export function LegacyReconciliationView({
           </select>
         ) : (
           <select
+            aria-label="تصفية الفواتير التاريخية حسب النوع المعتمد"
             value={roleFilter}
             onChange={(e) => { setRoleFilter(e.target.value); setPage(0); }}
             style={{ padding: "7px 10px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 }}
           >
-            <option value="all">جميع أنواع الفواتير</option>
+            <option value="all">جميع الفواتير، بما فيها غير المصنفة</option>
             <option value="sale">مبيعات (sale)</option>
             <option value="purchase">مشتريات (purchase)</option>
             <option value="sale_return">مردود بيع</option>
@@ -246,6 +239,11 @@ export function LegacyReconciliationView({
         )}
       </div>
 
+      {mode === "invoices" && unclassifiedInvoices > 0 ? (
+        <p role="status" style={{ margin: 0, fontSize: 12, color: "#854d0e" }}>
+          {unclassifiedInvoices.toLocaleString("en-US")} مستندًا لم يُعتمد نوعه بعد. تظهر في «جميع الفواتير»؛ راجع خريطة أنواع العمليات في مركز الترحيل قبل تصفيتها كمبيعات أو مشتريات.
+        </p>
+      ) : null}
       {/* Table */}
       {mode === "moves" ? (
         <div style={{ maxHeight: 340, overflow: "auto", border: "1px solid #e2e8f0", borderRadius: 10, background: "#ffffff" }}>
@@ -306,17 +304,19 @@ export function LegacyReconciliationView({
                 <th style={{ padding: "8px" }}>العميل / المورد</th>
                 <th style={{ padding: "8px" }}>التاريخ</th>
                 <th style={{ padding: "8px" }}>dain / madin</th>
+                <th style={{ padding: "8px" }}>البنود</th>
                 <th style={{ padding: "8px" }}>الإجراء</th>
               </tr>
             </thead>
             <tbody>
-              {invoiceMoves.slice(page * pageSize, (page + 1) * pageSize).map(({ row, table, role, personName }) => (
+              {invoiceMoves.slice(page * pageSize, (page + 1) * pageSize).map(({ row, table, role, personName, lineCount }) => (
                 <tr key={`${table}:${row.id}`} style={{ borderBottom: "1px solid #f1f5f9" }}>
                   <td style={{ padding: "6px 8px", fontWeight: 700 }}>#{String(row.id)}</td>
                   <td style={{ padding: "6px 8px" }}>{ROLE_LABELS[role as keyof typeof ROLE_LABELS] ?? role}</td>
                   <td style={{ padding: "6px 8px" }}>{personName || `#${row.per_id}`}</td>
                   <td style={{ padding: "6px 8px" }}>{`${row.year}-${String(row.month).padStart(2, "0")}-${String(row.day).padStart(2, "0")}`}</td>
                   <td style={{ padding: "6px 8px" }}>{String(row.dain)} / {String(row.madin)}</td>
+                  <td style={{ padding: "6px 8px" }}>{lineCount}</td>
                   <td style={{ padding: "6px 8px" }}>
                     <button
                       type="button"
