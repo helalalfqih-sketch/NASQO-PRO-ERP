@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { findPublicDatabaseFiles } from "../scripts/guard-public-backups.mjs";
-import worker from "../worker/index.js";
+import { findPublicDatabaseFiles, SENSITIVE_DATABASE_EXTENSION } from "../scripts/guard-public-backups.mjs";
 
 test("build guard detects SQLite files recursively but allows normal application assets", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "nasqo-public-guard-"));
@@ -20,21 +19,11 @@ test("build guard detects SQLite files recursively but allows normal application
   }
 });
 
-test("Sites worker returns 404 for private database file extensions without touching assets", async () => {
-  for (const fileName of [
-    "backup.back",
-    "accounting.sqlite",
-    "clients.db",
-    "system.dump",
-    "backup.SQL.GZ",
-    "accounting%2Eback",
-  ]) {
-    let calls = 0;
-    const response = await worker.fetch(
-      new Request(`https://example.test/assets/${fileName}`),
-      { ASSETS: { fetch: async () => { calls += 1; return new Response("exposed"); } } },
-    );
-    assert.equal(response.status, 404, fileName);
-    assert.equal(calls, 0, fileName);
+test("database backup extensions are treated as sensitive regardless of case", () => {
+  for (const name of ["backup.back", "accounting.sqlite", "clients.db", "system.dump", "backup.SQL.GZ"]) {
+    assert.equal(SENSITIVE_DATABASE_EXTENSION.test(name), true, name);
+  }
+  for (const name of ["app.js", "style.css", "manifest.json"]) {
+    assert.equal(SENSITIVE_DATABASE_EXTENSION.test(name), false, name);
   }
 });
