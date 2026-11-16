@@ -572,6 +572,30 @@ export function subscribeWorkspace(
       callbacks.onWarehouses([...snapshot.warehouses].sort((a, b) => a.codeNumber - b.codeNumber));
       callbacks.onInventory([...snapshot.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar")));
     });
+    if (isIndexedDbAvailable()) {
+      void readSnapshotFromIndexedDb(uid)
+        .then((idbSnap) => {
+          if (!idbSnap || !localListeners.has(callbacks)) return;
+          const totalIdb =
+            idbSnap.accounts.length +
+            idbSnap.ledger.length +
+            idbSnap.warehouses.length +
+            idbSnap.inventory.length;
+          const totalLs =
+            snapshot.accounts.length +
+            snapshot.ledger.length +
+            snapshot.warehouses.length +
+            snapshot.inventory.length;
+          if (totalIdb > totalLs) {
+            callbacks.onWorkspace(idbSnap.workspace);
+            callbacks.onAccounts([...idbSnap.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
+            callbacks.onLedger([...idbSnap.ledger]);
+            callbacks.onWarehouses([...idbSnap.warehouses].sort((a, b) => a.codeNumber - b.codeNumber));
+            callbacks.onInventory([...idbSnap.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+          }
+        })
+        .catch(() => {});
+    }
     return () => {
       localListeners.delete(callbacks);
     };
@@ -1210,4 +1234,141 @@ export async function fetchInvoiceFromDatabase(
   }
 
   return null;
+}
+
+/**
+ * Atomically merges migrated legacy master records (accounts, warehouses, inventory)
+ * into the live workspace without overwriting or deleting existing user records.
+ */
+export async function mergeLegacyMasterBatch(
+  uid: string,
+  payload: {
+    accounts: readonly AccountRecord[];
+    warehouses: readonly WarehouseRecord[];
+    inventory: readonly InventoryItemRecord[];
+  },
+): Promise<{ accountsAdded: number; warehousesAdded: number; inventoryAdded: number }> {
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const accIds = new Set(snap.accounts.map((a) => a.id));
+    const whIds = new Set(snap.warehouses.map((w) => w.id));
+    const invIds = new Set(snap.inventory.map((i) => i.id));
+
+    let accountsAdded = 0;
+    for (const acc of payload.accounts) {
+      if (!accIds.has(acc.id)) {
+        snap.accounts.push(acc);
+        accIds.add(acc.id);
+        accountsAdded += 1;
+      }
+    }
+    let warehousesAdded = 0;
+    for (const wh of payload.warehouses) {
+      if (!whIds.has(wh.id)) {
+        snap.warehouses.push(wh);
+        whIds.add(wh.id);
+        warehousesAdded += 1;
+      }
+    }
+    let inventoryAdded = 0;
+    for (const item of payload.inventory) {
+      if (!invIds.has(item.id)) {
+        snap.inventory.push(item);
+        invIds.add(item.id);
+        inventoryAdded += 1;
+      }
+    }
+    writeLocalSnapshot(snap);
+    return { accountsAdded, warehousesAdded, inventoryAdded };
+  }
+
+  // Firestore chunked batch write (up to 400 ops per batch)
+  const ops: { col: "accounts" | "warehouses" | "inventory"; id: string; data: Record<string, unknown> }[] = [];
+  for (const a of payload.accounts) ops.push({ col: "accounts", id: a.id, data: { ...a, ownerId: uid, updatedAt: serverTimestamp() } });
+  for (const w of payload.warehouses) ops.push({ col: "warehouses", id: w.id, data: { ...w, ownerId: uid, updatedAt: serverTimestamp() } });
+  for (const i of payload.inventory) ops.push({ col: "inventory", id: i.id, data: { ...i, ownerId: uid, updatedAt: serverTimestamp() } });
+
+  for (let start = 0; start < ops.length; start += 400) {
+    const batch = writeBatch(db);
+    for (const op of ops.slice(start, start + 400)) {
+      batch.set(doc(db, "workspaces", uid, op.col, op.id), op.data, { merge: true });
+    }
+    await batch.commit();
+  }
+  return {
+    accountsAdded: payload.accounts.length,
+    warehousesAdded: payload.warehouses.length,
+    inventoryAdded: payload.inventory.length,
+  };
+}
+
+/**
+ * Atomically posts verified, balanced legacy ledger entries to the live ledger
+ * without duplicating already-posted entries.
+ */
+export async function postLegacyLedgerBatch(
+  uid: string,
+  entries: readonly LedgerEntryRecord[],
+): Promise<{ added: number; skippedDuplicates: number }> {
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const existingIds = new Set(snap.ledger.map((e) => e.id));
+    let added = 0;
+    let skippedDuplicates = 0;
+    for (const entry of entries) {
+      if (existingIds.has(entry.id)) {
+        skippedDuplicates += 1;
+      } else {
+        snap.ledger.push(entry);
+        existingIds.add(entry.id);
+        added += 1;
+      }
+    }
+    writeLocalSnapshot(snap);
+    return { added, skippedDuplicates };
+  }
+
+  for (let start = 0; start < entries.length; start += 400) {
+    const batch = writeBatch(db);
+    for (const entry of entries.slice(start, start + 400)) {
+      batch.set(doc(db, "workspaces", uid, "ledger", entry.id), { ...entry, ownerId: uid, updatedAt: serverTimestamp() }, { merge: true });
+    }
+    await batch.commit();
+  }
+  return { added: entries.length, skippedDuplicates: 0 };
+}
+
+/**
+ * Rolls back ONLY the live records imported from a specific legacy SQLite source (matched by its prefix),
+ * leaving all user-created records untouched.
+ */
+export async function rollbackLegacyLivePrefix(
+  uid: string,
+  prefix: string,
+): Promise<{ accountsRemoved: number; warehousesRemoved: number; inventoryRemoved: number; ledgerRemoved: number }> {
+  if (!prefix || prefix.length < 6) {
+    throw new Error("معرف دفعة الترحيل غير صالح للتراجع.");
+  }
+  const match = (id: string) => id.startsWith(`${prefix}_`);
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const beforeAcc = snap.accounts.length;
+    const beforeWh = snap.warehouses.length;
+    const beforeInv = snap.inventory.length;
+    const beforeLed = snap.ledger.length;
+
+    snap.accounts = snap.accounts.filter((a) => !match(a.id));
+    snap.warehouses = snap.warehouses.filter((w) => !match(w.id));
+    snap.inventory = snap.inventory.filter((i) => !match(i.id));
+    snap.ledger = snap.ledger.filter((e) => !match(e.id));
+
+    writeLocalSnapshot(snap);
+    return {
+      accountsRemoved: beforeAcc - snap.accounts.length,
+      warehousesRemoved: beforeWh - snap.warehouses.length,
+      inventoryRemoved: beforeInv - snap.inventory.length,
+      ledgerRemoved: beforeLed - snap.ledger.length,
+    };
+  }
+  return { accountsRemoved: 0, warehousesRemoved: 0, inventoryRemoved: 0, ledgerRemoved: 0 };
 }

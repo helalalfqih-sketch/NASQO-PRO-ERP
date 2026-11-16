@@ -398,7 +398,13 @@ export function ErpCrmPosScreen({
                         <strong>{item.name}</strong>
                         <small>
                           السعر: <bdi>{formatAmount(sellPrice)}</bdi> {currency} · المتاح:{" "}
-                          <bdi>{item.quantity}</bdi> {item.unit}
+                          {item.quantityUnverified ? (
+                            <bdi style={{ color: "#b45309" }}>بحاجة إلى تسوية</bdi>
+                          ) : (
+                            <>
+                              <bdi>{item.quantity}</bdi> {item.unit}
+                            </>
+                          )}
                         </small>
                       </div>
                       <div className="erp-stepper">

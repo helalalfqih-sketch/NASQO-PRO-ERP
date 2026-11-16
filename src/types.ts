@@ -83,6 +83,8 @@ export type AccountRecord = {
   openingBalance: number;
   openingDirection: "debit" | "credit";
   codeNumber: number;
+  /** stable reference to the legacy SQLite source row (`<sha12>:<table>:<id>`) */
+  legacyRef?: string;
 };
 
 export type LedgerEntryRecord = {
@@ -111,6 +113,7 @@ export type LedgerEntryRecord = {
   expenseCategory?: string;
   deliveryDays?: number;
   createdAtMs: number;
+  legacyRef?: string;
 };
 
 export type WarehouseRecord = {
@@ -120,6 +123,7 @@ export type WarehouseRecord = {
   details: string;
   isDefault: boolean;
   codeNumber: number;
+  legacyRef?: string;
 };
 
 export type InventoryItemRecord = {
@@ -132,6 +136,9 @@ export type InventoryItemRecord = {
   minThreshold?: number;
   sku?: string;
   warehouseId: string;
+  /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
+  quantityUnverified?: boolean;
+  legacyRef?: string;
 };
 
 export type StatementRowWithBalance = LedgerEntryRecord & {

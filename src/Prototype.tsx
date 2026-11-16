@@ -82,6 +82,9 @@ import { DashboardScreen } from "./components/DashboardScreen";
 import { ExpenseCategorySelector } from "./components/ExpenseCategorySelector";
 import { GoogleDriveModal } from "./components/GoogleDriveModal";
 import { LegacyFinancialImportModal } from "./components/LegacyFinancialImportModal";
+import { FullSqliteImportModal } from "./components/FullSqliteImportModal";
+import { LegacyArchiveExplorerModal } from "./components/LegacyArchiveExplorerModal";
+import { CustomerLegacyArchiveSection } from "./components/CustomerLegacyArchiveSection";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
@@ -206,6 +209,8 @@ type OverlayKind =
   | "backup-name"
   | "google-drive"
   | "legacy-financial-import"
+  | "full-sqlite-import"
+  | "legacy-archive-explorer"
   | "transfer"
   | null;
 type AccountCreateMode = "compact" | "extended";
@@ -255,6 +260,8 @@ type LiveWorkspaceState = {
   openBackupModal: () => void;
   openGoogleDriveModal: () => void;
   openLegacyFinancialImport: () => void;
+  openFullSqliteImport: () => void;
+  openLegacyArchiveExplorer: (roleFilter?: string) => void;
   openTransferModal: (accountId?: string) => void;
   openInventoryAdd: () => void;
   openSettings: () => void;
@@ -889,6 +896,21 @@ function AuthenticatedWorkspace({
     setOverlay("legacy-financial-import");
   }, [dismissKeyboard]);
 
+  const openFullSqliteImport = useCallback(() => {
+    dismissKeyboard();
+    setOverlay("full-sqlite-import");
+  }, [dismissKeyboard]);
+
+  const [legacyExplorerFilter, setLegacyExplorerFilter] = useState<string>("all");
+  const openLegacyArchiveExplorer = useCallback(
+    (roleFilter: string = "all") => {
+      dismissKeyboard();
+      setLegacyExplorerFilter(roleFilter);
+      setOverlay("legacy-archive-explorer");
+    },
+    [dismissKeyboard],
+  );
+
   const openTransferModal = useCallback(
     (accountId?: string) => {
       dismissKeyboard();
@@ -1362,6 +1384,8 @@ function AuthenticatedWorkspace({
       openBackupModal,
       openGoogleDriveModal,
       openLegacyFinancialImport,
+      openFullSqliteImport,
+      openLegacyArchiveExplorer,
       openTransferModal,
       openInventoryAdd: () => setOverlay("inventory-add"),
       openSettings: () => {
@@ -1429,6 +1453,8 @@ function AuthenticatedWorkspace({
       openBackupModal,
       openGoogleDriveModal,
       openLegacyFinancialImport,
+      openFullSqliteImport,
+      openLegacyArchiveExplorer,
       openDashboardMenu,
       openDrawer,
       openErpModule,
@@ -1777,6 +1803,22 @@ function AuthenticatedWorkspace({
           onClose={() => setOverlay(null)}
           workspaceId={user.uid}
           onNotify={showToast}
+        />
+        <FullSqliteImportModal
+          open={overlay === "full-sqlite-import"}
+          onClose={() => setOverlay(null)}
+          workspaceId={user.uid}
+          liveWorkspace={workspace}
+          liveAccounts={accounts}
+          liveWarehouses={warehouses}
+          liveInventory={inventory}
+          liveLedger={ledger}
+          onNotify={showToast}
+        />
+        <LegacyArchiveExplorerModal
+          open={overlay === "legacy-archive-explorer"}
+          onClose={() => setOverlay(null)}
+          initialRoleFilter={legacyExplorerFilter}
         />
         <GoogleDriveModal
           open={overlay === "google-drive"}
@@ -2464,9 +2506,12 @@ function InventoryFooter({ initialWarehouseId }: { initialWarehouseId?: string }
     <div className="inventory-totals">
       <div>
         عدد الأصناف: <b>{summary.items.length}</b>
+        {summary.unverifiedCount > 0 ? (
+          <span style={{ color: "#b45309", marginRight: 8 }}> (بحاجة لتسوية: {summary.unverifiedCount})</span>
+        ) : null}
       </div>
       <div>
-        إجمالي الكمية: <b>{formatAmount(summary.totalQuantity)}</b>　 القيمة:{" "}
+        الكمية المعتمدة: <b>{formatAmount(summary.totalQuantity)}</b>　 القيمة:{" "}
         <b>{formatAmount(summary.totalValue)}</b>
       </div>
     </div>
@@ -2484,8 +2529,17 @@ function InventoryReportPage({
   ctx.flowRef.current = flow;
   const [period, setPeriod] = useState("الكل");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(initialWarehouseId ?? "");
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const summary = computeInventorySummary(ctx.inventory, selectedWarehouseId || undefined);
+  const rawSummary = computeInventorySummary(ctx.inventory, selectedWarehouseId || undefined);
+  const filteredItems = useMemo(() => {
+    const q = normalizeArabicSearch(searchQuery);
+    if (!q) return rawSummary.items;
+    return rawSummary.items.filter((item) =>
+      normalizeArabicSearch(`${item.name} ${item.sku ?? ""} ${item.unit}`).includes(q),
+    );
+  }, [rawSummary.items, searchQuery]);
+  const summary = { ...rawSummary, items: filteredItems };
 
   const toggleItem = (id: string) => {
     triggerHaptic("light");
@@ -2546,6 +2600,14 @@ function InventoryReportPage({
             <option>حساب الأرباح حسب: متوسط سعر الشراء</option>
             <option>حساب الأرباح حسب: آخر سعر شراء</option>
           </select>
+          <div style={{ marginTop: 8 }}>
+            <KeyboardInput
+              aria-label="البحث في الأصناف"
+              placeholder="ابحث باسم الصنف أو الباركود..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
           <div className="reference-date-strip">
             <ArrowRightIcon />
             <span>
@@ -2596,7 +2658,12 @@ function InventoryReportPage({
                   </td>
                   <td>{item.unit}</td>
                   <td>
-                    {formatAmount(item.quantity)} ({formatAmount(item.avgCost)})
+                    {item.quantityUnverified ? (
+                      <span style={{ color: "#b45309", fontWeight: 600 }}>بحاجة إلى تسوية</span>
+                    ) : (
+                      formatAmount(item.quantity)
+                    )}{" "}
+                    ({formatAmount(item.avgCost)})
                   </td>
                 </tr>
               );
@@ -4156,6 +4223,27 @@ function PurchasesPage({ flow, category }: { flow: FlowControls; category: Accou
       </section>
       <MobileScroll className="app-screen purchases-list-scroll">
         <main className="purchases-page page-with-footer" data-testid="purchases-screen">
+          {(category === "sales" || category === "purchases") && ctx.accounts.some((a) => Boolean(a.legacyRef)) ? (
+            <div style={{ padding: "8px 10px 0" }}>
+              <button
+                type="button"
+                onClick={() => ctx.openLegacyArchiveExplorer(category === "sales" ? "sale" : "purchase")}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #bae6fd",
+                  background: "#f0f9ff",
+                  color: "#0369a1",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {category === "sales" ? "عرض فواتير المبيعات التاريخية (SQLite)" : "عرض فواتير المشتريات التاريخية (SQLite)"}
+              </button>
+            </div>
+          ) : null}
           {visibleVendors.length === 0 ? (
             <p className="cash-empty">لا توجد حسابات في هذا القسم حتى الآن — اضغط + لإضافة حساب.</p>
           ) : (
@@ -4461,6 +4549,7 @@ function SupplierPage({
             <span>التفاصيل</span>
             <span>الرصيد</span>
           </div>
+          <CustomerLegacyArchiveSection account={account} />
           {statement.rows.length === 0 ? (
             <p className="cash-empty">لا توجد حركات مسجلة لهذا الحساب.</p>
           ) : (
@@ -4752,6 +4841,7 @@ function CashSupplierPage({
       </div>
       <MobileScroll className="cash-statement-scroll">
         <main ref={listRef} data-testid="supplier-screen" className="cash-statement-list">
+          <CustomerLegacyArchiveSection account={account} />
           {statement.rows.length === 0 ? (
             <p className="cash-empty" role="status">
               لا توجد حركات تطابق البحث أو العملة المحددة.
@@ -5681,6 +5771,8 @@ function AppDrawer({
         { label: "ملفات والنسخ السحابي Google Drive", icon: GlobeIcon, action: () => { onClose(); ctx.openGoogleDriveModal(); } },
         { label: "تسمية وحفظ نسخة احتياطية (محلي / جوجل)", icon: ArchiveIcon, action: () => { onClose(); ctx.openBackupModal(); } },
         { label: "استعادة نسخة احتياطية", icon: UploadIconShim, action: () => { onClose(); ctx.triggerJsonRestore(); } },
+        { label: "مركز استيراد وترحيل قواعد البيانات", icon: ArchiveIcon, action: () => { onClose(); ctx.openFullSqliteImport(); } },
+        { label: "الفواتير التاريخية ومطابقة القيود", icon: FileTextIcon, action: () => { onClose(); ctx.openLegacyArchiveExplorer(); } },
         { label: "استيراد الأرشيف المحاسبي التاريخي", icon: ArchiveIcon, action: () => { onClose(); ctx.openLegacyFinancialImport(); } },
       ],
     },
@@ -5772,6 +5864,8 @@ function DashboardAddMenu({ open, onClose }: { open: boolean; onClose: () => voi
     { label: "قيد بسيط", action: () => ctx.flowRef.current?.push(simpleEntryScreen()) },
     { label: "إضافة صنف للمخزن", action: ctx.openInventoryAdd },
     { label: "ملفات Google Drive", action: ctx.openGoogleDriveModal },
+    { label: "مركز استيراد وترحيل قواعد البيانات", action: ctx.openFullSqliteImport },
+    { label: "الفواتير التاريخية والمطابقة", action: ctx.openLegacyArchiveExplorer },
     { label: "استيراد أرشيف الفواتير والقيود", action: ctx.openLegacyFinancialImport },
   ];
   return (
@@ -6712,6 +6806,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
       lastBackupIso={ctx.lastBackupIso}
       onOpenBackupModal={ctx.openBackupModal}
       onOpenGoogleDrive={ctx.openGoogleDriveModal}
+      onOpenFullSqliteImport={ctx.openFullSqliteImport}
       onRestoreJson={ctx.triggerJsonRestore}
       onOpenTrash={ctx.openTrash}
       onSignOut={ctx.handleSignOut}

@@ -25,6 +25,7 @@ interface SystemSettingsPageProps {
   lastBackupIso: string | null;
   onOpenBackupModal: () => void;
   onOpenGoogleDrive?: () => void;
+  onOpenFullSqliteImport?: () => void;
   onRestoreJson: () => void;
   onOpenTrash: () => void;
   onSignOut: () => void;
@@ -49,6 +50,7 @@ export function SystemSettingsPage({
   lastBackupIso,
   onOpenBackupModal,
   onOpenGoogleDrive,
+  onOpenFullSqliteImport,
   onRestoreJson,
   onOpenTrash,
   onSignOut,
@@ -521,6 +523,20 @@ export function SystemSettingsPage({
               استعادة من ملف
             </button>
           </div>
+          {onOpenFullSqliteImport ? (
+            <button
+              type="button"
+              className="ref-btn orange"
+              style={{ width: "100%", marginTop: 8, background: "#ea580c", color: "#ffffff" }}
+              onClick={() => {
+                triggerHaptic("light");
+                onOpenFullSqliteImport();
+              }}
+              data-testid="settings-full-sqlite-import-btn"
+            >
+              مركز استيراد وترحيل قواعد البيانات (SQLite / .back)
+            </button>
+          ) : null}
           {onOpenGoogleDrive ? (
             <button
               type="button"

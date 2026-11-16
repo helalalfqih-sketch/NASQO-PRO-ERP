@@ -100,6 +100,7 @@ export function sanitizeAccountPayload(input: Partial<AccountRecord> & { ownerId
     openingBalance: safeOpening,
     openingDirection: (input.openingDirection === "credit" ? "credit" : "debit") as "credit" | "debit",
     codeNumber: Number.isFinite(input.codeNumber) ? Number(input.codeNumber) : 1,
+    ...(input.legacyRef ? { legacyRef: clampString(input.legacyRef, 128) } : {}),
   };
 }
 
@@ -146,6 +147,7 @@ export function sanitizeLedgerPayload(
     ...(dueDate ? { dueDate } : {}),
     ...(expenseCategory ? { expenseCategory } : {}),
     ...(deliveryDays !== undefined ? { deliveryDays } : {}),
+    ...(input.legacyRef ? { legacyRef: clampString(input.legacyRef, 128) } : {}),
   };
 }
 
@@ -156,6 +158,7 @@ export function sanitizeWarehousePayload(input: Partial<WarehouseRecord> & { own
     details: clampString(input.details ?? "", SCHEMA_LIMITS.warehouseDetailsMax),
     isDefault: Boolean(input.isDefault),
     codeNumber: Number.isFinite(input.codeNumber) ? Number(input.codeNumber) : 1,
+    ...(input.legacyRef ? { legacyRef: clampString(input.legacyRef, 128) } : {}),
   };
 }
 
@@ -174,6 +177,8 @@ export function sanitizeInventoryPayload(
     minThreshold,
     ...(sku ? { sku } : {}),
     warehouseId: clampString(input.warehouseId, SCHEMA_LIMITS.ownerIdMax),
+    ...(input.quantityUnverified ? { quantityUnverified: true } : {}),
+    ...(input.legacyRef ? { legacyRef: clampString(input.legacyRef, 128) } : {}),
   };
 }
 
@@ -405,7 +410,7 @@ export function ledgerEntryMatchesQuery(entry: LedgerEntryRecord, normalizedQuer
 export function accountMatchesQuery(account: AccountRecord, query: string): boolean {
   const needle = normalizeArabicSearch(query);
   if (!needle) return true;
-  return normalizeArabicSearch(`${account.name} ${account.phone} ${account.codeNumber}`).includes(needle);
+  return normalizeArabicSearch(`${account.name} ${account.phone} ${account.codeNumber} ${account.note ?? ""} ${account.legacyRef ?? ""}`).includes(needle);
 }
 
 function escapeCsvCell(cell: string | number | boolean): string {
@@ -426,7 +431,14 @@ export function computeInventorySummary(items: readonly InventoryItemRecord[], w
   const filtered = warehouseId ? items.filter((item) => item.warehouseId === warehouseId) : items;
   let totalQuantity = 0;
   let totalValue = 0;
+  let verifiedCount = 0;
+  let unverifiedCount = 0;
   for (const item of filtered) {
+    if (item.quantityUnverified) {
+      unverifiedCount += 1;
+      continue;
+    }
+    verifiedCount += 1;
     totalQuantity += item.quantity;
     totalValue += item.quantity * item.avgCost;
   }
@@ -434,6 +446,8 @@ export function computeInventorySummary(items: readonly InventoryItemRecord[], w
     items: filtered,
     totalQuantity,
     totalValue,
+    verifiedCount,
+    unverifiedCount,
   };
 }
 
@@ -571,6 +585,7 @@ export function computeDashboardSummary(
   );
 
   const lowStockItems: LowStockAlertItem[] = inventory
+    .filter((item) => !item.quantityUnverified)
     .map((item) => {
       const effectiveThreshold = useItemThresholds
         ? typeof item.minThreshold === "number"
@@ -743,6 +758,7 @@ export function computeWorkspaceNotifications(
 
   // 2. Low-stock updates for items below their defined minimum threshold
   for (const item of inventory) {
+    if (item.quantityUnverified) continue;
     const threshold = typeof item.minThreshold === "number" ? item.minThreshold : 25;
     if (threshold > 0 && item.quantity < threshold) {
       const whName = warehouseMap.get(item.warehouseId) ?? "مخزن عام";
