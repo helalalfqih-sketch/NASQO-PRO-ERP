@@ -2,3 +2,10 @@ node_modules/
 dist/
 test-results/
 playwright-report/
+
+# Private accounting backups and database files (never upload to GitHub)
+*.back
+*.sqlite
+*.sqlite3
+*.db
+*.dump
