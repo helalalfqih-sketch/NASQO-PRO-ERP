@@ -25,7 +25,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check:runtime
           npm run lint
-          node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs
+          node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs
           npm run build
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
           # Source runtime integrity checks are unchanged.
