@@ -1,0 +1,47 @@
+name: Build and test NASQO mobile release
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: nasqo-mobile-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - name: Install and test
+        run: |
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run lint
+          node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs
+          npm run build
+          # Rebuild only the client with an isolated URL prefix for ERP domain routing.
+          # Source runtime integrity checks are unchanged.
+          npx vite build --base /nsqo-app/
+          node deploy/prepare-subpath.mjs
+          npm run test:sites
+      - name: Prepare release
+        run: |
+          mkdir -p release/dist
+          cp package.json package-lock.json server.ts Dockerfile.deploy release/
+          cp -a dist/client release/dist/client
+          printf '%s\n' "$GITHUB_SHA" > release/RELEASE_SHA
+          tar -czf "$RUNNER_TEMP/nsqo-release.tar.gz" -C release .
+      - name: Save tested release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsqo-release
+          path: ${{ runner.temp }}/nsqo-release.tar.gz
+          retention-days: 3

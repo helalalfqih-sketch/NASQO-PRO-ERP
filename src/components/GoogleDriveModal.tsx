@@ -45,6 +45,7 @@ import {
   type DriveFileRecord,
 } from "../services/googleDrive";
 import { formatNasqoBackupFilename } from "../utils/backupFormat";
+import { describeGoogleDriveConnectError } from "../utils/googleDriveAuthError";
 import { triggerHaptic } from "../utils/haptics";
 import { GoogleSignInButton } from "./GoogleSignInButton";
 
@@ -111,14 +112,14 @@ export function GoogleDriveModal({
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<DriveCategoryFilter>("all");
   const [breadcrumbs, setBreadcrumbs] = useState<FolderCrumb[]>([
-    { id: null, name: "ملفاتي (Drive)" },
+    { id: null, name: "ملفات نسق برو (Drive)" },
   ]);
 
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [pendingConfirm, setPendingConfirm] = useState<PendingDriveConfirmation>(null);
 
-  const currentFolder = breadcrumbs[breadcrumbs.length - 1] ?? { id: null, name: "ملفاتي (Drive)" };
+  const currentFolder = breadcrumbs[breadcrumbs.length - 1] ?? { id: null, name: "ملفات نسق برو (Drive)" };
 
   useEffect(() => {
     return subscribeGoogleAccessToken((token) => {
@@ -187,12 +188,7 @@ export function GoogleDriveModal({
       await loadDriveContents(freshToken, currentFolder.id);
     } catch (err) {
       triggerHaptic("warning");
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorMsg(
-        msg.includes("popup-closed")
-          ? "تم إغلاق نافذة مصادقة Google قبل إتمام الربط."
-          : msg || "تعذر إتمام الربط مع Google Drive.",
-      );
+      setErrorMsg(describeGoogleDriveConnectError(err));
     } finally {
       setBusyAction(null);
     }
@@ -419,8 +415,9 @@ export function GoogleDriveModal({
               <CheckCircledIcon />
               <h3>اتصال مباشر وآمن بحساب Google Drive</h3>
               <p>
-                قم بتسجيل الدخول بحساب Google لمنح صلاحية حفظ النسخ الاحتياطية (.back / JSON)،
-                رفع فواتير PDF، واستعراض واستعادة ملفاتك من Google Drive مباشرة.
+                اربط حسابك لحفظ نسخ نسق برو الاحتياطية (.back / JSON) ورفع فواتير PDF.
+                سيعرض التطبيق الملفات التي ينشئها أو يرفعها عبر نسق برو فقط،
+                وليس جميع ملفاتك الأخرى في Google Drive.
               </p>
             </div>
             <div className="gdrive-signin-holder">

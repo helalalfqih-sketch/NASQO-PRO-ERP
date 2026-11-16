@@ -116,20 +116,12 @@ async function testConnection() {
 }
 void testConnection();
 
+// Google Drive integration intentionally has per-file access only. The app
+// can manage files it creates or that the user explicitly shares with it,
+// but must not request blanket access to the user's entire Google Drive.
+// Keep this separate from basic Google sign-in (openid/email/profile).
 export const GOOGLE_WORKSPACE_SCOPES = [
-  "https://www.googleapis.com/auth/drive",
-  "https://www.googleapis.com/auth/drive.activity",
-  "https://www.googleapis.com/auth/drive.activity.readonly",
-  "https://www.googleapis.com/auth/drive.appdata",
-  "https://www.googleapis.com/auth/drive.apps.readonly",
   "https://www.googleapis.com/auth/drive.file",
-  "https://www.googleapis.com/auth/drive.install",
-  "https://www.googleapis.com/auth/drive.meet.readonly",
-  "https://www.googleapis.com/auth/drive.metadata",
-  "https://www.googleapis.com/auth/drive.metadata.readonly",
-  "https://www.googleapis.com/auth/drive.photos.readonly",
-  "https://www.googleapis.com/auth/drive.readonly",
-  "https://www.googleapis.com/auth/drive.scripts",
 ] as const;
 
 // Strictly in-memory OAuth access token cache — never persisted to localStorage or sessionStorage.
@@ -197,11 +189,13 @@ onAuthStateChanged(auth, (user) => {
 });
 
 export async function signInWithGoogle(): Promise<User> {
-  const provider = buildGoogleDriveProvider();
+  // Ordinary login only needs Google identity. Do NOT request Drive scopes here:
+  // sensitive/restricted Drive permissions belong to the separate Drive flow.
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
   const result = await signInWithPopup(auth, provider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  cachedGoogleAccessToken = credential?.accessToken ?? null;
-  notifyGoogleTokenListeners();
+  // A previously cached Drive token must never carry over to a new sign-in.
+  clearGoogleAccessToken();
   return result.user;
 }
 
