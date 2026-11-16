@@ -54,7 +54,7 @@ function FlowProvider({ value, children }: PropsWithChildren<{ value: FlowContro
   return <FlowContext.Provider value={value}>{children}</FlowContext.Provider>;
 }
 
-export function FlowStack({ initial }: { initial: FlowScreen }) {
+export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSystemBack?: () => boolean }) {
   const keyboard = useKeyboard();
   const { bottomInset, keyboardDragging } = useKeyboardInsets();
   const dismissKeyboardDrag = useKeyboardDismissDrag();
@@ -68,6 +68,27 @@ export function FlowStack({ initial }: { initial: FlowScreen }) {
   const [stack, setStack] = useState<FlowEntry[]>(() => [initialEntry.current]);
   const [direction, setDirection] = useState(1);
   const [swipeX, setSwipeX] = useState(0);
+  // Keep the Android/PWA hardware Back gesture inside the application. The guard
+  // is re-armed after every browser Back so it cannot exit on an open modal or
+  // a nested flow. No route data or accounting records are written to history.
+  const systemBackRef = useRef(onSystemBack);
+  systemBackRef.current = onSystemBack;
+  const internalPopRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const guardKey = "__nasqo_flow_back_guard__";
+    const arm = () => {
+      window.history.pushState({ ...window.history.state, [guardKey]: true }, "", window.location.href);
+    };
+    arm();
+    const onPopState = () => {
+      // Restore the guard first, including when the user is at the dashboard.
+      arm();
+      if (systemBackRef.current?.()) return;
+      internalPopRef.current();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     const element = stackRef.current;
@@ -127,6 +148,8 @@ export function FlowStack({ initial }: { initial: FlowScreen }) {
       },
     };
   }, [keyboard, pop, stack, toEntry]);
+
+  internalPopRef.current = pop;
 
   const bindEdgeSwipe = useDrag(
     (state) => {

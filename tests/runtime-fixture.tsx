@@ -112,6 +112,7 @@ function stackedScreen(level: number): FlowScreen {
 }
 
 function FlowFixture() {
+  const [modalOpen, setModalOpen] = useState(false);
   const screen: FlowScreen = {
     id: "flow-root",
     footerHeight: 84,
@@ -124,6 +125,7 @@ function FlowFixture() {
       <MobileScroll className="fixture-screen">
         <main className="fixture-content">
           <h1>Flow root</h1>
+          <button type="button" onClick={() => setModalOpen(true)}>Open overlay</button>
           <button type="button" onClick={() => flow.push(stackedScreen(2))}>
             Push level 2
           </button>
@@ -134,7 +136,8 @@ function FlowFixture() {
 
   return (
     <MobileRuntime>
-      <FlowStack initial={screen} />
+      <FlowStack initial={screen} onSystemBack={() => { if (modalOpen) { setModalOpen(false); return true; } return false; }} />
+      {modalOpen ? <div role="dialog" aria-label="Transient overlay">Overlay visible</div> : null}
     </MobileRuntime>
   );
 }

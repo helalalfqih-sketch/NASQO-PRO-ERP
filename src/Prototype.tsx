@@ -1660,10 +1660,21 @@ function AuthenticatedWorkspace({
     }
   };
 
+  // Hardware/system Back closes transient UI before navigating the screen stack.
+  // At the dashboard the history guard keeps the installed PWA in the app.
+  const handleSystemBack = () => {
+    if (overlay) { setOverlay(null); return true; }
+    if (drawerOpen) { setDrawerOpen(false); return true; }
+    if (dashboardMenuOpen) { setDashboardMenuOpen(false); return true; }
+    if (exportState.open) { setExportState((current) => ({ ...current, open: false })); return true; }
+    if (sheet) { setSheet(null); return true; }
+    return false;
+  };
+
   return (
     <WorkspaceContext.Provider value={ctx}>
       <div className="nasqo-app" dir="rtl">
-        <FlowStack initial={initial} />
+        <FlowStack initial={initial} onSystemBack={handleSystemBack} />
         <AppDrawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
