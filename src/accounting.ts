@@ -174,6 +174,8 @@ export function sanitizeInventoryPayload(
     unit: clampString(input.unit || "حبة", SCHEMA_LIMITS.inventoryUnitMax) || "حبة",
     quantity: Math.max(0, parseArabicNumber(input.quantity)),
     avgCost: Math.max(0, parseArabicNumber(input.avgCost)),
+    ...(input.sellingPrice !== undefined && Number.isFinite(Number(input.sellingPrice)) && Number(input.sellingPrice) > 0
+      ? { sellingPrice: Number(input.sellingPrice) } : {}),
     minThreshold,
     ...(sku ? { sku } : {}),
     warehouseId: clampString(input.warehouseId, SCHEMA_LIMITS.ownerIdMax),

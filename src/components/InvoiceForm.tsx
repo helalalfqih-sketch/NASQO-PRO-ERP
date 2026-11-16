@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { triggerHaptic } from "../utils/haptics";
 import { CustomerList } from "./CustomerList";
+import { approvedLiveSellingPrice, requiresStockReconciliation } from "../legacy/liveSafety";
 
 interface InvoiceItemRow {
   id: string;
@@ -65,9 +66,9 @@ export function InvoiceForm({
     {
       id: `row_${Date.now()}`,
       itemId: inventory[0]?.id,
-      productName: inventory[0]?.name ?? "صنف افتراضي",
+      productName: inventory[0]?.name ?? "",
       quantity: 1,
-      unitPrice: inventory[0] ? Math.round(inventory[0].avgCost * 1.25) : 100,
+      unitPrice: inventory[0] ? (approvedLiveSellingPrice(inventory[0]) ?? 0) : 0,
     },
   ]);
 
@@ -100,9 +101,9 @@ export function InvoiceForm({
       {
         id: `row_${Date.now()}_${Math.random()}`,
         itemId: defaultItem?.id,
-        productName: defaultItem?.name ?? "صنف جديد",
+        productName: defaultItem?.name ?? "",
         quantity: 1,
-        unitPrice: defaultItem ? Math.round(defaultItem.avgCost * 1.25) : 100,
+        unitPrice: defaultItem ? (approvedLiveSellingPrice(defaultItem) ?? 0) : 0,
       },
     ]);
   };
@@ -125,7 +126,7 @@ export function InvoiceForm({
           const matched = inventory.find((item) => item.id === patch.itemId);
           if (matched) {
             next.productName = matched.name;
-            next.unitPrice = Math.round(matched.avgCost * 1.25);
+            next.unitPrice = approvedLiveSellingPrice(matched) ?? 0;
           }
         }
         return next;
@@ -143,8 +144,16 @@ export function InvoiceForm({
       onToast("أدخل اسم العميل أولًا");
       return;
     }
-    if (rows.length === 0 || rows.some((r) => r.quantity <= 0 || r.unitPrice < 0)) {
-      onToast("تحقق من كميات الأسعار والأصناف في الفاتورة");
+    if (rows.length === 0 || rows.some((r) => !r.productName.trim() || !Number.isFinite(r.quantity) || r.quantity <= 0 || !Number.isFinite(r.unitPrice) || r.unitPrice <= 0)) {
+      onToast("حدد صنفًا حقيقيًا وتحقق من الكمية وأدخل سعر بيع موجبًا ومعتمدًا.");
+      return;
+    }
+    const unresolvedStock = rows.find((r) => {
+      const item = inventory.find((candidate) => candidate.id === r.itemId);
+      return item && requiresStockReconciliation(item);
+    });
+    if (unresolvedStock) {
+      onToast("لا يمكن ترحيل فاتورة لصنف مستورد قبل اعتماد جرد المخزون الفعلي.");
       return;
     }
 
@@ -352,6 +361,11 @@ export function InvoiceForm({
             </button>
           </div>
 
+          {rows.some((row) => inventory.some((item) => item.id === row.itemId && (item.quantityUnverified || (item.legacyRef && !item.sellingPrice)))) ? (
+            <p role="status" style={{ color: "#92400e", fontSize: 11, margin: "4px 0" }}>
+              الأصناف التاريخية لا تحمل رصيدًا أو سعر بيع معتمدًا تلقائيًا؛ اعتمد الجرد وسعر البيع قبل ترحيل الفاتورة.
+            </p>
+          ) : null}
           <div style={{ display: "grid", gap: "4px", maxHeight: "140px", overflowY: "auto" }}>
             {rows.map((row, idx) => (
               <div

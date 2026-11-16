@@ -62,4 +62,81 @@ test("SQLite one-click import populates live screens, persists and searches sour
   await expect(page.getByText("بحاجة إلى تسوية").first()).toBeVisible();
   await page.getByRole("button", { name: "بحث في فواتير الصنف فلتر محرك مميز" }).click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "فتح البنود" })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "✕" }).click();
+
+  // A migrated stock item must require an explicit absolute stock count and
+  // an independently approved selling price before it can be sold in POS.
+  await page.getByLabel("تحديد فلتر محرك مميز").check();
+  await page.getByLabel("نوع تعديل الكمية").selectOption("set");
+  await page.getByLabel("قيمة تعديل الكمية").fill("7");
+  await page.getByLabel("سعر البيع المعتمد").fill("200");
+  await page.getByLabel("تأكيد جرد المخزون الفعلي").check();
+  await page.getByLabel("تأكيد اعتماد سعر البيع").check();
+  await page.getByTestId("bulk-apply-btn").click();
+  await expect(page.getByText("بحاجة إلى تسوية")).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
+  const approved = await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("nasqo_pro_erp_db");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      const result = await new Promise<{ quantity: number; sellingPrice?: number; quantityUnverified?: boolean }[]>((resolve, reject) => {
+        const request = db.transaction("inventory", "readonly").objectStore("inventory").getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      return result.find((record) => record.sellingPrice === 200) ?? null;
+    } finally { db.close(); }
+  });
+  expect(approved?.quantity).toBe(7);
+  expect(approved?.quantityUnverified).not.toBe(true);
+  expect(approved?.sellingPrice).toBe(200);
+
+  // Reopen saved original locally without uploading it again; reimport must
+  // preserve the user's subsequent stocktake and price approval.
+  await page.getByLabel("إضافة", { exact: true }).click();
+  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "مركز استيراد وترحيل قواعد البيانات" }).click();
+  const historyDialog = page.getByRole("dialog");
+  await historyDialog.getByRole("button", { name: /السجل والنسخ/ }).click();
+  await historyDialog.getByRole("button", { name: "فتح النسخة المحفوظة للاستيراد" }).click();
+  await expect(historyDialog.getByText(/تم فتح قاعدة البيانات بنجاح/)).toBeVisible();
+  await historyDialog.getByTestId("legacy-import-and-show").click();
+  await expect(historyDialog.getByText(/0 حسابًا جديدًا، 0 صنفًا، 0 مخزنًا/)).toBeVisible();
+});
+
+test("IndexedDB restores imported accounts and inventory when localStorage quota is exhausted", async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === "nasqo-local-workspace-v1") {
+        throw new DOMException("Storage quota reached", "QuotaExceededError");
+      }
+      return originalSetItem.call(this, key, value);
+    };
+    localStorage.setItem("nasqo-local-session-active", "1");
+  });
+  await page.goto("/?autostart=1");
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
+  await page.getByLabel("إضافة", { exact: true }).click();
+  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "مركز استيراد وترحيل قواعد البيانات" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator("#legacy-center-sqlite-input").setInputFiles({
+    name: "legacy-quota.sqlite", mimeType: "application/x-sqlite3", buffer: await sampleSqlite(),
+  });
+  await expect(dialog.getByText(/تم فتح قاعدة البيانات بنجاح/)).toBeVisible();
+  await dialog.getByTestId("legacy-import-and-show").click();
+  await expect(dialog.getByText(/تم حفظ الأرشيف وإظهار البيانات/)).toBeVisible({ timeout: 45000 });
+  await page.reload();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
+  await page.getByLabel("فتح القائمة", { exact: true }).click();
+  await page.getByLabel("قائمة نسقو", { exact: true }).getByRole("button", { name: "الأصناف والمخزون", exact: true }).click();
+  await expect(page.getByTestId("inventory-report-screen")).toBeVisible();
+  await page.getByLabel("البحث في الأصناف").fill("BAR-9988");
+  await expect(page.getByText("فلتر محرك مميز")).toBeVisible();
+  await expect(page.getByText("بحاجة إلى تسوية").first()).toBeVisible();
 });

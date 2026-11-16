@@ -17,7 +17,9 @@ interface InventoryBulkEditBarProps {
       item: InventoryItemRecord;
       quantity: number;
       avgCost: number;
+      sellingPrice?: number;
       minThreshold?: number;
+      quantityUnverified?: boolean;
     }[],
   ) => Promise<void>;
 }
@@ -33,20 +35,41 @@ export function InventoryBulkEditBar({
 }: InventoryBulkEditBarProps) {
   const [priceMode, setPriceMode] = useState<"keep" | "set" | "percent">("keep");
   const [priceValue, setPriceValue] = useState("");
+  const [sellingPriceValue, setSellingPriceValue] = useState("");
+  const [confirmSellingPrice, setConfirmSellingPrice] = useState(false);
   const [stockMode, setStockMode] = useState<"keep" | "set" | "delta">("keep");
   const [stockValue, setStockValue] = useState("");
   const [minThresholdValue, setMinThresholdValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [confirmStockCount, setConfirmStockCount] = useState(false);
 
   const selectedItems = items.filter((item) => selectedIds.has(item.id));
   const allSelected = items.length > 0 && selectedItems.length === items.length;
 
   const handleApply = async () => {
     if (selectedItems.length === 0) return;
-    if (priceMode === "keep" && stockMode === "keep" && !minThresholdValue.trim()) {
+    if (priceMode === "keep" && stockMode === "keep" && !sellingPriceValue.trim() && !minThresholdValue.trim()) {
       triggerHaptic("warning");
       onNotify("اختر حقلًا واحدًا على الأقل للتحديث الجماعي (السعر أو الكمية أو الحد الأدنى).");
       return;
+    }
+
+    const unverifiedSelected = selectedItems.some((item) => item.quantityUnverified);
+    if (unverifiedSelected && stockMode === "delta") {
+      onNotify("لا يمكن إضافة أو خصم كمية من رصيد غير معتمد. اختر تعيين كمية بناءً على جرد فعلي.");
+      return;
+    }
+    if (unverifiedSelected && stockMode === "set" && (!stockValue.trim() || !confirmStockCount)) {
+      onNotify("لتسوية رصيد مستورد: أدخل كمية الجرد الفعلية وأقر بصحتها أولًا.");
+      return;
+    }
+
+    if (sellingPriceValue.trim()) {
+      const price = parseArabicNumber(sellingPriceValue);
+      if (!Number.isFinite(price) || price <= 0 || !confirmSellingPrice) {
+        onNotify("أدخل سعر بيع موجبًا ومعتمدًا وأكّد مراجعته قبل تطبيقه على الأصناف.");
+        return;
+      }
     }
 
     const parsedPrice = parseArabicNumber(priceValue);
@@ -72,7 +95,9 @@ export function InventoryBulkEditBar({
       return {
         item,
         avgCost: nextCost,
+        ...(sellingPriceValue.trim() ? { sellingPrice: parseArabicNumber(sellingPriceValue) } : {}),
         quantity: nextQty,
+        ...(stockMode === "set" && stockValue.trim() !== "" ? { quantityUnverified: false } : {}),
         ...(hasThreshold ? { minThreshold: parsedThreshold } : {}),
       };
     });
@@ -87,10 +112,13 @@ export function InventoryBulkEditBar({
       triggerHaptic("success");
       onNotify(`تم تحديث ${updates.length} صنف دفعة واحدة في قاعدة البيانات`);
       setPriceValue("");
+      setSellingPriceValue("");
+      setConfirmSellingPrice(false);
       setStockValue("");
       setMinThresholdValue("");
       setPriceMode("keep");
       setStockMode("keep");
+      setConfirmStockCount(false);
       onClearSelection();
     } finally {
       setSaving(false);
@@ -152,6 +180,18 @@ export function InventoryBulkEditBar({
 
           <div className="inv-bulk-field">
             <label>
+              <span>سعر البيع التشغيلي (اختياري)</span>
+              <input type="number" min={0} step="any" aria-label="سعر البيع المعتمد" placeholder="أدخل السعر المعتمد" value={sellingPriceValue} onChange={(e) => setSellingPriceValue(e.target.value)} />
+            </label>
+            {sellingPriceValue.trim() ? (
+              <label style={{ display: "block", fontSize: 12, color: "#854d0e" }}>
+                <input type="checkbox" aria-label="تأكيد اعتماد سعر البيع" checked={confirmSellingPrice} onChange={(e) => setConfirmSellingPrice(e.target.checked)} />
+                أقر بأن سعر البيع أُدخل وراجعته يدويًا، وليس مستنتجًا من تكلفة SQLite.
+              </label>
+            ) : null}
+          </div>
+          <div className="inv-bulk-field">
+            <label>
               <span>تحديث الكمية</span>
               <select
                 aria-label="نوع تعديل الكمية"
@@ -191,6 +231,17 @@ export function InventoryBulkEditBar({
             </label>
           </div>
 
+          {selectedItems.some((item) => item.quantityUnverified) ? (
+            <div role="status" style={{ fontSize: 12, color: "#854d0e" }}>
+              أصناف مستوردة بحاجة إلى تسوية. لا يمكن حساب حركة نسبية على كمية غير معتمدة.
+              {stockMode === "set" ? (
+                <label style={{ display: "block", marginTop: 6 }}>
+                  <input type="checkbox" checked={confirmStockCount} onChange={(e) => setConfirmStockCount(e.target.checked)} aria-label="تأكيد جرد المخزون الفعلي" />
+                  أؤكد أن القيمة المحددة ناتجة عن جرد فعلي، وأوافق على اعتمادها رصيدًا تشغيليًا.
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <button
             type="button"
             className="inv-bulk-apply"

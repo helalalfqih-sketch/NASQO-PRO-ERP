@@ -25,7 +25,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check:runtime
           npm run lint
-          npx tsx --test tests/legacy-search-binding.test.ts
+          npx tsx --test tests/legacy-search-binding.test.ts tests/legacy-live-safety.test.ts
           node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs
           npm run build
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.

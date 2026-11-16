@@ -220,6 +220,12 @@ export async function signOutUser(): Promise<void> {
 export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
 const LOCAL_WORKSPACE_STORAGE_KEY = "nasqo-local-workspace-v1";
 const LOCAL_SESSION_STORAGE_KEY = "nasqo-local-session-active";
+// Browser storage quotas are much smaller than IndexedDB. Keep the latest
+// authoritative snapshot in memory during a session instead of re-reading
+// potentially stale/truncated localStorage after a successful large import.
+let activeLocalSnapshot: LocalWorkspaceSnapshot | null = null;
+let activeLocalRevision = 0;
+
 
 export function isLocalWorkspaceSession(): boolean {
   if (typeof window === "undefined") return false;
@@ -322,6 +328,7 @@ function buildStarterSnapshot(uid: string, displayName?: string | null): LocalWo
 }
 
 function readLocalSnapshot(): LocalWorkspaceSnapshot {
+  if (activeLocalSnapshot) return structuredClone(activeLocalSnapshot);
   if (typeof window === "undefined") return buildStarterSnapshot(LOCAL_WORKSPACE_UID);
   try {
     const raw = window.localStorage.getItem(LOCAL_WORKSPACE_STORAGE_KEY);
@@ -346,6 +353,8 @@ function readLocalSnapshot(): LocalWorkspaceSnapshot {
 }
 
 function notifyLocalListeners(snapshot: LocalWorkspaceSnapshot) {
+  activeLocalSnapshot = structuredClone(snapshot);
+  activeLocalRevision += 1;
   const sortedAccounts = [...snapshot.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
   const sortedWarehouses = [...snapshot.warehouses].sort((a, b) => a.codeNumber - b.codeNumber);
   const sortedInventory = [...snapshot.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar"));
@@ -372,6 +381,17 @@ function writeLocalSnapshot(snapshot: LocalWorkspaceSnapshot) {
   notifyLocalListeners(snapshot);
 }
 
+async function persistLocalSnapshotDurably(snapshot: LocalWorkspaceSnapshot): Promise<void> {
+  if (!isIndexedDbAvailable()) {
+    throw new Error("حفظ التغييرات المحاسبية يتطلب دعم IndexedDB في المتصفح الحالي.");
+  }
+  await writeSnapshotToIndexedDb(snapshot);
+  try {
+    window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch { /* IndexedDB is the durable source of truth after quota exhaustion. */ }
+  notifyLocalListeners(snapshot);
+}
+
 function makeDocId(prefix: string): string {
   const rand =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -387,12 +407,13 @@ export async function ensureWorkspaceSeeded(uid: string, displayName?: string | 
       try {
         const dbSnap = await readSnapshotFromIndexedDb(uid);
         if (dbSnap) {
-          if (typeof window !== "undefined") {
+          try {
             window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(dbSnap));
-          }
+          } catch { /* Large accounting imports live in IndexedDB; quota must not hide them. */ }
           notifyLocalListeners(dbSnap);
         } else {
           await writeSnapshotToIndexedDb(localSnap);
+          notifyLocalListeners(localSnap);
         }
       } catch {
         // Fallback cleanly to localStorage snapshot
@@ -559,6 +580,7 @@ export function subscribeWorkspace(
   if (uid === LOCAL_WORKSPACE_UID) {
     localListeners.add(callbacks);
     const snapshot = readLocalSnapshot();
+    const subscriptionRevision = activeLocalRevision;
     queueMicrotask(() => {
       callbacks.onWorkspace(snapshot.workspace);
       callbacks.onAccounts([...snapshot.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
@@ -570,23 +592,10 @@ export function subscribeWorkspace(
       void readSnapshotFromIndexedDb(uid)
         .then((idbSnap) => {
           if (!idbSnap || !localListeners.has(callbacks)) return;
-          const totalIdb =
-            idbSnap.accounts.length +
-            idbSnap.ledger.length +
-            idbSnap.warehouses.length +
-            idbSnap.inventory.length;
-          const totalLs =
-            snapshot.accounts.length +
-            snapshot.ledger.length +
-            snapshot.warehouses.length +
-            snapshot.inventory.length;
-          if (totalIdb > totalLs) {
-            callbacks.onWorkspace(idbSnap.workspace);
-            callbacks.onAccounts([...idbSnap.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
-            callbacks.onLedger([...idbSnap.ledger]);
-            callbacks.onWarehouses([...idbSnap.warehouses].sort((a, b) => a.codeNumber - b.codeNumber));
-            callbacks.onInventory([...idbSnap.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar")));
-          }
+          // IndexedDB is authoritative even if the number of records is
+          // unchanged (e.g. a manually reconciled stock quantity or price).
+          // Do not replay an older async read over a newer in-session write.
+          if (activeLocalRevision === subscriptionRevision) notifyLocalListeners(idbSnap);
         })
         .catch(() => {});
     }
@@ -701,6 +710,8 @@ export function subscribeWorkspace(
             unit: String(data.unit ?? "حبة"),
             quantity: Number(data.quantity ?? 0),
             avgCost: Number(data.avgCost ?? 0),
+            ...(typeof data.sellingPrice === "number" && Number.isFinite(data.sellingPrice) && data.sellingPrice > 0
+              ? { sellingPrice: data.sellingPrice } : {}),
             minThreshold: typeof data.minThreshold === "number" ? data.minThreshold : 25,
             ...(typeof data.sku === "string" && data.sku ? { sku: data.sku } : {}),
             warehouseId: String(data.warehouseId ?? ""),
@@ -816,7 +827,7 @@ export async function createLedgerEntry(
   if (uid === LOCAL_WORKSPACE_UID) {
     const snap = readLocalSnapshot();
     snap.ledger.push({ id, ...clean, createdAtMs: Date.now() });
-    writeLocalSnapshot(snap);
+    await persistLocalSnapshotDurably(snap);
     return id;
   }
   const path = `workspaces/${uid}/ledger/${id}`;
@@ -978,7 +989,7 @@ export async function createInventoryItem(
   if (uid === LOCAL_WORKSPACE_UID) {
     const snap = readLocalSnapshot();
     snap.inventory.push({ id, ...clean });
-    writeLocalSnapshot(snap);
+    await persistLocalSnapshotDurably(snap);
     return id;
   }
   const path = `workspaces/${uid}/inventory/${id}`;
@@ -1005,7 +1016,7 @@ export async function updateInventoryItem(
     const idx = snap.inventory.findIndex((i) => i.id === itemId);
     if (idx >= 0) {
       snap.inventory[idx] = { id: itemId, ...clean };
-      writeLocalSnapshot(snap);
+      await persistLocalSnapshotDurably(snap);
     }
     return;
   }
@@ -1032,7 +1043,9 @@ export async function batchUpdateInventoryItems(
     item: InventoryItemRecord;
     quantity?: number;
     avgCost?: number;
+    sellingPrice?: number;
     minThreshold?: number;
+    quantityUnverified?: boolean;
   }[],
 ): Promise<void> {
   if (updates.length === 0) return;
@@ -1044,14 +1057,16 @@ export async function batchUpdateInventoryItems(
         ownerId: uid,
         quantity: entry.quantity ?? entry.item.quantity,
         avgCost: entry.avgCost ?? entry.item.avgCost,
+        sellingPrice: entry.sellingPrice ?? entry.item.sellingPrice,
         minThreshold: entry.minThreshold ?? entry.item.minThreshold,
+        quantityUnverified: entry.quantityUnverified ?? entry.item.quantityUnverified,
       });
       const idx = snap.inventory.findIndex((i) => i.id === entry.item.id);
       if (idx >= 0) {
         snap.inventory[idx] = { id: entry.item.id, ...clean };
       }
     }
-    writeLocalSnapshot(snap);
+    await persistLocalSnapshotDurably(snap);
     return;
   }
   const path = `workspaces/${uid}/inventory/batch`;
@@ -1063,16 +1078,20 @@ export async function batchUpdateInventoryItems(
         ownerId: uid,
         quantity: entry.quantity ?? entry.item.quantity,
         avgCost: entry.avgCost ?? entry.item.avgCost,
+        sellingPrice: entry.sellingPrice ?? entry.item.sellingPrice,
         minThreshold: entry.minThreshold ?? entry.item.minThreshold,
+        quantityUnverified: entry.quantityUnverified ?? entry.item.quantityUnverified,
       });
       batch.update(doc(db, "workspaces", uid, "inventory", entry.item.id), {
         name: clean.name,
         unit: clean.unit,
         quantity: clean.quantity,
         avgCost: clean.avgCost,
+        ...(clean.sellingPrice !== undefined ? { sellingPrice: clean.sellingPrice } : {}),
         minThreshold: clean.minThreshold,
         ...(clean.sku ? { sku: clean.sku } : {}),
         warehouseId: clean.warehouseId,
+        quantityUnverified: Boolean(clean.quantityUnverified),
         updatedAt: serverTimestamp(),
       });
     }
@@ -1276,14 +1295,8 @@ export async function mergeLegacyMasterBatch(
         inventoryAdded += 1;
       }
     }
-    // Await the durable IndexedDB commit before reporting an import as successful.
-    // Fire-and-forget snapshot writes could race with reload and lose imported rows.
-    if (!isIndexedDbAvailable()) throw new Error("IndexedDB مطلوب لحفظ الحسابات والأصناف المستوردة على الهاتف.");
-    await writeSnapshotToIndexedDb(snap);
-    try {
-      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(snap));
-    } catch { /* IndexedDB is authoritative if localStorage quota is exceeded. */ }
-    notifyLocalListeners(snap);
+    // Imported master records become visible only after durable IndexedDB commit.
+    await persistLocalSnapshotDurably(snap);
     return { accountsAdded, warehousesAdded, inventoryAdded };
   }
 
@@ -1351,7 +1364,7 @@ export async function postLegacyLedgerBatch(
         added += 1;
       }
     }
-    writeLocalSnapshot(snap);
+    await persistLocalSnapshotDurably(snap);
     return { added, skippedDuplicates };
   }
 
