@@ -165,6 +165,7 @@ import {
   extractBackupCollections,
   inspectBackupBytes,
 } from "./utils/backupFormat";
+import { describeGoogleSignInError } from "./utils/authError";
 import { exportSummaryAsPngImage } from "./utils/canvasExport";
 import {
   DEFAULT_HOME_METRIC_ORDER,
@@ -471,12 +472,7 @@ function NasqoProductionShell() {
     try {
       await signInWithGoogle();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setAuthError(
-        msg.includes("popup-closed")
-          ? "تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية."
-          : "تعذر إتمام تسجيل الدخول عبر Google. يمكنك الدخول مباشرة عبر مساحة العمل المحلية بالأسفل.",
-      );
+      setAuthError(describeGoogleSignInError(err));
     } finally {
       setAuthBusy(false);
     }
