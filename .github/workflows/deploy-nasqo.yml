@@ -26,6 +26,10 @@ jobs:
           npm run check:runtime
           npm run lint
           npm run build
+          # Rebuild only the client with an isolated URL prefix for ERP domain routing.
+          # Source runtime integrity checks are unchanged.
+          npx vite build --base /nsqo-app/
+          node deploy/prepare-subpath.mjs
           npm run test:sites
       - name: Prepare release
         run: |
