@@ -32,7 +32,7 @@ jobs:
           mkdir -p release/dist
           cp package.json package-lock.json server.ts Dockerfile.deploy release/
           cp -a dist/client release/dist/client
-          cp deploy/deploy.sh release/deploy.sh
+          printf '%s\n' "$GITHUB_SHA" > release/RELEASE_SHA
           tar -czf "$RUNNER_TEMP/nsqo-release.tar.gz" -C release .
       - name: Configure SSH (host key pinned)
         if: github.event_name != 'pull_request'
@@ -53,8 +53,6 @@ jobs:
           HOST: ${{ secrets.NASQO_DEPLOY_HOST }}
           USER: ${{ secrets.NASQO_DEPLOY_USER }}
         run: |
-          SSH=(ssh -i "$HOME/.ssh/nasqo_deploy" -o BatchMode=yes -o StrictHostKeyChecking=yes)
-          SCP=(scp -i "$HOME/.ssh/nasqo_deploy" -o BatchMode=yes -o StrictHostKeyChecking=yes)
-          "${SSH[@]}" "$USER@$HOST" 'mkdir -p "$HOME/apps/nsqo-mobile/releases"'
-          "${SCP[@]}" "$RUNNER_TEMP/nsqo-release.tar.gz" "$USER@$HOST:/tmp/nsqo-${GITHUB_SHA}.tar.gz"
-          "${SSH[@]}" "$USER@$HOST" "set -e; mkdir -p \"\$HOME/apps/nsqo-mobile/releases/${GITHUB_SHA}\"; tar -xzf '/tmp/nsqo-${GITHUB_SHA}.tar.gz' -C \"\$HOME/apps/nsqo-mobile/releases/${GITHUB_SHA}\"; rm -f '/tmp/nsqo-${GITHUB_SHA}.tar.gz'; bash \"\$HOME/apps/nsqo-mobile/releases/${GITHUB_SHA}/deploy.sh\" '${GITHUB_SHA}'"
+          ssh -T -i "$HOME/.ssh/nasqo_deploy" \
+              -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              "$USER@$HOST" < "$RUNNER_TEMP/nsqo-release.tar.gz"
