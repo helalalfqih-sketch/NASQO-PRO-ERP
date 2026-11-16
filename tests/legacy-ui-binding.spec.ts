@@ -47,7 +47,7 @@ test("SQLite one-click import populates live screens, persists and searches sour
   await page.getByLabel("إضافة", { exact: true }).click();
   await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "الفواتير التاريخية والمطابقة" }).click();
   const archive = page.getByRole("dialog");
-  await archive.getByPlaceholder(/بحث برقم الفاتورة/).fill("BAR-9988");
+  await archive.getByPlaceholder(/بحث بالرقم/).fill("BAR-9988");
   await expect(archive.getByText("عميل اختبار نسق").first()).toBeVisible();
   await archive.getByRole("button", { name: "فتح البنود" }).click();
   await expect(archive.getByTestId("legacy-invoice-detail").getByText("فلتر محرك مميز")).toBeVisible();
@@ -85,7 +85,8 @@ test("SQLite one-click import populates live screens, persists and searches sour
     });
     try {
       const result = await new Promise<{ quantity: number; sellingPrice?: number; quantityUnverified?: boolean }[]>((resolve, reject) => {
-        const request = db.transaction("inventory", "readonly").objectStore("inventory").getAll();
+        const request = db.transaction("inventory_v2", "readonly").objectStore("inventory_v2")
+          .index("byOwner").getAll(IDBKeyRange.only("local-erp-workspace"));
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });

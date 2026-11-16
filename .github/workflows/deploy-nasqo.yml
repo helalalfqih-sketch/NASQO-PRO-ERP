@@ -26,6 +26,7 @@ jobs:
           npm run check:runtime
           npm run lint
           npx tsx --test tests/legacy-search-binding.test.ts tests/legacy-live-safety.test.ts
+          npx tsx --test tests/workspace-isolation.test.ts tests/local-database.test.ts
           node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs
           npm run build
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
@@ -37,6 +38,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts --reporter=line
+          NASQO_PRIVATE_E2E_SOURCE=backup_2026.11.08_03.49.26.back npx playwright test tests/legacy-real-data.spec.ts --reporter=line
       - name: Prepare release
         run: |
           mkdir -p release/dist
