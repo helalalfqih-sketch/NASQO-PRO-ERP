@@ -197,11 +197,13 @@ onAuthStateChanged(auth, (user) => {
 });
 
 export async function signInWithGoogle(): Promise<User> {
-  const provider = buildGoogleDriveProvider();
+  // Ordinary login only needs Google identity. Do NOT request Drive scopes here:
+  // sensitive/restricted Drive permissions belong to the separate Drive flow.
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
   const result = await signInWithPopup(auth, provider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  cachedGoogleAccessToken = credential?.accessToken ?? null;
-  notifyGoogleTokenListeners();
+  // A previously cached Drive token must never carry over to a new sign-in.
+  clearGoogleAccessToken();
   return result.user;
 }
 
