@@ -34,6 +34,12 @@ import type {
   WarehouseRecord,
   WorkspaceSettings,
 } from "./types";
+import {
+  clearLocalDatabase,
+  isIndexedDbAvailable,
+  readSnapshotFromIndexedDb,
+  writeSnapshotToIndexedDb,
+} from "./utils/localDatabase";
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -113,6 +119,161 @@ export async function signOutUser(): Promise<void> {
   await signOut(auth);
 }
 
+export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
+const LOCAL_WORKSPACE_STORAGE_KEY = "nasqo-local-workspace-v1";
+const LOCAL_SESSION_STORAGE_KEY = "nasqo-local-session-active";
+
+export function isLocalWorkspaceSession(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(LOCAL_SESSION_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setLocalWorkspaceSession(active: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (active) {
+      window.localStorage.setItem(LOCAL_SESSION_STORAGE_KEY, "1");
+    } else {
+      window.localStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+type LocalWorkspaceSnapshot = {
+  workspace: WorkspaceSettings;
+  accounts: AccountRecord[];
+  ledger: LedgerEntryRecord[];
+  warehouses: WarehouseRecord[];
+  inventory: InventoryItemRecord[];
+  backups: { id: string; name: string; exportedAtIso: string }[];
+};
+
+type WorkspaceCallbacks = {
+  onWorkspace: (ws: WorkspaceSettings | null) => void;
+  onAccounts: (accounts: AccountRecord[]) => void;
+  onLedger: (entries: LedgerEntryRecord[]) => void;
+  onWarehouses: (warehouses: WarehouseRecord[]) => void;
+  onInventory: (items: InventoryItemRecord[]) => void;
+};
+
+const localListeners = new Set<WorkspaceCallbacks>();
+
+function buildStarterSnapshot(uid: string, displayName?: string | null): LocalWorkspaceSnapshot {
+  const daysAgoIso = (days: number) =>
+    new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
+  const workspace: WorkspaceSettings = {
+    id: uid,
+    ownerId: uid,
+    companyName: displayName ? `نشاط ${displayName}` : "نسقو برو ERP",
+    defaultCurrency: "ريال",
+    whatsappProvider: "nasqo",
+    whatsappInstantEnabled: false,
+    whatsappPhone: "",
+  };
+
+  const warehouses: WarehouseRecord[] = [
+    { id: "wh_1", ownerId: uid, name: "المخزن الرئيسي", details: "المستودع الافتراضي", isDefault: true, codeNumber: 1 },
+    { id: "wh_3", ownerId: uid, name: "مخازن بينون", details: "مستودع البضائع العام", isDefault: false, codeNumber: 3 },
+    { id: "wh_4", ownerId: uid, name: "بينون", details: "فرع التوريد", isDefault: false, codeNumber: 4 },
+  ];
+
+  const inventory: InventoryItemRecord[] = [
+    { id: "inv_1", ownerId: uid, name: "ابجورة شكل قمر", unit: "حبة", quantity: 40, avgCost: 2200, minThreshold: 25, sku: "SKU-1001", warehouseId: "wh_3" },
+    { id: "inv_2", ownerId: uid, name: "توصيلة تايب سي 2 متر", unit: "حبة", quantity: 120, avgCost: 1500, minThreshold: 30, sku: "SKU-1002", warehouseId: "wh_1" },
+    { id: "inv_3", ownerId: uid, name: "بطارية جهاز كشف الذهب", unit: "حبة", quantity: 25, avgCost: 1500, minThreshold: 25, sku: "SKU-1003", warehouseId: "wh_1" },
+    { id: "inv_4", ownerId: uid, name: "فواحة عطرية خازن", unit: "حبة", quantity: 35, avgCost: 3400, minThreshold: 20, sku: "SKU-1004", warehouseId: "wh_3" },
+    { id: "inv_5", ownerId: uid, name: "مكينة خياطة كبير", unit: "حبة", quantity: 12, avgCost: 10000, minThreshold: 25, sku: "SKU-1005", warehouseId: "wh_1" },
+    { id: "inv_6", ownerId: uid, name: "عازل سطوح 10 كيلو", unit: "كيلو", quantity: 18, avgCost: 33000, minThreshold: 25, sku: "SKU-1006", warehouseId: "wh_1" },
+    { id: "inv_7", ownerId: uid, name: "فرامة لحم", unit: "حبة", quantity: 15, avgCost: 3000, minThreshold: 25, sku: "SKU-1007", warehouseId: "wh_4" },
+  ];
+
+  const accounts: AccountRecord[] = [
+    { id: "acc_barari", ownerId: uid, name: "البراري للتوريد", category: "purchases", phone: "055 832 1042", creditLimit: 1000000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 1, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 243450, openingDirection: "credit", codeNumber: 34 },
+    { id: "acc_naqd_hilal", ownerId: uid, name: "نقـد هلال", category: "purchases", phone: "050 441 7731", creditLimit: 500000, currency: "ريال", isCashAccount: true, accountImage: "1", sortOrder: 2, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "حساب المشتريات النقدية", openingBalance: 0, openingDirection: "credit", codeNumber: 9 },
+    { id: "acc_waha", ownerId: uid, name: "الواحة التجارية", category: "purchases", phone: "053 190 6208", creditLimit: 750000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 3, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 227601, openingDirection: "credit", codeNumber: 49 },
+    { id: "acc_khatabi", ownerId: uid, name: "خطابي وشركاه", category: "purchases", phone: "056 710 8824", creditLimit: 250000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 4, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 64000, openingDirection: "debit", codeNumber: 53 },
+    { id: "acc_bashar", ownerId: uid, name: "بشار العزي", category: "purchases", phone: "", creditLimit: 1000000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 5, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 227601, openingDirection: "credit", codeNumber: 6 },
+    { id: "acc_client_noor", ownerId: uid, name: "شركة النور للتجارة", category: "clients", phone: "055 210 9934", creditLimit: 400000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 6, settlement: false, documentNumberRequired: false, messageMethod: "whatsapp", sendMode: "confirm", note: "عميل جملة رئيسي", openingBalance: 48500, openingDirection: "debit", codeNumber: 55 },
+    { id: "acc_shop_main", ownerId: uid, name: "حساب المحل", category: "shop", phone: "", creditLimit: 500000, currency: "ريال", isCashAccount: false, accountImage: "2", sortOrder: 7, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "مصروفات وتشغيل المحل", openingBalance: 261100, openingDirection: "debit", codeNumber: 60 },
+    { id: "acc_emp_1", ownerId: uid, name: "رواتب الموظفين", category: "employees", phone: "", creditLimit: 200000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 8, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 10500, openingDirection: "credit", codeNumber: 61 },
+    { id: "acc_sales_1", ownerId: uid, name: "المبيعات العامة", category: "sales", phone: "", creditLimit: 2000000, currency: "ريال", isCashAccount: false, accountImage: "3", sortOrder: 9, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 172650, openingDirection: "debit", codeNumber: 62 },
+  ];
+
+  const baseMs = Date.now() - 20 * 86_400_000;
+  const ledger: LedgerEntryRecord[] = [
+    { id: "ent_1108", ownerId: uid, accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه", payment: "cash", direction: "debit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "تسوية حساب مورد", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1108, deleted: false, entryDate: daysAgoIso(18), expenseCategory: "مشتريات بضائع", deliveryDays: 3, createdAtMs: baseMs + 1000 },
+    { id: "ent_1136", ownerId: uid, accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 4000, currency: "ريال", exchangeRate: 1, details: "زينة منازل شكل شجرة | 1 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1136, deleted: false, entryDate: daysAgoIso(11), expenseCategory: "مشتريات بضائع", deliveryDays: 2, createdAtMs: baseMs + 2000 },
+    { id: "ent_1178", ownerId: uid, accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 33000, currency: "ريال", exchangeRate: 1, details: "عازل سطوح 10 كيلو | 1 كيلو", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1178, deleted: false, entryDate: daysAgoIso(5), dueDate: daysAgoIso(-3), expenseCategory: "مشتريات بضائع", deliveryDays: 4, createdAtMs: baseMs + 3000 },
+    { id: "ent_1090", ownerId: uid, accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 17000, currency: "ريال", exchangeRate: 1, details: "فواحة عطرية خازن | 5 حبة", documentNumber: "", warehouseId: "wh_3", warehouseName: "مخازن بينون", invoiceContent: "items", entryNumber: 1090, deleted: false, entryDate: daysAgoIso(14), expenseCategory: "مشتريات بضائع", deliveryDays: 1, createdAtMs: baseMs + 4000 },
+    { id: "ent_1140", ownerId: uid, accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 3000, currency: "ريال", exchangeRate: 1, details: "توصيلة تايب سي 2 متر | 1 حبة\nبطارية جهاز كشف الذهب | 1 حبة", documentNumber: "1140", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1140, deleted: false, entryDate: daysAgoIso(6), expenseCategory: "مشتريات بضائع", deliveryDays: 2, createdAtMs: baseMs + 5000 },
+    { id: "ent_1218", ownerId: uid, accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "محلات بن عوضة\nمكينة خياطة كبير | 2 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1218, deleted: false, entryDate: daysAgoIso(3), expenseCategory: "شحن ونقل", deliveryDays: 2, createdAtMs: baseMs + 6000 },
+    { id: "ent_1225", ownerId: uid, accountId: "acc_shop_main", accountName: "حساب المحل", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 6500, currency: "ريال", exchangeRate: 1, details: "فاتورة كهرباء وصيانة مستودع", documentNumber: "1225", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1225, deleted: false, entryDate: daysAgoIso(4), expenseCategory: "صيانة ومرافق", createdAtMs: baseMs + 7000 },
+    { id: "ent_1230", ownerId: uid, accountId: "acc_emp_1", accountName: "رواتب الموظفين", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 12000, currency: "ريال", exchangeRate: 1, details: "دفعة رواتب شهرية", documentNumber: "1230", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1230, deleted: false, entryDate: daysAgoIso(2), expenseCategory: "رواتب وأجور", createdAtMs: baseMs + 8000 },
+    { id: "ent_1235", ownerId: uid, accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 24500, currency: "ريال", exchangeRate: 1, details: "مبيعات أجهزة وتجهيزات", documentNumber: "1235", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1235, deleted: false, entryDate: daysAgoIso(1), createdAtMs: baseMs + 9000 },
+    { id: "ent_1236", ownerId: uid, accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 18500, currency: "ريال", exchangeRate: 1, details: "مبيعات الجملة اليومية", documentNumber: "1236", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1236, deleted: false, entryDate: daysAgoIso(0), createdAtMs: baseMs + 10000 },
+  ];
+
+  return { workspace, accounts, ledger, warehouses, inventory, backups: [] };
+}
+
+function readLocalSnapshot(): LocalWorkspaceSnapshot {
+  if (typeof window === "undefined") return buildStarterSnapshot(LOCAL_WORKSPACE_UID);
+  try {
+    const raw = window.localStorage.getItem(LOCAL_WORKSPACE_STORAGE_KEY);
+    if (!raw) {
+      const seeded = buildStarterSnapshot(LOCAL_WORKSPACE_UID);
+      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(seeded));
+      return seeded;
+    }
+    const parsed = JSON.parse(raw) as Partial<LocalWorkspaceSnapshot>;
+    const fallback = buildStarterSnapshot(LOCAL_WORKSPACE_UID);
+    return {
+      workspace: parsed.workspace ?? fallback.workspace,
+      accounts: Array.isArray(parsed.accounts) ? parsed.accounts : fallback.accounts,
+      ledger: Array.isArray(parsed.ledger) ? parsed.ledger : fallback.ledger,
+      warehouses: Array.isArray(parsed.warehouses) ? parsed.warehouses : fallback.warehouses,
+      inventory: Array.isArray(parsed.inventory) ? parsed.inventory : fallback.inventory,
+      backups: Array.isArray(parsed.backups) ? parsed.backups : [],
+    };
+  } catch {
+    return buildStarterSnapshot(LOCAL_WORKSPACE_UID);
+  }
+}
+
+function notifyLocalListeners(snapshot: LocalWorkspaceSnapshot) {
+  const sortedAccounts = [...snapshot.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
+  const sortedWarehouses = [...snapshot.warehouses].sort((a, b) => a.codeNumber - b.codeNumber);
+  const sortedInventory = [...snapshot.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  for (const cb of localListeners) {
+    cb.onWorkspace(snapshot.workspace);
+    cb.onAccounts(sortedAccounts);
+    cb.onLedger([...snapshot.ledger]);
+    cb.onWarehouses(sortedWarehouses);
+    cb.onInventory(sortedInventory);
+  }
+}
+
+function writeLocalSnapshot(snapshot: LocalWorkspaceSnapshot) {
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Ignore quota issues
+    }
+    if (isIndexedDbAvailable()) {
+      void writeSnapshotToIndexedDb(snapshot).catch(() => {});
+    }
+  }
+  notifyLocalListeners(snapshot);
+}
+
 function makeDocId(prefix: string): string {
   const rand =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -122,6 +283,25 @@ function makeDocId(prefix: string): string {
 }
 
 export async function ensureWorkspaceSeeded(uid: string, displayName?: string | null): Promise<void> {
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const localSnap = readLocalSnapshot();
+    if (isIndexedDbAvailable()) {
+      try {
+        const dbSnap = await readSnapshotFromIndexedDb(uid);
+        if (dbSnap) {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(dbSnap));
+          }
+          notifyLocalListeners(dbSnap);
+        } else {
+          await writeSnapshotToIndexedDb(localSnap);
+        }
+      } catch {
+        // Fallback cleanly to localStorage snapshot
+      }
+    }
+    return;
+  }
   const wsPath = `workspaces/${uid}`;
   const wsRef = doc(db, "workspaces", uid);
 
@@ -241,16 +421,57 @@ export async function ensureWorkspaceSeeded(uid: string, displayName?: string | 
   }
 }
 
+function mapLedgerDoc(id: string, uid: string, data: Record<string, unknown>): LedgerEntryRecord {
+  const ts = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
+  return {
+    id,
+    ownerId: String(data.ownerId ?? uid),
+    accountId: String(data.accountId ?? ""),
+    accountName: String(data.accountName ?? ""),
+    counterpartAccountId: String(data.counterpartAccountId ?? ""),
+    counterpartAccountName: String(data.counterpartAccountName ?? ""),
+    kind: (data.kind as LedgerEntryRecord["kind"]) ?? "voucher",
+    typeLabel: String(data.typeLabel ?? "سند"),
+    payment: (data.payment as LedgerEntryRecord["payment"]) ?? "cash",
+    direction: data.direction === "credit" ? "credit" : "debit",
+    amount: Number(data.amount ?? 0),
+    currency: (data.currency as LedgerEntryRecord["currency"]) ?? "ريال",
+    exchangeRate: Number(data.exchangeRate ?? 1),
+    details: String(data.details ?? ""),
+    documentNumber: String(data.documentNumber ?? ""),
+    warehouseId: String(data.warehouseId ?? ""),
+    warehouseName: String(data.warehouseName ?? ""),
+    invoiceContent: (data.invoiceContent as LedgerEntryRecord["invoiceContent"]) ?? "none",
+    entryNumber: Number(data.entryNumber ?? 1),
+    deleted: Boolean(data.deleted),
+    entryDate: String(data.entryDate ?? ""),
+    ...(typeof data.dueDate === "string" && data.dueDate ? { dueDate: data.dueDate } : {}),
+    ...(typeof data.expenseCategory === "string" && data.expenseCategory
+      ? { expenseCategory: data.expenseCategory }
+      : {}),
+    ...(typeof data.deliveryDays === "number" ? { deliveryDays: data.deliveryDays } : {}),
+    createdAtMs: ts,
+  };
+}
+
 export function subscribeWorkspace(
   uid: string,
-  callbacks: {
-    onWorkspace: (ws: WorkspaceSettings | null) => void;
-    onAccounts: (accounts: AccountRecord[]) => void;
-    onLedger: (entries: LedgerEntryRecord[]) => void;
-    onWarehouses: (warehouses: WarehouseRecord[]) => void;
-    onInventory: (items: InventoryItemRecord[]) => void;
-  },
+  callbacks: WorkspaceCallbacks,
 ): () => void {
+  if (uid === LOCAL_WORKSPACE_UID) {
+    localListeners.add(callbacks);
+    const snapshot = readLocalSnapshot();
+    queueMicrotask(() => {
+      callbacks.onWorkspace(snapshot.workspace);
+      callbacks.onAccounts([...snapshot.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
+      callbacks.onLedger([...snapshot.ledger]);
+      callbacks.onWarehouses([...snapshot.warehouses].sort((a, b) => a.codeNumber - b.codeNumber));
+      callbacks.onInventory([...snapshot.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+    });
+    return () => {
+      localListeners.delete(callbacks);
+    };
+  }
   const unsubs: Unsubscribe[] = [];
 
   unsubs.push(
@@ -314,39 +535,7 @@ export function subscribeWorkspace(
     onSnapshot(
       query(collection(db, "workspaces", uid, "ledger"), where("ownerId", "==", uid)),
       (snap) => {
-        const list: LedgerEntryRecord[] = snap.docs.map((d) => {
-          const data = d.data();
-          const ts = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
-          return {
-            id: d.id,
-            ownerId: String(data.ownerId ?? uid),
-            accountId: String(data.accountId ?? ""),
-            accountName: String(data.accountName ?? ""),
-            counterpartAccountId: String(data.counterpartAccountId ?? ""),
-            counterpartAccountName: String(data.counterpartAccountName ?? ""),
-            kind: data.kind ?? "voucher",
-            typeLabel: String(data.typeLabel ?? "سند"),
-            payment: data.payment ?? "cash",
-            direction: data.direction === "credit" ? "credit" : "debit",
-            amount: Number(data.amount ?? 0),
-            currency: data.currency ?? "ريال",
-            exchangeRate: Number(data.exchangeRate ?? 1),
-            details: String(data.details ?? ""),
-            documentNumber: String(data.documentNumber ?? ""),
-            warehouseId: String(data.warehouseId ?? ""),
-            warehouseName: String(data.warehouseName ?? ""),
-            invoiceContent: data.invoiceContent ?? "none",
-            entryNumber: Number(data.entryNumber ?? 1),
-            deleted: Boolean(data.deleted),
-            entryDate: String(data.entryDate ?? ""),
-            ...(typeof data.dueDate === "string" && data.dueDate ? { dueDate: data.dueDate } : {}),
-            ...(typeof data.expenseCategory === "string" && data.expenseCategory
-              ? { expenseCategory: data.expenseCategory }
-              : {}),
-            ...(typeof data.deliveryDays === "number" ? { deliveryDays: data.deliveryDays } : {}),
-            createdAtMs: ts,
-          };
-        });
+        const list: LedgerEntryRecord[] = snap.docs.map((d) => mapLedgerDoc(d.id, uid, d.data()));
         callbacks.onLedger(list);
       },
       (err) => handleFirestoreError(err, OperationType.LIST, `workspaces/${uid}/ledger`),
@@ -409,9 +598,23 @@ export async function saveWorkspaceSettings(
   uid: string,
   updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">> & WorkspaceSettings,
 ) {
+  const clean = sanitizeWorkspacePayload({ ...updates, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    snap.workspace = {
+      id: uid,
+      ownerId: uid,
+      companyName: clean.companyName,
+      defaultCurrency: clean.defaultCurrency,
+      whatsappProvider: clean.whatsappProvider,
+      whatsappInstantEnabled: clean.whatsappInstantEnabled,
+      whatsappPhone: clean.whatsappPhone,
+    };
+    writeLocalSnapshot(snap);
+    return;
+  }
   const path = `workspaces/${uid}`;
   try {
-    const clean = sanitizeWorkspacePayload({ ...updates, ownerId: uid });
     await updateDoc(doc(db, "workspaces", uid), {
       companyName: clean.companyName,
       defaultCurrency: clean.defaultCurrency,
@@ -431,8 +634,20 @@ export async function createOrUpdateAccount(
   existingId?: string,
 ): Promise<string> {
   const id = existingId || makeDocId("acc");
-  const path = `workspaces/${uid}/accounts/${id}`;
   const clean = sanitizeAccountPayload({ ...account, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const record: AccountRecord = { id, ...clean };
+    const idx = snap.accounts.findIndex((a) => a.id === id);
+    if (idx >= 0) {
+      snap.accounts[idx] = { ...snap.accounts[idx], ...record, codeNumber: snap.accounts[idx].codeNumber };
+    } else {
+      snap.accounts.push(record);
+    }
+    writeLocalSnapshot(snap);
+    return id;
+  }
+  const path = `workspaces/${uid}/accounts/${id}`;
   try {
     if (existingId) {
       await updateDoc(doc(db, "workspaces", uid, "accounts", id), {
@@ -471,8 +686,14 @@ export async function createLedgerEntry(
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<string> {
   const id = makeDocId("ent");
-  const path = `workspaces/${uid}/ledger/${id}`;
   const clean = sanitizeLedgerPayload({ ...entry, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    snap.ledger.push({ id, ...clean, createdAtMs: Date.now() });
+    writeLocalSnapshot(snap);
+    return id;
+  }
+  const path = `workspaces/${uid}/ledger/${id}`;
   try {
     await setDoc(doc(db, "workspaces", uid, "ledger", id), {
       ...clean,
@@ -490,8 +711,17 @@ export async function updateLedgerEntry(
   entryId: string,
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<void> {
-  const path = `workspaces/${uid}/ledger/${entryId}`;
   const clean = sanitizeLedgerPayload({ ...entry, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const idx = snap.ledger.findIndex((e) => e.id === entryId);
+    if (idx >= 0) {
+      snap.ledger[idx] = { ...snap.ledger[idx], ...clean };
+      writeLocalSnapshot(snap);
+    }
+    return;
+  }
+  const path = `workspaces/${uid}/ledger/${entryId}`;
   try {
     await updateDoc(doc(db, "workspaces", uid, "ledger", entryId), {
       accountId: clean.accountId,
@@ -522,6 +752,15 @@ export async function updateLedgerEntry(
 }
 
 export async function setLedgerDeleted(uid: string, entryId: string, deleted: boolean): Promise<void> {
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const idx = snap.ledger.findIndex((e) => e.id === entryId);
+    if (idx >= 0) {
+      snap.ledger[idx] = { ...snap.ledger[idx], deleted };
+      writeLocalSnapshot(snap);
+    }
+    return;
+  }
   const path = `workspaces/${uid}/ledger/${entryId}`;
   try {
     await updateDoc(doc(db, "workspaces", uid, "ledger", entryId), {
@@ -534,6 +773,12 @@ export async function setLedgerDeleted(uid: string, entryId: string, deleted: bo
 }
 
 export async function permanentlyDeleteLedger(uid: string, entryId: string): Promise<void> {
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    snap.ledger = snap.ledger.filter((e) => e.id !== entryId);
+    writeLocalSnapshot(snap);
+    return;
+  }
   const path = `workspaces/${uid}/ledger/${entryId}`;
   try {
     await deleteDoc(doc(db, "workspaces", uid, "ledger", entryId));
@@ -549,8 +794,22 @@ export async function saveWarehouse(
   existingId?: string,
 ): Promise<string> {
   const id = existingId || makeDocId("wh");
-  const path = `workspaces/${uid}/warehouses/${id}`;
   const clean = sanitizeWarehousePayload({ ...warehouse, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    if (clean.isDefault) {
+      snap.warehouses = snap.warehouses.map((w) => ({ ...w, isDefault: w.id === id }));
+    }
+    const idx = snap.warehouses.findIndex((w) => w.id === id);
+    if (idx >= 0) {
+      snap.warehouses[idx] = { ...snap.warehouses[idx], name: clean.name, details: clean.details, isDefault: clean.isDefault };
+    } else {
+      snap.warehouses.push({ id, ...clean });
+    }
+    writeLocalSnapshot(snap);
+    return id;
+  }
+  const path = `workspaces/${uid}/warehouses/${id}`;
   try {
     const batch = writeBatch(db);
     if (clean.isDefault) {
@@ -589,8 +848,14 @@ export async function createInventoryItem(
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): Promise<string> {
   const id = makeDocId("inv");
-  const path = `workspaces/${uid}/inventory/${id}`;
   const clean = sanitizeInventoryPayload({ ...item, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    snap.inventory.push({ id, ...clean });
+    writeLocalSnapshot(snap);
+    return id;
+  }
+  const path = `workspaces/${uid}/inventory/${id}`;
   try {
     await setDoc(doc(db, "workspaces", uid, "inventory", id), {
       ...clean,
@@ -608,8 +873,17 @@ export async function updateInventoryItem(
   itemId: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): Promise<void> {
-  const path = `workspaces/${uid}/inventory/${itemId}`;
   const clean = sanitizeInventoryPayload({ ...item, ownerId: uid });
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    const idx = snap.inventory.findIndex((i) => i.id === itemId);
+    if (idx >= 0) {
+      snap.inventory[idx] = { id: itemId, ...clean };
+      writeLocalSnapshot(snap);
+    }
+    return;
+  }
+  const path = `workspaces/${uid}/inventory/${itemId}`;
   try {
     await updateDoc(doc(db, "workspaces", uid, "inventory", itemId), {
       name: clean.name,
@@ -636,6 +910,24 @@ export async function batchUpdateInventoryItems(
   }[],
 ): Promise<void> {
   if (updates.length === 0) return;
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    for (const entry of updates) {
+      const clean = sanitizeInventoryPayload({
+        ...entry.item,
+        ownerId: uid,
+        quantity: entry.quantity ?? entry.item.quantity,
+        avgCost: entry.avgCost ?? entry.item.avgCost,
+        minThreshold: entry.minThreshold ?? entry.item.minThreshold,
+      });
+      const idx = snap.inventory.findIndex((i) => i.id === entry.item.id);
+      if (idx >= 0) {
+        snap.inventory[idx] = { id: entry.item.id, ...clean };
+      }
+    }
+    writeLocalSnapshot(snap);
+    return;
+  }
   const path = `workspaces/${uid}/inventory/batch`;
   try {
     const batch = writeBatch(db);
@@ -676,6 +968,16 @@ export async function createCloudBackupRecord(
   },
 ): Promise<string> {
   const id = makeDocId("bkp");
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    snap.backups.push({
+      id,
+      name: String(payload.name || "نسخة احتياطية").trim().slice(0, 120) || "نسخة احتياطية",
+      exportedAtIso: String(payload.exportedAtIso).slice(0, 40),
+    });
+    writeLocalSnapshot(snap);
+    return id;
+  }
   const path = `workspaces/${uid}/backups/${id}`;
   try {
     await setDoc(doc(db, "workspaces", uid, "backups", id), {
@@ -695,3 +997,113 @@ export async function createCloudBackupRecord(
   }
 }
 
+export async function syncLocalWorkspaceToIndexedDb(
+  uid: string,
+  liveData?: {
+    workspace?: WorkspaceSettings | null;
+    accounts: readonly AccountRecord[];
+    ledger: readonly LedgerEntryRecord[];
+    warehouses: readonly WarehouseRecord[];
+    inventory: readonly InventoryItemRecord[];
+  },
+): Promise<void> {
+  if (!isIndexedDbAvailable()) return;
+  if (uid === LOCAL_WORKSPACE_UID) {
+    const snap = readLocalSnapshot();
+    await writeSnapshotToIndexedDb(snap);
+    return;
+  }
+  if (liveData?.workspace) {
+    await writeSnapshotToIndexedDb({
+      workspace: liveData.workspace,
+      accounts: [...liveData.accounts],
+      ledger: [...liveData.ledger],
+      warehouses: [...liveData.warehouses],
+      inventory: [...liveData.inventory],
+      backups: [],
+    });
+  }
+}
+
+export async function resetLocalWorkspaceDatabase(): Promise<void> {
+  const seeded = buildStarterSnapshot(LOCAL_WORKSPACE_UID);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(seeded));
+    } catch {
+      // Ignore quota issues
+    }
+  }
+  if (isIndexedDbAvailable()) {
+    try {
+      await clearLocalDatabase();
+      await writeSnapshotToIndexedDb(seeded);
+    } catch {
+      // Fallback cleanly
+    }
+  }
+  notifyLocalListeners(seeded);
+}
+
+export async function fetchInvoiceFromDatabase(
+  uid: string,
+  entryId: string,
+): Promise<LedgerEntryRecord | null> {
+  const target = String(entryId || "").trim();
+  if (!target) return null;
+
+  if (uid === LOCAL_WORKSPACE_UID) {
+    if (isIndexedDbAvailable()) {
+      try {
+        const dbSnap = await readSnapshotFromIndexedDb(uid);
+        const match = dbSnap?.ledger.find(
+          (e) => e.id === target || String(e.entryNumber) === target,
+        );
+        if (match) return match;
+      } catch {
+        // Fallback to localStorage snapshot below
+      }
+    }
+    const localSnap = readLocalSnapshot();
+    return (
+      localSnap.ledger.find(
+        (e) => e.id === target || String(e.entryNumber) === target,
+      ) ?? null
+    );
+  }
+
+  const validDocId = /^[a-zA-Z0-9_-]{1,128}$/.test(target);
+  if (validDocId) {
+    const docPath = `workspaces/${uid}/ledger/${target}`;
+    try {
+      const snap = await getDoc(doc(db, "workspaces", uid, "ledger", target));
+      if (snap.exists()) {
+        return mapLedgerDoc(snap.id, uid, snap.data());
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, docPath);
+    }
+  }
+
+  const numericTarget = Number(target);
+  if (Number.isFinite(numericTarget)) {
+    const listPath = `workspaces/${uid}/ledger`;
+    try {
+      const q = query(
+        collection(db, "workspaces", uid, "ledger"),
+        where("ownerId", "==", uid),
+        where("entryNumber", "==", numericTarget),
+        limit(1),
+      );
+      const querySnap = await getDocs(q);
+      if (!querySnap.empty) {
+        const d = querySnap.docs[0];
+        return mapLedgerDoc(d.id, uid, d.data());
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, listPath);
+    }
+  }
+
+  return null;
+}

@@ -1,12 +1,132 @@
 import { jsPDF } from "jspdf";
 import { formatAmount, type DashboardSummary } from "../accounting";
-import type { CurrencyCode } from "../types";
+import type { CurrencyCode, LedgerEntryRecord } from "../types";
 
 export interface DashboardPdfPayload {
   companyName: string;
   defaultCurrency: CurrencyCode;
   periodLabel: string;
   summary: DashboardSummary;
+}
+
+export interface InvoicePdfSummaryLine {
+  description: string;
+  unit: string;
+  quantity: string;
+  unitPrice: string;
+  lineTotal: string;
+}
+
+export interface InvoicePdfSummaryData {
+  entryId: string;
+  entryNumber: number;
+  documentNumber: string;
+  companyName: string;
+  title: string;
+  accountName: string;
+  counterpartName: string;
+  warehouseName: string;
+  entryDate: string;
+  dueDate?: string;
+  paymentLabel: string;
+  directionLabel: string;
+  statusLabel: string;
+  currency: string;
+  exchangeRate: number;
+  amount: number;
+  formattedAmount: string;
+  vatLine?: string;
+  lines: InvoicePdfSummaryLine[];
+  footerNote?: string;
+  generatedAtIso: string;
+}
+
+const PAYMENT_LABELS: Record<LedgerEntryRecord["payment"], string> = {
+  cash: "نقدي",
+  credit: "آجل",
+  balance: "رصيد افتتاحي",
+};
+
+export function buildInvoicePdfSummaryData(
+  entry: LedgerEntryRecord,
+  options?: { companyName?: string; footerNote?: string; generatedAt?: Date },
+): InvoicePdfSummaryData {
+  const rawLines = entry.details
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let vatLine: string | undefined;
+  const itemLines: InvoicePdfSummaryLine[] = [];
+
+  for (const raw of rawLines) {
+    if (raw.startsWith("ضريبة القيمة المضافة")) {
+      vatLine = raw;
+      continue;
+    }
+    const pipeMatch = raw.match(/^(.+?)\s*\|\s*([0-9.,٠-٩]+)(?:\s+([^\s×x*]+))?\s*[×x*]\s*([0-9.,٠-٩]+)$/i);
+    if (pipeMatch) {
+      const desc = pipeMatch[1].trim();
+      const qtyStr = pipeMatch[2].trim();
+      const unitStr = (pipeMatch[3] ?? "وحدة").trim();
+      const priceStr = pipeMatch[4].trim();
+      const qtyNum = Number(qtyStr.replace(/,/g, ""));
+      const priceNum = Number(priceStr.replace(/,/g, ""));
+      const computedTotal =
+        Number.isFinite(qtyNum) && Number.isFinite(priceNum)
+          ? formatAmount(qtyNum * priceNum)
+          : priceStr;
+      itemLines.push({
+        description: desc,
+        unit: unitStr,
+        quantity: qtyStr,
+        unitPrice: priceStr,
+        lineTotal: computedTotal,
+      });
+    } else {
+      itemLines.push({
+        description: raw,
+        unit: itemLines.length === 0 ? "عملية" : "بند",
+        quantity: "1",
+        unitPrice: itemLines.length === 0 ? formatAmount(entry.amount) : "—",
+        lineTotal: itemLines.length === 0 ? formatAmount(entry.amount) : "—",
+      });
+    }
+  }
+
+  if (itemLines.length === 0) {
+    itemLines.push({
+      description: entry.typeLabel,
+      unit: "عملية",
+      quantity: "1",
+      unitPrice: formatAmount(entry.amount),
+      lineTotal: formatAmount(entry.amount),
+    });
+  }
+
+  return {
+    entryId: entry.id,
+    entryNumber: entry.entryNumber,
+    documentNumber: entry.documentNumber || `#${entry.entryNumber}`,
+    companyName: options?.companyName?.trim() || "نسقو برو",
+    title: entry.typeLabel,
+    accountName: entry.accountName,
+    counterpartName: entry.counterpartAccountName || "—",
+    warehouseName: entry.warehouseName || "المخزن الرئيسي",
+    entryDate: entry.entryDate,
+    dueDate: entry.dueDate,
+    paymentLabel: PAYMENT_LABELS[entry.payment] ?? entry.payment,
+    directionLabel: entry.direction === "debit" ? "مدين (عليه)" : "دائن (له)",
+    statusLabel: entry.deleted ? "ملغى" : "معتمد",
+    currency: entry.currency,
+    exchangeRate: entry.exchangeRate || 1,
+    amount: entry.amount,
+    formattedAmount: formatAmount(entry.amount),
+    vatLine,
+    lines: itemLines,
+    footerNote: options?.footerNote?.trim() || undefined,
+    generatedAtIso: (options?.generatedAt ?? new Date()).toISOString(),
+  };
 }
 
 function drawSummaryCanvas(payload: DashboardPdfPayload): HTMLCanvasElement {
@@ -185,6 +305,283 @@ function drawSummaryCanvas(payload: DashboardPdfPayload): HTMLCanvasElement {
   }
 
   return canvas;
+}
+
+function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasElement {
+  const width = 1240;
+  const rowsHeight = Math.max(summary.lines.length, 1) * 60;
+  const height = Math.max(1754, 960 + rowsHeight);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  // Top Header Banner
+  ctx.fillStyle = "#0b5ca8";
+  ctx.fillRect(0, 0, width, 168);
+
+  ctx.direction = "rtl";
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = 'bold 40px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText(summary.companyName, width - 64, 72);
+
+  ctx.font = '24px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillStyle = "#dbeafe";
+  ctx.fillText("ملخص الفاتورة القابل للطباعة · نظام نسقو برو", width - 64, 120);
+
+  ctx.direction = "ltr";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = 'bold 28px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText("NASQO PRO", 64, 70);
+  ctx.fillStyle = "#fbbf24";
+  ctx.font = 'bold 22px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText(`#${summary.entryNumber}`, 64, 118);
+
+  // Invoice Title Strip
+  ctx.direction = "rtl";
+  ctx.fillStyle = "#f1f6fc";
+  ctx.strokeStyle = "#bfdbfe";
+  ctx.lineWidth = 2;
+  ctx.fillRect(64, 198, width - 128, 76);
+  ctx.strokeRect(64, 198, width - 128, 76);
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#07365d";
+  ctx.font = 'bold 30px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText(summary.title, width - 92, 246);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = summary.statusLabel === "ملغى" ? "#dc2626" : "#15803d";
+  ctx.font = 'bold 22px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText(`الحالة: ${summary.statusLabel}`, 92, 246);
+
+  // Metadata 2-Column Grid
+  const metaY = 300;
+  const metaGap = 24;
+  const boxW = (width - 128 - metaGap) / 2;
+  const metaBoxes = [
+    [
+      { label: "العميل / الحساب", value: summary.accountName },
+      { label: "الحساب المقابل", value: summary.counterpartName },
+      { label: "المستودع", value: summary.warehouseName },
+    ],
+    [
+      { label: "تاريخ الفاتورة", value: summary.entryDate },
+      { label: "رقم المستند / المرجع", value: summary.documentNumber },
+      { label: "طريقة الدفع / التوجيه", value: `${summary.paymentLabel} · ${summary.directionLabel}` },
+    ],
+  ];
+
+  metaBoxes.forEach((rows, colIdx) => {
+    const x = width - 64 - boxW * (colIdx + 1) - metaGap * colIdx;
+    ctx.fillStyle = "#f8fafc";
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, metaY, boxW, 188);
+    ctx.strokeRect(x, metaY, boxW, 188);
+
+    rows.forEach((row, rowIdx) => {
+      const y = metaY + 46 + rowIdx * 54;
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#64748b";
+      ctx.font = '600 18px "Segoe UI", Tahoma, Arial, sans-serif';
+      ctx.fillText(`${row.label}:`, x + boxW - 22, y);
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#0f172a";
+      ctx.font = 'bold 20px "Segoe UI", Tahoma, Arial, sans-serif';
+      ctx.fillText(row.value.slice(0, 32), x + 22, y);
+    });
+  });
+
+  // Items Table
+  let cursorY = 530;
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#07365d";
+  ctx.font = 'bold 26px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText("بنود وتفاصيل الفاتورة", width - 64, cursorY);
+  cursorY += 22;
+
+  ctx.fillStyle = "#0b5ca8";
+  ctx.fillRect(64, cursorY, width - 128, 54);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = 'bold 21px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText("الصنف / البيان", width - 86, cursorY + 35);
+  ctx.fillText("الوحدة", width - 590, cursorY + 35);
+  ctx.fillText("الكمية", width - 740, cursorY + 35);
+  ctx.fillText("السعر", width - 900, cursorY + 35);
+  ctx.textAlign = "left";
+  ctx.fillText("الإجمالي", 86, cursorY + 35);
+  cursorY += 54;
+
+  summary.lines.forEach((line, idx) => {
+    const rowH = 56;
+    ctx.fillStyle = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
+    ctx.fillRect(64, cursorY, width - 128, rowH);
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(64, cursorY, width - 128, rowH);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#0f172a";
+    ctx.font = '600 20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(line.description.slice(0, 44), width - 86, cursorY + 36);
+    ctx.fillStyle = "#475569";
+    ctx.font = '20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(line.unit.slice(0, 12), width - 590, cursorY + 36);
+    ctx.fillStyle = "#b91c1c";
+    ctx.font = 'bold 20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(line.quantity, width - 740, cursorY + 36);
+    ctx.fillStyle = "#1e293b";
+    ctx.font = '20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(line.unitPrice, width - 900, cursorY + 36);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#0b5ca8";
+    ctx.font = 'bold 21px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(line.lineTotal, 86, cursorY + 36);
+
+    cursorY += rowH;
+  });
+
+  // Totals Card
+  cursorY += 34;
+  const totalBoxH = summary.vatLine ? 196 : 152;
+  ctx.fillStyle = "#eef6ff";
+  ctx.strokeStyle = "#0b5ca8";
+  ctx.lineWidth = 2;
+  ctx.fillRect(64, cursorY, width - 128, totalBoxH);
+  ctx.strokeRect(64, cursorY, width - 128, totalBoxH);
+
+  let ty = cursorY + 46;
+  if (summary.vatLine) {
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#334155";
+    ctx.font = '600 21px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(summary.vatLine, width - 92, ty);
+    ty += 46;
+  }
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#07365d";
+  ctx.font = 'bold 28px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText("الإجمالي النهائي للفاتورة", width - 92, ty);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#0b5ca8";
+  ctx.font = 'bold 34px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText(`${summary.formattedAmount} ${summary.currency}`, 92, ty);
+
+  ty += 46;
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#475569";
+  ctx.font = '19px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.fillText(
+    `سعر الصرف: ${summary.exchangeRate}${summary.dueDate ? ` · تاريخ الاستحقاق: ${summary.dueDate}` : ""}`,
+    width - 92,
+    ty,
+  );
+
+  if (summary.footerNote) {
+    cursorY += totalBoxH + 28;
+    ctx.fillStyle = "#fff7ed";
+    ctx.strokeStyle = "#fed7aa";
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(64, cursorY, width - 128, 56);
+    ctx.strokeRect(64, cursorY, width - 128, 56);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#9a3412";
+    ctx.font = 'bold 20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(summary.footerNote.slice(0, 90), width / 2, cursorY + 36);
+  }
+
+  // Page Footer
+  const stamp = summary.generatedAtIso.slice(0, 16).replace("T", " ");
+  ctx.fillStyle = "#64748b";
+  ctx.font = '18px "Segoe UI", Tahoma, Arial, sans-serif';
+  ctx.textAlign = "right";
+  ctx.fillText(`صادر عن قاعدة بيانات ${summary.companyName}`, width - 64, height - 48);
+  ctx.textAlign = "left";
+  ctx.fillText(`Generated: ${stamp} · Page 1`, 64, height - 48);
+
+  return canvas;
+}
+
+export async function generateInvoiceSummaryPdf(
+  summary: InvoicePdfSummaryData,
+  mode: "download" | "share" = "download",
+): Promise<{ result: "downloaded" | "shared"; filename: string }> {
+  const canvas = drawInvoiceSummaryCanvas(summary);
+  const imgData = canvas.toDataURL("image/png");
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const renderedHeight = (canvas.height * pageWidth) / canvas.width;
+  const fitHeight = Math.min(renderedHeight, pageHeight);
+  pdf.addImage(imgData, "PNG", 0, 0, pageWidth, fitHeight, undefined, "FAST");
+
+  const safeDate = (summary.entryDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, "");
+  const filename = `nasqo-invoice-${summary.entryNumber}-${safeDate}.pdf`;
+
+  if (mode === "share" && typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      const blob = pdf.output("blob");
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `${summary.title} #${summary.entryNumber}`,
+          text: `${summary.accountName} — ${summary.formattedAmount} ${summary.currency}`,
+          files: [file],
+        });
+        return { result: "shared", filename };
+      }
+    } catch {
+      // Fallback to direct download below
+    }
+  }
+
+  pdf.save(filename);
+  return { result: "downloaded", filename };
+}
+
+export async function generatePrintableInvoicePdfFromDatabase(
+  uid: string,
+  entryId: string,
+  options?: {
+    companyName?: string;
+    footerNote?: string;
+    mode?: "download" | "share";
+    fallbackEntry?: LedgerEntryRecord;
+  },
+): Promise<{
+  entry: LedgerEntryRecord;
+  summary: InvoicePdfSummaryData;
+  result: "downloaded" | "shared";
+  filename: string;
+}> {
+  const { fetchInvoiceFromDatabase } = await import("../firebase");
+  const dbEntry = await fetchInvoiceFromDatabase(uid, entryId);
+  const resolvedEntry = dbEntry ?? options?.fallbackEntry ?? null;
+  if (!resolvedEntry) {
+    throw new Error("Invoice not found in database");
+  }
+  const summary = buildInvoicePdfSummaryData(resolvedEntry, {
+    companyName: options?.companyName,
+    footerNote: options?.footerNote,
+  });
+  const exported = await generateInvoiceSummaryPdf(summary, options?.mode ?? "download");
+  return {
+    entry: resolvedEntry,
+    summary,
+    result: exported.result,
+    filename: exported.filename,
+  };
 }
 
 export async function exportDashboardSummaryPdf(

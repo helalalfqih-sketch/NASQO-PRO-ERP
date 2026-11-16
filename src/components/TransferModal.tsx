@@ -37,6 +37,9 @@ interface TransferModalProps {
     subtitle: string;
     rows: [string, string][];
   }) => void;
+  onCreateLedgerEntry?: (
+    entry: Omit<LedgerEntryRecord, "id" | "ownerId" | "createdAtMs">,
+  ) => Promise<unknown>;
 }
 
 export function TransferModal({
@@ -50,6 +53,7 @@ export function TransferModal({
   onNotify,
   onSendWhatsApp,
   onGenerateImage,
+  onCreateLedgerEntry,
 }: TransferModalProps) {
   const keyboard = useKeyboard();
   const [closeAfterSave, setCloseAfterSave] = useState(true);
@@ -147,7 +151,7 @@ export function TransferModal({
       const nextNum = Math.max(1000, ...ledger.map((e) => e.entryNumber)) + 1;
       const cashboxAcc = accounts.find((a) => a.id === cashboxId);
       const composedDetails = composeDetailsText();
-      await createLedgerEntry(uid, {
+      const payload: Omit<LedgerEntryRecord, "id" | "ownerId" | "createdAtMs"> = {
         accountId: activeAccount.id,
         accountName: activeAccount.name,
         counterpartAccountId: cashboxAcc?.id ?? "",
@@ -161,10 +165,18 @@ export function TransferModal({
         exchangeRate: 1,
         details: composedDetails,
         documentNumber: transferNumber.trim() || String(nextNum),
+        warehouseId: "",
+        warehouseName: "",
+        invoiceContent: "none",
         entryNumber: nextNum,
         deleted: false,
         entryDate: now.toISOString().slice(0, 10),
-      });
+      };
+      if (onCreateLedgerEntry) {
+        await onCreateLedgerEntry(payload);
+      } else {
+        await createLedgerEntry(uid, payload);
+      }
       triggerHaptic("success");
       onNotify(`تم حفظ الحوالة رقم #${nextNum} بنجاح`);
 

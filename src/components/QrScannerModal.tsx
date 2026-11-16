@@ -27,6 +27,13 @@ interface QrScannerModalProps {
   warehouses: readonly WarehouseRecord[];
   onNotify: (message: string) => void;
   onOpenInventoryReport: () => void;
+  onCreateItem?: (
+    item: Omit<InventoryItemRecord, "id" | "ownerId">,
+  ) => Promise<unknown>;
+  onUpdateItem?: (
+    itemId: string,
+    item: Omit<InventoryItemRecord, "id" | "ownerId">,
+  ) => Promise<void>;
 }
 
 type BarcodeDetectorLike = {
@@ -41,6 +48,8 @@ export function QrScannerModal({
   warehouses,
   onNotify,
   onOpenInventoryReport,
+  onCreateItem,
+  onUpdateItem,
 }: QrScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -243,10 +252,15 @@ export function QrScannerModal({
     const addQty = Math.max(1, parseArabicNumber(restockDelta));
     setSaving(true);
     try {
-      await updateInventoryItem(uid, matchedItem.id, {
+      const updated = {
         ...matchedItem,
         quantity: matchedItem.quantity + addQty,
-      });
+      };
+      if (onUpdateItem) {
+        await onUpdateItem(matchedItem.id, updated);
+      } else {
+        await updateInventoryItem(uid, matchedItem.id, updated);
+      }
       triggerHaptic("success");
       onNotify(`تمت إضافة ${formatAmount(addQty)} ${matchedItem.unit} إلى "${matchedItem.name}"`);
       onClose();
@@ -266,7 +280,7 @@ export function QrScannerModal({
     }
     setSaving(true);
     try {
-      await createInventoryItem(uid, {
+      const created = {
         name: newName.trim(),
         sku: newSku.trim() || undefined,
         unit: newUnit.trim() || "حبة",
@@ -274,7 +288,12 @@ export function QrScannerModal({
         avgCost: parseArabicNumber(newCost),
         minThreshold: parseArabicNumber(newThreshold) || 25,
         warehouseId: newWarehouseId,
-      });
+      };
+      if (onCreateItem) {
+        await onCreateItem(created);
+      } else {
+        await createInventoryItem(uid, created);
+      }
       triggerHaptic("success");
       onNotify(`تمت إضافة "${newName.trim()}" إلى المخزون`);
       setScannedRaw("");

@@ -1,0 +1,255 @@
+import 'package:flutter/material.dart';
+import '../models/erp_models.dart';
+import '../services/accounting_engine.dart';
+import '../state/erp_controller.dart';
+import 'invoice_form_sheet.dart';
+
+class PosCrmScreen extends StatefulWidget {
+  const PosCrmScreen({super.key, required this.controller});
+
+  final ErpController controller;
+
+  @override
+  State<PosCrmScreen> createState() => _PosCrmScreenState();
+}
+
+class _PosCrmScreenState extends State<PosCrmScreen> {
+  int _tabIndex = 0;
+  final Map<String, int> _cart = {};
+  bool _includeVat = true;
+  PaymentMethod _payment = PaymentMethod.cash;
+
+  void _adjustCart(InventoryItemRecord item, int delta) {
+    setState(() {
+      final cur = _cart[item.id] ?? 0;
+      final next = (cur + delta).clamp(0, item.quantity.toInt());
+      if (next == 0) {
+        _cart.remove(item.id);
+      } else {
+        _cart[item.id] = next;
+      }
+    });
+  }
+
+  void _checkout() {
+    if (_cart.isEmpty) return;
+    final rows = <InvoiceItemRow>[];
+    for (final entry in _cart.entries) {
+      final item = widget.controller.inventory.firstWhere((i) => i.id == entry.key);
+      rows.add(
+        InvoiceItemRow(
+          id: 'pos_${item.id}',
+          itemId: item.id,
+          productName: item.name,
+          quantity: entry.value.toDouble(),
+          unitPrice: (item.avgCost * 1.25).roundToDouble(),
+        ),
+      );
+    }
+    final acc = widget.controller.accounts.firstWhere(
+      (a) => a.category == AccountCategory.sales || a.category == AccountCategory.clients,
+      orElse: () => widget.controller.accounts.first,
+    );
+    widget.controller.submitSalesInvoice(
+      accountId: acc.id,
+      customerName: acc.name,
+      warehouse: widget.controller.warehouses.first,
+      payment: _payment,
+      includeVat: _includeVat,
+      rows: rows,
+    );
+    setState(() => _cart.clear());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم إتمام البيع وتحديث المخزون والأستاذ العام')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cur = widget.controller.defaultCurrency.label;
+    double subtotal = 0;
+    for (final entry in _cart.entries) {
+      final item = widget.controller.inventory.firstWhere((i) => i.id == entry.key);
+      subtotal += entry.value * (item.avgCost * 1.25).roundToDouble();
+    }
+    final vat = _includeVat ? ((subtotal * 0.15) * 100).roundToDouble() / 100 : 0.0;
+    final grandTotal = subtotal + vat;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(10),
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('نقطة البيع (POS)')),
+              ButtonSegment(value: 1, label: Text('فرص المبيعات (CRM)')),
+            ],
+            selected: {_tabIndex},
+            onSelectionChanged: (s) => setState(() => _tabIndex = s.first),
+          ),
+        ),
+        Expanded(
+          child: _tabIndex == 0
+              ? ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'كتالوج الأصناف للبيع السريع',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () => showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            builder: (_) =>
+                                InvoiceFormSheet(controller: widget.controller),
+                          ),
+                          icon: const Icon(Icons.add, size: 16),
+                          label: const Text('فاتورة مفصلة'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ...widget.controller.inventory.map((item) {
+                      final qty = _cart[item.id] ?? 0;
+                      final sellPrice = (item.avgCost * 1.25).roundToDouble();
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        child: ListTile(
+                          title: Text(item.name,
+                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            'السعر: ${AccountingEngine.formatAmount(sellPrice)} $cur · المتاح: ${item.quantity.toInt()} ${item.unit}',
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline),
+                                onPressed:
+                                    qty > 0 ? () => _adjustCart(item, -1) : null,
+                              ),
+                              Text('$qty',
+                                  style: const TextStyle(fontWeight: FontWeight.bold)),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline),
+                                onPressed: qty < item.quantity
+                                    ? () => _adjustCart(item, 1)
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                )
+              : ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  children: widget.controller.deals.map((deal) {
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(deal.title,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                ),
+                                Text(
+                                  '${AccountingEngine.formatAmount(deal.value)} ${deal.currency.label}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF169B62),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text('${deal.clientName} · ${deal.stage.label} (${deal.probability}%)'),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                if (deal.stage != ErpDealStage.won &&
+                                    deal.stage != ErpDealStage.lost)
+                                  OutlinedButton(
+                                    onPressed: () =>
+                                        widget.controller.advanceDeal(deal.id),
+                                    child: const Text('ترقية المرحلة'),
+                                  ),
+                                const SizedBox(width: 8),
+                                if (deal.convertedInvoiceEntryId == null)
+                                  FilledButton(
+                                    onPressed: () => widget.controller
+                                        .convertDealToInvoice(deal.id),
+                                    child: const Text('تحويل إلى فاتورة'),
+                                  )
+                                else
+                                  const Chip(label: Text('تم الترحيل لفاتورة')),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+        ),
+        if (_tabIndex == 0)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    SegmentedButton<PaymentMethod>(
+                      segments: const [
+                        ButtonSegment(value: PaymentMethod.cash, label: Text('نقدي')),
+                        ButtonSegment(value: PaymentMethod.credit, label: Text('آجل')),
+                      ],
+                      selected: {_payment},
+                      onSelectionChanged: (s) => setState(() => _payment = s.first),
+                    ),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _includeVat,
+                          onChanged: (v) => setState(() => _includeVat = v ?? true),
+                        ),
+                        const Text('VAT 15%'),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _cart.isEmpty ? null : _checkout,
+                    icon: const Icon(Icons.check_circle),
+                    label: Text(
+                      'إتمام البيع (${AccountingEngine.formatAmount(grandTotal)} $cur)',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}

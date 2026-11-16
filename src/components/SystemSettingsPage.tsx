@@ -29,6 +29,7 @@ interface SystemSettingsPageProps {
   onSignOut: () => void;
   onNotify: (msg: string) => void;
   onBack: () => void;
+  onSaveWorkspaceSettings?: (next: WorkspaceSettings) => Promise<void>;
 }
 
 export function SystemSettingsPage({
@@ -51,6 +52,7 @@ export function SystemSettingsPage({
   onSignOut,
   onNotify,
   onBack,
+  onSaveWorkspaceSettings,
 }: SystemSettingsPageProps) {
   const keyboard = useKeyboard();
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -70,11 +72,9 @@ export function SystemSettingsPage({
     key: K,
     value: ExtendedAppSettings[K],
   ) => {
-    setDraft((prev) => {
-      const next = { ...prev, [key]: value };
-      onChangeExtended(next);
-      return next;
-    });
+    const next = { ...draft, [key]: value };
+    setDraft(next);
+    onChangeExtended(next);
   };
 
   const handleLogoUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -102,14 +102,19 @@ export function SystemSettingsPage({
     }
     setSaving(true);
     try {
-      await saveWorkspaceSettings(uid, {
+      const nextWorkspace: WorkspaceSettings = {
         ...workspace,
         companyName: companyName.trim() || workspace.companyName,
         defaultCurrency,
         whatsappPhone: whatsappPhone.trim(),
         whatsappInstantEnabled: draft.autoWhatsapp,
         whatsappProvider: draft.whatsappVariant === "green" ? "external" : "nasqo",
-      });
+      };
+      if (onSaveWorkspaceSettings) {
+        await onSaveWorkspaceSettings(nextWorkspace);
+      } else {
+        await saveWorkspaceSettings(uid, nextWorkspace);
+      }
       triggerHaptic("success");
       onNotify("تم حفظ جميع إعدادات النظام بنجاح");
     } finally {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { KeyboardInput, useKeyboard } from "../mobile";
+import { formatNasqoBackupFilename } from "../utils/backupFormat";
 import { triggerHaptic } from "../utils/haptics";
 
 interface BackupNameModalProps {
@@ -21,13 +22,13 @@ export function BackupNameModal({
 
   useEffect(() => {
     if (open) {
-      setName(`نسخة-${new Date().toISOString().slice(0, 10)}`);
+      setName(formatNasqoBackupFilename());
     }
   }, [open]);
 
   if (!open) return null;
 
-  const trimmed = name.trim() || `نسخة-${new Date().toISOString().slice(0, 10)}`;
+  const trimmed = name.trim() || formatNasqoBackupFilename();
 
   const handleClose = () => {
     keyboard.hide();

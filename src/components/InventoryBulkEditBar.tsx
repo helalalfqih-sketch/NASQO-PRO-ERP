@@ -12,6 +12,14 @@ interface InventoryBulkEditBarProps {
   onToggleSelectAll: () => void;
   onClearSelection: () => void;
   onNotify: (message: string) => void;
+  onBatchUpdateItems?: (
+    updates: {
+      item: InventoryItemRecord;
+      quantity: number;
+      avgCost: number;
+      minThreshold?: number;
+    }[],
+  ) => Promise<void>;
 }
 
 export function InventoryBulkEditBar({
@@ -21,6 +29,7 @@ export function InventoryBulkEditBar({
   onToggleSelectAll,
   onClearSelection,
   onNotify,
+  onBatchUpdateItems,
 }: InventoryBulkEditBarProps) {
   const [priceMode, setPriceMode] = useState<"keep" | "set" | "percent">("keep");
   const [priceValue, setPriceValue] = useState("");
@@ -70,7 +79,11 @@ export function InventoryBulkEditBar({
 
     setSaving(true);
     try {
-      await batchUpdateInventoryItems(uid, updates);
+      if (onBatchUpdateItems) {
+        await onBatchUpdateItems(updates);
+      } else {
+        await batchUpdateInventoryItems(uid, updates);
+      }
       triggerHaptic("success");
       onNotify(`تم تحديث ${updates.length} صنف دفعة واحدة في قاعدة البيانات`);
       setPriceValue("");

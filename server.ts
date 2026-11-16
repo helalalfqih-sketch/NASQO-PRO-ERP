@@ -1,3 +1,4 @@
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type Request, type Response } from "express";
@@ -14,7 +15,17 @@ const ALLOWED_CATEGORIES = [
   "أخرى",
 ] as const;
 
-const PORT = Number(process.env.PORT || 3000);
+function resolvePort(): number {
+  const portFlagIndex = process.argv.indexOf("--port");
+  if (portFlagIndex !== -1 && process.argv[portFlagIndex + 1]) {
+    const parsed = Number(process.argv[portFlagIndex + 1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const envPort = Number(process.env.PORT || 3000);
+  return Number.isFinite(envPort) && envPort > 0 ? envPort : 3000;
+}
+
+const PORT = resolvePort();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isProd = process.env.NODE_ENV === "production";
 
@@ -147,11 +158,13 @@ async function createApp() {
     }
   });
 
+  const httpServer = http.createServer(app);
+
   if (!isProd) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       configFile: path.resolve(__dirname, "vite.dev.config.ts"),
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false, ws: { server: httpServer } },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -163,9 +176,19 @@ async function createApp() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`NASQO Pro server listening on http://0.0.0.0:${PORT}`);
   });
+
+  httpServer.on("error", (err) => {
+    console.error("Server error:", err);
+  });
+
+  const shutdown = () => {
+    httpServer.close(() => process.exit(0));
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }
 
 void createApp();

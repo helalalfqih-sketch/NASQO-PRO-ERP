@@ -21,6 +21,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   BackpackIcon,
+  BarChartIcon,
   BellIcon,
   BookmarkFilledIcon,
   BookmarkIcon,
@@ -42,6 +43,7 @@ import {
   HamburgerMenuIcon,
   HomeIcon,
   InfoCircledIcon,
+  LayersIcon,
   LockClosedIcon,
   MagnifyingGlassIcon,
   MixIcon,
@@ -54,6 +56,7 @@ import {
   ReaderIcon,
   ReloadIcon,
   ResetIcon,
+  RocketIcon,
   RulerHorizontalIcon,
   RulerSquareIcon,
   Share1Icon,
@@ -84,6 +87,18 @@ import { QrScannerModal } from "./components/QrScannerModal";
 import { SystemSettingsPage } from "./components/SystemSettingsPage";
 import { TransferModal } from "./components/TransferModal";
 import { WhatsAppIcon } from "./components/WhatsAppIcon";
+import { ErpHubScreen } from "./components/erp/ErpHubScreen";
+import { ErpFinanceScreen } from "./components/erp/ErpFinanceScreen";
+import { ErpHrScreen } from "./components/erp/ErpHrScreen";
+import { ErpCrmPosScreen } from "./components/erp/ErpCrmPosScreen";
+import { ErpProcurementScreen } from "./components/erp/ErpProcurementScreen";
+import { ErpManufacturingScreen } from "./components/erp/ErpManufacturingScreen";
+import {
+  loadErpWorkspaceData,
+  saveErpWorkspaceData,
+  type ErpModuleId,
+  type ErpWorkspaceData,
+} from "./erp";
 import {
   accountMatchesQuery,
   buildCsvContent,
@@ -107,10 +122,13 @@ import {
   createLedgerEntry,
   createOrUpdateAccount,
   ensureWorkspaceSeeded,
+  isLocalWorkspaceSession,
+  LOCAL_WORKSPACE_UID,
   permanentlyDeleteLedger,
   saveWarehouse,
   saveWorkspaceSettings,
   setLedgerDeleted,
+  setLocalWorkspaceSession,
   signInWithGoogle,
   signOutUser,
   subscribeWorkspace,
@@ -133,6 +151,11 @@ import {
   type ExtendedAppSettings,
 } from "./utils/appSettings";
 import { BRAND_COLOR_PRESETS, useBrandColor } from "./utils/brandColor";
+import {
+  buildLocalBackupDownloadName,
+  extractBackupCollections,
+  inspectBackupBytes,
+} from "./utils/backupFormat";
 import { exportSummaryAsPngImage } from "./utils/canvasExport";
 import {
   DEFAULT_HOME_METRIC_ORDER,
@@ -148,6 +171,7 @@ import {
   type HomeMetricId,
   type PinnedFavoriteItem,
 } from "./utils/dashboardPrefs";
+import { generatePrintableInvoicePdfFromDatabase } from "./utils/exportPdf";
 import { readHapticsEnabled, triggerHaptic, writeHapticsEnabled } from "./utils/haptics";
 import { useThemeMode, type ThemeMode } from "./utils/theme";
 
@@ -185,7 +209,8 @@ type DrawerTarget =
   | "currency"
   | "trash"
   | "daily-journal"
-  | "analytics-dashboard";
+  | "analytics-dashboard"
+  | ErpModuleId;
 
 type LiveWorkspaceState = {
   uid: string;
@@ -195,6 +220,9 @@ type LiveWorkspaceState = {
   ledger: LedgerEntryRecord[];
   warehouses: WarehouseRecord[];
   inventory: InventoryItemRecord[];
+  erpData: ErpWorkspaceData;
+  updateErpData: (next: ErpWorkspaceData) => void;
+  openErpModule: (moduleId: ErpModuleId) => void;
   syncing: boolean;
   flowRef: MutableRefObject<FlowControls | null>;
   openDrawer: () => void;
@@ -354,6 +382,14 @@ export default function Prototype() {
   );
 }
 
+function createLocalUserProfile(): User {
+  return {
+    uid: LOCAL_WORKSPACE_UID,
+    email: "erp@nasqo.local",
+    displayName: "مساحة العمل المتكاملة",
+  } as User;
+}
+
 function NasqoProductionShell() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -363,11 +399,34 @@ function NasqoProductionShell() {
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
 
+  const enterLocalWorkspace = useCallback(async () => {
+    setLocalWorkspaceSession(true);
+    const localUser = createLocalUserProfile();
+    await ensureWorkspaceSeeded(localUser.uid, localUser.displayName);
+    setUser(localUser);
+    setAuthReady(true);
+    setWorkspaceReady(true);
+  }, []);
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (nextUser) => {
-      setUser(nextUser);
+    const wantsAutostart =
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("autostart") === "1";
+
+    if (wantsAutostart || isLocalWorkspaceSession()) {
+      void enterLocalWorkspace();
+    }
+
+    const fallbackTimer = window.setTimeout(() => {
       setAuthReady(true);
+    }, 1000);
+
+    const unsub = onAuthStateChanged(auth, async (nextUser) => {
+      window.clearTimeout(fallbackTimer);
       if (nextUser) {
+        setLocalWorkspaceSession(false);
+        setUser(nextUser);
+        setAuthReady(true);
         try {
           await ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName);
         } catch (err) {
@@ -375,12 +434,17 @@ function NasqoProductionShell() {
         } finally {
           setWorkspaceReady(true);
         }
-      } else {
+      } else if (!wantsAutostart && !isLocalWorkspaceSession()) {
+        setUser(null);
+        setAuthReady(true);
         setWorkspaceReady(false);
       }
     });
-    return () => unsub();
-  }, []);
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      unsub();
+    };
+  }, [enterLocalWorkspace]);
 
   const handleSignIn = async () => {
     setAuthBusy(true);
@@ -392,7 +456,7 @@ function NasqoProductionShell() {
       setAuthError(
         msg.includes("popup-closed")
           ? "تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية."
-          : "تعذر إتمام تسجيل الدخول عبر Google. تأكد من السماح للنوافذ المنبثقة وحاول مجددًا.",
+          : "تعذر إتمام تسجيل الدخول عبر Google. يمكنك الدخول مباشرة عبر مساحة العمل المحلية بالأسفل.",
       );
     } finally {
       setAuthBusy(false);
@@ -409,7 +473,7 @@ function NasqoProductionShell() {
                 <CubeIcon />
               </span>
               <span className="header-copy">
-                <strong>نسقو برو</strong>
+                <strong>نسقو برو ERP</strong>
               </span>
             </div>
           </header>
@@ -418,8 +482,8 @@ function NasqoProductionShell() {
               <span className="drawer-hero-mark">
                 <CubeIcon />
               </span>
-              <h1>جاري تحميل مساحة العمل السحابية...</h1>
-              <p>يتم التحقق من الجلسة ومزامنة الحسابات والسندات.</p>
+              <h1>جاري تحميل منظومة الـ ERP...</h1>
+              <p>يتم تجهيز الأستاذ العام، المخازن، الرواتب، المبيعات، والمشتريات.</p>
             </section>
           </main>
         </div>
@@ -437,8 +501,8 @@ function NasqoProductionShell() {
                 <CubeIcon />
               </span>
               <span className="header-copy">
-                <strong>نسقو برو</strong>
-                <small>إدارة الأعمال والحسابات</small>
+                <strong>نسقو برو ERP</strong>
+                <small>نظام تخطيط موارد المنشأة المتكامل</small>
               </span>
             </div>
           </header>
@@ -447,10 +511,10 @@ function NasqoProductionShell() {
               <span className="drawer-hero-mark">
                 <CubeIcon />
               </span>
-              <h1>نسقو برو — نظام الأعمال السحابي</h1>
+              <h1>نسقو برو — نظام الـ ERP المتكامل</h1>
               <p>
-                سجّل الدخول بحساب Google للوصول إلى حسابات الموردين والعملاء، الفواتير، السندات، والمخازن
-                مع حفظ ومزامنة فورية على السحابة.
+                أدر المحاسبة والأستاذ العام، القوائم المالية، الموارد البشرية والرواتب، نقطة البيع وCRM،
+                أوامر الشراء والتوريد، والتصنيع ومراكز التكلفة في نظام واحد مترابط.
               </p>
               {authError ? (
                 <p className="auth-error" role="alert">
@@ -459,12 +523,20 @@ function NasqoProductionShell() {
               ) : null}
               <button
                 className="auth-google-btn"
+                onClick={() => void enterLocalWorkspace()}
+                data-testid="local-erp-signin-button"
+              >
+                <RocketIcon />
+                <span>الدخول السريع — نظام ERP متكامل</span>
+              </button>
+              <button
+                className="auth-local-secondary-btn"
                 onClick={handleSignIn}
                 disabled={authBusy}
                 data-testid="google-signin-button"
               >
                 <LockClosedIcon />
-                <span>{authBusy ? "جاري تسجيل الدخول..." : "تسجيل الدخول بحساب Google"}</span>
+                <span>{authBusy ? "جاري تسجيل الدخول..." : "المزامنة عبر حساب Google"}</span>
               </button>
             </section>
           </main>
@@ -476,6 +548,11 @@ function NasqoProductionShell() {
   return (
     <AuthenticatedWorkspace
       user={user}
+      onLocalSignOut={() => {
+        setLocalWorkspaceSession(false);
+        setUser(null);
+        setWorkspaceReady(false);
+      }}
       themeMode={themeMode}
       setThemeMode={setThemeMode}
       brandColor={brandColor}
@@ -487,6 +564,7 @@ function NasqoProductionShell() {
 
 function AuthenticatedWorkspace({
   user,
+  onLocalSignOut,
   themeMode,
   setThemeMode,
   brandColor,
@@ -494,6 +572,7 @@ function AuthenticatedWorkspace({
   resetBrandColor,
 }: {
   user: User;
+  onLocalSignOut: () => void;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
   brandColor: string;
@@ -505,6 +584,7 @@ function AuthenticatedWorkspace({
   const [ledger, setLedger] = useState<LedgerEntryRecord[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseRecord[]>([]);
   const [inventory, setInventory] = useState<InventoryItemRecord[]>([]);
+  const [erpData, setErpData] = useState<ErpWorkspaceData>(() => loadErpWorkspaceData(user.uid));
   const [syncFlags, setSyncFlags] = useState({ accounts: false, ledger: false, inventory: false });
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -606,6 +686,20 @@ function AuthenticatedWorkspace({
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    const loaded = loadErpWorkspaceData(user.uid);
+    setErpData(loaded);
+    saveErpWorkspaceData(user.uid, loaded);
+  }, [user.uid]);
+
+  const updateErpData = useCallback(
+    (next: ErpWorkspaceData) => {
+      setErpData(next);
+      saveErpWorkspaceData(user.uid, next);
+    },
+    [user.uid],
+  );
 
   useEffect(() => {
     const unsub = subscribeWorkspace(user.uid, {
@@ -776,6 +870,8 @@ function AuthenticatedWorkspace({
     (backupName: string) => {
       const exportedAt = new Date().toISOString();
       const payload = {
+        format: "nasqo-pro-erp-backup",
+        version: 2,
         name: backupName,
         exportedAt,
         workspace,
@@ -783,19 +879,20 @@ function AuthenticatedWorkspace({
         ledger,
         warehouses,
         inventory,
+        erpData,
       };
-      const safeFile = backupName.replace(/[\\/:*?"<>|]/g, "-").trim() || "nasqo-backup";
+      const fileName = buildLocalBackupDownloadName(backupName);
       downloadFile(
-        `${safeFile}.json`,
+        fileName,
         JSON.stringify(payload, null, 2),
         "application/json;charset=utf-8",
       );
       const savedIso = recordLastBackupNow(exportedAt);
       setLastBackupIso(savedIso);
       triggerHaptic("success");
-      showToast(`تم تنزيل النسخة الاحتياطية: ${backupName}`);
+      showToast(`تم تنزيل النسخة الاحتياطية: ${fileName}`);
     },
-    [accounts, inventory, ledger, showToast, warehouses, workspace],
+    [accounts, erpData, inventory, ledger, showToast, warehouses, workspace],
   );
 
   const saveCloudNamedBackup = useCallback(
@@ -833,20 +930,170 @@ function AuthenticatedWorkspace({
     event.target.value = "";
     if (!file) return;
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as { accounts?: Partial<AccountRecord>[]; warehouses?: Partial<WarehouseRecord>[] };
-      let added = 0;
-      if (Array.isArray(parsed.accounts)) {
-        for (const acc of parsed.accounts) {
-          if (acc && typeof acc.name === "string" && acc.name.trim()) {
-            await createOrUpdateAccount(user.uid, { ...acc, name: acc.name });
-            added += 1;
-          }
-        }
+      const buffer = await file.arrayBuffer();
+      const inspection = inspectBackupBytes(new Uint8Array(buffer), file.name);
+
+      if (inspection.kind === "sqlite") {
+        triggerHaptic("warning");
+        showToast(
+          `الملف ${file.name} هو قاعدة بيانات SQLite من تطبيق الهاتف؛ لاستيراده هنا صدّره بصيغة JSON أو CSV أو .back نصي`,
+        );
+        return;
       }
-      showToast(`تم استيراد ${added} حساب من النسخة الاحتياطية`);
+
+      if (inspection.kind === "zip") {
+        triggerHaptic("warning");
+        showToast(
+          `الملف ${file.name} أرشيف ZIP مضغوط؛ فك الضغط واستورد ملف JSON أو CSV بالداخل`,
+        );
+        return;
+      }
+
+      if (inspection.kind !== "json") {
+        triggerHaptic("warning");
+        showToast("تعذر قراءة ملف النسخة الاحتياطية — تأكد أنه بصيغة .back أو JSON صالحة");
+        return;
+      }
+
+      const collections = extractBackupCollections(inspection.payload);
+      const warehouseIdMap = new Map<string, string>();
+      const accountIdMap = new Map<string, string>();
+
+      let restoredWh = 0;
+      for (const wh of collections.warehouses) {
+        if (!wh || typeof wh.name !== "string" || !wh.name.trim()) continue;
+        const existingWh = warehouses.find(
+          (item) => item.name.trim() === wh.name!.trim(),
+        );
+        if (existingWh) {
+          if (wh.id) warehouseIdMap.set(wh.id, existingWh.id);
+          continue;
+        }
+        const createdWhId = await saveWarehouse(
+          user.uid,
+          { name: wh.name.trim(), details: wh.details ?? "", isDefault: Boolean(wh.isDefault) },
+          warehouses,
+        );
+        if (wh.id) warehouseIdMap.set(wh.id, createdWhId);
+        restoredWh += 1;
+      }
+
+      let restoredAccounts = 0;
+      for (const acc of collections.accounts) {
+        if (!acc || typeof acc.name !== "string" || !acc.name.trim()) continue;
+        const existingAcc = accounts.find(
+          (item) => item.name.trim() === acc.name!.trim(),
+        );
+        if (existingAcc) {
+          if (acc.id) accountIdMap.set(acc.id, existingAcc.id);
+          continue;
+        }
+        const createdAccId = await createOrUpdateAccount(user.uid, {
+          ...acc,
+          name: acc.name.trim(),
+        });
+        if (acc.id) accountIdMap.set(acc.id, createdAccId);
+        restoredAccounts += 1;
+      }
+
+      const defaultWh = warehouses.find((w) => w.isDefault) ?? warehouses[0];
+      let restoredItems = 0;
+      for (const item of collections.inventory) {
+        if (!item || typeof item.name !== "string" || !item.name.trim()) continue;
+        const mappedWhId =
+          (item.warehouseId && warehouseIdMap.get(item.warehouseId)) ||
+          item.warehouseId ||
+          defaultWh?.id ||
+          "wh_1";
+        const exists = inventory.some(
+          (cur) => cur.name.trim() === item.name!.trim() && cur.warehouseId === mappedWhId,
+        );
+        if (exists) continue;
+        await createInventoryItem(user.uid, {
+          ...item,
+          name: item.name.trim(),
+          warehouseId: mappedWhId,
+        });
+        restoredItems += 1;
+      }
+
+      let restoredEntries = 0;
+      for (const entry of collections.ledger) {
+        if (!entry || typeof entry.amount !== "number") continue;
+        const mappedAccId =
+          (entry.accountId && accountIdMap.get(entry.accountId)) ||
+          entry.accountId ||
+          accounts[0]?.id;
+        if (!mappedAccId) continue;
+        const mappedWhId =
+          (entry.warehouseId && warehouseIdMap.get(entry.warehouseId)) ||
+          entry.warehouseId ||
+          defaultWh?.id ||
+          "wh_1";
+        await createLedgerEntry(user.uid, {
+          ...entry,
+          accountId: mappedAccId,
+          accountName:
+            entry.accountName ||
+            accounts.find((a) => a.id === mappedAccId)?.name ||
+            "حساب مستعاد",
+          warehouseId: mappedWhId,
+          warehouseName:
+            entry.warehouseName ||
+            warehouses.find((w) => w.id === mappedWhId)?.name ||
+            defaultWh?.name ||
+            "المخزن الرئيسي",
+        });
+        restoredEntries += 1;
+      }
+
+      let restoredErp = false;
+      if (collections.erpData) {
+        updateErpData({
+          ...erpData,
+          ...collections.erpData,
+          employees: Array.isArray(collections.erpData.employees)
+            ? collections.erpData.employees
+            : erpData.employees,
+          leaveRequests: Array.isArray(collections.erpData.leaveRequests)
+            ? collections.erpData.leaveRequests
+            : erpData.leaveRequests,
+          purchaseOrders: Array.isArray(collections.erpData.purchaseOrders)
+            ? collections.erpData.purchaseOrders
+            : erpData.purchaseOrders,
+          deals: Array.isArray(collections.erpData.deals)
+            ? collections.erpData.deals
+            : erpData.deals,
+          boms: Array.isArray(collections.erpData.boms)
+            ? collections.erpData.boms
+            : erpData.boms,
+          productionOrders: Array.isArray(collections.erpData.productionOrders)
+            ? collections.erpData.productionOrders
+            : erpData.productionOrders,
+          costCenters: Array.isArray(collections.erpData.costCenters)
+            ? collections.erpData.costCenters
+            : erpData.costCenters,
+        });
+        restoredErp = true;
+      }
+
+      triggerHaptic("success");
+      const summaryParts = [
+        restoredAccounts > 0 ? `${restoredAccounts} حساب` : "",
+        restoredEntries > 0 ? `${restoredEntries} قيد` : "",
+        restoredItems > 0 ? `${restoredItems} صنف` : "",
+        restoredWh > 0 ? `${restoredWh} مخزن` : "",
+        restoredErp ? "بيانات الـ ERP" : "",
+      ].filter(Boolean);
+
+      showToast(
+        summaryParts.length > 0
+          ? `تمت استعادة ${summaryParts.join(" و")} من ${file.name}`
+          : `ملف ${file.name} مطابق للبيانات الحالية بالفعل`,
+      );
     } catch {
-      showToast("تعذر قراءة ملف النسخة الاحتياطية — تأكد من صيغة JSON");
+      triggerHaptic("warning");
+      showToast("تعذر قراءة ملف النسخة الاحتياطية — تأكد من صيغة .back أو JSON");
     }
   };
 
@@ -886,8 +1133,12 @@ function AuthenticatedWorkspace({
 
   const handleSignOut = useCallback(async () => {
     setDrawerOpen(false);
+    if (user.uid === LOCAL_WORKSPACE_UID) {
+      onLocalSignOut();
+      return;
+    }
     await signOutUser();
-  }, []);
+  }, [onLocalSignOut, user.uid]);
 
   const syncing = !(syncFlags.accounts && syncFlags.ledger && syncFlags.inventory);
 
@@ -986,6 +1237,14 @@ function AuthenticatedWorkspace({
     [dismissKeyboard, openAccountCreate, openInvoice],
   );
 
+  const openErpModule = useCallback(
+    (moduleId: ErpModuleId) => {
+      dismissKeyboard();
+      flowRef.current?.push(erpModuleScreen(moduleId));
+    },
+    [dismissKeyboard],
+  );
+
   const ctx = useMemo<LiveWorkspaceState>(
     () => ({
       uid: user.uid,
@@ -995,6 +1254,9 @@ function AuthenticatedWorkspace({
       ledger,
       warehouses,
       inventory,
+      erpData,
+      updateErpData,
+      openErpModule,
       syncing,
       flowRef,
       openDrawer,
@@ -1060,6 +1322,7 @@ function AuthenticatedWorkspace({
       accounts,
       brandColor,
       dismissKeyboard,
+      erpData,
       extendedSettings,
       favorites,
       handleSignOut,
@@ -1075,6 +1338,7 @@ function AuthenticatedWorkspace({
       openBackupModal,
       openDashboardMenu,
       openDrawer,
+      openErpModule,
       openExportMenu,
       openInvoice,
       openPrintOptions,
@@ -1099,6 +1363,7 @@ function AuthenticatedWorkspace({
       triggerJsonRestore,
       unpinFavorite,
       unreadNotificationsCount,
+      updateErpData,
       user.email,
       user.uid,
       warehouses,
@@ -1111,6 +1376,17 @@ function AuthenticatedWorkspace({
 
   const navigateFromDrawer = (target: DrawerTarget) => {
     setDrawerOpen(false);
+    if (
+      target === "erp-hub" ||
+      target === "erp-finance" ||
+      target === "erp-hr" ||
+      target === "erp-crm" ||
+      target === "erp-procurement" ||
+      target === "erp-manufacturing"
+    ) {
+      flowRef.current?.push(erpModuleScreen(target));
+      return;
+    }
     if (target === "accounts") {
       openAccountPicker();
       return;
@@ -1455,7 +1731,7 @@ function AuthenticatedWorkspace({
         <input
           ref={jsonRestoreInputRef}
           type="file"
-          accept=".json,application/json"
+          accept=".back,.json,application/json,application/octet-stream"
           style={{ display: "none" }}
           onChange={handleJsonFileRestore}
         />
@@ -1491,9 +1767,9 @@ function AuthenticatedWorkspace({
 function dashboardScreen(): FlowScreen {
   return {
     id: "dashboard",
-    headerHeight: 50,
+    headerHeight: 52,
     header: () => <DashboardHeader />,
-    footerHeight: 28,
+    footerHeight: 38,
     footer: () => <BottomNav />,
     render: (flow) => <DashboardPage flow={flow} />,
   };
@@ -1501,10 +1777,14 @@ function dashboardScreen(): FlowScreen {
 
 function DashboardHeader() {
   const ctx = useWorkspace();
+  const displayTitle =
+    !ctx.workspace?.companyName || ctx.workspace.companyName === "نسقو برو"
+      ? "نسقو برو ERP"
+      : ctx.workspace.companyName;
   return (
     <AppHeader
       className="dashboard-header"
-      title={ctx.workspace?.companyName || "نسقو برو"}
+      title={displayTitle}
       subtitle=""
       onMenu={ctx.openDrawer}
       actions={[
@@ -1514,11 +1794,6 @@ function DashboardHeader() {
           icon: BellIcon,
           badge: ctx.unreadNotificationsCount > 0 ? String(ctx.unreadNotificationsCount) : undefined,
           onClick: ctx.openNotifications,
-        },
-        {
-          label: "مزامنة",
-          icon: ReloadIcon,
-          onClick: () => ctx.showToast("متصل بالسحابة — البيانات محدّثة لحظيًا"),
         },
         { label: "إضافة", icon: PlusIcon, onClick: ctx.openDashboardMenu },
       ]}
@@ -2275,6 +2550,117 @@ function AnalyticsDashboardPage({ flow }: { flow: FlowControls }) {
   );
 }
 
+const ERP_SCREEN_TITLES: Record<ErpModuleId, string> = {
+  "erp-hub": "مركز الـ ERP المتكامل",
+  "erp-finance": "القوائم المالية والأستاذ العام",
+  "erp-hr": "الموارد البشرية والرواتب",
+  "erp-crm": "المبيعات ونقطة البيع (POS / CRM)",
+  "erp-procurement": "المشتريات وسلسلة التوريد",
+  "erp-manufacturing": "التصنيع ومراكز التكلفة",
+};
+
+function erpModuleScreen(moduleId: ErpModuleId): FlowScreen {
+  return {
+    id: `${moduleId}-${Date.now()}`,
+    headerHeight: 54,
+    header: (flow) => <SimpleAppHeader title={ERP_SCREEN_TITLES[moduleId]} onBack={flow.pop} />,
+    render: (flow) => <ErpModulePage moduleId={moduleId} flow={flow} />,
+  };
+}
+
+function ErpModulePage({ moduleId, flow }: { moduleId: ErpModuleId; flow: FlowControls }) {
+  const ctx = useWorkspace();
+  ctx.flowRef.current = flow;
+  const companyName = ctx.workspace?.companyName || "نسقو برو ERP";
+  const currency = ctx.workspace?.defaultCurrency || "ريال";
+
+  if (moduleId === "erp-finance") {
+    return (
+      <ErpFinanceScreen
+        companyName={companyName}
+        currency={currency}
+        accounts={ctx.accounts}
+        ledger={ctx.ledger}
+        inventory={ctx.inventory}
+        onToast={ctx.showToast}
+      />
+    );
+  }
+  if (moduleId === "erp-hr") {
+    return (
+      <ErpHrScreen
+        uid={ctx.uid}
+        currency={currency}
+        accounts={ctx.accounts}
+        warehouses={ctx.warehouses}
+        erpData={ctx.erpData}
+        onUpdateErpData={ctx.updateErpData}
+        onToast={ctx.showToast}
+      />
+    );
+  }
+  if (moduleId === "erp-crm") {
+    return (
+      <ErpCrmPosScreen
+        uid={ctx.uid}
+        currency={currency}
+        accounts={ctx.accounts}
+        warehouses={ctx.warehouses}
+        inventory={ctx.inventory}
+        erpData={ctx.erpData}
+        onUpdateErpData={ctx.updateErpData}
+        onToast={ctx.showToast}
+      />
+    );
+  }
+  if (moduleId === "erp-procurement") {
+    return (
+      <ErpProcurementScreen
+        uid={ctx.uid}
+        currency={currency}
+        accounts={ctx.accounts}
+        warehouses={ctx.warehouses}
+        inventory={ctx.inventory}
+        erpData={ctx.erpData}
+        onUpdateErpData={ctx.updateErpData}
+        onToast={ctx.showToast}
+      />
+    );
+  }
+  if (moduleId === "erp-manufacturing") {
+    return (
+      <ErpManufacturingScreen
+        uid={ctx.uid}
+        currency={currency}
+        accounts={ctx.accounts}
+        ledger={ctx.ledger}
+        warehouses={ctx.warehouses}
+        inventory={ctx.inventory}
+        erpData={ctx.erpData}
+        onUpdateErpData={ctx.updateErpData}
+        onToast={ctx.showToast}
+      />
+    );
+  }
+  return (
+    <ErpHubScreen
+      uid={ctx.uid}
+      workspace={ctx.workspace}
+      companyName={companyName}
+      currency={currency}
+      accounts={ctx.accounts}
+      ledger={ctx.ledger}
+      warehouses={ctx.warehouses}
+      inventory={ctx.inventory}
+      erpData={ctx.erpData}
+      onUpdateErpData={ctx.updateErpData}
+      onOpenModule={(nextId) => flow.push(erpModuleScreen(nextId))}
+      onOpenInventory={() => flow.push(inventoryReportScreen())}
+      onToast={ctx.showToast}
+    />
+  );
+}
+
 function dailyJournalScreen(): FlowScreen {
   return {
     id: "daily-journal",
@@ -2714,7 +3100,12 @@ function AppHeader({
       </button>
       <div className="header-brand">
         <span className="brand-mark" aria-hidden="true">
-          <CubeIcon />
+          <svg viewBox="0 0 28 28" fill="none">
+            <rect x="3" y="4" width="11" height="11" rx="3" fill="#38bdf8" />
+            <rect x="14" y="13" width="11" height="11" rx="3" fill="#0ea5e9" />
+            <rect x="6" y="7" width="5" height="5" rx="1.2" fill="#e0f2fe" opacity="0.9" />
+            <rect x="17" y="16" width="5" height="5" rx="1.2" fill="#bae6fd" opacity="0.9" />
+          </svg>
         </span>
         <span className="header-copy">
           <strong>{title}</strong>
@@ -2755,6 +3146,117 @@ function TransferArrowsIcon() {
       <ArrowRightIcon />
       <ArrowLeftIcon />
     </span>
+  );
+}
+
+function CartIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="20" r="1.5" />
+      <circle cx="18" cy="20" r="1.5" />
+      <path d="M2 3h3l2.4 11.2a1.5 1.5 0 0 0 1.5 1.2h8.8a1.5 1.5 0 0 0 1.45-1.15L21 7H6" />
+    </svg>
+  );
+}
+
+function PeopleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="3.5" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a3.5 3.5 0 0 1 0 6.74" />
+    </svg>
+  );
+}
+
+function ShopIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l1.5-5h15L21 9" />
+      <path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" />
+      <path d="M5 10v10h14V10" />
+      <path d="M9.5 20v-5h5v5" />
+    </svg>
+  );
+}
+
+function QrScanIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.2" />
+      <rect x="14" y="3" width="7" height="7" rx="1.2" />
+      <rect x="3" y="14" width="7" height="7" rx="1.2" />
+      <path d="M14 14h3v3h-3zM19 14h2v2M14 20h3M19 19v2h2" />
+    </svg>
+  );
+}
+
+function GaugeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 14l4-4" />
+      <path d="M4.6 18a9 9 0 1 1 14.8 0" />
+    </svg>
+  );
+}
+
+function TagPriceIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function FactoryIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 21V10l6 4V10l6 4V4h4v17H3z" />
+      <path d="M7 18h2M12 18h2" />
+    </svg>
+  );
+}
+
+function HomeHeroBuildingArt() {
+  return (
+    <svg className="home-summary-art" viewBox="0 0 240 130" preserveAspectRatio="xMinYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="nasqoTowerSky" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#8ed0ff" stopOpacity="0.92" />
+          <stop offset="45%" stopColor="#3b82f6" stopOpacity="0.45" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="nasqoGlassLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0e4a86" />
+          <stop offset="100%" stopColor="#1e78c8" />
+        </linearGradient>
+        <linearGradient id="nasqoGlassRight" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.88" />
+          <stop offset="100%" stopColor="#0b5ca8" stopOpacity="0.72" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="130" fill="url(#nasqoTowerSky)" />
+      <polygon points="10,130 10,36 74,8 74,130" fill="url(#nasqoGlassLeft)" />
+      <polygon points="74,8 134,42 134,130 74,130" fill="url(#nasqoGlassRight)" />
+      <g stroke="#bae6fd" strokeOpacity="0.45" strokeWidth="1.2">
+        <line x1="26" y1="29" x2="26" y2="130" />
+        <line x1="42" y1="22" x2="42" y2="130" />
+        <line x1="58" y1="15" x2="58" y2="130" />
+        <line x1="90" y1="17" x2="90" y2="130" />
+        <line x1="106" y1="26" x2="106" y2="130" />
+        <line x1="120" y1="34" x2="120" y2="130" />
+        <line x1="10" y1="54" x2="74" y2="27" />
+        <line x1="10" y1="74" x2="74" y2="48" />
+        <line x1="10" y1="94" x2="74" y2="69" />
+        <line x1="10" y1="114" x2="74" y2="90" />
+        <line x1="74" y1="27" x2="134" y2="57" />
+        <line x1="74" y1="48" x2="134" y2="75" />
+        <line x1="74" y1="69" x2="134" y2="93" />
+        <line x1="74" y1="90" x2="134" y2="112" />
+      </g>
+    </svg>
   );
 }
 
@@ -2921,7 +3423,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       id: "sales",
       label: "المبيعات",
       value: formatMetric(totals.sales.netSigned),
-      icon: PersonIcon,
+      icon: BarChartIcon,
       tone: toneOf(totals.sales.netSigned),
       action: () => {
         triggerHaptic("light");
@@ -2932,7 +3434,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       id: "purchases",
       label: "المشتريات",
       value: formatMetric(totals.purchases.netSigned),
-      icon: PersonIcon,
+      icon: CartIcon,
       tone: toneOf(totals.purchases.netSigned),
       action: () => {
         triggerHaptic("light");
@@ -2943,7 +3445,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       id: "clients",
       label: "العملاء",
       value: formatMetric(totals.clients.netSigned),
-      icon: PersonIcon,
+      icon: PeopleIcon,
       tone: toneOf(totals.clients.netSigned),
       action: () => {
         triggerHaptic("light");
@@ -2954,7 +3456,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       id: "employees",
       label: "الموظفين",
       value: formatMetric(totals.employees.netSigned),
-      icon: PersonIcon,
+      icon: PeopleIcon,
       tone: toneOf(totals.employees.netSigned),
       action: () => {
         triggerHaptic("light");
@@ -2965,7 +3467,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       id: "transfers",
       label: "الحوالات",
       value: formatMetric(totals.transfers.netSigned),
-      icon: PersonIcon,
+      icon: SwitchIcon,
       tone: toneOf(totals.transfers.netSigned),
       action: () => {
         triggerHaptic("light");
@@ -2976,7 +3478,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
       id: "shop",
       label: "المحل",
       value: formatMetric(totals.shop.netSigned),
-      icon: PersonIcon,
+      icon: ShopIcon,
       tone: toneOf(totals.shop.netSigned),
       action: () => {
         triggerHaptic("light");
@@ -2986,7 +3488,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     inventory: {
       id: "inventory",
       label: "المخازن والأصناف",
-      icon: RulerHorizontalIcon,
+      icon: CubeIcon,
       action: () => {
         triggerHaptic("light");
         flow.push(inventoryReportScreen());
@@ -2995,7 +3497,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     "new-account": {
       id: "new-account",
       label: "حساب جديد",
-      icon: RulerSquareIcon,
+      icon: FilePlusIcon,
       action: () => {
         triggerHaptic("light");
         ctx.openAccountCreate("extended");
@@ -3063,24 +3565,94 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
             }}
             data-testid="open-analytics-dashboard-btn"
           >
-            <div className="home-summary-head">
-              <strong>لوحة المبيعات والفواتير والمخزون</strong>
-              <span className="home-summary-cta">
-                فتح اللوحة <ArrowLeftIcon />
-              </span>
-            </div>
-            <div className="home-summary-metrics">
-              <span>
-                المبيعات: <b>{formatAmount(liveSummary.totalSales)}</b>
-              </span>
-              <span>
-                الفواتير: <b>{liveSummary.totalInvoicesCount}</b>
-              </span>
-              <span className={liveSummary.lowStockItems.length > 0 ? "alert" : ""}>
-                نواقص المخزون: <b>{liveSummary.lowStockItems.length}</b>
-              </span>
+            <HomeHeroBuildingArt />
+            <div className="home-summary-content">
+              <div className="home-summary-head">
+                <span className="home-summary-badge" aria-hidden="true">
+                  <BarChartIcon />
+                </span>
+                <strong>لوحة المبيعات والفواتير والمخزون</strong>
+              </div>
+              <div className="home-summary-metrics">
+                <div className="home-summary-kpi">
+                  <span className="home-summary-kpi-icon sales" aria-hidden="true">
+                    <TagPriceIcon />
+                  </span>
+                  <span className="home-summary-kpi-copy">
+                    <small>المبيعات</small>
+                    <b>{formatAmount(liveSummary.totalSales)}</b>
+                  </span>
+                </div>
+                <div className="home-summary-kpi">
+                  <span className="home-summary-kpi-icon invoices" aria-hidden="true">
+                    <FileTextIcon />
+                  </span>
+                  <span className="home-summary-kpi-copy">
+                    <small>الفواتير</small>
+                    <b>{liveSummary.totalInvoicesCount}</b>
+                  </span>
+                </div>
+                <div className={`home-summary-kpi ${liveSummary.lowStockItems.length > 0 ? "alert" : ""}`}>
+                  <span className="home-summary-kpi-icon stock" aria-hidden="true">
+                    <CubeIcon />
+                  </span>
+                  <span className="home-summary-kpi-copy">
+                    <small>نواقص المخزون</small>
+                    <b>{liveSummary.lowStockItems.length}</b>
+                  </span>
+                </div>
+              </div>
             </div>
           </button>
+
+          <section className="home-erp-launcher" data-testid="home-erp-launcher">
+            <button
+              type="button"
+              className="home-erp-main-btn"
+              data-testid="open-erp-hub-btn"
+              onClick={() => {
+                triggerHaptic("light");
+                flow.push(erpModuleScreen("erp-hub"));
+              }}
+            >
+              <span className="home-erp-head-brand">
+                <span className="home-erp-badge" aria-hidden="true">
+                  <LayersIcon />
+                </span>
+                <span className="home-erp-main-copy">
+                  <strong>منظومة الـ ERP المتكاملة</strong>
+                  <small>الأستاذ العام · الموارد البشرية · POS وCRM · المشتريات · التصنيع</small>
+                </span>
+              </span>
+              <span className="home-erp-cta-pill">
+                <GaugeIcon />
+                <span>مركز القيادة</span>
+                <ChevronLeftIcon />
+              </span>
+            </button>
+            <div className="home-erp-pills">
+              <button type="button" onClick={() => ctx.openErpModule("erp-finance")} data-testid="quick-erp-finance">
+                <BarChartIcon />
+                <span>القوائم المالية</span>
+              </button>
+              <button type="button" onClick={() => ctx.openErpModule("erp-crm")} data-testid="quick-erp-crm">
+                <CartIcon />
+                <span>نقطة البيع و CRM</span>
+              </button>
+              <button type="button" onClick={() => ctx.openErpModule("erp-hr")} data-testid="quick-erp-hr">
+                <PeopleIcon />
+                <span>الرواتب و HR</span>
+              </button>
+              <button type="button" onClick={() => ctx.openErpModule("erp-procurement")} data-testid="quick-erp-procurement">
+                <CartIcon />
+                <span>المشتريات PO</span>
+              </button>
+              <button type="button" onClick={() => ctx.openErpModule("erp-manufacturing")} data-testid="quick-erp-manufacturing">
+                <FactoryIcon />
+                <span>التصنيع BOM</span>
+              </button>
+            </div>
+          </section>
 
           <section className="section-block quick-section">
             <div className="quick-grid">
@@ -3102,7 +3674,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
                 onClick={ctx.openQrScanner}
                 data-testid="home-qr-scanner-btn"
               >
-                <CameraIcon />
+                <QrScanIcon />
                 <span>مسح رمز QR</span>
               </button>
               <button
@@ -3139,26 +3711,41 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
               <p className="exec-favorites-empty">لم يتم تثبيت مهام بعد — اضغط «تثبيت مهمة».</p>
             ) : (
               <div className="exec-favorites-rail">
-                {ctx.favorites.map((fav) => (
-                  <div className="exec-favorite-chip" key={fav.id}>
-                    <button
-                      type="button"
-                      className="exec-favorite-launch"
-                      onClick={() => ctx.launchFavorite(fav)}
-                    >
-                      <strong>{fav.label}</strong>
-                      {fav.subtitle ? <small>{fav.subtitle}</small> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="exec-favorite-unpin"
-                      aria-label={`إزالة ${fav.label} من المفضلة`}
-                      onClick={() => ctx.unpinFavorite(fav.id)}
-                    >
-                      <Cross2Icon />
-                    </button>
-                  </div>
-                ))}
+                {ctx.favorites.map((fav) => {
+                  const FavIcon =
+                    fav.id === "fav_inventory"
+                      ? CubeIcon
+                      : fav.id === "fav_journal"
+                        ? ActivityLogIcon
+                        : fav.id === "fav_purchases"
+                          ? PeopleIcon
+                          : BookmarkFilledIcon;
+                  return (
+                    <div className="exec-favorite-chip" key={fav.id}>
+                      <button
+                        type="button"
+                        className="exec-favorite-launch"
+                        onClick={() => ctx.launchFavorite(fav)}
+                      >
+                        <span className="exec-favorite-icon" aria-hidden="true">
+                          <FavIcon />
+                        </span>
+                        <span className="exec-favorite-copy">
+                          <strong>{fav.label}</strong>
+                          {fav.subtitle ? <small>{fav.subtitle}</small> : null}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="exec-favorite-unpin"
+                        aria-label={`إزالة ${fav.label} من المفضلة`}
+                        onClick={() => ctx.unpinFavorite(fav.id)}
+                      >
+                        <Cross2Icon />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {pinPickerOpen ? (
@@ -3205,7 +3792,10 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
 
           <section className="section-block metrics-section">
             <div className="home-metrics-toolbar">
-              <strong>بطاقات الملخص</strong>
+              <span className="home-metrics-heading">
+                <LayersIcon />
+                <strong>بطاقات الملخص</strong>
+              </span>
               <div className="home-metrics-toolbar-actions">
                 <button
                   type="button"
@@ -3284,7 +3874,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
                     </div>
                   ) : null}
                   <button
-                    className={`metric-card ${metric.tone ?? "measurement"}`}
+                    className={`metric-card ${metric.tone ?? "measurement"} metric-card-${metric.id}`}
                     onClick={metric.action}
                   >
                     <span className="metric-icon">
@@ -4855,10 +5445,11 @@ function BottomNav() {
   const ctx = useWorkspace();
   return (
     <nav className="dashboard-footer" aria-label="روابط نسقو">
-      <div>
+      <div className="footer-icon-group">
         <button aria-label="الإعدادات" onClick={ctx.openSettings}>
           <GlobeIcon />
         </button>
+        <span className="footer-icon-divider" aria-hidden="true" />
         <button aria-label="واتساب" onClick={() => ctx.flowRef.current?.push(whatsappSettingsScreen())}>
           <WhatsAppIcon variant="glyph" />
         </button>
@@ -4866,7 +5457,7 @@ function BottomNav() {
       <span>
         رقم الإصدار: <bdi>1.0.0</bdi>
       </span>
-      <div>
+      <div className="footer-icon-group">
         <button aria-label="التقارير" onClick={() => ctx.flowRef.current?.push(inventoryReportScreen())}>
           <VideoIcon />
         </button>
@@ -4971,6 +5562,17 @@ function AppDrawer({
       items: [
         { label: "تسمية وحفظ نسخة احتياطية (محلي / جوجل)", icon: ArchiveIcon, action: () => { onClose(); ctx.openBackupModal(); } },
         { label: "استعادة نسخة احتياطية", icon: UploadIconShim, action: () => { onClose(); ctx.triggerJsonRestore(); } },
+      ],
+    },
+    {
+      title: "منظومة الـ ERP المتكاملة",
+      items: [
+        { label: "مركز قيادة الـ ERP", icon: RocketIcon, target: "erp-hub" },
+        { label: "القوائم المالية والأستاذ العام", icon: BarChartIcon, target: "erp-finance" },
+        { label: "الموارد البشرية والرواتب", icon: PersonIcon, target: "erp-hr" },
+        { label: "نقطة البيع وخط المبيعات (CRM)", icon: CardStackIcon, target: "erp-crm" },
+        { label: "أوامر الشراء وسلسلة التوريد", icon: BackpackIcon, target: "erp-procurement" },
+        { label: "التصنيع (BOM) ومراكز التكلفة", icon: LayersIcon, target: "erp-manufacturing" },
       ],
     },
     {
@@ -6438,6 +7040,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportWidth, setViewportWidth] = useState(373);
   const [zoom, setZoom] = useState<number | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [generatedAt] = useState(() => new Date());
   const fitScale = Math.min(viewportWidth / 1280, 1);
   const scale = zoom ?? fitScale;
@@ -6460,6 +7063,26 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
   const moveDocument = (direction: -1 | 1) =>
     viewportRef.current?.scrollBy({ left: direction * 240, behavior: "smooth" });
 
+  const handleDownloadPdf = async () => {
+    if (!entry || downloadingPdf) return;
+    setDownloadingPdf(true);
+    triggerHaptic("light");
+    try {
+      const { filename } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
+        companyName: ctx.workspace?.companyName || "نسقو برو",
+        footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
+        fallbackEntry: entry,
+      });
+      triggerHaptic("success");
+      ctx.showToast(`تم تنزيل ملخص الفاتورة (${filename})`);
+    } catch {
+      triggerHaptic("warning");
+      ctx.showToast("تعذّر إنشاء ملف PDF للفاتورة");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   if (!entry) {
     return (
       <MobileScroll className="app-screen">
@@ -6470,7 +7093,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
 
   return (
     <main className="cash-invoice-preview" data-testid="cash-invoice-screen">
-      <div className="cash-invoice-controls" role="group" aria-label="تكبير الفاتورة">
+      <div className="cash-invoice-controls" role="group" aria-label="تكبير الفاتورة وتنزيل PDF">
         <button
           data-testid="cash-invoice-zoom-in"
           aria-label="تكبير الفاتورة"
@@ -6499,6 +7122,17 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
         <button className="cash-invoice-actual" onClick={() => window.print()} aria-label="طباعة الفاتورة">
           طباعة PDF
         </button>
+        <button
+          type="button"
+          className="cash-invoice-download"
+          data-testid="cash-invoice-download-pdf"
+          aria-label="تنزيل ملخص الفاتورة PDF"
+          disabled={downloadingPdf}
+          onClick={() => void handleDownloadPdf()}
+        >
+          <DownloadIcon />
+          <span>{downloadingPdf ? "جارٍ الإنشاء..." : "تنزيل PDF"}</span>
+        </button>
       </div>
       <div className="cash-invoice-reader-hint">
         {scale > fitScale ? (
@@ -6513,7 +7147,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
           </>
         ) : (
           <span>
-            مستند رقم {entry.entryNumber} · كبّر لقراءة التفاصيل أو اضغط طباعة PDF
+            مستند رقم {entry.entryNumber} · اضغط تنزيل PDF لحفظ ملخص الفاتورة أو طباعة PDF
           </span>
         )}
       </div>
