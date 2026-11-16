@@ -34,7 +34,7 @@ Use GitHub **Settings → Secrets and variables → Actions → New repository s
 
 ## Deployment
 
-After setup, merge the reviewed pull request into `main`. A push to `main` runs Node 22 build checks and tests. GitHub Actions creates a compressed release with a pinned `package-lock.json` and version marker, then streams it over the SSH key. The forced SSH command runs a fixed host receiver which rejects unsafe archives and deploys the release using Docker after a health check. The old container is restored if the live health check fails.
+After setup, merge the reviewed pull request into `main`. A push to `main` runs Node 24.12 build checks and tests. GitHub Actions creates a compressed release with a pinned `package-lock.json` and version marker, then streams it over the SSH key. The forced SSH command runs a fixed host receiver which rejects unsafe archives and deploys the release using Docker after a health check. The old container is restored if the live health check fails.
 
 Verify **on server**:
 
