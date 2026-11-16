@@ -95,3 +95,27 @@ test("version-one IndexedDB snapshot remains readable and is copied only for its
   assert.equal((await readSnapshotFromIndexedDb(uid))?.inventory[0]?.quantity, 25);
   assert.equal((await readSnapshotFromIndexedDb("google-user-99"))?.inventory[0]?.quantity, 91);
 });
+
+test("empty v1 mirror cannot mask surviving localStorage after older cross-workspace overwrite", async () => {
+  const factory = installIsolatedBrowser();
+  const uid = "local-erp-workspace";
+  const db1 = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = factory.open(LOCAL_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      for (const name of ["workspaces", "accounts", "ledger", "warehouses", "inventory"])
+        db.createObjectStore(name, { keyPath: "id" });
+      db.createObjectStore("erp_modules", { keyPath: "uid" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const tx = db1.transaction("workspaces", "readwrite");
+    tx.objectStore("workspaces").put(snapshot(uid, 0).workspace);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db1.close();
+  assert.equal(await readSnapshotFromIndexedDb(uid), null);
+});

@@ -47,7 +47,7 @@ test("SQLite one-click import populates live screens, persists and searches sour
   await page.getByLabel("إضافة", { exact: true }).click();
   await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "الفواتير التاريخية والمطابقة" }).click();
   const archive = page.getByRole("dialog");
-  await archive.getByPlaceholder(/بحث برقم الفاتورة/).fill("BAR-9988");
+  await archive.getByPlaceholder(/بحث بالرقم/).fill("BAR-9988");
   await expect(archive.getByText("عميل اختبار نسق").first()).toBeVisible();
   await archive.getByRole("button", { name: "فتح البنود" }).click();
   await expect(archive.getByTestId("legacy-invoice-detail").getByText("فلتر محرك مميز")).toBeVisible();

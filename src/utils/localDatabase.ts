@@ -176,6 +176,10 @@ export async function readSnapshotFromIndexedDb(
       readStore<WarehouseRecord>(storeNames[2]),
       readStore<InventoryItemRecord>(storeNames[3]),
     ]);
+    // A v1 workspace with no accounts often means an older cross-workspace
+    // cache overwrite. Prefer the surviving localStorage data to an empty v1
+    // mirror; v2 explicitly permits an intentional empty workspace.
+    if (!usesV2 && accounts.length === 0) return null;
     const { backups = [], snapshotVersion: _version, ...workspaceFields } = ws;
     return { workspace: workspaceFields, accounts, ledger, warehouses, inventory, backups };
   } finally {

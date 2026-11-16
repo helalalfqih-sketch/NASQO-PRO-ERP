@@ -80,9 +80,8 @@ test("real private source: 26,001 rows, 125 accounts, 1,402 products, 5 stores a
   await page.getByLabel("إضافة", { exact: true }).click();
   await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "الفواتير التاريخية والمطابقة" }).click();
   const archive = page.getByRole("dialog");
-  await archive.getByPlaceholder(/بحث برقم الفاتورة/).fill(String(invoiceId));
-  const tableRow = archive.locator("tr").filter({ has: archive.getByText(`#${invoiceId}`, { exact: true }) }).first();
-  await tableRow.getByRole("button", { name: "فتح البنود" }).click();
+  await archive.getByPlaceholder(/بحث بالرقم/).fill(`#${invoiceId}`);
+  await archive.getByRole("button", { name: "فتح البنود" }).first().click();
   await expect(archive.getByTestId("legacy-invoice-detail").locator("tbody tr")).toHaveCount(totalLines, { timeout: 20_000 });
   await archive.getByRole("button", { name: "✕" }).click();
 

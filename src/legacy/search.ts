@@ -61,8 +61,13 @@ export function searchHistoricalInvoices(
   search: string,
   roleFilter: string = "all",
 ): HistoricalInvoiceHit[] {
-  const q = normalizeArabicSearch(search);
+  const raw = search.trim();
+  // Prefix # limits the search to one exact original document ID. Bare numbers
+  // remain full-text searches, so numeric barcodes keep working.
+  const exactDocument = /^#(\d+)$/.exec(raw);
+  const q = normalizeArabicSearch(raw);
   return hits.filter((hit) =>
-    (roleFilter === "all" || hit.role === roleFilter) && (!q || hit.searchText.includes(q)),
+    (roleFilter === "all" || hit.role === roleFilter) &&
+    (exactDocument ? String(hit.row.id) === exactDocument[1] : (!q || hit.searchText.includes(q))),
   );
 }

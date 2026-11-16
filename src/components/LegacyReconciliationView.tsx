@@ -206,7 +206,7 @@ export function LegacyReconciliationView({
           type="search"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-          placeholder="بحث برقم الفاتورة أو المستند أو العميل أو الصنف أو الباركود..."
+          placeholder="بحث بالرقم أو العميل أو الصنف أو الباركود (للرقم المطابق: #123)..."
           style={{ flex: "1 1 220px", padding: "7px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13 }}
         />
         {mode === "moves" ? (
