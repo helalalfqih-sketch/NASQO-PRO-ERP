@@ -126,7 +126,6 @@ function FlowFixture() {
         <main className="fixture-content">
           <h1>Flow root</h1>
           <button type="button" onClick={() => setModalOpen(true)}>Open overlay</button>
-          {modalOpen ? <div role="dialog" aria-label="Transient overlay">Overlay visible</div> : null}
           <button type="button" onClick={() => flow.push(stackedScreen(2))}>
             Push level 2
           </button>
@@ -138,6 +137,7 @@ function FlowFixture() {
   return (
     <MobileRuntime>
       <FlowStack initial={screen} onSystemBack={() => { if (modalOpen) { setModalOpen(false); return true; } return false; }} />
+      {modalOpen ? <div role="dialog" aria-label="Transient overlay">Overlay visible</div> : null}
     </MobileRuntime>
   );
 }
