@@ -24,6 +24,7 @@ interface SystemSettingsPageProps {
   onChangeHaptics: (enabled: boolean) => void;
   lastBackupIso: string | null;
   onOpenBackupModal: () => void;
+  onOpenGoogleDrive?: () => void;
   onRestoreJson: () => void;
   onOpenTrash: () => void;
   onSignOut: () => void;
@@ -47,6 +48,7 @@ export function SystemSettingsPage({
   onChangeHaptics,
   lastBackupIso,
   onOpenBackupModal,
+  onOpenGoogleDrive,
   onRestoreJson,
   onOpenTrash,
   onSignOut,
@@ -519,6 +521,20 @@ export function SystemSettingsPage({
               استعادة من ملف
             </button>
           </div>
+          {onOpenGoogleDrive ? (
+            <button
+              type="button"
+              className="ref-btn purple"
+              style={{ width: "100%", marginTop: 8 }}
+              onClick={() => {
+                triggerHaptic("light");
+                onOpenGoogleDrive();
+              }}
+              data-testid="settings-open-drive-btn"
+            >
+              فتح Google Drive (النسخ والملفات السحابية)
+            </button>
+          ) : null}
         </section>
 
         {/* General & Printing & WhatsApp Toggles */}

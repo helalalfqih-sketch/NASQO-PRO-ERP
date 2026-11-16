@@ -80,6 +80,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { BackupNameModal } from "./components/BackupNameModal";
 import { DashboardScreen } from "./components/DashboardScreen";
 import { ExpenseCategorySelector } from "./components/ExpenseCategorySelector";
+import { GoogleDriveModal } from "./components/GoogleDriveModal";
+import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { PrintOptionsModal } from "./components/PrintOptionsModal";
@@ -117,11 +119,13 @@ import {
 } from "./accounting";
 import {
   auth,
+  connectGoogleDrive,
   createCloudBackupRecord,
   createInventoryItem,
   createLedgerEntry,
   createOrUpdateAccount,
   ensureWorkspaceSeeded,
+  getGoogleAccessToken,
   isLocalWorkspaceSession,
   LOCAL_WORKSPACE_UID,
   permanentlyDeleteLedger,
@@ -135,6 +139,11 @@ import {
   updateInventoryItem,
   updateLedgerEntry,
 } from "./firebase";
+import {
+  findOrCreateDriveFolder,
+  uploadFileToDrive,
+  DriveAuthExpiredError,
+} from "./services/googleDrive";
 import {
   CURRENCIES,
   type AccountCategory,
@@ -171,7 +180,11 @@ import {
   type HomeMetricId,
   type PinnedFavoriteItem,
 } from "./utils/dashboardPrefs";
-import { generatePrintableInvoicePdfFromDatabase } from "./utils/exportPdf";
+import {
+  buildInvoicePdfSummaryData,
+  buildInvoiceSummaryPdfBytes,
+  generatePrintableInvoicePdfFromDatabase,
+} from "./utils/exportPdf";
 import { readHapticsEnabled, triggerHaptic, writeHapticsEnabled } from "./utils/haptics";
 import { useThemeMode, type ThemeMode } from "./utils/theme";
 
@@ -190,6 +203,7 @@ type OverlayKind =
   | "qr-scanner"
   | "print-options"
   | "backup-name"
+  | "google-drive"
   | "transfer"
   | null;
 type AccountCreateMode = "compact" | "extended";
@@ -237,6 +251,7 @@ type LiveWorkspaceState = {
   openExportMenu: (kind?: ExportKind, account?: AccountRecord) => void;
   openPrintOptions: (kind?: ExportKind, account?: AccountRecord) => void;
   openBackupModal: () => void;
+  openGoogleDriveModal: () => void;
   openTransferModal: (accountId?: string) => void;
   openInventoryAdd: () => void;
   openSettings: () => void;
@@ -424,6 +439,9 @@ function NasqoProductionShell() {
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       window.clearTimeout(fallbackTimer);
       if (nextUser) {
+        if (wantsAutostart || isLocalWorkspaceSession()) {
+          return;
+        }
         setLocalWorkspaceSession(false);
         setUser(nextUser);
         setAuthReady(true);
@@ -449,6 +467,7 @@ function NasqoProductionShell() {
   const handleSignIn = async () => {
     setAuthBusy(true);
     setAuthError("");
+    setLocalWorkspaceSession(false);
     try {
       await signInWithGoogle();
     } catch (err) {
@@ -529,15 +548,15 @@ function NasqoProductionShell() {
                 <RocketIcon />
                 <span>الدخول السريع — نظام ERP متكامل</span>
               </button>
-              <button
-                className="auth-local-secondary-btn"
-                onClick={handleSignIn}
-                disabled={authBusy}
-                data-testid="google-signin-button"
-              >
-                <LockClosedIcon />
-                <span>{authBusy ? "جاري تسجيل الدخول..." : "المزامنة عبر حساب Google"}</span>
-              </button>
+              <div className="auth-gsi-wrap">
+                <GoogleSignInButton
+                  onClick={() => void handleSignIn()}
+                  disabled={authBusy}
+                  label={authBusy ? "جاري تسجيل الدخول..." : "Sign in with Google"}
+                  testId="google-signin-button"
+                  fullWidth
+                />
+              </div>
             </section>
           </main>
         </div>
@@ -857,6 +876,11 @@ function AuthenticatedWorkspace({
     setOverlay("backup-name");
   }, [dismissKeyboard]);
 
+  const openGoogleDriveModal = useCallback(() => {
+    dismissKeyboard();
+    setOverlay("google-drive");
+  }, [dismissKeyboard]);
+
   const openTransferModal = useCallback(
     (accountId?: string) => {
       dismissKeyboard();
@@ -866,9 +890,8 @@ function AuthenticatedWorkspace({
     [dismissKeyboard],
   );
 
-  const saveLocalNamedBackup = useCallback(
-    (backupName: string) => {
-      const exportedAt = new Date().toISOString();
+  const buildBackupJsonString = useCallback(
+    (backupName: string, exportedAt: string = new Date().toISOString()) => {
       const payload = {
         format: "nasqo-pro-erp-backup",
         version: 2,
@@ -881,10 +904,18 @@ function AuthenticatedWorkspace({
         inventory,
         erpData,
       };
+      return JSON.stringify(payload, null, 2);
+    },
+    [accounts, erpData, inventory, ledger, warehouses, workspace],
+  );
+
+  const saveLocalNamedBackup = useCallback(
+    (backupName: string) => {
+      const exportedAt = new Date().toISOString();
       const fileName = buildLocalBackupDownloadName(backupName);
       downloadFile(
         fileName,
-        JSON.stringify(payload, null, 2),
+        buildBackupJsonString(backupName, exportedAt),
         "application/json;charset=utf-8",
       );
       const savedIso = recordLastBackupNow(exportedAt);
@@ -892,12 +923,47 @@ function AuthenticatedWorkspace({
       triggerHaptic("success");
       showToast(`تم تنزيل النسخة الاحتياطية: ${fileName}`);
     },
-    [accounts, erpData, inventory, ledger, showToast, warehouses, workspace],
+    [buildBackupJsonString, showToast],
   );
 
   const saveCloudNamedBackup = useCallback(
     async (backupName: string) => {
       const exportedAtIso = new Date().toISOString();
+      const fileName = buildLocalBackupDownloadName(backupName);
+      let token = getGoogleAccessToken();
+      if (!token) {
+        const authResult = await connectGoogleDrive();
+        token = authResult.accessToken;
+      }
+      try {
+        const folder = await findOrCreateDriveFolder(token, "NASQO Pro Backups");
+        await uploadFileToDrive(token, {
+          name: fileName,
+          content: buildBackupJsonString(backupName, exportedAtIso),
+          mimeType: "application/json",
+          parentId: folder.id,
+          description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
+        });
+      } catch (err) {
+        if (err instanceof DriveAuthExpiredError) {
+          const authResult = await connectGoogleDrive();
+          const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Backups");
+          await uploadFileToDrive(authResult.accessToken, {
+            name: fileName,
+            content: buildBackupJsonString(backupName, exportedAtIso),
+            mimeType: "application/json",
+            parentId: folder.id,
+            description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
+          });
+        } else {
+          showToast(
+            err instanceof Error
+              ? `تعذر الرفع إلى Google Drive: ${err.message}`
+              : "تعذر الرفع إلى Google Drive",
+          );
+          throw err;
+        }
+      }
       await createCloudBackupRecord(user.uid, {
         name: backupName,
         accountsCount: accounts.length,
@@ -908,9 +974,17 @@ function AuthenticatedWorkspace({
       });
       const savedIso = recordLastBackupNow(exportedAtIso);
       setLastBackupIso(savedIso);
-      showToast(`تم حفظ النسخة الاحتياطية في جوجل (السحابة): ${backupName}`);
+      showToast(`تم حفظ النسخة في Google Drive: ${fileName}`);
     },
-    [accounts.length, inventory.length, ledger.length, showToast, user.uid, warehouses.length],
+    [
+      accounts.length,
+      buildBackupJsonString,
+      inventory.length,
+      ledger.length,
+      showToast,
+      user.uid,
+      warehouses.length,
+    ],
   );
 
   const triggerJsonBackup = useCallback(() => {
@@ -925,18 +999,15 @@ function AuthenticatedWorkspace({
     csvImportInputRef.current?.click();
   }, []);
 
-  const handleJsonFileRestore = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    try {
-      const buffer = await file.arrayBuffer();
-      const inspection = inspectBackupBytes(new Uint8Array(buffer), file.name);
+  const restoreBackupFromBytes = useCallback(
+    async (bytes: Uint8Array, fileName: string) => {
+      try {
+        const inspection = inspectBackupBytes(bytes, fileName);
 
       if (inspection.kind === "sqlite") {
         triggerHaptic("warning");
         showToast(
-          `الملف ${file.name} هو قاعدة بيانات SQLite من تطبيق الهاتف؛ لاستيراده هنا صدّره بصيغة JSON أو CSV أو .back نصي`,
+          `الملف ${fileName} هو قاعدة بيانات SQLite من تطبيق الهاتف؛ لاستيراده هنا صدّره بصيغة JSON أو CSV أو .back نصي`,
         );
         return;
       }
@@ -944,7 +1015,7 @@ function AuthenticatedWorkspace({
       if (inspection.kind === "zip") {
         triggerHaptic("warning");
         showToast(
-          `الملف ${file.name} أرشيف ZIP مضغوط؛ فك الضغط واستورد ملف JSON أو CSV بالداخل`,
+          `الملف ${fileName} أرشيف ZIP مضغوط؛ فك الضغط واستورد ملف JSON أو CSV بالداخل`,
         );
         return;
       }
@@ -1088,13 +1159,23 @@ function AuthenticatedWorkspace({
 
       showToast(
         summaryParts.length > 0
-          ? `تمت استعادة ${summaryParts.join(" و")} من ${file.name}`
-          : `ملف ${file.name} مطابق للبيانات الحالية بالفعل`,
+          ? `تمت استعادة ${summaryParts.join(" و")} من ${fileName}`
+          : `ملف ${fileName} مطابق للبيانات الحالية بالفعل`,
       );
     } catch {
       triggerHaptic("warning");
       showToast("تعذر قراءة ملف النسخة الاحتياطية — تأكد من صيغة .back أو JSON");
     }
+  },
+  [accounts, erpData, inventory, showToast, updateErpData, user.uid, warehouses],
+);
+
+  const handleJsonFileRestore = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const buffer = await file.arrayBuffer();
+    await restoreBackupFromBytes(new Uint8Array(buffer), file.name);
   };
 
   const handleCsvAccountImport = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1271,6 +1352,7 @@ function AuthenticatedWorkspace({
       openExportMenu,
       openPrintOptions,
       openBackupModal,
+      openGoogleDriveModal,
       openTransferModal,
       openInventoryAdd: () => setOverlay("inventory-add"),
       openSettings: () => {
@@ -1336,6 +1418,7 @@ function AuthenticatedWorkspace({
       openAccountEdit,
       openAccountPicker,
       openBackupModal,
+      openGoogleDriveModal,
       openDashboardMenu,
       openDrawer,
       openErpModule,
@@ -1678,6 +1761,25 @@ function AuthenticatedWorkspace({
           onClose={() => setOverlay(null)}
           onSaveLocal={saveLocalNamedBackup}
           onSaveToGoogle={saveCloudNamedBackup}
+        />
+        <GoogleDriveModal
+          open={overlay === "google-drive"}
+          onClose={() => setOverlay(null)}
+          buildBackupPayloadJson={(backupName) => buildBackupJsonString(backupName)}
+          onBackupUploaded={(fileName) => {
+            const savedIso = recordLastBackupNow();
+            setLastBackupIso(savedIso);
+            void createCloudBackupRecord(user.uid, {
+              name: fileName,
+              accountsCount: accounts.length,
+              ledgerCount: ledger.length,
+              warehousesCount: warehouses.length,
+              inventoryCount: inventory.length,
+              exportedAtIso: savedIso,
+            });
+          }}
+          onRestoreBackupBytes={restoreBackupFromBytes}
+          onNotify={showToast}
         />
         <TransferModal
           open={overlay === "transfer"}
@@ -5558,8 +5660,9 @@ function AppDrawer({
       ],
     },
     {
-      title: "النسخ الاحتياطي",
+      title: "النسخ الاحتياطي و Google Drive",
       items: [
+        { label: "ملفات والنسخ السحابي Google Drive", icon: GlobeIcon, action: () => { onClose(); ctx.openGoogleDriveModal(); } },
         { label: "تسمية وحفظ نسخة احتياطية (محلي / جوجل)", icon: ArchiveIcon, action: () => { onClose(); ctx.openBackupModal(); } },
         { label: "استعادة نسخة احتياطية", icon: UploadIconShim, action: () => { onClose(); ctx.triggerJsonRestore(); } },
       ],
@@ -5651,6 +5754,7 @@ function DashboardAddMenu({ open, onClose }: { open: boolean; onClose: () => voi
     { label: "إضافة طلبية", action: () => ctx.accounts[0] && ctx.openVendorInvoice(ctx.accounts[0], "order") },
     { label: "قيد بسيط", action: () => ctx.flowRef.current?.push(simpleEntryScreen()) },
     { label: "إضافة صنف للمخزن", action: ctx.openInventoryAdd },
+    { label: "ملفات Google Drive", action: ctx.openGoogleDriveModal },
   ];
   return (
     <div className="dashboard-add-layer" data-testid="dashboard-add-menu">
@@ -6589,6 +6693,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
       onChangeHaptics={ctx.setHapticsEnabled}
       lastBackupIso={ctx.lastBackupIso}
       onOpenBackupModal={ctx.openBackupModal}
+      onOpenGoogleDrive={ctx.openGoogleDriveModal}
       onRestoreJson={ctx.triggerJsonRestore}
       onOpenTrash={ctx.openTrash}
       onSignOut={ctx.handleSignOut}
@@ -6780,6 +6885,25 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
             }}
           >
             استعادة نسخة
+          </button>
+          <button
+            onClick={() => {
+              triggerHaptic("light");
+              onClose();
+              ctx.openGoogleDriveModal();
+            }}
+            style={{
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: 6,
+              background: "var(--nasqo-surface-alt)",
+              border: "1px solid var(--nasqo-line)",
+              color: "var(--nasqo-blue)",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            مدير Google Drive السحابي
           </button>
         </div>
         <div className="form-modal-actions">
@@ -7041,6 +7165,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
   const [viewportWidth, setViewportWidth] = useState(373);
   const [zoom, setZoom] = useState<number | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [uploadingDrive, setUploadingDrive] = useState(false);
   const [generatedAt] = useState(() => new Date());
   const fitScale = Math.min(viewportWidth / 1280, 1);
   const scale = zoom ?? fitScale;
@@ -7080,6 +7205,59 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
       ctx.showToast("تعذّر إنشاء ملف PDF للفاتورة");
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleUploadPdfToDrive = async () => {
+    if (!entry || uploadingDrive) return;
+    setUploadingDrive(true);
+    triggerHaptic("light");
+    try {
+      const summary = buildInvoicePdfSummaryData(entry, {
+        companyName: ctx.workspace?.companyName || "نسقو برو",
+        footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
+      });
+      const { bytes, filename, mimeType } = await buildInvoiceSummaryPdfBytes(summary);
+      let token = getGoogleAccessToken();
+      if (!token) {
+        const authResult = await connectGoogleDrive();
+        token = authResult.accessToken;
+      }
+      try {
+        const folder = await findOrCreateDriveFolder(token, "NASQO Pro Invoices");
+        await uploadFileToDrive(token, {
+          name: filename,
+          content: bytes,
+          mimeType,
+          parentId: folder.id,
+          description: `فاتورة ${summary.title} #${summary.entryNumber} - ${summary.accountName}`,
+        });
+      } catch (err) {
+        if (err instanceof DriveAuthExpiredError) {
+          const authResult = await connectGoogleDrive();
+          const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Invoices");
+          await uploadFileToDrive(authResult.accessToken, {
+            name: filename,
+            content: bytes,
+            mimeType,
+            parentId: folder.id,
+            description: `فاتورة ${summary.title} #${summary.entryNumber} - ${summary.accountName}`,
+          });
+        } else {
+          throw err;
+        }
+      }
+      triggerHaptic("success");
+      ctx.showToast(`تم حفظ الفاتورة PDF في Google Drive: ${filename}`);
+    } catch (err) {
+      triggerHaptic("warning");
+      ctx.showToast(
+        err instanceof Error
+          ? `تعذر رفع الفاتورة إلى Drive: ${err.message}`
+          : "تعذر رفع الفاتورة إلى Google Drive",
+      );
+    } finally {
+      setUploadingDrive(false);
     }
   };
 
@@ -7132,6 +7310,17 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
         >
           <DownloadIcon />
           <span>{downloadingPdf ? "جارٍ الإنشاء..." : "تنزيل PDF"}</span>
+        </button>
+        <button
+          type="button"
+          className="cash-invoice-drive"
+          data-testid="cash-invoice-upload-drive"
+          aria-label="رفع الفاتورة PDF إلى Google Drive"
+          disabled={uploadingDrive}
+          onClick={() => void handleUploadPdfToDrive()}
+        >
+          <GlobeIcon />
+          <span>{uploadingDrive ? "جاري الرفع..." : "حفظ لـ Drive"}</span>
         </button>
       </div>
       <div className="cash-invoice-reader-hint">

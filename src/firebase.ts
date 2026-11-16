@@ -1,5 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, type User } from "firebase/auth";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  type User,
+} from "firebase/auth";
 import {
   collection,
   deleteDoc,
@@ -42,7 +49,8 @@ import {
 } from "./utils/localDatabase";
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const configuredDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
+export const db = configuredDatabaseId ? getFirestore(app, configuredDatabaseId) : getFirestore(app);
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -108,14 +116,110 @@ async function testConnection() {
 }
 void testConnection();
 
-export async function signInWithGoogle(): Promise<User> {
+export const GOOGLE_WORKSPACE_SCOPES = [
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/drive.activity",
+  "https://www.googleapis.com/auth/drive.activity.readonly",
+  "https://www.googleapis.com/auth/drive.appdata",
+  "https://www.googleapis.com/auth/drive.apps.readonly",
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive.install",
+  "https://www.googleapis.com/auth/drive.meet.readonly",
+  "https://www.googleapis.com/auth/drive.metadata",
+  "https://www.googleapis.com/auth/drive.metadata.readonly",
+  "https://www.googleapis.com/auth/drive.photos.readonly",
+  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/drive.scripts",
+] as const;
+
+// Strictly in-memory OAuth access token cache — never persisted to localStorage or sessionStorage.
+let cachedGoogleAccessToken: string | null = null;
+const googleTokenListeners = new Set<(token: string | null) => void>();
+
+function notifyGoogleTokenListeners() {
+  for (const listener of googleTokenListeners) {
+    listener(cachedGoogleAccessToken);
+  }
+}
+
+export function getGoogleAccessToken(): string | null {
+  return cachedGoogleAccessToken;
+}
+
+export function hasGoogleAccessToken(): boolean {
+  return Boolean(cachedGoogleAccessToken);
+}
+
+export function clearGoogleAccessToken(): void {
+  if (cachedGoogleAccessToken !== null) {
+    cachedGoogleAccessToken = null;
+    notifyGoogleTokenListeners();
+  }
+}
+
+export function subscribeGoogleAccessToken(listener: (token: string | null) => void): () => void {
+  googleTokenListeners.add(listener);
+  listener(cachedGoogleAccessToken);
+  return () => {
+    googleTokenListeners.delete(listener);
+  };
+}
+
+export function getConnectedGoogleAccountInfo(): {
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+} {
+  const current = auth.currentUser;
+  if (!current) {
+    return { email: null, displayName: null, photoURL: null };
+  }
+  return {
+    email: current.email,
+    displayName: current.displayName,
+    photoURL: current.photoURL,
+  };
+}
+
+function buildGoogleDriveProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider();
+  for (const scope of GOOGLE_WORKSPACE_SCOPES) {
+    provider.addScope(scope);
+  }
   provider.setCustomParameters({ prompt: "select_account" });
+  return provider;
+}
+
+onAuthStateChanged(auth, (user) => {
+  if (!user) {
+    clearGoogleAccessToken();
+  }
+});
+
+export async function signInWithGoogle(): Promise<User> {
+  const provider = buildGoogleDriveProvider();
   const result = await signInWithPopup(auth, provider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  cachedGoogleAccessToken = credential?.accessToken ?? null;
+  notifyGoogleTokenListeners();
   return result.user;
 }
 
+export async function connectGoogleDrive(): Promise<{ user: User; accessToken: string }> {
+  const provider = buildGoogleDriveProvider();
+  const result = await signInWithPopup(auth, provider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const token = credential?.accessToken ?? null;
+  if (!token) {
+    throw new Error("لم يتم استلام رمز وصول Google Drive من نافذة المصادقة.");
+  }
+  cachedGoogleAccessToken = token;
+  notifyGoogleTokenListeners();
+  return { user: result.user, accessToken: token };
+}
+
 export async function signOutUser(): Promise<void> {
+  clearGoogleAccessToken();
   await signOut(auth);
 }
 

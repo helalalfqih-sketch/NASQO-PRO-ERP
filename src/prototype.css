@@ -5546,3 +5546,663 @@ select.select-box.currency-select {
   color: #60a5fa;
 }
 
+/* --- Cash Invoice Preview Drive Upload Button --- */
+.cash-invoice-controls .cash-invoice-drive {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: var(--nasqo-green);
+  border-color: var(--nasqo-green);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cash-invoice-controls .cash-invoice-drive svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+/* --- Official Google Identity Services Sign-In Button --- */
+.auth-gsi-wrap {
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.nasqo-app button.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-appearance: none;
+  background-color: #ffffff;
+  background-image: none;
+  border: 1px solid #747775;
+  border-radius: 4px;
+  box-sizing: border-box;
+  color: #1f1f1f;
+  cursor: pointer;
+  font-family: "Roboto", Arial, sans-serif;
+  font-size: 14px;
+  height: 40px;
+  letter-spacing: 0.25px;
+  outline: none;
+  overflow: hidden;
+  padding: 0 12px;
+  position: relative;
+  text-align: center;
+  transition: background-color 0.218s, border-color 0.218s, box-shadow 0.218s;
+  vertical-align: middle;
+  white-space: nowrap;
+  width: auto;
+  max-width: 400px;
+  min-width: min-content;
+  direction: ltr;
+}
+
+.nasqo-app button.gsi-material-button.full-width {
+  width: 100%;
+}
+
+.gsi-material-button .gsi-material-button-icon {
+  height: 20px;
+  margin-right: 12px;
+  min-width: 20px;
+  width: 20px;
+}
+
+.gsi-material-button .gsi-material-button-content-wrapper {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  height: 100%;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+}
+
+.gsi-material-button .gsi-material-button-contents {
+  flex-grow: 0;
+  font-family: "Roboto", Arial, sans-serif;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.gsi-material-button .gsi-material-button-state {
+  transition: opacity 0.218s;
+  bottom: 0;
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.nasqo-app button.gsi-material-button:disabled {
+  cursor: default;
+  background-color: #ffffff61;
+  border-color: #1f1f1f1f;
+}
+
+.gsi-material-button:disabled .gsi-material-button-contents,
+.gsi-material-button:disabled .gsi-material-button-icon {
+  opacity: 0.38;
+}
+
+.gsi-material-button:not(:disabled):active .gsi-material-button-state,
+.gsi-material-button:not(:disabled):focus .gsi-material-button-state {
+  background-color: #303030;
+  opacity: 0.12;
+}
+
+.nasqo-app button.gsi-material-button:not(:disabled):hover {
+  box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+}
+
+.gsi-material-button:not(:disabled):hover .gsi-material-button-state {
+  background-color: #303030;
+  opacity: 0.08;
+}
+
+:root.dark .nasqo-app button.gsi-material-button {
+  background-color: #131314;
+  border: 1px solid #8e918f;
+  color: #e3e3e3;
+}
+
+:root.dark .nasqo-app button.gsi-material-button:not(:disabled):hover .gsi-material-button-state,
+:root.dark .nasqo-app button.gsi-material-button:not(:disabled):active .gsi-material-button-state {
+  background-color: #ffffff;
+}
+
+/* --- Google Drive Modal --- */
+.gdrive-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(86vh, 690px);
+  padding: 12px;
+  overflow: hidden;
+}
+
+.gdrive-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--nasqo-line);
+}
+
+.gdrive-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.gdrive-logo-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--nasqo-surface-alt);
+  border: 1px solid var(--nasqo-line);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.gdrive-title-wrap h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--nasqo-ink);
+}
+
+.gdrive-title-wrap small {
+  display: block;
+  font-size: 11px;
+  color: var(--nasqo-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 225px;
+}
+
+.gdrive-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--nasqo-surface-alt);
+  border: 1px solid var(--nasqo-line);
+  color: var(--nasqo-ink);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.gdrive-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.gdrive-alert.error {
+  background: rgba(201, 27, 8, 0.1);
+  border: 1px solid rgba(201, 27, 8, 0.3);
+  color: var(--nasqo-red);
+}
+
+.gdrive-connect-gate {
+  display: grid;
+  gap: 12px;
+  padding: 14px 6px 8px;
+  text-align: center;
+}
+
+.gdrive-connect-hero {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+
+.gdrive-connect-hero svg {
+  width: 32px;
+  height: 32px;
+  color: var(--nasqo-blue);
+}
+
+.gdrive-connect-hero h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--nasqo-ink);
+}
+
+.gdrive-connect-hero p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--nasqo-muted);
+}
+
+.gdrive-signin-holder {
+  display: flex;
+  justify-content: center;
+  padding: 2px 4px;
+}
+
+.gdrive-token-note {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+}
+
+.gdrive-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--nasqo-surface-alt);
+  border: 1px solid var(--nasqo-line);
+}
+
+.gdrive-quota-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.gdrive-quota-copy strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gdrive-quota-copy span {
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+}
+
+.gdrive-quota-bar {
+  height: 5px;
+  border-radius: 99px;
+  background: var(--nasqo-line);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.gdrive-quota-bar span {
+  display: block;
+  height: 100%;
+  background: var(--nasqo-blue);
+  border-radius: 99px;
+}
+
+.gdrive-status-btns {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.gdrive-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface);
+  color: var(--nasqo-blue);
+  display: grid;
+  place-items: center;
+}
+
+.gdrive-chip-action {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.gdrive-chip-action.danger {
+  color: var(--nasqo-red);
+  border-color: rgba(201, 27, 8, 0.3);
+}
+
+.gdrive-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gdrive-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.gdrive-action-btn.primary {
+  flex: 1 1 160px;
+  background: var(--nasqo-blue);
+  border-color: var(--nasqo-blue);
+  color: #ffffff;
+}
+
+.gdrive-mkdir-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.gdrive-mkdir-row input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12px;
+}
+
+.gdrive-search-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-muted);
+}
+
+.gdrive-search-row input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nasqo-ink);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.gdrive-tabs {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.gdrive-tabs button {
+  padding: 4px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gdrive-tabs button.active {
+  background: var(--nasqo-blue);
+  border-color: var(--nasqo-blue);
+  color: #ffffff;
+}
+
+.gdrive-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.gdrive-back-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface-alt);
+  color: var(--nasqo-ink);
+  font-weight: 700;
+}
+
+.gdrive-crumbs-trail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.gdrive-crumbs-trail button {
+  background: transparent;
+  color: var(--nasqo-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.gdrive-crumbs-trail button.current {
+  color: var(--nasqo-blue);
+  font-weight: 800;
+}
+
+.gdrive-files-scroll {
+  flex: 1 1 auto;
+  min-height: 180px;
+  max-height: 310px;
+}
+
+.gdrive-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.gdrive-file-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface-alt);
+}
+
+.gdrive-file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gdrive-file-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--nasqo-brand-tint);
+  color: var(--nasqo-blue);
+}
+
+.gdrive-file-icon.folder {
+  background: rgba(245, 158, 11, 0.16);
+  color: #d97706;
+}
+
+.gdrive-file-icon.backup {
+  background: rgba(16, 185, 129, 0.16);
+  color: var(--nasqo-green);
+}
+
+.gdrive-file-icon.spreadsheet {
+  background: rgba(22, 163, 74, 0.15);
+  color: #15803d;
+}
+
+.gdrive-file-meta {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.gdrive-file-meta strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--nasqo-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gdrive-file-meta span {
+  font-size: 10.5px;
+  color: var(--nasqo-muted);
+}
+
+.gdrive-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.gdrive-row-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 27px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--nasqo-line);
+  background: var(--nasqo-surface);
+  color: var(--nasqo-ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.gdrive-row-btn.primary {
+  background: var(--nasqo-blue);
+  border-color: var(--nasqo-blue);
+  color: #ffffff;
+}
+
+.gdrive-row-btn.success {
+  background: rgba(16, 185, 129, 0.14);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: var(--nasqo-green);
+}
+
+.gdrive-row-btn.warn {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #d97706;
+}
+
+.gdrive-row-btn.danger {
+  color: var(--nasqo-red);
+  border-color: rgba(201, 27, 8, 0.28);
+  margin-inline-start: auto;
+}
+
+.gdrive-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--nasqo-muted);
+}
+
+.gdrive-confirm-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(7, 17, 34, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  backdrop-filter: blur(2px);
+}
+
+.gdrive-confirm-card {
+  width: 100%;
+  background: var(--nasqo-surface);
+  border: 1px solid var(--nasqo-line);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+}
+
+.gdrive-confirm-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--nasqo-red);
+}
+
+.gdrive-confirm-head strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--nasqo-ink);
+}
+
+.gdrive-confirm-card p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--nasqo-muted);
+}
+
+.gdrive-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.gdrive-confirm-actions .ref-btn {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 11.5px;
+}
+
+

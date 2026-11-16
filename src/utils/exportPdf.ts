@@ -513,10 +513,7 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
   return canvas;
 }
 
-export async function generateInvoiceSummaryPdf(
-  summary: InvoicePdfSummaryData,
-  mode: "download" | "share" = "download",
-): Promise<{ result: "downloaded" | "shared"; filename: string }> {
+function createInvoiceSummaryPdfDoc(summary: InvoicePdfSummaryData): { pdf: jsPDF; filename: string } {
   const canvas = drawInvoiceSummaryCanvas(summary);
   const imgData = canvas.toDataURL("image/png");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -528,6 +525,26 @@ export async function generateInvoiceSummaryPdf(
 
   const safeDate = (summary.entryDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, "");
   const filename = `nasqo-invoice-${summary.entryNumber}-${safeDate}.pdf`;
+  return { pdf, filename };
+}
+
+export async function buildInvoiceSummaryPdfBytes(
+  summary: InvoicePdfSummaryData,
+): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> {
+  const { pdf, filename } = createInvoiceSummaryPdfDoc(summary);
+  const buffer = pdf.output("arraybuffer");
+  return {
+    bytes: new Uint8Array(buffer),
+    filename,
+    mimeType: "application/pdf",
+  };
+}
+
+export async function generateInvoiceSummaryPdf(
+  summary: InvoicePdfSummaryData,
+  mode: "download" | "share" = "download",
+): Promise<{ result: "downloaded" | "shared"; filename: string }> {
+  const { pdf, filename } = createInvoiceSummaryPdfDoc(summary);
 
   if (mode === "share" && typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
