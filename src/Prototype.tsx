@@ -81,6 +81,7 @@ import { BackupNameModal } from "./components/BackupNameModal";
 import { DashboardScreen } from "./components/DashboardScreen";
 import { ExpenseCategorySelector } from "./components/ExpenseCategorySelector";
 import { GoogleDriveModal } from "./components/GoogleDriveModal";
+import { LegacyFinancialImportModal } from "./components/LegacyFinancialImportModal";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
@@ -204,6 +205,7 @@ type OverlayKind =
   | "print-options"
   | "backup-name"
   | "google-drive"
+  | "legacy-financial-import"
   | "transfer"
   | null;
 type AccountCreateMode = "compact" | "extended";
@@ -252,6 +254,7 @@ type LiveWorkspaceState = {
   openPrintOptions: (kind?: ExportKind, account?: AccountRecord) => void;
   openBackupModal: () => void;
   openGoogleDriveModal: () => void;
+  openLegacyFinancialImport: () => void;
   openTransferModal: (accountId?: string) => void;
   openInventoryAdd: () => void;
   openSettings: () => void;
@@ -881,6 +884,11 @@ function AuthenticatedWorkspace({
     setOverlay("google-drive");
   }, [dismissKeyboard]);
 
+  const openLegacyFinancialImport = useCallback(() => {
+    dismissKeyboard();
+    setOverlay("legacy-financial-import");
+  }, [dismissKeyboard]);
+
   const openTransferModal = useCallback(
     (accountId?: string) => {
       dismissKeyboard();
@@ -1353,6 +1361,7 @@ function AuthenticatedWorkspace({
       openPrintOptions,
       openBackupModal,
       openGoogleDriveModal,
+      openLegacyFinancialImport,
       openTransferModal,
       openInventoryAdd: () => setOverlay("inventory-add"),
       openSettings: () => {
@@ -1419,6 +1428,7 @@ function AuthenticatedWorkspace({
       openAccountPicker,
       openBackupModal,
       openGoogleDriveModal,
+      openLegacyFinancialImport,
       openDashboardMenu,
       openDrawer,
       openErpModule,
@@ -1761,6 +1771,12 @@ function AuthenticatedWorkspace({
           onClose={() => setOverlay(null)}
           onSaveLocal={saveLocalNamedBackup}
           onSaveToGoogle={saveCloudNamedBackup}
+        />
+        <LegacyFinancialImportModal
+          open={overlay === "legacy-financial-import"}
+          onClose={() => setOverlay(null)}
+          workspaceId={user.uid}
+          onNotify={showToast}
         />
         <GoogleDriveModal
           open={overlay === "google-drive"}
@@ -5665,6 +5681,7 @@ function AppDrawer({
         { label: "ملفات والنسخ السحابي Google Drive", icon: GlobeIcon, action: () => { onClose(); ctx.openGoogleDriveModal(); } },
         { label: "تسمية وحفظ نسخة احتياطية (محلي / جوجل)", icon: ArchiveIcon, action: () => { onClose(); ctx.openBackupModal(); } },
         { label: "استعادة نسخة احتياطية", icon: UploadIconShim, action: () => { onClose(); ctx.triggerJsonRestore(); } },
+        { label: "استيراد الأرشيف المحاسبي التاريخي", icon: ArchiveIcon, action: () => { onClose(); ctx.openLegacyFinancialImport(); } },
       ],
     },
     {
@@ -5755,6 +5772,7 @@ function DashboardAddMenu({ open, onClose }: { open: boolean; onClose: () => voi
     { label: "قيد بسيط", action: () => ctx.flowRef.current?.push(simpleEntryScreen()) },
     { label: "إضافة صنف للمخزن", action: ctx.openInventoryAdd },
     { label: "ملفات Google Drive", action: ctx.openGoogleDriveModal },
+    { label: "استيراد أرشيف الفواتير والقيود", action: ctx.openLegacyFinancialImport },
   ];
   return (
     <div className="dashboard-add-layer" data-testid="dashboard-add-menu">
