@@ -12,6 +12,8 @@ PORT=18176
 
 test -f "$RELEASE/Dockerfile.deploy"
 test -f "$RELEASE/dist/client/index.html"
+mkdir -p "$ROOT"
+if [[ ! -f "$ROOT/production.env" ]]; then (umask 077; touch "$ROOT/production.env"); fi
 docker build --pull -t "$IMAGE" -f "$RELEASE/Dockerfile.deploy" "$RELEASE"
 
 # Verify candidate health on a dynamically assigned localhost port before promoting.
