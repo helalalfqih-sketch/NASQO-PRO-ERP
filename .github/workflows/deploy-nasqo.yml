@@ -32,6 +32,10 @@ jobs:
           npx vite build --base /nsqo-app/
           node deploy/prepare-subpath.mjs
           npm run test:sites
+      - name: Verify Android Back navigation in Chromium
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test tests/android-back-navigation.spec.ts --reporter=line
       - name: Prepare release
         run: |
           mkdir -p release/dist
