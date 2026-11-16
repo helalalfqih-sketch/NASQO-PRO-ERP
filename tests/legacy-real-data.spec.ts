@@ -21,8 +21,9 @@ async function archivedCounts(page: Page) {
     try {
       const tx = records.transaction(["accounts_v2", "warehouses_v2", "inventory_v2", "ledger_v2"], "readonly");
       const count = (name: string) => new Promise<number>((resolve, reject) => {
-        const request = tx.objectStore(name).index("byOwner").count(IDBKeyRange.only("local-erp-workspace"));
-        request.onsuccess = () => resolve(request.result);
+        const request = tx.objectStore(name).index("byOwner").getAll(IDBKeyRange.only("local-erp-workspace"));
+        request.onsuccess = () => resolve((request.result as { legacyRef?: string }[])
+          .filter((row) => row.legacyRef?.startsWith(`${sha.slice(0, 12)}:`)).length);
         request.onerror = () => reject(request.error);
       });
       const [accounts, warehouses, inventory, ledger] = await Promise.all([

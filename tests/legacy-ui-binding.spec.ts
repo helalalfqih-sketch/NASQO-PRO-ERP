@@ -85,7 +85,8 @@ test("SQLite one-click import populates live screens, persists and searches sour
     });
     try {
       const result = await new Promise<{ quantity: number; sellingPrice?: number; quantityUnverified?: boolean }[]>((resolve, reject) => {
-        const request = db.transaction("inventory", "readonly").objectStore("inventory").getAll();
+        const request = db.transaction("inventory_v2", "readonly").objectStore("inventory_v2")
+          .index("byOwner").getAll(IDBKeyRange.only("local-erp-workspace"));
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
