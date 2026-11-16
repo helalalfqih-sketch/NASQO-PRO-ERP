@@ -1,7 +1,7 @@
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import express, { type Request, type Response } from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 const ALLOWED_CATEGORIES = [
@@ -32,6 +32,23 @@ const isProd = process.env.NODE_ENV === "production";
 async function createApp() {
   const app = express();
   app.use(express.json({ limit: "64kb" }));
+
+  // Defense in depth: even if a private backup is accidentally included in
+  // static assets, never serve it over HTTP (including unauthenticated paths).
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    let requestedPath: string;
+    try {
+      requestedPath = decodeURIComponent(req.path);
+    } catch {
+      res.sendStatus(400);
+      return;
+    }
+    if (/\.(?:back|db|sqlite|sqlite3|dump|sql)(?:\.gz)?$/i.test(requestedPath)) {
+      res.status(404).end();
+      return;
+    }
+    next();
+  });
 
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ ok: true, service: "nasqo-pro-api" });
