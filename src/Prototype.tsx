@@ -436,7 +436,7 @@ function NasqoProductionShell() {
   const [authError, setAuthError] = useState("");
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [startupError, setStartupError] = useState("");
-  const [startupSlow, setStartupSlow] = useState(false);
+  const [cloudInitializationError, setCloudInitializationError] = useState("");
   const localStartPending = useRef<Promise<void> | null>(null);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
@@ -448,7 +448,6 @@ function NasqoProductionShell() {
     setAuthReady(true);
     setWorkspaceReady(false);
     setStartupError("");
-    setStartupSlow(false);
     // React StrictMode and fast double-taps must not start parallel migrations.
     let pending = localStartPending.current;
     if (!pending) {
@@ -469,19 +468,13 @@ function NasqoProductionShell() {
   }, []);
 
   useEffect(() => {
-    if (authReady && (!user || workspaceReady)) {
-      setStartupSlow(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setStartupSlow(true), 5_000);
+    if (!authReady || !user || workspaceReady) return;
+    // Only show a real failure, never a speculative "old tab" alarm at 5s.
     const deadline = window.setTimeout(() => {
       setStartupError((previous) => previous ||
-        "انتهت مهلة تهيئة مساحة العمل. قد تكون قاعدة البيانات محجوبة أو الاتصال بطيئًا. أغلق النوافذ الأخرى وأعد المحاولة دون حذف البيانات.");
-    }, 15_000);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearTimeout(deadline);
-    };
+        "لم يكتمل استرجاع البيانات المحلية. يمكن إعادة محاولة فتحها دون حذف أي سجل.");
+    }, 12_000);
+    return () => window.clearTimeout(deadline);
   }, [authReady, user, workspaceReady]);
 
   useEffect(() => {
@@ -506,20 +499,23 @@ function NasqoProductionShell() {
         setLocalWorkspaceSession(false);
         setUser(nextUser);
         setAuthReady(true);
-        setWorkspaceReady(false);
+        // Identity is ready. Do not hold the entire mobile UI hostage to
+        // getDoc/getDocs/seed writes over a slow mobile network.
+        setWorkspaceReady(true);
         setStartupError("");
-        try {
-          await ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName);
-          setWorkspaceReady(true);
-        } catch (err) {
+        setCloudInitializationError("");
+        void ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName).catch((err) => {
           console.error("Failed initializing workspace:", err);
-          setStartupError(err instanceof Error ? err.message : "تعذر الاتصال بقاعدة بيانات مساحة العمل.");
-        }
+          if (auth.currentUser?.uid === nextUser.uid) {
+            setCloudInitializationError("تعذر إكمال تهيئة البيانات السحابية. ستبقى التعديلات مقفلة حتى تصل بيانات الحساب الحقيقية.");
+          }
+        });
       } else if (!wantsAutostart && !isLocalWorkspaceSession()) {
         setUser(null);
         setAuthReady(true);
         setWorkspaceReady(false);
         setStartupError("");
+        setCloudInitializationError("");
       }
     });
     return () => {
@@ -581,15 +577,7 @@ function NasqoProductionShell() {
                 <>
                   <h1>جاري تحميل منظومة الـ ERP...</h1>
                   <p>يتم تجهيز بيانات مساحة العمل المحفوظة بأمان.</p>
-                  {startupSlow ? (
-                    <div className="startup-slow-help" role="status" data-testid="startup-slow-help">
-                      <p>استغرق فتح قاعدة البيانات وقتًا أطول من المعتاد. قد تكون نافذة قديمة تعطل التحديث.</p>
-                      <button type="button" className="auth-google-btn" onClick={() => window.location.reload()}>
-                        <ReloadIcon /> إعادة محاولة فتح التطبيق
-                      </button>
-                      <p>أغلق النوافذ الأخرى أولًا، دون مسح بيانات نسق برو.</p>
-                    </div>
-                  ) : null}
+
                 </>
               )}
             </section>
@@ -655,7 +643,9 @@ function NasqoProductionShell() {
 
   return (
     <AuthenticatedWorkspace
+      key={user.uid}
       user={user}
+      cloudInitializationError={cloudInitializationError}
       onLocalSignOut={() => {
         setLocalWorkspaceSession(false);
         setUser(null);
@@ -672,6 +662,7 @@ function NasqoProductionShell() {
 
 function AuthenticatedWorkspace({
   user,
+  cloudInitializationError,
   onLocalSignOut,
   themeMode,
   setThemeMode,
@@ -680,6 +671,7 @@ function AuthenticatedWorkspace({
   resetBrandColor,
 }: {
   user: User;
+  cloudInitializationError: string;
   onLocalSignOut: () => void;
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
@@ -1760,6 +1752,15 @@ function AuthenticatedWorkspace({
     <WorkspaceContext.Provider value={ctx}>
       <div className="nasqo-app" dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
+        {user.uid !== LOCAL_WORKSPACE_UID && syncing ? (
+          <div className="nasqo-cloud-hydration-lock" role="status" data-testid="cloud-hydration-lock">
+            <section>
+              <h2>واجهة نسق برو جاهزة</h2>
+              <p>{cloudInitializationError || "جارٍ جلب السجلات الحقيقية من حساب Google. التعديل المالي متوقف لحين اكتمال المزامنة؛ لن نعرض بيانات تخمينية."}</p>
+              <button type="button" onClick={() => window.location.reload()}>إعادة الاتصال دون حذف البيانات</button>
+            </section>
+          </div>
+        ) : null}
         <AppDrawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}

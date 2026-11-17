@@ -118,6 +118,50 @@ function openLocalDb(): Promise<IDBDatabase> {
   });
 }
 
+/** Open the version ALREADY on disk. Reading must not require a schema
+ * upgrade, since an older installed PWA tab may still own a v1 connection.
+ * Never create an empty database merely to check for historical records. */
+function openExistingLocalDbForRead(): Promise<IDBDatabase | null> {
+  return new Promise((resolve, reject) => {
+    if (!isIndexedDbAvailable()) { resolve(null); return; }
+    const request = window.indexedDB.open(LOCAL_DB_NAME);
+    let finished = false;
+    let wasAbsent = false;
+    const deadline = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        reject(new Error("تعذر الوصول إلى قاعدة بيانات الهاتف. لم يتم حذف أي بيانات."));
+      }
+    }, 8_000);
+    const finish = () => {
+      if (finished) return false;
+      finished = true;
+      clearTimeout(deadline);
+      return true;
+    };
+    request.onupgradeneeded = () => {
+      // This event only occurs when no database exists yet. Never leave an
+      // accidental v1 database behind just because we attempted a read.
+      wasAbsent = true;
+      request.transaction?.abort();
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      if (finish()) resolve(db);
+      else db.close();
+    };
+    request.onerror = () => {
+      if (!finish()) return;
+      if (wasAbsent && request.error?.name === "AbortError") resolve(null);
+      else reject(request.error ?? new Error("تعذر قراءة قاعدة بيانات الهاتف"));
+    };
+    request.onblocked = () => {
+      if (finish()) reject(new Error("توجد عملية أخرى تمنع قراءة قاعدة البيانات. لم يتم حذف بياناتك."));
+    };
+  });
+}
+
 function readAllFromStore<T>(store: IDBObjectStore): Promise<T[]> {
   return new Promise((resolve, reject) => {
     const req = store.getAll();
@@ -177,8 +221,10 @@ export async function readSnapshotFromIndexedDb(
   uid: string,
 ): Promise<LocalWorkspaceDbSnapshot | null> {
   if (!isIndexedDbAvailable()) return null;
-  const db = await openLocalDb();
+  const db = await openExistingLocalDbForRead();
+  if (!db) return null;
   try {
+    if (!db.objectStoreNames.contains("workspaces")) return null;
     const wsRequest = db.transaction("workspaces", "readonly").objectStore("workspaces").get(uid);
     const ws = await new Promise<(WorkspaceSettings & { backups?: LocalWorkspaceDbSnapshot["backups"]; snapshotVersion?: number }) | undefined>((resolve, reject) => {
       wsRequest.onsuccess = () => resolve(wsRequest.result);
@@ -188,6 +234,9 @@ export async function readSnapshotFromIndexedDb(
 
     const usesV2 = ws.snapshotVersion === 2;
     const storeNames = usesV2 ? [...SCOPED_STORES] : ["accounts", "ledger", "warehouses", "inventory"];
+    if (storeNames.some((name) => !db.objectStoreNames.contains(name))) {
+      throw new Error("قاعدة البيانات لا تحتوي على الجداول المطلوبة. لم تُغيّر بياناتك.");
+    }
     const tx = db.transaction(storeNames, "readonly");
     const readStore = async <T extends { ownerId: string }>(name: string): Promise<T[]> => {
       const store = tx.objectStore(name);
@@ -241,14 +290,17 @@ export async function saveErpDataToIndexedDb(uid: string, data: unknown): Promis
 
 export async function readErpDataFromIndexedDb<T>(uid: string): Promise<T | null> {
   if (!isIndexedDbAvailable()) return null;
-  const db = await openLocalDb();
+  const db = await openExistingLocalDbForRead();
+  if (!db) return null;
   try {
-    const tx = db.transaction(["erp_modules"], "readonly");
-    const rows = await readAllFromStore<{ uid: string; data: T }>(
-      tx.objectStore("erp_modules"),
-    );
-    const match = rows.find((r) => r.uid === (uid || "local"));
-    return match ? match.data : null;
+    if (!db.objectStoreNames.contains("erp_modules")) return null;
+    const row = await new Promise<{ uid: string; data: T } | undefined>((resolve, reject) => {
+      const request = db.transaction("erp_modules", "readonly")
+        .objectStore("erp_modules").get(uid || "local");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error("تعذر قراءة وحدات ERP"));
+    });
+    return row?.data ?? null;
   } finally {
     db.close();
   }

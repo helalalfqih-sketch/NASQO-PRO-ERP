@@ -6207,22 +6207,7 @@ select.select-box.currency-select {
 
 
 
-/* Startup and on-demand module loading: show actionable feedback without
-   masking the dashboard or clearing private browser storage. */
-.startup-slow-help {
-  display: grid;
-  justify-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid #d0dfec;
-  background: #f1f7fc;
-}
-.auth-card .startup-slow-help p {
-  color: #39566e;
-  font-size: 12px;
-}
+/* On-demand ERP module loading is visible only when a module is opened. */
 .erp-lazy-loading {
   min-height: 92px;
   padding: 20px;
@@ -6234,3 +6219,29 @@ select.select-box.currency-select {
   border-radius: 10px;
   font-size: 13px;
 }
+
+/* Cloud identity is instant; until Firestore returns the user's actual data,
+   cover write targets with a clear, non-destructive synchronization guard. */
+.nasqo-cloud-hydration-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 99990;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(241, 247, 252, 0.68);
+}
+.nasqo-cloud-hydration-lock section {
+  max-width: 420px;
+  width: 100%;
+  border: 1px solid #cad8e7;
+  background: #fff;
+  color: #153654;
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+  box-shadow: 0 12px 30px rgba(13, 51, 80, 0.15);
+}
+.nasqo-cloud-hydration-lock h2 { margin: 0 0 10px; font-size: 18px; }
+.nasqo-cloud-hydration-lock p { margin: 0 0 14px; font-size: 13px; line-height: 1.8; }
+.nasqo-cloud-hydration-lock button { border: 0; border-radius: 9px; padding: 10px 14px; background: #087ad7; color: #fff; font-weight: 700; }
