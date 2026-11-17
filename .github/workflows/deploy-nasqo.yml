@@ -28,7 +28,7 @@ jobs:
           npx tsc -p tsconfig.server.json --noEmit
           node --check server/smartproPolicy.ts
           node --check server/smartpro.ts
-          npx tsx --test tests/smartpro-policy.test.ts
+          npx tsx --test tests/smartpro-policy.test.ts tests/smartpro-invoice.test.ts
           npx tsx --test tests/legacy-search-binding.test.ts tests/legacy-live-safety.test.ts tests/legacy-invoice-preview.test.ts
           npx tsx --test tests/workspace-isolation.test.ts tests/local-database.test.ts
           node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs

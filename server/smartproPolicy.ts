@@ -35,6 +35,20 @@ export function authorize(role:Role,action:"read"|"create"|"update"|"delete"|"ro
   if(role==="admin")return;
   throw new InputError("ليس لديك صلاحية هذا الإجراء",403);
 }
+// Prevent isolated row-level mutations from bypassing financial posting,
+// stock movement, archived document integrity and mandatory audit semantics.
+export const ACCOUNTING_DOCUMENT_TABLES = new Set<TableName>([
+  "bounds","bill_details","bill_details2",
+  "bin","bin_bill_details","bin_bill_details2",
+  "store_trans","trans_details",
+  "offers","offer_bill_details","offer_sbill_details",
+  "prems",
+]);
+export function requireDocumentWorkflow(table:TableName):void {
+  if(ACCOUNTING_DOCUMENT_TABLES.has(table)) {
+    throw new InputError("هذا جدول مستندات محاسبية؛ يجب إجراء التعديل عبر عملية مالية مترابطة، وليس تعديل صف منفرد.",409);
+  }
+}
 export function validId(v:unknown):string {
   const id=String(v??"");
   if(!/^[1-9]\d{0,17}$/.test(id))throw new InputError("رقم السجل غير صحيح");

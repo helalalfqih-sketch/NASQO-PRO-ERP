@@ -44,3 +44,11 @@
 .smartpro-role-item b { overflow-wrap: anywhere; }
 .smartpro-audit-row { display: grid; gap: 4px; border-bottom: 1px solid #e1e8ed; padding: 7px 0; font-size: 12px; }
 .smartpro-audit-row small { color: #668091; }
+
+.smartpro-invoice-form { display: grid; gap: 14px; margin-top: 12px; }
+.smartpro-invoice-grid { display:grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap:10px; }
+.smartpro-invoice-line-entry { display:grid; gap:10px; padding:12px; border:1px solid #d9e1e9; border-radius:12px; }
+.smartpro-invoice-line { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 0; border-bottom:1px solid #e4e9ef; font-size:12px; }
+.smartpro-invoice-line button { border:0; background:#fee2e2; color:#9d1b1b; border-radius:7px; padding:6px 9px; }
+.smartpro-invoice-total { display:block; padding:12px; border-radius:9px; background:#eef5fc; font-size:17px; }
+@media (max-width:430px) { .smartpro-invoice-grid {grid-template-columns:1fr;} }
