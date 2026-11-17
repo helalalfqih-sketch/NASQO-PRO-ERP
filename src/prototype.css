@@ -6245,3 +6245,18 @@ select.select-box.currency-select {
 .nasqo-cloud-hydration-lock h2 { margin: 0 0 10px; font-size: 18px; }
 .nasqo-cloud-hydration-lock p { margin: 0 0 14px; font-size: 13px; line-height: 1.8; }
 .nasqo-cloud-hydration-lock button { border: 0; border-radius: 9px; padding: 10px 14px; background: #087ad7; color: #fff; font-weight: 700; }
+
+.erp-smartpro-launch {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255,255,255,.48) !important;
+  border-radius: 11px;
+  background: rgba(255,255,255,.16);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
