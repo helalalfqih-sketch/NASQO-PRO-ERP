@@ -3,14 +3,16 @@ import { onAuthStateChanged, signOut, type User } from "firebase/auth";
 import { auth, signInWithGoogle } from "../../firebase";
 import { KeyboardInput, KeyboardTextarea, MobileScroll } from "../../mobile";
 import "./SmartProControlScreen.css";
+import { SmartProInvoicesPanel } from "./SmartProInvoicesPanel";
 
 type Column = { name:string; type:string; nullable:boolean; autoIncrement:boolean; maxLength:number|null; hasDefault:boolean; defaultValue:string|null };
 type Table = { name:string; columns:Column[]; editableColumns:string[] };
-type Metadata = { tables:Table[]; role:"admin"|"editor"|"viewer";writeEnabled:boolean;email:string };
+type Metadata = { tables:Table[]; role:"admin"|"editor"|"viewer";writeEnabled:boolean;invoiceWriteEnabled:boolean;salesStockVerified:boolean;email:string };
 type Wrapped = { data:Record<string,unknown>;etag:string };
 type Listed = { rows:Wrapped[];hasMore:boolean };
 type RoleRecord = { email:string;role:string;granted_by:string;updated_at:string };
 type AuditRecord = { id:number;actor_email:string;table_name:string;row_id:string;action:string;created_at:string };
+const FINANCIAL_TABLES = new Set(["bounds","bill_details","bill_details2","bin","bin_bill_details","bin_bill_details2","store_trans","trans_details","offers","offer_bill_details","offer_sbill_details","prems"]);
 const LABELS:Record<string,string> = {
   accounts:"الحسابات والعملاء",alerts:"التنبيهات",bill_details:"بنود الفواتير",bill_details2:"بنود فواتير إضافية",
   bin:"أرشيف المحذوفات",bin_bill_details:"بنود الأرشيف",bin_bill_details2:"بنود الأرشيف الإضافية",
@@ -61,7 +63,7 @@ export function SmartProControlScreen(){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState("");
   const [success,setSuccess]=useState("");
-  const [mode,setMode]=useState<"records"|"roles"|"audit">("records");
+  const [mode,setMode]=useState<"records"|"invoices"|"roles"|"audit">("records");
   const [editing,setEditing]=useState<{item:Wrapped|null;values:Record<string,string>}|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<Wrapped|null>(null);
   const [confirmation,setConfirmation]=useState("");
@@ -73,8 +75,8 @@ export function SmartProControlScreen(){
   const table=useMemo(()=>meta?.tables.find(t=>t.name===selected)??null,[meta,selected]);
   const canEdit=Boolean(meta?.writeEnabled&&(meta.role==="admin"||meta.role==="editor"));
   const canDelete=Boolean(meta?.writeEnabled&&meta.role==="admin");
-  const canModifySelected=canEdit&&selected!=="users";
-  const canDeleteSelected=canDelete&&selected!=="users";
+  const canModifySelected=canEdit&&selected!=="users"&&!FINANCIAL_TABLES.has(selected);
+  const canDeleteSelected=canDelete&&selected!=="users"&&!FINANCIAL_TABLES.has(selected);
 
   useEffect(()=>onAuthStateChanged(auth,setIdentity),[]);
   useEffect(()=>{
@@ -109,7 +111,7 @@ export function SmartProControlScreen(){
     }catch(e){setError(e instanceof Error?e.message:String(e))}
     finally{setBusy(false)}
   },[]);
-  useEffect(()=>{if(meta&&mode!=="records")void reloadExtra(mode)},[meta,mode,reloadExtra]);
+  useEffect(()=>{if(meta&&(mode==="roles"||mode==="audit"))void reloadExtra(mode)},[meta,mode,reloadExtra]);
 
   const openForm=(item:Wrapped|null)=>{
     if(!table)return;
@@ -201,10 +203,12 @@ export function SmartProControlScreen(){
           <>
             <nav className="smartpro-tabs" aria-label="أقسام إدارة SmartPro">
               <button type="button" aria-current={mode==="records"?"page":undefined} onClick={()=>setMode("records")}>البيانات والجداول</button>
+              <button type="button" aria-current={mode==="invoices"?"page":undefined} onClick={()=>setMode("invoices")}>الفواتير والمشتريات</button>
               {meta.role==="admin"?<button type="button" aria-current={mode==="roles"?"page":undefined} onClick={()=>setMode("roles")}>صلاحيات المستخدمين</button>:null}
               {meta.role==="admin"?<button type="button" aria-current={mode==="audit"?"page":undefined} onClick={()=>setMode("audit")}>سجل التغييرات</button>:null}
             </nav>
             {!meta.writeEnabled?<p className="smartpro-alert" role="alert">التعديلات المركزية غير مفعلة بعد في الخادم.</p>:null}
+            {mode==="invoices"?<SmartProInvoicesPanel canWrite={canEdit&&meta.invoiceWriteEnabled} canSell={meta.salesStockVerified}/>:null}
             {mode==="records"?(
               <section className="smartpro-panel">
                 <label className="smartpro-label">القسم

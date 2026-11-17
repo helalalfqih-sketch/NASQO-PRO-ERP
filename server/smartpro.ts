@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
+import { validateInvoicePosting } from "./smartproInvoice.ts";
 import type { Express, Request, Response, NextFunction } from "express";
 import { Router } from "express";
 import { initializeApp, getApp, getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import mysql, { type Pool, type PoolConnection, type RowDataPacket, type ResultSetHeader } from "mysql2/promise";
-import { TABLES, tableName, ident, editable, visible, validateFields, authorize, validId, InputError, type Role, type Column, type TableName } from "./smartproPolicy.ts";
+import { TABLES, tableName, ident, editable, visible, validateFields, authorize, validId, requireDocumentWorkflow, InputError, type Role, type Column, type TableName } from "./smartproPolicy.ts";
 
 type Actor = { uid: string; email: string; role: Role; bootstrap: boolean };
 type DataRow = Record<string, unknown>;
@@ -206,7 +207,139 @@ export function mountSmartProApi(app: Express): void {
       return { name, columns: visible(cols), editableColumns: editable(name,cols).map(c => c.name) };
     }));
     const user = actor(req);
-    res.json({ tables:tableSpecs, role:user.role, writeEnabled:writesEnabled(), email:user.email });
+    res.json({
+      tables:tableSpecs,
+      role:user.role,
+      writeEnabled:writesEnabled(),
+      invoiceWriteEnabled:writesEnabled() &&
+        process.env.SMARTPRO_INVOICE_WRITE_ENABLED==="1" &&
+        !!process.env.SMARTPRO_POSTING_USER_ID,
+      salesStockVerified:process.env.SMARTPRO_INVENTORY_RECONCILED==="1",
+      email:user.email,
+    });
+  }));
+  // Schema-aware invoice workflow: a single InnoDB transaction posts the header,
+  // every product line and the corresponding per-record audit events.
+  router.get("/invoice/lookup", asyncRoute(async (req,res) => {
+    authorize(actor(req).role,"read");
+    const [accounts] = await pool().query<RowDataPacket[]>("SELECT id,name,box_id FROM accounts ORDER BY id LIMIT 2000");
+    const [products] = await pool().query<RowDataPacket[]>("SELECT id,name,unit,sell_price,buy_price FROM products WHERE bstate=1 ORDER BY id LIMIT 5000");
+    const [stores] = await pool().query<RowDataPacket[]>("SELECT id,name FROM stores WHERE state=1 ORDER BY id LIMIT 200");
+    const [cashboxes] = await pool().query<RowDataPacket[]>("SELECT id,name FROM cboxes WHERE state=1 ORDER BY id LIMIT 200");
+    const [currencies] = await pool().query<RowDataPacket[]>("SELECT id,name FROM currencies ORDER BY id LIMIT 100");
+    res.json({accounts,products,stores,cashboxes,currencies});
+  }));
+  router.get("/invoice/recent", asyncRoute(async (req,res) => {
+    authorize(actor(req).role,"read");
+    const [rows] = await pool().query<RowDataPacket[]>(
+      "SELECT b.id,b.date,b.doc_type,b.dain,b.madin,b.details,b.acc_id,a.name AS account_name," +
+      "(SELECT COUNT(*) FROM bill_details d WHERE d.bill_id=b.id) AS line_count " +
+      "FROM bounds b JOIN accounts a ON a.id=b.acc_id WHERE b.doc_type IN (2,3) " +
+      "ORDER BY b.id DESC LIMIT 40",
+    );
+    res.json({rows});
+  }));
+  router.get("/invoice/:id", asyncRoute(async (req,res) => {
+    authorize(actor(req).role,"read");
+    const id=recordIdFrom(req);
+    const [docs]=await pool().query<RowDataPacket[]>(
+      "SELECT id,date,doc_type,dain,madin,acc_id,cur_id,cboxid,details FROM bounds WHERE id=? AND doc_type IN (2,3) LIMIT 1",[id]);
+    if(!docs.length)throw new InputError("الفاتورة غير موجودة.",404);
+    const [lines]=await pool().query<RowDataPacket[]>(
+      "SELECT d.id,d.prod_id,d.store_id,d.price,d.amount,d.total,d.unit,p.name AS product_name " +
+      "FROM bill_details d JOIN products p ON p.id=d.prod_id WHERE d.bill_id=? ORDER BY d.id",[id]);
+    res.json({invoice:docs[0],lines});
+  }));
+  router.post("/invoice", asyncRoute(async (req,res) => {
+    const user=actor(req);
+    requireWrite(user.role,"create");
+    if(process.env.SMARTPRO_INVOICE_WRITE_ENABLED!=="1") {
+      throw new InputError("ترحيل الفواتير المركزية غير مفعّل حتى اعتماد المطابقة المحاسبية.",503);
+    }
+    const invoice=validateInvoicePosting(req.body);
+    if(invoice.type==="sale" && process.env.SMARTPRO_INVENTORY_RECONCILED!=="1") {
+      throw new InputError("مبيعات الأصناف مقفلة حتى مطابقة الأرصدة وحركات التحويل على جميع المخازن.",503);
+    }
+    if(!process.env.SMARTPRO_POSTING_USER_ID) {
+      throw new InputError("لم يتم إعداد ربط المستخدم المحاسبي للترحيل.",503);
+    }
+    const postingUserId=validId(process.env.SMARTPRO_POSTING_USER_ID);
+    const digest=createHash("sha256").update(JSON.stringify(invoice)).digest("hex");
+    const conn=await pool().getConnection();
+    try {
+      await conn.beginTransaction();
+      // Unique request key is claimed in the same transaction as the invoice.
+      // Concurrent retries serialize on this key instead of posting twice.
+      try {
+        await conn.execute(
+          "INSERT INTO nasqo_invoice_requests(request_key,actor_uid,payload_sha256,invoice_id) VALUES (?,?,?,0)",
+          [invoice.requestId,user.uid,digest],
+        );
+      }catch(error){
+        if(!error||typeof error!=="object"||(error as {code?:string}).code!=="ER_DUP_ENTRY")throw error;
+        const [existing]=await conn.query<RowDataPacket[]>(
+          "SELECT actor_uid,payload_sha256,invoice_id FROM nasqo_invoice_requests WHERE request_key=? FOR UPDATE",
+          [invoice.requestId],
+        );
+        const item=existing[0];
+        if(!item||item.actor_uid!==user.uid||item.payload_sha256!==digest||Number(item.invoice_id)<1) {
+          throw new InputError("مفتاح الفاتورة مستخدم لبيانات مختلفة؛ لا يمكن تكرار العملية.",409);
+        }
+        await conn.rollback();
+        res.status(200).json({
+          id:String(item.invoice_id),type:invoice.type,total:invoice.grandTotal,
+          lineCount:invoice.lines.length,duplicate:true,
+        });
+        return;
+      }
+      const required = [
+        ["accounts",invoice.accountId],["currencies",invoice.currencyId],
+        ["users",postingUserId],
+        ...(invoice.payment==="cash" ? [["cboxes",invoice.cashboxId]] : []),
+      ];
+      for(const [name,id] of required) {
+        const [rows]=await conn.query<RowDataPacket[]>(
+          "SELECT id FROM "+ident(name)+" WHERE id=? FOR UPDATE",[id]);
+        if(!rows.length)throw new InputError("معرف مرجعي غير موجود في "+name,409);
+      }
+      const canonicalLines=[];
+      for(const line of invoice.lines) {
+        const [products]=await conn.query<RowDataPacket[]>(
+          "SELECT id,unit,bstate FROM products WHERE id=? FOR UPDATE",[line.productId]);
+        const [stores]=await conn.query<RowDataPacket[]>(
+          "SELECT id,state FROM stores WHERE id=? FOR UPDATE",[line.storeId]);
+        if(!products.length||Number(products[0].bstate)!==1)throw new InputError("الصنف غير موجود أو غير نشط.",409);
+        if(!stores.length||Number(stores[0].state)!==1)throw new InputError("المخزن غير موجود أو غير نشط.",409);
+        canonicalLines.push({...line,unit:String(products[0].unit||"حبة").slice(0,20)});
+      }
+      const [header]=await conn.execute<ResultSetHeader>(
+        "INSERT INTO bounds(dain,madin,date,acc_id,cur_id,bill,user_id,details,img,doc_type,cboxid) " +
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        [invoice.dain,invoice.madin,invoice.date,invoice.accountId,invoice.currencyId,
+          "",postingUserId,invoice.note,"",invoice.docType,invoice.cashboxId],
+      );
+      if(!header.insertId)throw new InputError("فشل إنشاء رقم الفاتورة.",409);
+      const id=String(header.insertId);
+      const doc=await lockedRow(conn,"bounds",id);
+      await audit(conn,user,"bounds",id,"insert",null,doc);
+      for(const item of canonicalLines) {
+        const [result]=await conn.execute<ResultSetHeader>(
+          "INSERT INTO bill_details(bill_id,prod_id,price,amount,total,details,unit,store_id,discount,bonus,unitnum,exdate) " +
+          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+          [id,item.productId,item.price,item.quantity,item.total,"",item.unit,item.storeId,"0","0",1,""],
+        );
+        if(!result.insertId)throw new InputError("لم يُحفظ أحد بنود الفاتورة.",409);
+        const row=await lockedRow(conn,"bill_details",String(result.insertId));
+        await audit(conn,user,"bill_details",String(result.insertId),"insert",null,row);
+      }
+      await conn.execute(
+        "UPDATE nasqo_invoice_requests SET invoice_id=? WHERE request_key=?",
+        [id,invoice.requestId],
+      );
+      await conn.commit();
+      res.status(201).json({id,type:invoice.type,total:invoice.grandTotal,lineCount:canonicalLines.length});
+    }catch(error){await conn.rollback();throw error}
+    finally{conn.release()}
   }));
   router.get("/table/:table", asyncRoute(async (req,res) => {
     authorize(actor(req).role,"read");
@@ -228,6 +361,7 @@ export function mountSmartProApi(app: Express): void {
   router.post("/table/:table", asyncRoute(async (req,res) => {
     const user=actor(req);requireWrite(user.role,"create");
     const table=tableFrom(req);
+    requireDocumentWorkflow(table);
     if(table==="users")throw new InputError("مستخدمو SmartPro القدامى محفوظون لأغراض التوافق؛ أضف مستخدمي النظام الحديث من إدارة الصلاحيات.",403);
     const cols=await columns(table);
     const values=validateFields(table,cols,req.body?.values);
@@ -250,6 +384,7 @@ export function mountSmartProApi(app: Express): void {
   router.patch("/table/:table/:id", asyncRoute(async(req,res) => {
     const user=actor(req);requireWrite(user.role,"update");
     const table=tableFrom(req),id=recordIdFrom(req),cols=await columns(table);
+    requireDocumentWorkflow(table);
     if(table==="users")throw new InputError("لا يمكن تعديل حسابات SmartPro القديمة. استخدم إدارة صلاحيات NASQO.",403);
     const values=validateFields(table,cols,req.body?.values);
     if(typeof req.body?.etag!=="string"||!/^[a-f0-9]{64}$/.test(req.body.etag))throw new InputError("المراجعة السابقة للسجل مطلوبة.");
@@ -272,6 +407,7 @@ export function mountSmartProApi(app: Express): void {
   router.delete("/table/:table/:id", asyncRoute(async(req,res) => {
     const user=actor(req);requireWrite(user.role,"delete");
     const table=tableFrom(req),id=recordIdFrom(req);
+    requireDocumentWorkflow(table);
     if(table==="users")throw new InputError("لا يمكن حذف مستخدمي SmartPro القديمة. استخدم إدارة صلاحيات NASQO.",403);
     if(req.body?.confirmation!==table+":"+id)throw new InputError("تأكيد الحذف غير مطابق.",400);
     if(typeof req.body?.etag!=="string"||!/^[a-f0-9]{64}$/.test(req.body.etag))throw new InputError("المراجعة السابقة للسجل مطلوبة.");

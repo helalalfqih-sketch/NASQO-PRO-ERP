@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TABLES, tableName, ident, editable, visible, validateFields, authorize, validId, type Column, type Role } from "../server/smartproPolicy.ts";
+import { requireDocumentWorkflow, TABLES, tableName, ident, editable, visible, validateFields, authorize, validId, type Column, type Role } from "../server/smartproPolicy.ts";
 
 const columns:Column[]=[
   {name:"id",type:"int",nullable:false,autoIncrement:true,maxLength:null,hasDefault:false,defaultValue:null},
@@ -46,4 +46,12 @@ test("admin full rights, editor write/no delete, viewer read only",()=>{
 test("only positive numeric record identifiers are accepted",()=>{
   assert.equal(validId("145"),"145");
   for(const value of ["-1","0","2 OR 1=1","","../../users","12345678901234567890123"])assert.throws(()=>validId(value));
+});
+
+test("financial document rows cannot be changed outside atomic workflow",()=>{
+  for(const table of ["bounds","bill_details","bill_details2","store_trans","trans_details","bin","prems"] as const) {
+    assert.throws(()=>requireDocumentWorkflow(table));
+  }
+  assert.doesNotThrow(()=>requireDocumentWorkflow("accounts"));
+  assert.doesNotThrow(()=>requireDocumentWorkflow("products"));
 });
