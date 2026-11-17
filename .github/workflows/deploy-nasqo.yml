@@ -51,6 +51,23 @@ jobs:
           cp -a dist/client release/dist/client
           printf '%s\n' "$GITHUB_SHA" > release/RELEASE_SHA
           tar -czf "$RUNNER_TEMP/nsqo-release.tar.gz" -C release .
+      - name: Verify deployable production Docker image
+        run: |
+          docker build --pull -f release/Dockerfile.deploy -t "nasqo-ci:$GITHUB_SHA" release
+          docker run --rm -d --name nasqo-ci-smoke "nasqo-ci:$GITHUB_SHA"
+          trap 'docker rm -f nasqo-ci-smoke >/dev/null 2>&1 || true' EXIT
+          healthy=0
+          for i in $(seq 1 25); do
+            if docker exec nasqo-ci-smoke node -e 'fetch("http://127.0.0.1:3000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then
+              healthy=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$healthy" != "1" ]]; then
+            docker logs nasqo-ci-smoke --tail 40
+            exit 1
+          fi
       - name: Save tested release artifact
         uses: actions/upload-artifact@v4
         with:
