@@ -6206,3 +6206,31 @@ select.select-box.currency-select {
 }
 
 
+
+/* Startup and on-demand module loading: show actionable feedback without
+   masking the dashboard or clearing private browser storage. */
+.startup-slow-help {
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #d0dfec;
+  background: #f1f7fc;
+}
+.auth-card .startup-slow-help p {
+  color: #39566e;
+  font-size: 12px;
+}
+.erp-lazy-loading {
+  min-height: 92px;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: #165a7e;
+  background: #f5f9fd;
+  border-radius: 10px;
+  font-size: 13px;
+}

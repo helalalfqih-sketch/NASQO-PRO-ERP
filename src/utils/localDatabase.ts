@@ -56,6 +56,20 @@ function openLocalDb(): Promise<IDBDatabase> {
       return;
     }
     const req = window.indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+    let finished = false;
+    const complete = () => {
+      if (finished) return false;
+      finished = true;
+      clearTimeout(deadline);
+      return true;
+    };
+    // A blocked upgrade used to leave the app on its loading screen forever.
+    // A timeout does not delete or reset any browser database.
+    const deadline = setTimeout(() => {
+      if (complete()) reject(new Error(
+        "تأخر فتح قاعدة البيانات المحلية. أغلق نوافذ نسق برو الأخرى ثم اضغط إعادة المحاولة. بياناتك لم تُحذف.",
+      ));
+    }, 10_000);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains("workspaces")) {
@@ -86,9 +100,21 @@ function openLocalDb(): Promise<IDBDatabase> {
         scoped.createIndex("byOwner", "ownerId", { unique: false });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("Failed opening IndexedDB"));
-    req.onblocked = () => reject(new Error("أغلق علامات التبويب الأخرى لنسق برو ثم أعد فتح التطبيق لإكمال تحديث التخزين."));
+    req.onsuccess = () => {
+      const db = req.result;
+      // A future new release must be able to upgrade while this tab is open.
+      db.onversionchange = () => db.close();
+      if (complete()) resolve(db);
+      else db.close();
+    };
+    req.onerror = () => {
+      if (complete()) reject(req.error ?? new Error("تعذر فتح IndexedDB"));
+    };
+    req.onblocked = () => {
+      if (complete()) reject(new Error(
+        "تحديث قاعدة البيانات محجوب بواسطة علامة تبويب أخرى لنسق برو. أغلقها ثم اضغط إعادة المحاولة؛ لم تُمسح بياناتك.",
+      ));
+    };
   });
 }
 
