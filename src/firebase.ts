@@ -763,6 +763,7 @@ export async function syncLocalWorkspaceToIndexedDb(
 export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Promise<void> {
   const bundle = await dbFetch<WorkspaceBundle>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/reset`, {
     method: "POST",
+    body: JSON.stringify({ confirmation: "RESET:" + effectiveUid(uid) }),
   });
   applyBundle(bundle);
 }

@@ -1,7 +1,7 @@
 /** Private CI regression: process the real 22-table source only in an isolated
  * browser fixture. Source bytes must NEVER be emitted as static/site assets. */
 import { test, expect, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import initSqlJs from "sql.js";
 import { createRequire } from "node:module";
@@ -44,7 +44,7 @@ async function archivedCounts(page: Page) {
 }
 
 test("real private source: 26,001 rows, 125 accounts, 1,402 products, 5 stores and multi-line invoices survive reload", async ({ page }) => {
-  test.skip(!privatePath, "Run only with an explicitly supplied private SQLite file path");
+  test.skip(!privatePath || !existsSync(privatePath), "Requires a user-provided private SQLite fixture; never store it in GitHub.");
   test.setTimeout(240_000);
   const original = readFileSync(privatePath!);
   expect(createHash("sha256").update(original).digest("hex")).toBe(sourceSha);

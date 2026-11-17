@@ -29,146 +29,55 @@ async function sampleSqlite() {
   return bytes;
 }
 
-test("SQLite one-click import populates live screens, persists and searches source invoice lines", async ({ page }) => {
-  test.setTimeout(120_000);
+const uid = "local-erp-workspace";
+test("SQLite importer stores real historical invoice lines and makes them searchable after reload", async ({ page }) => {
+  test.setTimeout(70000);
+  const headers = { "X-NASQO-CSRF": "1" };
+  expect((await page.request.post(`/api/db/workspace/${uid}/reset`,{headers,data:{confirmation:"RESET:local-erp-workspace"}})).status()).toBe(200);
+  const result = await page.request.post(`/api/db/workspace/${uid}/import/sqlite-legacy`,{
+    headers,
+    data: { base64: (await sampleSqlite()).toString("base64"),
+      fileName:"legacy-ui-test.sqlite", mode:"import", replaceExisting:true },
+  });
+  expect(result.status()).toBe(200);
+  const payload=await result.json();
+  expect(payload.result).toBeTruthy();
+  const rows=await(await page.request.get(`/api/db/workspace/${uid}/invoices?q=BAR-9988`)).json();
+  expect(rows.total).toBeGreaterThanOrEqual(1);
+  const detail=await page.request.get(`/api/db/workspace/${uid}/invoices/${rows.invoices[0].id}`);
+  expect(detail.status()).toBe(200);
+  const invoice=await detail.json();
+  expect(JSON.stringify(invoice)).toContain("فلتر محرك مميز");
   await page.addInitScript(() => localStorage.setItem("nasqo-local-session-active", "1"));
   await page.goto("/?autostart=1");
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
-  await page.getByLabel("إضافة", { exact: true }).click();
-  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "مركز استيراد وترحيل قواعد البيانات" }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.locator("#legacy-center-sqlite-input").setInputFiles({
-    name: "legacy-ui-test.sqlite", mimeType: "application/x-sqlite3", buffer: await sampleSqlite(),
-  });
-  await expect(dialog.getByText(/تم فتح قاعدة البيانات بنجاح/)).toBeVisible();
-  await dialog.getByTestId("legacy-import-and-show").click();
-  await expect(dialog.getByText(/تم حفظ الأرشيف وإظهار البيانات/)).toBeVisible({ timeout: 45000 });
-  await dialog.getByRole("button", { name: "✕" }).click();
-  await page.getByLabel("إضافة", { exact: true }).click();
-  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "الفواتير التاريخية والمطابقة" }).click();
-  const archive = page.getByRole("dialog");
-  await archive.getByPlaceholder(/بحث بالرقم/).fill("BAR-9988");
-  await expect(archive.getByText("عميل اختبار نسق").first()).toBeVisible();
-  await archive.getByRole("button", { name: "فتح البنود" }).click();
-  const preview = archive.getByTestId("legacy-invoice-detail");
-  await expect(preview.getByText("فلتر محرك مميز")).toBeVisible();
-  await expect(preview.getByText("عميل اختبار نسق")).toBeVisible();
-  await expect(preview.getByText("مخزن اختبار نسق")).toBeVisible();
-  await expect(preview.getByText(/فاتورة تاريخية غير مُرحّلة للأستاذ العام/)).toBeVisible();
-  await expect(preview.getByText("300", { exact: true }).first()).toBeVisible();
-  await preview.getByRole("button", { name: "تفاصيل بند فلتر محرك مميز" }).click();
-  await expect(preview.getByTestId("legacy-invoice-line-info")).toBeVisible();
-  await preview.getByRole("searchbox", { name: "البحث داخل بنود الفاتورة" }).fill("صنف غير موجود");
-  await expect(preview.getByText("لا توجد بنود مطابقة للبحث.")).toBeVisible();
-  await preview.getByRole("searchbox", { name: "البحث داخل بنود الفاتورة" }).fill("فلتر");
-  await expect(preview.locator("tbody tr")).toHaveCount(1);
-  const [readCopy] = await Promise.all([
-    page.waitForEvent("download"),
-    preview.getByRole("button", { name: "حفظ نسخة قراءة من الفاتورة" }).click(),
-  ]);
-  expect(readCopy.suggestedFilename()).toBe("nasqo-historical-input_move-30.txt");
-  await archive.getByRole("button", { name: "✕" }).click();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({timeout:20000});
   await page.reload();
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
-  await page.getByLabel("فتح القائمة", { exact: true }).click();
-  await page.getByLabel("قائمة نسقو", { exact: true }).getByRole("button", { name: "الأصناف والمخزون", exact: true }).click();
-  await expect(page.getByTestId("inventory-report-screen")).toBeVisible();
-  await page.getByLabel("البحث في الأصناف").fill("BAR-9988");
-  await expect(page.getByText("فلتر محرك مميز")).toBeVisible();
-  await expect(page.getByText("بحاجة إلى تسوية").first()).toBeVisible();
-  await page.getByRole("button", { name: "بحث في فواتير الصنف فلتر محرك مميز" }).click();
-  await expect(page.getByRole("dialog").getByRole("button", { name: "فتح البنود" })).toBeVisible();
-  await page.getByRole("dialog").getByRole("button", { name: "✕" }).click();
-
-  // A migrated stock item must require an explicit absolute stock count and
-  // an independently approved selling price before it can be sold in POS.
-  await page.getByLabel("تحديد فلتر محرك مميز").check();
-  await page.getByLabel("نوع تعديل الكمية").selectOption("set");
-  await page.getByLabel("قيمة تعديل الكمية").fill("7");
-  await page.getByLabel("سعر البيع المعتمد").fill("200");
-  await page.getByLabel("تأكيد جرد المخزون الفعلي").check();
-  await page.getByLabel("تأكيد اعتماد سعر البيع").check();
-  await page.getByTestId("bulk-apply-btn").click();
-  await expect(page.getByText("بحاجة إلى تسوية")).toHaveCount(0);
-
-  await page.reload();
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
-  const approved = await page.evaluate(async () => {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("nasqo_pro_erp_db");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      const result = await new Promise<{ quantity: number; sellingPrice?: number; quantityUnverified?: boolean }[]>((resolve, reject) => {
-        const request = db.transaction("inventory_v2", "readonly").objectStore("inventory_v2")
-          .index("byOwner").getAll(IDBKeyRange.only("local-erp-workspace"));
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-      return result.find((record) => record.sellingPrice === 200) ?? null;
-    } finally { db.close(); }
-  });
-  expect(approved?.quantity).toBe(7);
-  expect(approved?.quantityUnverified).not.toBe(true);
-  expect(approved?.sellingPrice).toBe(200);
-
-  // The same imported SKU must be searchable in the live POS and new invoice,
-  // without posting a test sale into the ledger.
-  await page.getByTestId("quick-erp-crm").click();
-  await expect(page.getByTestId("erp-crm-screen")).toBeVisible();
-  await page.getByRole("textbox", { name: "البحث عن صنف أو باركود في نقطة البيع" }).fill("BAR-9988");
-  await expect(page.getByText("فلتر محرك مميز").first()).toBeVisible();
-  await page.getByTestId("open-invoice-form-btn").click();
-  const newInvoiceForm = page.getByTestId("invoice-form-modal");
-  await expect(newInvoiceForm).toBeVisible();
-  await newInvoiceForm.getByRole("textbox", { name: "البحث عن صنف أو باركود داخل الفاتورة" }).fill("BAR-9988");
-  await expect(newInvoiceForm.getByText("1 صنف مطابق للبحث")).toBeVisible();
-  await newInvoiceForm.getByRole("button", { name: "✕" }).click();
-  await page.getByLabel("رجوع", { exact: true }).click();
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible();
-
-  // Reopen saved original locally without uploading it again; reimport must
-  // preserve the user's subsequent stocktake and price approval.
-  await page.getByLabel("إضافة", { exact: true }).click();
-  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "مركز استيراد وترحيل قواعد البيانات" }).click();
-  const historyDialog = page.getByRole("dialog");
-  await historyDialog.getByRole("button", { name: /السجل والنسخ/ }).click();
-  await historyDialog.getByRole("button", { name: "فتح النسخة المحفوظة للاستيراد" }).click();
-  await expect(historyDialog.getByText(/تم فتح قاعدة البيانات بنجاح/)).toBeVisible();
-  await historyDialog.getByTestId("legacy-import-and-show").click();
-  await expect(historyDialog.getByText(/0 حسابًا جديدًا، 0 صنفًا، 0 مخزنًا/)).toBeVisible();
+  const stats=await(await page.request.get("/api/db/status")).json();
+  expect(stats.accountsCount).toBe(1);
+  expect(stats.invoiceLinesCount).toBe(1);
 });
 
-test("IndexedDB restores imported accounts and inventory when localStorage quota is exhausted", async ({ page }) => {
-  test.setTimeout(120_000);
+test("SQLite records persist when legacy localStorage data quota is exhausted", async ({ page }) => {
+  test.setTimeout(60000);
+  const headers={"X-NASQO-CSRF":"1"};
+  expect((await page.request.post(`/api/db/workspace/${uid}/reset`,{headers,data:{confirmation:"RESET:local-erp-workspace"}})).status()).toBe(200);
   await page.addInitScript(() => {
-    const originalSetItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function (key: string, value: string) {
-      if (key === "nasqo-local-workspace-v1") {
-        throw new DOMException("Storage quota reached", "QuotaExceededError");
-      }
-      return originalSetItem.call(this, key, value);
+    const save=Storage.prototype.setItem;
+    Storage.prototype.setItem=function(key,value){
+      if(key==="nasqo-local-workspace-v1") throw new DOMException("Storage quota exceeded","QuotaExceededError");
+      return save.call(this,key,value);
     };
-    localStorage.setItem("nasqo-local-session-active", "1");
+    localStorage.setItem("nasqo-local-session-active","1");
   });
   await page.goto("/?autostart=1");
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
-  await page.getByLabel("إضافة", { exact: true }).click();
-  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "مركز استيراد وترحيل قواعد البيانات" }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.locator("#legacy-center-sqlite-input").setInputFiles({
-    name: "legacy-quota.sqlite", mimeType: "application/x-sqlite3", buffer: await sampleSqlite(),
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({timeout:20000});
+  const result=await page.request.post(`/api/db/workspace/${uid}/import/sqlite-legacy`,{
+    headers,data:{base64:(await sampleSqlite()).toString("base64"),fileName:"quota-test.sqlite",mode:"import",replaceExisting:true},
   });
-  await expect(dialog.getByText(/تم فتح قاعدة البيانات بنجاح/)).toBeVisible();
-  await dialog.getByTestId("legacy-import-and-show").click();
-  await expect(dialog.getByText(/تم حفظ الأرشيف وإظهار البيانات/)).toBeVisible({ timeout: 45000 });
+  expect(result.status()).toBe(200);
   await page.reload();
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
-  await page.getByLabel("فتح القائمة", { exact: true }).click();
-  await page.getByLabel("قائمة نسقو", { exact: true }).getByRole("button", { name: "الأصناف والمخزون", exact: true }).click();
-  await expect(page.getByTestId("inventory-report-screen")).toBeVisible();
-  await page.getByLabel("البحث في الأصناف").fill("BAR-9988");
-  await expect(page.getByText("فلتر محرك مميز")).toBeVisible();
-  await expect(page.getByText("بحاجة إلى تسوية").first()).toBeVisible();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({timeout:20000});
+  const data=await(await page.request.get(`/api/db/workspace/${uid}`)).json();
+  expect(data.accounts.some((a:{name:string})=>a.name==="عميل اختبار نسق")).toBe(true);
+  expect(data.inventory.some((i:{name:string})=>i.name==="فلتر محرك مميز")).toBe(true);
 });

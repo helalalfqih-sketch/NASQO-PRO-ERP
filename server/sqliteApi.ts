@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import express, { Router, type Express, type Request, type Response } from "express";
+import { requireSqliteAccess, sqliteLogin, sqliteLogout, sqliteStatus, validateSqliteProductionConfig } from "./sqliteAccess.ts";
 import type { DatabaseSync } from "node:sqlite";
 import type { ErpWorkspaceData } from "../src/erp.ts";
 import type {
@@ -114,6 +115,7 @@ function mapDocRoleFilter(role: string): string | null {
 }
 
 export function mountSqliteApi(app: Express): void {
+  validateSqliteProductionConfig();
   try {
     const db = getSqliteDb();
     const report = bootstrapSmartProSqlIfConfigured(db);
@@ -125,10 +127,20 @@ export function mountSqliteApi(app: Express): void {
       ensureEmptyWorkspace(db, DEFAULT_WORKSPACE_ID);
     }
   } catch (err) {
+    // A missing persistent volume must abort startup, not leave a misleading
+    // healthy HTTP container with an unusable accounting database.
+    if (process.env.NODE_ENV === "production") throw err;
     console.error("SQLite initial bootstrap warning:", err);
   }
 
   const router = Router();
+  router.get("/auth/status", (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(sqliteStatus(req));
+  });
+  router.post("/auth/login", express.json({ limit: "2kb" }), sqliteLogin);
+  router.post("/auth/logout", sqliteLogout);
+  router.use(requireSqliteAccess);
   router.use(express.json({ limit: "32mb" }));
 
   router.get(
@@ -165,6 +177,12 @@ export function mountSqliteApi(app: Express): void {
     "/workspace/:uid/reset",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
+      if (process.env.NODE_ENV === "production" && process.env.NASQO_SQLITE_ALLOW_RESET !== "1") {
+        throw new HttpError(403, "تفريغ قاعدة الإنتاج مغلق. يلزم تفعيله صراحةً بعد أخذ نسخة احتياطية.");
+      }
+      if (req.body?.confirmation !== "RESET:" + uid) {
+        throw new HttpError(400, "يلزم تأكيد التفريغ صراحةً.");
+      }
       resetWorkspaceToEmpty(db, uid);
       res.json(getFullWorkspaceBundle(db, uid));
     }),
