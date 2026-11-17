@@ -52,3 +52,12 @@
 .smartpro-invoice-line button { border:0; background:#fee2e2; color:#9d1b1b; border-radius:7px; padding:6px 9px; }
 .smartpro-invoice-total { display:block; padding:12px; border-radius:9px; background:#eef5fc; font-size:17px; }
 @media (max-width:430px) { .smartpro-invoice-grid {grid-template-columns:1fr;} }
+
+.smartpro-report-stack {display:grid;gap:11px;margin-top:12px;}
+.smartpro-report-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.smartpro-report-grid>div {display:flex;flex-direction:column;gap:4px;min-height:62px;
+  background:#edf4fc;border:1px solid #d7e4f2;padding:10px;border-radius:11px;}
+.smartpro-report-grid small {font-size:11px;color:#526580;}
+.smartpro-report-grid strong {font-size:17px;color:#153b62;overflow-wrap:anywhere;}
+.smartpro-report-filter {display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;}
+@media (max-width:430px) {.smartpro-report-filter {grid-template-columns:1fr;}}

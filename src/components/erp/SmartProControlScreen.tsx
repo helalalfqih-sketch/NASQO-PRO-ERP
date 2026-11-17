@@ -4,10 +4,14 @@ import { auth, signInWithGoogle } from "../../firebase";
 import { KeyboardInput, KeyboardTextarea, MobileScroll } from "../../mobile";
 import "./SmartProControlScreen.css";
 import { SmartProInvoicesPanel } from "./SmartProInvoicesPanel";
+import { SmartProReportsPanel } from "./SmartProReportsPanel";
+import { SmartProTransfersPanel } from "./SmartProTransfersPanel";
+import { SmartProReturnsPanel } from "./SmartProReturnsPanel";
+import { SmartProVouchersPanel } from "./SmartProVouchersPanel";
 
 type Column = { name:string; type:string; nullable:boolean; autoIncrement:boolean; maxLength:number|null; hasDefault:boolean; defaultValue:string|null };
 type Table = { name:string; columns:Column[]; editableColumns:string[] };
-type Metadata = { tables:Table[]; role:"admin"|"editor"|"viewer";writeEnabled:boolean;invoiceWriteEnabled:boolean;salesStockVerified:boolean;email:string };
+type Metadata = { tables:Table[]; role:"admin"|"editor"|"viewer";writeEnabled:boolean;invoiceWriteEnabled:boolean;salesStockVerified:boolean;transferWriteEnabled:boolean;returnWriteEnabled:boolean;voucherWriteEnabled:boolean;email:string };
 type Wrapped = { data:Record<string,unknown>;etag:string };
 type Listed = { rows:Wrapped[];hasMore:boolean };
 type RoleRecord = { email:string;role:string;granted_by:string;updated_at:string };
@@ -63,7 +67,7 @@ export function SmartProControlScreen(){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState("");
   const [success,setSuccess]=useState("");
-  const [mode,setMode]=useState<"records"|"invoices"|"roles"|"audit">("records");
+  const [mode,setMode]=useState<"records"|"invoices"|"reports"|"transfers"|"returns"|"vouchers"|"roles"|"audit">("records");
   const [editing,setEditing]=useState<{item:Wrapped|null;values:Record<string,string>}|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<Wrapped|null>(null);
   const [confirmation,setConfirmation]=useState("");
@@ -204,10 +208,18 @@ export function SmartProControlScreen(){
             <nav className="smartpro-tabs" aria-label="أقسام إدارة SmartPro">
               <button type="button" aria-current={mode==="records"?"page":undefined} onClick={()=>setMode("records")}>البيانات والجداول</button>
               <button type="button" aria-current={mode==="invoices"?"page":undefined} onClick={()=>setMode("invoices")}>الفواتير والمشتريات</button>
+              <button type="button" aria-current={mode==="reports"?"page":undefined} onClick={()=>setMode("reports")}>التقارير والمخزون</button>
+              <button type="button" aria-current={mode==="transfers"?"page":undefined} onClick={()=>setMode("transfers")}>تحويل المخازن</button>
+              <button type="button" aria-current={mode==="returns"?"page":undefined} onClick={()=>setMode("returns")}>المرتجعات</button>
+              <button type="button" aria-current={mode==="vouchers"?"page":undefined} onClick={()=>setMode("vouchers")}>السندات</button>
               {meta.role==="admin"?<button type="button" aria-current={mode==="roles"?"page":undefined} onClick={()=>setMode("roles")}>صلاحيات المستخدمين</button>:null}
               {meta.role==="admin"?<button type="button" aria-current={mode==="audit"?"page":undefined} onClick={()=>setMode("audit")}>سجل التغييرات</button>:null}
             </nav>
             {!meta.writeEnabled?<p className="smartpro-alert" role="alert">التعديلات المركزية غير مفعلة بعد في الخادم.</p>:null}
+            {mode==="reports"?<SmartProReportsPanel/>:null}
+            {mode==="transfers"?<SmartProTransfersPanel canWrite={canEdit&&meta.transferWriteEnabled}/>:null}
+            {mode==="returns"?<SmartProReturnsPanel canWrite={canEdit&&meta.returnWriteEnabled} stockVerified={meta.salesStockVerified}/>:null}
+            {mode==="vouchers"?<SmartProVouchersPanel canWrite={canEdit&&meta.voucherWriteEnabled}/>:null}
             {mode==="invoices"?<SmartProInvoicesPanel canWrite={canEdit&&meta.invoiceWriteEnabled} canSell={meta.salesStockVerified}/>:null}
             {mode==="records"?(
               <section className="smartpro-panel">
