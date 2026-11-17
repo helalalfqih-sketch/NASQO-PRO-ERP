@@ -3,7 +3,7 @@ import { InputError, validId } from "./smartproPolicy.ts";
 const SCALE = 10_000n;
 const MAX_AMOUNT = 999_999_999_999n * SCALE;
 
-function scaledPositive(raw: unknown, label: string, allowZero = false): bigint {
+export function scaledPositive(raw: unknown, label: string, allowZero = false): bigint {
   if (typeof raw !== "string" && typeof raw !== "number") throw new InputError("قيمة غير صحيحة: " + label);
   const value = String(raw).trim();
   if (!/^(?:0|[1-9][0-9]{0,11})(?:\.[0-9]{1,4})?$/.test(value)) {
