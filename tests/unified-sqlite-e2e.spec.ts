@@ -42,6 +42,13 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
     }
   });
 
+  // The shared browser test database must start empty even if another spec
+  // just created test records. This is test-only, never production data.
+  const reset = await page.request.post("/api/db/workspace/local-erp-workspace/reset", {
+    headers: { "X-NASQO-CSRF": "1" },
+    data: { confirmation: "RESET:local-erp-workspace" },
+  });
+  expect(reset.status()).toBe(200);
   await page.addInitScript(() => localStorage.setItem("nasqo-local-session-active", "1"));
   await page.goto("/?autostart=1");
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20_000 });

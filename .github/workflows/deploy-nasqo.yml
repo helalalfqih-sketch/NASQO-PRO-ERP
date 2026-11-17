@@ -31,7 +31,8 @@ jobs:
           npx tsx --test tests/smartpro-policy.test.ts tests/smartpro-invoice.test.ts tests/smartpro-stock.test.ts tests/smartpro-returns.test.ts tests/smartpro-voucher.test.ts
           npx tsx --test tests/legacy-search-binding.test.ts tests/legacy-live-safety.test.ts tests/legacy-invoice-preview.test.ts
           npx tsx --test tests/workspace-isolation.test.ts tests/local-database.test.ts
-          node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs
+          node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs tests/sqlite-local-production.test.mjs
+          npx tsx --test tests/unified-sqlite.test.ts
           npm run build
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
           # Source runtime integrity checks are unchanged.
@@ -41,21 +42,29 @@ jobs:
       - name: Verify Android Back navigation in Chromium
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts tests/smartpro-admin-ui.spec.ts --reporter=line
-          NASQO_PRIVATE_E2E_SOURCE=backup_2026.11.08_03.49.26.back npx playwright test tests/legacy-real-data.spec.ts --reporter=line
+          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts tests/smartpro-admin-ui.spec.ts tests/unified-sqlite-e2e.spec.ts --reporter=line
+          npx playwright test tests/legacy-real-data.spec.ts --reporter=line
       - name: Prepare release
         run: |
           mkdir -p release/dist
           cp package.json package-lock.json server.ts Dockerfile.deploy release/
           cp -a server release/server
+          mkdir -p release/scripts
+          cp scripts/backup-sqlite.mjs release/scripts/
           cp -a dist/client release/dist/client
           printf '%s\n' "$GITHUB_SHA" > release/RELEASE_SHA
           tar -czf "$RUNNER_TEMP/nsqo-release.tar.gz" -C release .
       - name: Verify deployable production Docker image
         run: |
           docker build --pull -f release/Dockerfile.deploy -t "nasqo-ci:$GITHUB_SHA" release
-          docker run --rm -d --name nasqo-ci-smoke "nasqo-ci:$GITHUB_SHA"
-          trap 'docker rm -f nasqo-ci-smoke >/dev/null 2>&1 || true' EXIT
+          docker volume create nasqo-ci-sqlite-data
+          docker run --rm -d --name nasqo-ci-smoke \
+            -v nasqo-ci-sqlite-data:/app/data \
+            -e NASQO_SQLITE_PATH=/app/data/nasqo.sqlite \
+            -e NASQO_SQLITE_ADMIN_PASSWORD=ci-only-test-password \
+            -e NASQO_SQLITE_SESSION_SECRET=ci-smoke-session-secret-longer-than-32-chars \
+            "nasqo-ci:$GITHUB_SHA"
+          trap 'docker rm -f nasqo-ci-smoke >/dev/null 2>&1 || true; docker volume rm nasqo-ci-sqlite-data >/dev/null 2>&1 || true' EXIT
           healthy=0
           for i in $(seq 1 25); do
             if docker exec nasqo-ci-smoke node -e 'fetch("http://127.0.0.1:3000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then
@@ -64,6 +73,7 @@ jobs:
             fi
             sleep 1
           done
+          docker exec nasqo-ci-smoke node -e 'fetch("http://127.0.0.1:3000/api/db/auth/status").then(async r=>{const s=await r.json();if(!s.authenticated)process.exit(1)}).catch(()=>process.exit(1))'
           if [[ "$healthy" != "1" ]]; then
             docker logs nasqo-ci-smoke --tail 40
             exit 1

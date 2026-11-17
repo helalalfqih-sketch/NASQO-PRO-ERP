@@ -1,0 +1,29 @@
+# Independent SQLite-only NASQO installation. Does NOT modify the existing
+# nsqo-mobile-app, SmartPro service, MariaDB or other ERP containers.
+services:
+  nasqo-sqlite:
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18177:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      NASQO_SQLITE_PATH: /app/data/nasqo.sqlite
+      NASQO_SQLITE_ADMIN_PASSWORD: ${NASQO_SQLITE_ADMIN_PASSWORD:?Set the local admin password in an untracked .env}
+      NASQO_SQLITE_SESSION_SECRET: ${NASQO_SQLITE_SESSION_SECRET:?Set a random secret of 32+ characters in .env}
+      NASQO_SQLITE_SECURE_COOKIE: "${NASQO_SQLITE_SECURE_COOKIE:-0}"
+      NASQO_SQLITE_PUBLIC_ORIGIN: "${NASQO_SQLITE_PUBLIC_ORIGIN:-}"
+      NASQO_SKIP_AUTO_SQL_IMPORT: "1"
+    volumes:
+      - nasqo-sqlite-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+
+volumes:
+  nasqo-sqlite-data:
