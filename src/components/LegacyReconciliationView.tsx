@@ -15,6 +15,7 @@ import {
 import type { Row, Tables } from "../legacy/adapter";
 import { indexHistoricalInvoices, searchHistoricalInvoices } from "../legacy/search";
 import { normalizeArabicSearch } from "../accounting";
+import { LegacyInvoicePreview } from "./LegacyInvoicePreview";
 
 type Props = {
   tables: Tables;
@@ -135,69 +136,13 @@ export function LegacyReconciliationView({
         ) : null}
       </div>
 
-      {/* Selected Invoice Detail Modal / Card */}
+      {/* Read-only source invoice: source-backed fields and live detail buttons. */}
       {selectedInvoice ? (
-        <div style={{ border: "2px solid #0284c7", borderRadius: 12, padding: 14, background: "#f8fafc" }} data-testid="legacy-invoice-detail">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div>
-              <strong style={{ fontSize: 15, color: "#0f172a" }}>
-                فاتورة تاريخية #{selectedInvoice.id} — {ROLE_LABELS[selectedInvoice.role]}
-              </strong>
-              <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>
-                العميل/المورد: <b>{selectedInvoice.personName || "غير محدد"}</b> • التاريخ: <b>{selectedInvoice.date ?? "—"}</b> • العملة: <b>{selectedInvoice.currencyName || "—"}</b>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedInvoice(null)}
-              style={{ background: "#e2e8f0", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 700 }}
-            >
-              إغلاق التفاصيل
-            </button>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12, marginBottom: 10 }}>
-            <span style={{ background: "#fef3c7", color: "#92400e", padding: "3px 8px", borderRadius: 6, fontWeight: 600 }}>
-              حالة المطابقة: فاتورة تاريخية غير مُرحّلة للأستاذ العام
-            </span>
-            <span>رقم المستند: <b>{selectedInvoice.documentNumber || "—"}</b></span>
-            <span>دائن الرأس: <b>{selectedInvoice.headerDain ?? "—"}</b></span>
-            <span>مدين الرأس: <b>{selectedInvoice.headerMadin ?? "—"}</b></span>
-            <span>المجموع الأصلي: <b>{selectedInvoice.originalTotal ?? "—"}</b></span>
-            <span>مجموع البنود: <b>{selectedInvoice.linesTotal ?? "—"}</b></span>
-          </div>
-
-          <div style={{ maxHeight: 260, overflow: "auto", border: "1px solid #cbd5e1", borderRadius: 8, background: "#ffffff" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "right" }}>
-              <thead>
-                <tr style={{ background: "#f1f5f9", borderBottom: "1px solid #cbd5e1" }}>
-                  <th style={{ padding: "6px 8px" }}>#</th>
-                  <th style={{ padding: "6px 8px" }}>المنتج / البيان</th>
-                  <th style={{ padding: "6px 8px" }}>الوحدة</th>
-                  <th style={{ padding: "6px 8px" }}>الكمية</th>
-                  <th style={{ padding: "6px 8px" }}>السعر</th>
-                  <th style={{ padding: "6px 8px" }}>الخصم</th>
-                  <th style={{ padding: "6px 8px" }}>الإجمالي</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedInvoice.lines.map((line, i) => (
-                  <tr key={line.ref} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "6px 8px" }}>{i + 1}</td>
-                    <td style={{ padding: "6px 8px", fontWeight: 600 }}>
-                      {line.productName || line.description || `صنف #${line.productId ?? "—"}`}
-                    </td>
-                    <td style={{ padding: "6px 8px" }}>{line.unit || "—"}</td>
-                    <td style={{ padding: "6px 8px" }}>{line.quantity ?? "—"}</td>
-                    <td style={{ padding: "6px 8px" }}>{line.unitPrice ?? "—"}</td>
-                    <td style={{ padding: "6px 8px" }}>{line.discount ?? 0}</td>
-                    <td style={{ padding: "6px 8px", fontWeight: 700 }}>{line.total ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <LegacyInvoicePreview
+          key={`${selectedInvoice.table}:${selectedInvoice.id}`}
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
+        />
       ) : null}
 
       {/* Search & Filters */}

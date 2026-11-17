@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { Row } from "../legacy/adapter";
-import { ROLE_LABELS, type LegacyInvoice } from "../legacy/analysis";
+import type { LegacyInvoice } from "../legacy/analysis";
 import {
   getActiveArchiveInfo,
   loadCustomerHistoricalMoves,
   loadSingleHistoricalInvoice,
 } from "../legacy/centerService";
 import type { AccountRecord } from "../types";
+import { LegacyInvoicePreview } from "./LegacyInvoicePreview";
 
 export function CustomerLegacyArchiveSection({ account }: { account: AccountRecord }) {
   const [sha256, setSha256] = useState<string | null>(null);
@@ -106,59 +107,12 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
       ) : null}
 
       {selectedInvoice ? (
-        <div
-          data-testid="customer-legacy-invoice-detail"
-          style={{
-            marginTop: 10,
-            padding: 10,
-            borderRadius: 10,
-            background: "#ffffff",
-            border: "1px solid #0284c7",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <strong>
-              فاتورة #{selectedInvoice.id} — {ROLE_LABELS[selectedInvoice.role]} ({selectedInvoice.date ?? "—"})
-            </strong>
-            <button
-              type="button"
-              onClick={() => setSelectedInvoice(null)}
-              style={{ background: "#e2e8f0", border: "none", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}
-            >
-              إغلاق
-            </button>
-          </div>
-          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6 }}>
-            العميل: <b>{selectedInvoice.personName}</b> • دائن: <b>{selectedInvoice.headerDain ?? "—"}</b> • مدين:{" "}
-            <b>{selectedInvoice.headerMadin ?? "—"}</b> • حالة المطابقة: <b>فاتورة تاريخية غير مُرحّلة</b>
-          </div>
-          <div style={{ maxHeight: 200, overflow: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, textAlign: "right" }}>
-              <thead>
-                <tr style={{ background: "#f8fafc", borderBottom: "1px solid #cbd5e1" }}>
-                  <th style={{ padding: "4px 6px" }}>الصنف</th>
-                  <th style={{ padding: "4px 6px" }}>الكمية</th>
-                  <th style={{ padding: "4px 6px" }}>السعر</th>
-                  <th style={{ padding: "4px 6px" }}>الإجمالي</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selectedInvoice.lines.map((line) => (
-                  <tr key={line.ref} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "4px 6px", fontWeight: 600 }}>
-                      {line.productName || line.description || `#${line.productId}`}
-                    </td>
-                    <td style={{ padding: "4px 6px" }}>
-                      {line.quantity ?? "—"} {line.unit}
-                    </td>
-                    <td style={{ padding: "4px 6px" }}>{line.unitPrice ?? "—"}</td>
-                    <td style={{ padding: "4px 6px", fontWeight: 700 }}>{line.total ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <LegacyInvoicePreview
+          key={`${selectedInvoice.table}:${selectedInvoice.id}`}
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
+          testId="customer-legacy-invoice-detail"
+        />
       ) : null}
 
       {expanded ? (

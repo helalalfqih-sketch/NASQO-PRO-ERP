@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CheckCircledIcon, PlusIcon, TrashIcon } from "@radix-ui/react-icons";
-import { formatAmount } from "../accounting";
+import { formatAmount, normalizeArabicSearch } from "../accounting";
 import { createLedgerEntry } from "../firebase";
 import { KeyboardInput, useKeyboard } from "../mobile";
 import type {
@@ -60,6 +60,7 @@ export function InvoiceForm({
   );
   const [payment, setPayment] = useState<"cash" | "credit">("cash");
   const [includeVat, setIncludeVat] = useState(true);
+  const [productSearch, setProductSearch] = useState("");
   const [showCustomerListModal, setShowCustomerListModal] = useState(false);
 
   const [rows, setRows] = useState<InvoiceItemRow[]>([
@@ -79,6 +80,14 @@ export function InvoiceForm({
     return preferred.length > 0 ? preferred : accounts;
   }, [accounts]);
 
+  // Source-backed SKU is the barcode imported from the original SQLite.
+  const matchingProducts = useMemo(() => {
+    const q = normalizeArabicSearch(productSearch);
+    return inventory.filter((item) => !q || normalizeArabicSearch(
+      `${item.name} ${item.sku ?? ""} ${item.unit} ${item.legacyRef ?? ""}`,
+    ).includes(q));
+  }, [inventory, productSearch]);
+
   const activeAccount = useMemo(
     () => salesAndClientAccounts.find((a) => a.id === selectedAccountId) ?? accounts[0],
     [accounts, salesAndClientAccounts, selectedAccountId],
@@ -95,7 +104,7 @@ export function InvoiceForm({
 
   const handleAddRow = () => {
     triggerHaptic("light");
-    const defaultItem = inventory[0];
+    const defaultItem = matchingProducts[0] ?? inventory[0];
     setRows((prev) => [
       ...prev,
       {
@@ -366,6 +375,16 @@ export function InvoiceForm({
               الأصناف التاريخية لا تحمل رصيدًا أو سعر بيع معتمدًا تلقائيًا؛ اعتمد الجرد وسعر البيع قبل ترحيل الفاتورة.
             </p>
           ) : null}
+          <label style={{ display: "grid", gap: 4, margin: "4px 0 8px", fontSize: 11, color: "var(--nasqo-muted)" }}>
+            ابحث عن الصنف أو الباركود من النسخة المستوردة
+            <KeyboardInput
+              aria-label="البحث عن صنف أو باركود داخل الفاتورة"
+              placeholder="اسم الصنف أو رقم الباركود..."
+              value={productSearch}
+              onChange={(event) => setProductSearch(event.target.value)}
+            />
+            <small>{matchingProducts.length} صنف مطابق للبحث</small>
+          </label>
           <div style={{ display: "grid", gap: "4px", maxHeight: "140px", overflowY: "auto" }}>
             {rows.map((row, idx) => (
               <div
@@ -389,9 +408,9 @@ export function InvoiceForm({
                     style={{ width: "100%", fontSize: "11px", padding: "3px" }}
                   >
                     <option value="">(صنف حر)</option>
-                    {inventory.map((item) => (
+                    {inventory.filter((item) => matchingProducts.includes(item) || rows.some((r) => r.itemId === item.id)).map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.name} ({item.quantityUnverified ? "بحاجة إلى تسوية" : item.quantity})
+                        {item.name} {item.sku ? `• ${item.sku}` : ""} ({item.quantityUnverified ? "بحاجة إلى تسوية" : item.quantity})
                       </option>
                     ))}
                   </select>
