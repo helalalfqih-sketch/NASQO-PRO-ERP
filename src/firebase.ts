@@ -7,49 +7,23 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  limit,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-  writeBatch,
-  type Unsubscribe,
-} from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
-import {
-  sanitizeAccountPayload,
-  sanitizeInventoryPayload,
-  sanitizeLedgerPayload,
-  sanitizeWarehousePayload,
-  sanitizeWorkspacePayload,
-} from "./accounting";
+import { hydrateErpWorkspaceCache, type ErpWorkspaceData } from "./erp";
 import type {
+  AccountCategory,
+  AccountGroupRecord,
   AccountRecord,
+  CashboxRecord,
+  CurrencyCode,
   InventoryItemRecord,
   LedgerEntryRecord,
   WarehouseRecord,
   WorkspaceSettings,
 } from "./types";
-import {
-  clearLocalDatabase,
-  isIndexedDbAvailable,
-  readSnapshotFromIndexedDb,
-  writeSnapshotToIndexedDb,
-} from "./utils/localDatabase";
 
 const app = initializeApp(firebaseConfig);
-const configuredDatabaseId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
-export const db = configuredDatabaseId ? getFirestore(app, configuredDatabaseId) : getFirestore(app);
+// Identity-only Firebase Auth (optional Google Sign-In & per-file Google Drive token).
+// All accounting, inventory, ERP, and archive data live exclusively in the server SQLite DB.
 export const auth = getAuth(app);
 
 export enum OperationType {
@@ -65,54 +39,20 @@ export interface FirestoreErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  };
 }
 
 export function handleFirestoreError(
   error: unknown,
-  operationType: OperationType,
-  path: string | null,
+  _operationType: OperationType,
+  _path: string | null,
 ): never {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
-        })) || [],
-    },
-    operationType,
-    path,
-  };
-  console.error("Firestore Error: ", JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  throw error instanceof Error ? error : new Error(String(error));
 }
 
-// Google Drive integration intentionally has per-file access only. The app
-// can manage files it creates or that the user explicitly shares with it,
-// but must not request blanket access to the user's entire Google Drive.
-// Keep this separate from basic Google sign-in (openid/email/profile).
 export const GOOGLE_WORKSPACE_SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
 ] as const;
 
-// Strictly in-memory OAuth access token cache — never persisted to localStorage or sessionStorage.
 let cachedGoogleAccessToken: string | null = null;
 const googleTokenListeners = new Set<(token: string | null) => void>();
 
@@ -206,14 +146,7 @@ export async function signOutUser(): Promise<void> {
 }
 
 export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
-const LOCAL_WORKSPACE_STORAGE_KEY = "nasqo-local-workspace-v1";
 const LOCAL_SESSION_STORAGE_KEY = "nasqo-local-session-active";
-// Browser storage quotas are much smaller than IndexedDB. Keep the latest
-// authoritative snapshot in memory during a session instead of re-reading
-// potentially stale/truncated localStorage after a successful large import.
-let activeLocalSnapshot: LocalWorkspaceSnapshot | null = null;
-let activeLocalRevision = 0;
-
 
 export function isLocalWorkspaceSession(): boolean {
   if (typeof window === "undefined") return false;
@@ -237,524 +170,234 @@ export function setLocalWorkspaceSession(active: boolean): void {
   }
 }
 
-type LocalWorkspaceSnapshot = {
+export type UnifiedDbImportRecord = {
+  id: string;
+  sourceName: string;
+  sourceFormat: string;
+  sourceSha256: string;
+  tablesCount: number;
+  totalRows: number;
+  importedAt: string;
+  notes?: Record<string, unknown>;
+};
+
+export type UnifiedDbStats = {
+  engine: string;
+  dbName: string;
+  schemaVersion: number;
+  tablesCount: number;
+  fileSizeBytes: number;
+  accountsCount: number;
+  ledgerCount: number;
+  invoiceLinesCount: number;
+  warehousesCount: number;
+  inventoryCount: number;
+  archivedCount: number;
+  transfersCount: number;
+  offersCount: number;
+  erpModulesSaved: boolean;
+  lastSyncedAt: string | null;
+  imports?: UnifiedDbImportRecord[];
+};
+
+export type UnifiedInvoiceLine = {
+  id: number;
+  lineKind: "item" | "free";
+  inventoryItemId: string | null;
+  itemName: string;
+  sku: string;
+  warehouseName: string;
+  price: number;
+  quantity: number;
+  total: number;
+  discount: number;
+  bonus: number;
+  unit: string;
+  unitNum: number;
+  details: string;
+  expiryDate: string;
+};
+
+export type UnifiedInvoiceDetail = {
+  entry: LedgerEntryRecord;
+  lines: UnifiedInvoiceLine[];
+};
+
+export type ArchiveSummaryPayload = {
+  stats: UnifiedDbStats;
+  docTypeSummary: {
+    docType: number;
+    typeLabel: string;
+    count: number;
+    totalDain: number;
+    totalMadin: number;
+    cashSettledCount: number;
+  }[];
+  archivedDocs: Record<string, unknown>[];
+  transfers: Record<string, unknown>[];
+};
+
+export type UnifiedTableMeta = {
+  name: string;
+  rowsCount: number;
+  columns: { name: string; type: string; pk: boolean; nullable: boolean }[];
+};
+
+type WorkspaceBundle = {
   workspace: WorkspaceSettings;
+  accountGroups?: AccountGroupRecord[];
   accounts: AccountRecord[];
+  cashboxes?: CashboxRecord[];
   ledger: LedgerEntryRecord[];
   warehouses: WarehouseRecord[];
   inventory: InventoryItemRecord[];
+  erpData: ErpWorkspaceData;
   backups: { id: string; name: string; exportedAtIso: string }[];
+  stats: UnifiedDbStats;
 };
 
 type WorkspaceCallbacks = {
   onWorkspace: (ws: WorkspaceSettings | null) => void;
+  onAccountGroups?: (groups: AccountGroupRecord[]) => void;
   onAccounts: (accounts: AccountRecord[]) => void;
   onLedger: (entries: LedgerEntryRecord[]) => void;
   onWarehouses: (warehouses: WarehouseRecord[]) => void;
   onInventory: (items: InventoryItemRecord[]) => void;
+  onCashboxes?: (cashboxes: CashboxRecord[]) => void;
 };
 
-const localListeners = new Set<WorkspaceCallbacks>();
-
-function buildStarterSnapshot(uid: string, displayName?: string | null): LocalWorkspaceSnapshot {
-  const daysAgoIso = (days: number) =>
-    new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-
-  const workspace: WorkspaceSettings = {
-    id: uid,
-    ownerId: uid,
-    companyName: displayName ? `نشاط ${displayName}` : "نسقو برو ERP",
-    defaultCurrency: "ريال",
-    whatsappProvider: "nasqo",
-    whatsappInstantEnabled: false,
-    whatsappPhone: "",
-  };
-
-  const warehouses: WarehouseRecord[] = [
-    { id: "wh_1", ownerId: uid, name: "المخزن الرئيسي", details: "المستودع الافتراضي", isDefault: true, codeNumber: 1 },
-    { id: "wh_3", ownerId: uid, name: "مخازن بينون", details: "مستودع البضائع العام", isDefault: false, codeNumber: 3 },
-    { id: "wh_4", ownerId: uid, name: "بينون", details: "فرع التوريد", isDefault: false, codeNumber: 4 },
-  ];
-
-  const inventory: InventoryItemRecord[] = [
-    { id: "inv_1", ownerId: uid, name: "ابجورة شكل قمر", unit: "حبة", quantity: 40, avgCost: 2200, minThreshold: 25, sku: "SKU-1001", warehouseId: "wh_3" },
-    { id: "inv_2", ownerId: uid, name: "توصيلة تايب سي 2 متر", unit: "حبة", quantity: 120, avgCost: 1500, minThreshold: 30, sku: "SKU-1002", warehouseId: "wh_1" },
-    { id: "inv_3", ownerId: uid, name: "بطارية جهاز كشف الذهب", unit: "حبة", quantity: 25, avgCost: 1500, minThreshold: 25, sku: "SKU-1003", warehouseId: "wh_1" },
-    { id: "inv_4", ownerId: uid, name: "فواحة عطرية خازن", unit: "حبة", quantity: 35, avgCost: 3400, minThreshold: 20, sku: "SKU-1004", warehouseId: "wh_3" },
-    { id: "inv_5", ownerId: uid, name: "مكينة خياطة كبير", unit: "حبة", quantity: 12, avgCost: 10000, minThreshold: 25, sku: "SKU-1005", warehouseId: "wh_1" },
-    { id: "inv_6", ownerId: uid, name: "عازل سطوح 10 كيلو", unit: "كيلو", quantity: 18, avgCost: 33000, minThreshold: 25, sku: "SKU-1006", warehouseId: "wh_1" },
-    { id: "inv_7", ownerId: uid, name: "فرامة لحم", unit: "حبة", quantity: 15, avgCost: 3000, minThreshold: 25, sku: "SKU-1007", warehouseId: "wh_4" },
-  ];
-
-  const accounts: AccountRecord[] = [
-    { id: "acc_barari", ownerId: uid, name: "البراري للتوريد", category: "purchases", phone: "055 832 1042", creditLimit: 1000000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 1, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 243450, openingDirection: "credit", codeNumber: 34 },
-    { id: "acc_naqd_hilal", ownerId: uid, name: "نقـد هلال", category: "purchases", phone: "050 441 7731", creditLimit: 500000, currency: "ريال", isCashAccount: true, accountImage: "1", sortOrder: 2, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "حساب المشتريات النقدية", openingBalance: 0, openingDirection: "credit", codeNumber: 9 },
-    { id: "acc_waha", ownerId: uid, name: "الواحة التجارية", category: "purchases", phone: "053 190 6208", creditLimit: 750000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 3, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 227601, openingDirection: "credit", codeNumber: 49 },
-    { id: "acc_khatabi", ownerId: uid, name: "خطابي وشركاه", category: "purchases", phone: "056 710 8824", creditLimit: 250000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 4, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 64000, openingDirection: "debit", codeNumber: 53 },
-    { id: "acc_bashar", ownerId: uid, name: "بشار العزي", category: "purchases", phone: "", creditLimit: 1000000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 5, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 227601, openingDirection: "credit", codeNumber: 6 },
-    { id: "acc_client_noor", ownerId: uid, name: "شركة النور للتجارة", category: "clients", phone: "055 210 9934", creditLimit: 400000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 6, settlement: false, documentNumberRequired: false, messageMethod: "whatsapp", sendMode: "confirm", note: "عميل جملة رئيسي", openingBalance: 48500, openingDirection: "debit", codeNumber: 55 },
-    { id: "acc_shop_main", ownerId: uid, name: "حساب المحل", category: "shop", phone: "", creditLimit: 500000, currency: "ريال", isCashAccount: false, accountImage: "2", sortOrder: 7, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "مصروفات وتشغيل المحل", openingBalance: 261100, openingDirection: "debit", codeNumber: 60 },
-    { id: "acc_emp_1", ownerId: uid, name: "رواتب الموظفين", category: "employees", phone: "", creditLimit: 200000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 8, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 10500, openingDirection: "credit", codeNumber: 61 },
-    { id: "acc_sales_1", ownerId: uid, name: "المبيعات العامة", category: "sales", phone: "", creditLimit: 2000000, currency: "ريال", isCashAccount: false, accountImage: "3", sortOrder: 9, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 172650, openingDirection: "debit", codeNumber: 62 },
-  ];
-
-  const baseMs = Date.now() - 20 * 86_400_000;
-  const ledger: LedgerEntryRecord[] = [
-    { id: "ent_1108", ownerId: uid, accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه", payment: "cash", direction: "debit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "تسوية حساب مورد", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1108, deleted: false, entryDate: daysAgoIso(18), expenseCategory: "مشتريات بضائع", deliveryDays: 3, createdAtMs: baseMs + 1000 },
-    { id: "ent_1136", ownerId: uid, accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 4000, currency: "ريال", exchangeRate: 1, details: "زينة منازل شكل شجرة | 1 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1136, deleted: false, entryDate: daysAgoIso(11), expenseCategory: "مشتريات بضائع", deliveryDays: 2, createdAtMs: baseMs + 2000 },
-    { id: "ent_1178", ownerId: uid, accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 33000, currency: "ريال", exchangeRate: 1, details: "عازل سطوح 10 كيلو | 1 كيلو", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1178, deleted: false, entryDate: daysAgoIso(5), dueDate: daysAgoIso(-3), expenseCategory: "مشتريات بضائع", deliveryDays: 4, createdAtMs: baseMs + 3000 },
-    { id: "ent_1090", ownerId: uid, accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 17000, currency: "ريال", exchangeRate: 1, details: "فواحة عطرية خازن | 5 حبة", documentNumber: "", warehouseId: "wh_3", warehouseName: "مخازن بينون", invoiceContent: "items", entryNumber: 1090, deleted: false, entryDate: daysAgoIso(14), expenseCategory: "مشتريات بضائع", deliveryDays: 1, createdAtMs: baseMs + 4000 },
-    { id: "ent_1140", ownerId: uid, accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 3000, currency: "ريال", exchangeRate: 1, details: "توصيلة تايب سي 2 متر | 1 حبة\nبطارية جهاز كشف الذهب | 1 حبة", documentNumber: "1140", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1140, deleted: false, entryDate: daysAgoIso(6), expenseCategory: "مشتريات بضائع", deliveryDays: 2, createdAtMs: baseMs + 5000 },
-    { id: "ent_1218", ownerId: uid, accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "محلات بن عوضة\nمكينة خياطة كبير | 2 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1218, deleted: false, entryDate: daysAgoIso(3), expenseCategory: "شحن ونقل", deliveryDays: 2, createdAtMs: baseMs + 6000 },
-    { id: "ent_1225", ownerId: uid, accountId: "acc_shop_main", accountName: "حساب المحل", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 6500, currency: "ريال", exchangeRate: 1, details: "فاتورة كهرباء وصيانة مستودع", documentNumber: "1225", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1225, deleted: false, entryDate: daysAgoIso(4), expenseCategory: "صيانة ومرافق", createdAtMs: baseMs + 7000 },
-    { id: "ent_1230", ownerId: uid, accountId: "acc_emp_1", accountName: "رواتب الموظفين", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 12000, currency: "ريال", exchangeRate: 1, details: "دفعة رواتب شهرية", documentNumber: "1230", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1230, deleted: false, entryDate: daysAgoIso(2), expenseCategory: "رواتب وأجور", createdAtMs: baseMs + 8000 },
-    { id: "ent_1235", ownerId: uid, accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 24500, currency: "ريال", exchangeRate: 1, details: "مبيعات أجهزة وتجهيزات", documentNumber: "1235", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1235, deleted: false, entryDate: daysAgoIso(1), createdAtMs: baseMs + 9000 },
-    { id: "ent_1236", ownerId: uid, accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 18500, currency: "ريال", exchangeRate: 1, details: "مبيعات الجملة اليومية", documentNumber: "1236", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1236, deleted: false, entryDate: daysAgoIso(0), createdAtMs: baseMs + 10000 },
-  ];
-
-  return { workspace, accounts, ledger, warehouses, inventory, backups: [] };
+// Always map interactive sessions to the single authoritative SQLite workspace
+// so Google Sign-In and Quick Entry share the exact same single SQL database.
+function effectiveUid(_uid?: string): string {
+  return LOCAL_WORKSPACE_UID;
 }
 
-function readLocalSnapshot(): LocalWorkspaceSnapshot {
-  if (activeLocalSnapshot) return structuredClone(activeLocalSnapshot);
-  if (typeof window === "undefined") return buildStarterSnapshot(LOCAL_WORKSPACE_UID);
-  try {
-    const raw = window.localStorage.getItem(LOCAL_WORKSPACE_STORAGE_KEY);
-    if (!raw) {
-      const seeded = buildStarterSnapshot(LOCAL_WORKSPACE_UID);
-      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(seeded));
-      return seeded;
-    }
-    const parsed = JSON.parse(raw) as Partial<LocalWorkspaceSnapshot>;
-    const fallback = buildStarterSnapshot(LOCAL_WORKSPACE_UID);
-    return {
-      workspace: parsed.workspace ?? fallback.workspace,
-      accounts: Array.isArray(parsed.accounts) ? parsed.accounts : fallback.accounts,
-      ledger: Array.isArray(parsed.ledger) ? parsed.ledger : fallback.ledger,
-      warehouses: Array.isArray(parsed.warehouses) ? parsed.warehouses : fallback.warehouses,
-      inventory: Array.isArray(parsed.inventory) ? parsed.inventory : fallback.inventory,
-      backups: Array.isArray(parsed.backups) ? parsed.backups : [],
-    };
-  } catch {
-    return buildStarterSnapshot(LOCAL_WORKSPACE_UID);
+function apiBase(): string {
+  if (typeof window === "undefined") return "/api/db";
+  const baseUrl = new URL((import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? "/", window.location.origin);
+  return new URL("api/db", baseUrl).pathname.replace(/\/$/, "");
+}
+
+async function dbFetch<T>(subPath: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBase()}${subPath}`, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  const payload = await response.json().catch(() => ({ error: "تعذر قراءة استجابة قاعدة SQLite." }));
+  if (!response.ok) {
+    throw new Error((payload as { error?: string }).error || "تعذر الاتصال بقاعدة بيانات SQLite الموحدة.");
   }
+  return payload as T;
 }
 
-function notifyLocalListeners(snapshot: LocalWorkspaceSnapshot) {
-  activeLocalSnapshot = structuredClone(snapshot);
-  activeLocalRevision += 1;
-  const sortedAccounts = [...snapshot.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
-  const sortedWarehouses = [...snapshot.warehouses].sort((a, b) => a.codeNumber - b.codeNumber);
-  const sortedInventory = [...snapshot.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar"));
-  for (const cb of localListeners) {
-    cb.onWorkspace(snapshot.workspace);
+let activeBundle: WorkspaceBundle | null = null;
+const workspaceListeners = new Set<WorkspaceCallbacks>();
+const statsListeners = new Set<(stats: UnifiedDbStats) => void>();
+
+function applyBundle(bundle: WorkspaceBundle) {
+  activeBundle = bundle;
+  hydrateErpWorkspaceCache(LOCAL_WORKSPACE_UID, bundle.erpData);
+  const sortedAccounts = [...bundle.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
+  const sortedWarehouses = [...bundle.warehouses].sort((a, b) => a.codeNumber - b.codeNumber);
+  const sortedInventory = [...bundle.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar"));
+
+  for (const cb of workspaceListeners) {
+    cb.onWorkspace(bundle.workspace);
+    cb.onAccountGroups?.(bundle.accountGroups ?? []);
     cb.onAccounts(sortedAccounts);
-    cb.onLedger([...snapshot.ledger]);
+    cb.onLedger(bundle.ledger);
     cb.onWarehouses(sortedWarehouses);
     cb.onInventory(sortedInventory);
+    cb.onCashboxes?.(bundle.cashboxes ?? []);
+  }
+  for (const listener of statsListeners) {
+    listener(bundle.stats);
   }
 }
 
-function writeLocalSnapshot(snapshot: LocalWorkspaceSnapshot) {
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
-    } catch {
-      // Ignore quota issues
-    }
-    if (isIndexedDbAvailable()) {
-      void writeSnapshotToIndexedDb(snapshot).catch(() => {});
-    }
-  }
-  notifyLocalListeners(snapshot);
-}
-
-async function persistLocalSnapshotDurably(snapshot: LocalWorkspaceSnapshot): Promise<void> {
-  if (!isIndexedDbAvailable()) {
-    throw new Error("حفظ التغييرات المحاسبية يتطلب دعم IndexedDB في المتصفح الحالي.");
-  }
-  await writeSnapshotToIndexedDb(snapshot);
-  try {
-    window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
-  } catch { /* IndexedDB is the durable source of truth after quota exhaustion. */ }
-  notifyLocalListeners(snapshot);
-}
-
-function makeDocId(prefix: string): string {
-  const rand =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID().replace(/[^a-zA-Z0-9]/g, "").slice(0, 14)
-      : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  return `${prefix}_${rand}`;
+export async function refreshWorkspaceFromServer(uid: string, displayName?: string | null): Promise<WorkspaceBundle> {
+  const targetUid = effectiveUid(uid);
+  const qs = displayName ? `?displayName=${encodeURIComponent(displayName)}` : "";
+  const bundle = await dbFetch<WorkspaceBundle>(`/workspace/${encodeURIComponent(targetUid)}${qs}`);
+  applyBundle(bundle);
+  return bundle;
 }
 
 export async function ensureWorkspaceSeeded(uid: string, displayName?: string | null): Promise<void> {
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const localSnap = readLocalSnapshot();
-    if (isIndexedDbAvailable()) {
-      try {
-        const dbSnap = await readSnapshotFromIndexedDb(uid);
-        if (dbSnap) {
-          try {
-            window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(dbSnap));
-          } catch { /* Large accounting imports live in IndexedDB; quota must not hide them. */ }
-          notifyLocalListeners(dbSnap);
-        } else {
-          await writeSnapshotToIndexedDb(localSnap);
-          notifyLocalListeners(localSnap);
-        }
-      } catch (err) {
-        // A blocked/failed IndexedDB is NOT an empty database. Never open the
-        // ledger with stale localStorage and allow writes over live records.
-        throw err;
-      }
-    } else {
-      notifyLocalListeners(localSnap);
-    }
-    return;
-  }
-  const wsPath = `workspaces/${uid}`;
-  const wsRef = doc(db, "workspaces", uid);
-
-  try {
-    const existingWs = await getDoc(wsRef);
-    if (!existingWs.exists()) {
-      const payload = sanitizeWorkspacePayload({
-        ownerId: uid,
-        companyName: displayName ? `نشاط ${displayName}` : "نسقو برو",
-        defaultCurrency: "ريال",
-        whatsappProvider: "nasqo",
-        whatsappInstantEnabled: false,
-        whatsappPhone: "",
-      });
-      await setDoc(wsRef, {
-        ...payload,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, wsPath);
-  }
-
-  const accountsPath = `workspaces/${uid}/accounts`;
-  try {
-    const existingAccounts = await getDocs(
-      query(collection(db, "workspaces", uid, "accounts"), where("ownerId", "==", uid), limit(1)),
-    );
-    if (!existingAccounts.empty) return;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, accountsPath);
-  }
-
-  // Seed initial chart of accounts, warehouses, inventory, and starter entries once for new workspaces.
-  const batch = writeBatch(db);
-
-  const starterWarehouses: (Omit<WarehouseRecord, "ownerId"> & { id: string })[] = [
-    { id: "wh_1", name: "المخزن الرئيسي", details: "المستودع الافتراضي", isDefault: true, codeNumber: 1 },
-    { id: "wh_3", name: "مخازن بينون", details: "مستودع البضائع العام", isDefault: false, codeNumber: 3 },
-    { id: "wh_4", name: "بينون", details: "فرع التوريد", isDefault: false, codeNumber: 4 },
-  ];
-  for (const wh of starterWarehouses) {
-    const payload = sanitizeWarehousePayload({ ...wh, ownerId: uid });
-    batch.set(doc(db, "workspaces", uid, "warehouses", wh.id), {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  const starterItems = [
-    { id: "inv_1", name: "ابجورة شكل قمر", unit: "حبة", quantity: 40, avgCost: 2200, minThreshold: 25, sku: "SKU-1001", warehouseId: "wh_3" },
-    { id: "inv_2", name: "توصيلة تايب سي 2 متر", unit: "حبة", quantity: 120, avgCost: 1500, minThreshold: 30, sku: "SKU-1002", warehouseId: "wh_1" },
-    { id: "inv_3", name: "بطارية جهاز كشف الذهب", unit: "حبة", quantity: 25, avgCost: 1500, minThreshold: 25, sku: "SKU-1003", warehouseId: "wh_1" },
-    { id: "inv_4", name: "فواحة عطرية خازن", unit: "حبة", quantity: 35, avgCost: 3400, minThreshold: 20, sku: "SKU-1004", warehouseId: "wh_3" },
-    { id: "inv_5", name: "مكينة خياطة كبير", unit: "حبة", quantity: 12, avgCost: 10000, minThreshold: 25, sku: "SKU-1005", warehouseId: "wh_1" },
-    { id: "inv_6", name: "عازل سطوح 10 كيلو", unit: "كيلو", quantity: 18, avgCost: 33000, minThreshold: 25, sku: "SKU-1006", warehouseId: "wh_1" },
-    { id: "inv_7", name: "فرامة لحم", unit: "حبة", quantity: 15, avgCost: 3000, minThreshold: 25, sku: "SKU-1007", warehouseId: "wh_4" },
-  ];
-  for (const item of starterItems) {
-    const payload = sanitizeInventoryPayload({ ...item, ownerId: uid });
-    batch.set(doc(db, "workspaces", uid, "inventory", item.id), {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  const starterAccounts: Omit<AccountRecord, "ownerId">[] = [
-    { id: "acc_barari", name: "البراري للتوريد", category: "purchases", phone: "055 832 1042", creditLimit: 1000000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 1, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 243450, openingDirection: "credit", codeNumber: 34 },
-    { id: "acc_naqd_hilal", name: "نقـد هلال", category: "purchases", phone: "050 441 7731", creditLimit: 500000, currency: "ريال", isCashAccount: true, accountImage: "1", sortOrder: 2, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "حساب المشتريات النقدية", openingBalance: 0, openingDirection: "credit", codeNumber: 9 },
-    { id: "acc_waha", name: "الواحة التجارية", category: "purchases", phone: "053 190 6208", creditLimit: 750000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 3, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 227601, openingDirection: "credit", codeNumber: 49 },
-    { id: "acc_khatabi", name: "خطابي وشركاه", category: "purchases", phone: "056 710 8824", creditLimit: 250000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 4, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 64000, openingDirection: "debit", codeNumber: 53 },
-    { id: "acc_bashar", name: "بشار العزي", category: "purchases", phone: "", creditLimit: 1000000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 5, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 227601, openingDirection: "credit", codeNumber: 6 },
-    { id: "acc_shop_main", name: "حساب المحل", category: "shop", phone: "", creditLimit: 500000, currency: "ريال", isCashAccount: false, accountImage: "2", sortOrder: 6, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "مصروفات وتشغيل المحل", openingBalance: 261100, openingDirection: "debit", codeNumber: 60 },
-    { id: "acc_emp_1", name: "رواتب الموظفين", category: "employees", phone: "", creditLimit: 200000, currency: "ريال", isCashAccount: false, accountImage: "1", sortOrder: 7, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 10500, openingDirection: "credit", codeNumber: 61 },
-    { id: "acc_sales_1", name: "المبيعات العامة", category: "sales", phone: "", creditLimit: 2000000, currency: "ريال", isCashAccount: false, accountImage: "3", sortOrder: 8, settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never", note: "", openingBalance: 172650, openingDirection: "debit", codeNumber: 62 },
-  ];
-  for (const acc of starterAccounts) {
-    const payload = sanitizeAccountPayload({ ...acc, ownerId: uid });
-    batch.set(doc(db, "workspaces", uid, "accounts", acc.id), {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  const daysAgoIso = (days: number) =>
-    new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-
-  const starterLedger: Omit<LedgerEntryRecord, "ownerId" | "createdAtMs">[] = [
-    { id: "ent_1108", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه", payment: "cash", direction: "debit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "تسوية حساب مورد", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1108, deleted: false, entryDate: daysAgoIso(18), expenseCategory: "مشتريات بضائع", deliveryDays: 3 },
-    { id: "ent_1136", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 4000, currency: "ريال", exchangeRate: 1, details: "زينة منازل شكل شجرة | 1 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1136, deleted: false, entryDate: daysAgoIso(11), expenseCategory: "مشتريات بضائع", deliveryDays: 2 },
-    { id: "ent_1178", accountId: "acc_barari", accountName: "البراري للتوريد", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "فاتورة آجلة", payment: "credit", direction: "credit", amount: 33000, currency: "ريال", exchangeRate: 1, details: "عازل سطوح 10 كيلو | 1 كيلو", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1178, deleted: false, entryDate: daysAgoIso(5), dueDate: daysAgoIso(-3), expenseCategory: "مشتريات بضائع", deliveryDays: 4 },
-    { id: "ent_1090", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 17000, currency: "ريال", exchangeRate: 1, details: "فواحة عطرية خازن | 5 حبة", documentNumber: "", warehouseId: "wh_3", warehouseName: "مخازن بينون", invoiceContent: "items", entryNumber: 1090, deleted: false, entryDate: daysAgoIso(14), expenseCategory: "مشتريات بضائع", deliveryDays: 1 },
-    { id: "ent_1140", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 3000, currency: "ريال", exchangeRate: 1, details: "توصيلة تايب سي 2 متر | 1 حبة\nبطارية جهاز كشف الذهب | 1 حبة", documentNumber: "1140", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1140, deleted: false, entryDate: daysAgoIso(6), expenseCategory: "مشتريات بضائع", deliveryDays: 2 },
-    { id: "ent_1218", accountId: "acc_naqd_hilal", accountName: "نقـد هلال", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "credit", amount: 20000, currency: "ريال", exchangeRate: 1, details: "محلات بن عوضة\nمكينة خياطة كبير | 2 حبة", documentNumber: "", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1218, deleted: false, entryDate: daysAgoIso(3), expenseCategory: "شحن ونقل", deliveryDays: 2 },
-    { id: "ent_1225", accountId: "acc_shop_main", accountName: "حساب المحل", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 6500, currency: "ريال", exchangeRate: 1, details: "فاتورة كهرباء وصيانة مستودع", documentNumber: "1225", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1225, deleted: false, entryDate: daysAgoIso(4), expenseCategory: "صيانة ومرافق" },
-    { id: "ent_1230", accountId: "acc_emp_1", accountName: "رواتب الموظفين", counterpartAccountId: "", counterpartAccountName: "", kind: "voucher", typeLabel: "عليه (سند)", payment: "cash", direction: "debit", amount: 12000, currency: "ريال", exchangeRate: 1, details: "دفعة رواتب شهرية", documentNumber: "1230", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "none", entryNumber: 1230, deleted: false, entryDate: daysAgoIso(2), expenseCategory: "رواتب وأجور" },
-    { id: "ent_1235", accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 24500, currency: "ريال", exchangeRate: 1, details: "مبيعات أجهزة وتجهيزات", documentNumber: "1235", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1235, deleted: false, entryDate: daysAgoIso(1) },
-    { id: "ent_1236", accountId: "acc_sales_1", accountName: "المبيعات العامة", counterpartAccountId: "", counterpartAccountName: "", kind: "invoice", typeLabel: "ف.ش.نقدي", payment: "cash", direction: "debit", amount: 18500, currency: "ريال", exchangeRate: 1, details: "مبيعات الجملة اليومية", documentNumber: "1236", warehouseId: "wh_1", warehouseName: "المخزن الرئيسي", invoiceContent: "items", entryNumber: 1236, deleted: false, entryDate: daysAgoIso(0) },
-  ];
-  for (const entry of starterLedger) {
-    const payload = sanitizeLedgerPayload({ ...entry, ownerId: uid });
-    batch.set(doc(db, "workspaces", uid, "ledger", entry.id), {
-      ...payload,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-  }
-
-  try {
-    await batch.commit();
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `workspaces/${uid}/seed`);
-  }
+  await refreshWorkspaceFromServer(uid, displayName);
 }
 
-function mapLedgerDoc(id: string, uid: string, data: Record<string, unknown>): LedgerEntryRecord {
-  const ts = data.createdAt instanceof Timestamp ? data.createdAt.toMillis() : Date.now();
-  return {
-    id,
-    ownerId: String(data.ownerId ?? uid),
-    accountId: String(data.accountId ?? ""),
-    accountName: String(data.accountName ?? ""),
-    counterpartAccountId: String(data.counterpartAccountId ?? ""),
-    counterpartAccountName: String(data.counterpartAccountName ?? ""),
-    kind: (data.kind as LedgerEntryRecord["kind"]) ?? "voucher",
-    typeLabel: String(data.typeLabel ?? "سند"),
-    payment: (data.payment as LedgerEntryRecord["payment"]) ?? "cash",
-    direction: data.direction === "credit" ? "credit" : "debit",
-    amount: Number(data.amount ?? 0),
-    currency: (data.currency as LedgerEntryRecord["currency"]) ?? "ريال",
-    exchangeRate: Number(data.exchangeRate ?? 1),
-    details: String(data.details ?? ""),
-    documentNumber: String(data.documentNumber ?? ""),
-    warehouseId: String(data.warehouseId ?? ""),
-    warehouseName: String(data.warehouseName ?? ""),
-    invoiceContent: (data.invoiceContent as LedgerEntryRecord["invoiceContent"]) ?? "none",
-    entryNumber: Number(data.entryNumber ?? 1),
-    deleted: Boolean(data.deleted),
-    entryDate: String(data.entryDate ?? ""),
-    ...(typeof data.dueDate === "string" && data.dueDate ? { dueDate: data.dueDate } : {}),
-    ...(typeof data.expenseCategory === "string" && data.expenseCategory
-      ? { expenseCategory: data.expenseCategory }
-      : {}),
-    ...(typeof data.deliveryDays === "number" ? { deliveryDays: data.deliveryDays } : {}),
-    createdAtMs: ts,
-  };
-}
-
-export function subscribeWorkspace(
-  uid: string,
-  callbacks: WorkspaceCallbacks,
-): () => void {
-  if (uid === LOCAL_WORKSPACE_UID) {
-    localListeners.add(callbacks);
-    const snapshot = readLocalSnapshot();
-    const subscriptionRevision = activeLocalRevision;
+export function subscribeWorkspace(uid: string, callbacks: WorkspaceCallbacks): () => void {
+  workspaceListeners.add(callbacks);
+  if (activeBundle) {
+    const snap = activeBundle;
     queueMicrotask(() => {
-      callbacks.onWorkspace(snapshot.workspace);
-      callbacks.onAccounts([...snapshot.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
-      callbacks.onLedger([...snapshot.ledger]);
-      callbacks.onWarehouses([...snapshot.warehouses].sort((a, b) => a.codeNumber - b.codeNumber));
-      callbacks.onInventory([...snapshot.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+      if (!workspaceListeners.has(callbacks)) return;
+      callbacks.onWorkspace(snap.workspace);
+      callbacks.onAccountGroups?.(snap.accountGroups ?? []);
+      callbacks.onAccounts([...snap.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
+      callbacks.onLedger(snap.ledger);
+      callbacks.onWarehouses([...snap.warehouses].sort((a, b) => a.codeNumber - b.codeNumber));
+      callbacks.onInventory([...snap.inventory].sort((a, b) => a.name.localeCompare(b.name, "ar")));
+      callbacks.onCashboxes?.(snap.cashboxes ?? []);
     });
-    if (isIndexedDbAvailable()) {
-      void readSnapshotFromIndexedDb(uid)
-        .then((idbSnap) => {
-          if (!idbSnap || !localListeners.has(callbacks)) return;
-          // IndexedDB is authoritative even if the number of records is
-          // unchanged (e.g. a manually reconciled stock quantity or price).
-          // Do not replay an older async read over a newer in-session write.
-          if (activeLocalRevision === subscriptionRevision) notifyLocalListeners(idbSnap);
-        })
-        .catch(() => {});
-    }
-    return () => {
-      localListeners.delete(callbacks);
-    };
+  } else {
+    void refreshWorkspaceFromServer(uid).catch((err) => {
+      console.error("Failed loading unified SQLite workspace:", err);
+    });
   }
-  const unsubs: Unsubscribe[] = [];
-
-  unsubs.push(
-    onSnapshot(
-      doc(db, "workspaces", uid),
-      (snap) => {
-        if (!snap.exists()) {
-          callbacks.onWorkspace(null);
-          return;
-        }
-        const d = snap.data();
-        callbacks.onWorkspace({
-          id: snap.id,
-          ownerId: String(d.ownerId ?? uid),
-          companyName: String(d.companyName ?? "نسقو برو"),
-          defaultCurrency: d.defaultCurrency ?? "ريال",
-          whatsappProvider: d.whatsappProvider === "external" ? "external" : "nasqo",
-          whatsappInstantEnabled: Boolean(d.whatsappInstantEnabled),
-          whatsappPhone: String(d.whatsappPhone ?? ""),
-        });
-      },
-      (err) => handleFirestoreError(err, OperationType.GET, `workspaces/${uid}`),
-    ),
-  );
-
-  unsubs.push(
-    onSnapshot(
-      query(collection(db, "workspaces", uid, "accounts"), where("ownerId", "==", uid)),
-      (snap) => {
-        const list: AccountRecord[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            ownerId: String(data.ownerId ?? uid),
-            name: String(data.name ?? ""),
-            category: data.category ?? "purchases",
-            phone: String(data.phone ?? ""),
-            creditLimit: Number(data.creditLimit ?? 0),
-            currency: data.currency ?? "ريال",
-            isCashAccount: Boolean(data.isCashAccount),
-            accountImage: data.accountImage === "2" || data.accountImage === "3" ? data.accountImage : "1",
-            sortOrder: Number(data.sortOrder ?? 1),
-            settlement: Boolean(data.settlement),
-            documentNumberRequired: Boolean(data.documentNumberRequired),
-            messageMethod: data.messageMethod === "whatsapp" ? "whatsapp" : "sms",
-            sendMode: data.sendMode === "auto" || data.sendMode === "confirm" ? data.sendMode : "never",
-            note: String(data.note ?? ""),
-            openingBalance: Number(data.openingBalance ?? 0),
-            openingDirection: data.openingDirection === "credit" ? "credit" : "debit",
-            codeNumber: Number(data.codeNumber ?? 1),
-            ...(typeof data.legacyRef === "string" ? { legacyRef: data.legacyRef } : {}),
-          };
-        });
-        list.sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
-        callbacks.onAccounts(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, `workspaces/${uid}/accounts`),
-    ),
-  );
-
-  unsubs.push(
-    onSnapshot(
-      query(collection(db, "workspaces", uid, "ledger"), where("ownerId", "==", uid)),
-      (snap) => {
-        const list: LedgerEntryRecord[] = snap.docs.map((d) => mapLedgerDoc(d.id, uid, d.data()));
-        callbacks.onLedger(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, `workspaces/${uid}/ledger`),
-    ),
-  );
-
-  unsubs.push(
-    onSnapshot(
-      query(collection(db, "workspaces", uid, "warehouses"), where("ownerId", "==", uid)),
-      (snap) => {
-        const list: WarehouseRecord[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            ownerId: String(data.ownerId ?? uid),
-            name: String(data.name ?? ""),
-            details: String(data.details ?? ""),
-            isDefault: Boolean(data.isDefault),
-            codeNumber: Number(data.codeNumber ?? 1),
-            ...(typeof data.legacyRef === "string" ? { legacyRef: data.legacyRef } : {}),
-          };
-        });
-        list.sort((a, b) => a.codeNumber - b.codeNumber);
-        callbacks.onWarehouses(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, `workspaces/${uid}/warehouses`),
-    ),
-  );
-
-  unsubs.push(
-    onSnapshot(
-      query(collection(db, "workspaces", uid, "inventory"), where("ownerId", "==", uid)),
-      (snap) => {
-        const list: InventoryItemRecord[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            ownerId: String(data.ownerId ?? uid),
-            name: String(data.name ?? ""),
-            unit: String(data.unit ?? "حبة"),
-            quantity: Number(data.quantity ?? 0),
-            avgCost: Number(data.avgCost ?? 0),
-            ...(typeof data.sellingPrice === "number" && Number.isFinite(data.sellingPrice) && data.sellingPrice > 0
-              ? { sellingPrice: data.sellingPrice } : {}),
-            minThreshold: typeof data.minThreshold === "number" ? data.minThreshold : 25,
-            ...(typeof data.sku === "string" && data.sku ? { sku: data.sku } : {}),
-            warehouseId: String(data.warehouseId ?? ""),
-            quantityUnverified: Boolean(data.quantityUnverified),
-            ...(typeof data.legacyRef === "string" ? { legacyRef: data.legacyRef } : {}),
-          };
-        });
-        list.sort((a, b) => a.name.localeCompare(b.name, "ar"));
-        callbacks.onInventory(list);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, `workspaces/${uid}/inventory`),
-    ),
-  );
-
   return () => {
-    unsubs.forEach((u) => u());
+    workspaceListeners.delete(callbacks);
   };
+}
+
+export function subscribeUnifiedDbStats(listener: (stats: UnifiedDbStats) => void): () => void {
+  statsListeners.add(listener);
+  if (activeBundle?.stats) listener(activeBundle.stats);
+  return () => {
+    statsListeners.delete(listener);
+  };
+}
+
+export async function getUnifiedDbStats(uid = LOCAL_WORKSPACE_UID): Promise<UnifiedDbStats> {
+  return dbFetch<UnifiedDbStats>(`/status?uid=${encodeURIComponent(effectiveUid(uid))}`);
 }
 
 export async function saveWorkspaceSettings(
   uid: string,
   updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">> & WorkspaceSettings,
-) {
-  const clean = sanitizeWorkspacePayload({ ...updates, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    snap.workspace = {
-      id: uid,
-      ownerId: uid,
-      companyName: clean.companyName,
-      defaultCurrency: clean.defaultCurrency,
-      whatsappProvider: clean.whatsappProvider,
-      whatsappInstantEnabled: clean.whatsappInstantEnabled,
-      whatsappPhone: clean.whatsappPhone,
-    };
-    writeLocalSnapshot(snap);
-    return;
+): Promise<void> {
+  const { workspace } = await dbFetch<{ workspace: WorkspaceSettings }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}`, {
+    method: "PUT",
+    body: JSON.stringify(updates),
+  });
+  if (activeBundle) {
+    applyBundle({ ...activeBundle, workspace });
   }
-  const path = `workspaces/${uid}`;
-  try {
-    await updateDoc(doc(db, "workspaces", uid), {
-      companyName: clean.companyName,
-      defaultCurrency: clean.defaultCurrency,
-      whatsappProvider: clean.whatsappProvider,
-      whatsappInstantEnabled: clean.whatsappInstantEnabled,
-      whatsappPhone: clean.whatsappPhone,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
+}
+
+export async function saveAccountGroup(
+  uid: string,
+  group: { id?: number; name: string; category?: AccountCategory; currencyCode?: CurrencyCode; sortOrder?: number },
+): Promise<AccountGroupRecord> {
+  const { group: saved } = await dbFetch<{ group: AccountGroupRecord }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/groups`,
+    {
+      method: "POST",
+      body: JSON.stringify({ group }),
+    },
+  );
+  if (activeBundle) {
+    const existing = activeBundle.accountGroups ?? [];
+    const idx = existing.findIndex((g) => g.id === saved.id);
+    const next = idx >= 0 ? existing.map((g) => (g.id === saved.id ? saved : g)) : [...existing, saved];
+    applyBundle({ ...activeBundle, accountGroups: next });
   }
+  return saved;
 }
 
 export async function createOrUpdateAccount(
@@ -762,239 +405,293 @@ export async function createOrUpdateAccount(
   account: Partial<AccountRecord> & { name: string },
   existingId?: string,
 ): Promise<string> {
-  const id = existingId || makeDocId("acc");
-  const clean = sanitizeAccountPayload({ ...account, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const record: AccountRecord = { id, ...clean };
-    const idx = snap.accounts.findIndex((a) => a.id === id);
-    if (idx >= 0) {
-      snap.accounts[idx] = { ...snap.accounts[idx], ...record, codeNumber: snap.accounts[idx].codeNumber };
-    } else {
-      snap.accounts.push(record);
-    }
-    writeLocalSnapshot(snap);
-    return id;
+  const { account: saved } = await dbFetch<{ account: AccountRecord }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts`,
+    {
+      method: "POST",
+      body: JSON.stringify({ account, existingId }),
+    },
+  );
+  if (activeBundle) {
+    const next = [...activeBundle.accounts];
+    const idx = next.findIndex((a) => a.id === saved.id);
+    if (idx >= 0) next[idx] = saved;
+    else next.push(saved);
+    applyBundle({
+      ...activeBundle,
+      accounts: next,
+      stats: { ...activeBundle.stats, accountsCount: next.length },
+    });
   }
-  const path = `workspaces/${uid}/accounts/${id}`;
-  try {
-    if (existingId) {
-      await updateDoc(doc(db, "workspaces", uid, "accounts", id), {
-        name: clean.name,
-        category: clean.category,
-        phone: clean.phone,
-        creditLimit: clean.creditLimit,
-        currency: clean.currency,
-        isCashAccount: clean.isCashAccount,
-        accountImage: clean.accountImage,
-        sortOrder: clean.sortOrder,
-        settlement: clean.settlement,
-        documentNumberRequired: clean.documentNumberRequired,
-        messageMethod: clean.messageMethod,
-        sendMode: clean.sendMode,
-        note: clean.note,
-        openingBalance: clean.openingBalance,
-        openingDirection: clean.openingDirection,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      await setDoc(doc(db, "workspaces", uid, "accounts", id), {
-        ...clean,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    return id;
-  } catch (err) {
-    handleFirestoreError(err, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
-  }
+  return saved.id;
+}
+
+export async function fetchProductPriceStats(
+  uid: string,
+  itemId: string,
+): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }> {
+  return dbFetch<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/products/${encodeURIComponent(itemId)}/prices`,
+  );
 }
 
 export async function createLedgerEntry(
   uid: string,
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<string> {
-  const id = makeDocId("ent");
-  const clean = sanitizeLedgerPayload({ ...entry, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    snap.ledger.push({ id, ...clean, createdAtMs: Date.now() });
-    await persistLocalSnapshotDurably(snap);
-    return id;
-  }
-  const path = `workspaces/${uid}/ledger/${id}`;
-  try {
-    await setDoc(doc(db, "workspaces", uid, "ledger", id), {
-      ...clean,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+  const { entry: saved, inventory: nextInventory } = await dbFetch<{
+    entry: LedgerEntryRecord;
+    inventory?: InventoryItemRecord[];
+  }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger`,
+    {
+      method: "POST",
+      body: JSON.stringify({ entry }),
+    },
+  );
+  if (activeBundle) {
+    const next = [...activeBundle.ledger, saved];
+    applyBundle({
+      ...activeBundle,
+      ledger: next,
+      inventory: nextInventory ?? activeBundle.inventory,
+      stats: {
+        ...activeBundle.stats,
+        ledgerCount: next.length,
+        invoiceLinesCount:
+          activeBundle.stats.invoiceLinesCount + (entry.lines?.length ?? 0),
+      },
     });
-    return id;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, path);
   }
+  return saved.id;
 }
 
 export async function updateLedgerEntry(
   uid: string,
   entryId: string,
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
-): Promise<void> {
-  const clean = sanitizeLedgerPayload({ ...entry, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const idx = snap.ledger.findIndex((e) => e.id === entryId);
-    if (idx >= 0) {
-      snap.ledger[idx] = { ...snap.ledger[idx], ...clean };
-      writeLocalSnapshot(snap);
-    }
-    return;
-  }
-  const path = `workspaces/${uid}/ledger/${entryId}`;
-  try {
-    await updateDoc(doc(db, "workspaces", uid, "ledger", entryId), {
-      accountId: clean.accountId,
-      accountName: clean.accountName,
-      counterpartAccountId: clean.counterpartAccountId,
-      counterpartAccountName: clean.counterpartAccountName,
-      kind: clean.kind,
-      typeLabel: clean.typeLabel,
-      payment: clean.payment,
-      direction: clean.direction,
-      amount: clean.amount,
-      currency: clean.currency,
-      exchangeRate: clean.exchangeRate,
-      details: clean.details,
-      documentNumber: clean.documentNumber,
-      warehouseId: clean.warehouseId,
-      warehouseName: clean.warehouseName,
-      invoiceContent: clean.invoiceContent,
-      entryDate: clean.entryDate,
-      ...(clean.dueDate ? { dueDate: clean.dueDate } : {}),
-      ...(clean.expenseCategory ? { expenseCategory: clean.expenseCategory } : {}),
-      ...(clean.deliveryDays !== undefined ? { deliveryDays: clean.deliveryDays } : {}),
-      updatedAt: serverTimestamp(),
+): Promise<LedgerEntryRecord> {
+  const { entry: saved, inventory: nextInventory, invoiceLinesCount } = await dbFetch<{
+    entry: LedgerEntryRecord;
+    inventory?: InventoryItemRecord[];
+    invoiceLinesCount?: number;
+  }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ entry }),
+    },
+  );
+  if (activeBundle) {
+    const next = activeBundle.ledger.map((e) => (e.id === entryId ? saved : e));
+    applyBundle({
+      ...activeBundle,
+      ledger: next,
+      inventory: nextInventory ?? activeBundle.inventory,
+      stats: {
+        ...activeBundle.stats,
+        ...(typeof invoiceLinesCount === "number" ? { invoiceLinesCount } : {}),
+      },
     });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
   }
+  return saved;
 }
 
 export async function setLedgerDeleted(uid: string, entryId: string, deleted: boolean): Promise<void> {
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const idx = snap.ledger.findIndex((e) => e.id === entryId);
-    if (idx >= 0) {
-      snap.ledger[idx] = { ...snap.ledger[idx], deleted };
-      writeLocalSnapshot(snap);
-    }
-    return;
-  }
-  const path = `workspaces/${uid}/ledger/${entryId}`;
-  try {
-    await updateDoc(doc(db, "workspaces", uid, "ledger", entryId), {
-      deleted,
-      updatedAt: serverTimestamp(),
+  const { inventory: nextInventory } = await dbFetch<{ ok: boolean; inventory?: InventoryItemRecord[] }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}/deleted`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ deleted }),
+    },
+  );
+  if (activeBundle) {
+    const next = activeBundle.ledger.map((e) => (e.id === entryId ? { ...e, deleted } : e));
+    applyBundle({
+      ...activeBundle,
+      ledger: next,
+      inventory: nextInventory ?? activeBundle.inventory,
     });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
   }
 }
 
+export type InventoryMovementItemRow = {
+  id: string;
+  code: number | null;
+  name: string;
+  sku: string;
+  unit: string;
+  unit2: string;
+  count2: number | null;
+  warehouseId: string;
+  buyQty: number;
+  sellQty: number;
+  transferInQty: number;
+  transferOutQty: number;
+  buyTotal: number;
+  sellTotal: number;
+  availableQty: number;
+  unitCost: number;
+  remainingValue: number;
+  profit: number;
+  avgCost: number;
+  sellingPrice?: number;
+  catalogQuantity: number;
+  quantityUnverified: boolean;
+  hasMovement: boolean;
+};
+
+export async function fetchInventoryMovementsReport(
+  uid: string,
+  params?: {
+    warehouseId?: string;
+    itemId?: string;
+    fromDate?: string;
+    toDate?: string;
+    currency?: string;
+    profitBasis?: "avg" | "cost" | "last";
+  },
+): Promise<{
+  warehouses: Array<{ id: string; name: string }>;
+  warehouseStocks: Array<{
+    inventoryItemId: string;
+    warehouseId: string;
+    warehouseName: string;
+    purchasesQty: number;
+    salesQty: number;
+    salesReturnQty: number;
+    purchaseReturnQty: number;
+    transferInQty: number;
+    transferOutQty: number;
+    netComputedQty: number;
+  }>;
+  itemRows: InventoryMovementItemRow[];
+  totals: {
+    totalSales: number;
+    totalPurchases: number;
+    totalProfit: number;
+    totalRemainingValue: number;
+    activeItemsCount: number;
+    profitBasis: "avg" | "cost" | "last";
+  };
+  movements: Array<{
+    source: "invoice" | "transfer";
+    refId: string;
+    entryNumber?: number;
+    date: string;
+    label: string;
+    accountName: string;
+    warehouseName: string;
+    quantity: number;
+    unit: string;
+    unitNum: number;
+    baseQuantity: number;
+    effectQty: number;
+    price: number;
+    total: number;
+  }>;
+  anomalies: {
+    unverifiedItemsCount: number;
+    unresolvedTransfersCount: number;
+    unresolvedTransfers: Array<{
+      id: number;
+      transferDate: string;
+      transferType: number;
+      rawFromStoreId: number | null;
+      rawToStoreId: number | null;
+      details: string;
+      linesCount: number;
+    }>;
+    negativeComputedItems: Array<{ id: string; name: string; netComputedQty: number }>;
+  };
+}> {
+  const qs = new URLSearchParams();
+  if (params?.warehouseId) qs.set("warehouseId", params.warehouseId);
+  if (params?.itemId) qs.set("itemId", params.itemId);
+  if (params?.fromDate) qs.set("fromDate", params.fromDate);
+  if (params?.toDate) qs.set("toDate", params.toDate);
+  if (params?.currency) qs.set("currency", params.currency);
+  if (params?.profitBasis) qs.set("profitBasis", params.profitBasis);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/report${suffix}`);
+}
+
+export async function fetchCashboxesReport(uid: string): Promise<{
+  cashboxes: Array<{
+    id: number;
+    name: string;
+    currencyCode: string;
+    totalIn: number;
+    totalOut: number;
+    netBalance: number;
+    entryCount: number;
+  }>;
+}> {
+  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/cashboxes/report`);
+}
+
 export async function permanentlyDeleteLedger(uid: string, entryId: string): Promise<void> {
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    snap.ledger = snap.ledger.filter((e) => e.id !== entryId);
-    writeLocalSnapshot(snap);
-    return;
-  }
-  const path = `workspaces/${uid}/ledger/${entryId}`;
-  try {
-    await deleteDoc(doc(db, "workspaces", uid, "ledger", entryId));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+  await dbFetch<{ ok: boolean }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
+    { method: "DELETE" },
+  );
+  if (activeBundle) {
+    const next = activeBundle.ledger.filter((e) => e.id !== entryId);
+    applyBundle({
+      ...activeBundle,
+      ledger: next,
+      stats: { ...activeBundle.stats, ledgerCount: next.length },
+    });
   }
 }
 
 export async function saveWarehouse(
   uid: string,
   warehouse: Partial<WarehouseRecord> & { name: string },
-  allWarehouses: readonly WarehouseRecord[],
+  _allWarehouses: readonly WarehouseRecord[],
   existingId?: string,
 ): Promise<string> {
-  const id = existingId || makeDocId("wh");
-  const clean = sanitizeWarehousePayload({ ...warehouse, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    if (clean.isDefault) {
-      snap.warehouses = snap.warehouses.map((w) => ({ ...w, isDefault: w.id === id }));
-    }
-    const idx = snap.warehouses.findIndex((w) => w.id === id);
-    if (idx >= 0) {
-      snap.warehouses[idx] = { ...snap.warehouses[idx], name: clean.name, details: clean.details, isDefault: clean.isDefault };
-    } else {
-      snap.warehouses.push({ id, ...clean });
-    }
-    writeLocalSnapshot(snap);
-    return id;
+  const { warehouse: saved } = await dbFetch<{ warehouse: WarehouseRecord }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/warehouses`,
+    {
+      method: "POST",
+      body: JSON.stringify({ warehouse, existingId }),
+    },
+  );
+  if (activeBundle) {
+    let next = activeBundle.warehouses.map((w) => (saved.isDefault ? { ...w, isDefault: w.id === saved.id } : w));
+    const idx = next.findIndex((w) => w.id === saved.id);
+    if (idx >= 0) next[idx] = saved;
+    else next = [...next, saved];
+    applyBundle({
+      ...activeBundle,
+      warehouses: next,
+      stats: { ...activeBundle.stats, warehousesCount: next.length },
+    });
   }
-  const path = `workspaces/${uid}/warehouses/${id}`;
-  try {
-    const batch = writeBatch(db);
-    if (clean.isDefault) {
-      for (const other of allWarehouses) {
-        if (other.id !== id && other.isDefault) {
-          batch.update(doc(db, "workspaces", uid, "warehouses", other.id), {
-            isDefault: false,
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-    }
-    if (existingId) {
-      batch.update(doc(db, "workspaces", uid, "warehouses", id), {
-        name: clean.name,
-        details: clean.details,
-        isDefault: clean.isDefault,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      batch.set(doc(db, "workspaces", uid, "warehouses", id), {
-        ...clean,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    await batch.commit();
-    return id;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
+  return saved.id;
 }
 
 export async function createInventoryItem(
   uid: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): Promise<string> {
-  const id = makeDocId("inv");
-  const clean = sanitizeInventoryPayload({ ...item, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    snap.inventory.push({ id, ...clean });
-    await persistLocalSnapshotDurably(snap);
-    return id;
-  }
-  const path = `workspaces/${uid}/inventory/${id}`;
-  try {
-    await setDoc(doc(db, "workspaces", uid, "inventory", id), {
-      ...clean,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+  const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory`,
+    {
+      method: "POST",
+      body: JSON.stringify({ item }),
+    },
+  );
+  if (activeBundle) {
+    const next = [...activeBundle.inventory, saved];
+    applyBundle({
+      ...activeBundle,
+      inventory: next,
+      stats: { ...activeBundle.stats, inventoryCount: next.length },
     });
-    return id;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, path);
   }
+  return saved.id;
 }
 
 export async function updateInventoryItem(
@@ -1002,31 +699,14 @@ export async function updateInventoryItem(
   itemId: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): Promise<void> {
-  const clean = sanitizeInventoryPayload({ ...item, ownerId: uid });
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const idx = snap.inventory.findIndex((i) => i.id === itemId);
-    if (idx >= 0) {
-      snap.inventory[idx] = { id: itemId, ...clean };
-      await persistLocalSnapshotDurably(snap);
-    }
-    return;
-  }
-  const path = `workspaces/${uid}/inventory/${itemId}`;
-  try {
-    await updateDoc(doc(db, "workspaces", uid, "inventory", itemId), {
-      name: clean.name,
-      unit: clean.unit,
-      quantity: clean.quantity,
-      avgCost: clean.avgCost,
-      minThreshold: clean.minThreshold,
-      ...(clean.sku ? { sku: clean.sku } : {}),
-      warehouseId: clean.warehouseId,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
-  }
+  await dbFetch<{ ok: boolean }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ item }),
+    },
+  );
+  await refreshWorkspaceFromServer(uid);
 }
 
 export async function batchUpdateInventoryItems(
@@ -1040,57 +720,15 @@ export async function batchUpdateInventoryItems(
     quantityUnverified?: boolean;
   }[],
 ): Promise<void> {
-  if (updates.length === 0) return;
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    for (const entry of updates) {
-      const clean = sanitizeInventoryPayload({
-        ...entry.item,
-        ownerId: uid,
-        quantity: entry.quantity ?? entry.item.quantity,
-        avgCost: entry.avgCost ?? entry.item.avgCost,
-        sellingPrice: entry.sellingPrice ?? entry.item.sellingPrice,
-        minThreshold: entry.minThreshold ?? entry.item.minThreshold,
-        quantityUnverified: entry.quantityUnverified ?? entry.item.quantityUnverified,
-      });
-      const idx = snap.inventory.findIndex((i) => i.id === entry.item.id);
-      if (idx >= 0) {
-        snap.inventory[idx] = { id: entry.item.id, ...clean };
-      }
-    }
-    await persistLocalSnapshotDurably(snap);
-    return;
-  }
-  const path = `workspaces/${uid}/inventory/batch`;
-  try {
-    const batch = writeBatch(db);
-    for (const entry of updates) {
-      const clean = sanitizeInventoryPayload({
-        ...entry.item,
-        ownerId: uid,
-        quantity: entry.quantity ?? entry.item.quantity,
-        avgCost: entry.avgCost ?? entry.item.avgCost,
-        sellingPrice: entry.sellingPrice ?? entry.item.sellingPrice,
-        minThreshold: entry.minThreshold ?? entry.item.minThreshold,
-        quantityUnverified: entry.quantityUnverified ?? entry.item.quantityUnverified,
-      });
-      batch.update(doc(db, "workspaces", uid, "inventory", entry.item.id), {
-        name: clean.name,
-        unit: clean.unit,
-        quantity: clean.quantity,
-        avgCost: clean.avgCost,
-        ...(clean.sellingPrice !== undefined ? { sellingPrice: clean.sellingPrice } : {}),
-        minThreshold: clean.minThreshold,
-        ...(clean.sku ? { sku: clean.sku } : {}),
-        warehouseId: clean.warehouseId,
-        quantityUnverified: Boolean(clean.quantityUnverified),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    await batch.commit();
-  } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, path);
-  }
+  if (!updates.length) return;
+  await dbFetch<{ ok: boolean }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/batch`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ updates }),
+    },
+  );
+  await refreshWorkspaceFromServer(uid);
 }
 
 export async function createCloudBackupRecord(
@@ -1104,151 +742,131 @@ export async function createCloudBackupRecord(
     exportedAtIso: string;
   },
 ): Promise<string> {
-  const id = makeDocId("bkp");
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    snap.backups.push({
-      id,
-      name: String(payload.name || "نسخة احتياطية").trim().slice(0, 120) || "نسخة احتياطية",
-      exportedAtIso: String(payload.exportedAtIso).slice(0, 40),
-    });
-    writeLocalSnapshot(snap);
-    return id;
-  }
-  const path = `workspaces/${uid}/backups/${id}`;
-  try {
-    await setDoc(doc(db, "workspaces", uid, "backups", id), {
-      ownerId: uid,
-      name: String(payload.name || "نسخة احتياطية").trim().slice(0, 120) || "نسخة احتياطية",
-      accountsCount: Math.max(0, Math.round(payload.accountsCount)),
-      ledgerCount: Math.max(0, Math.round(payload.ledgerCount)),
-      warehousesCount: Math.max(0, Math.round(payload.warehousesCount)),
-      inventoryCount: Math.max(0, Math.round(payload.inventoryCount)),
-      exportedAtIso: String(payload.exportedAtIso).slice(0, 40),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    return id;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.CREATE, path);
-  }
+  const { id } = await dbFetch<{ id: string }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/backups`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+  return id;
 }
 
 export async function syncLocalWorkspaceToIndexedDb(
   uid: string,
-  liveData?: {
-    workspace?: WorkspaceSettings | null;
-    accounts: readonly AccountRecord[];
-    ledger: readonly LedgerEntryRecord[];
-    warehouses: readonly WarehouseRecord[];
-    inventory: readonly InventoryItemRecord[];
-  },
+  _liveData?: unknown,
 ): Promise<void> {
-  if (!isIndexedDbAvailable()) return;
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    await writeSnapshotToIndexedDb(snap);
-    return;
-  }
-  if (liveData?.workspace) {
-    await writeSnapshotToIndexedDb({
-      workspace: liveData.workspace,
-      accounts: [...liveData.accounts],
-      ledger: [...liveData.ledger],
-      warehouses: [...liveData.warehouses],
-      inventory: [...liveData.inventory],
-      backups: [],
-    });
+  // Unified SQLite replaces IndexedDB completely; refresh live state from server SQLite.
+  await refreshWorkspaceFromServer(uid);
+}
+
+export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Promise<void> {
+  const bundle = await dbFetch<WorkspaceBundle>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/reset`, {
+    method: "POST",
+  });
+  applyBundle(bundle);
+}
+
+export async function fetchInvoiceFromDatabase(uid: string, entryId: string): Promise<LedgerEntryRecord | null> {
+  try {
+    const detail = await fetchInvoiceDetailWithLines(uid, entryId);
+    return detail.entry;
+  } catch {
+    return null;
   }
 }
 
-export async function resetLocalWorkspaceDatabase(): Promise<void> {
-  const seeded = buildStarterSnapshot(LOCAL_WORKSPACE_UID);
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(LOCAL_WORKSPACE_STORAGE_KEY, JSON.stringify(seeded));
-    } catch {
-      // Ignore quota issues
-    }
-  }
-  if (isIndexedDbAvailable()) {
-    try {
-      await clearLocalDatabase();
-      await writeSnapshotToIndexedDb(seeded);
-    } catch {
-      // Fallback cleanly
-    }
-  }
-  notifyLocalListeners(seeded);
+export async function fetchInvoiceDetailWithLines(uid: string, entryId: string): Promise<UnifiedInvoiceDetail> {
+  return dbFetch<UnifiedInvoiceDetail>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/invoices/${encodeURIComponent(entryId)}`,
+  );
 }
 
-export async function fetchInvoiceFromDatabase(
+export async function fetchHistoricalInvoicesPage(
   uid: string,
-  entryId: string,
-): Promise<LedgerEntryRecord | null> {
-  const target = String(entryId || "").trim();
-  if (!target) return null;
-
-  if (uid === LOCAL_WORKSPACE_UID) {
-    if (isIndexedDbAvailable()) {
-      try {
-        const dbSnap = await readSnapshotFromIndexedDb(uid);
-        const match = dbSnap?.ledger.find(
-          (e) => e.id === target || String(e.entryNumber) === target,
-        );
-        if (match) return match;
-      } catch {
-        // Fallback to localStorage snapshot below
-      }
-    }
-    const localSnap = readLocalSnapshot();
-    return (
-      localSnap.ledger.find(
-        (e) => e.id === target || String(e.entryNumber) === target,
-      ) ?? null
-    );
-  }
-
-  const validDocId = /^[a-zA-Z0-9_-]{1,128}$/.test(target);
-  if (validDocId) {
-    const docPath = `workspaces/${uid}/ledger/${target}`;
-    try {
-      const snap = await getDoc(doc(db, "workspaces", uid, "ledger", target));
-      if (snap.exists()) {
-        return mapLedgerDoc(snap.id, uid, snap.data());
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.GET, docPath);
-    }
-  }
-
-  const numericTarget = Number(target);
-  if (Number.isFinite(numericTarget)) {
-    const listPath = `workspaces/${uid}/ledger`;
-    try {
-      const q = query(
-        collection(db, "workspaces", uid, "ledger"),
-        where("ownerId", "==", uid),
-        where("entryNumber", "==", numericTarget),
-        limit(1),
-      );
-      const querySnap = await getDocs(q);
-      if (!querySnap.empty) {
-        const d = querySnap.docs[0];
-        return mapLedgerDoc(d.id, uid, d.data());
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.LIST, listPath);
-    }
-  }
-
-  return null;
+  opts: { q?: string; role?: string; accountId?: string; limit?: number; offset?: number } = {},
+): Promise<{ total: number; limit: number; offset: number; invoices: LedgerEntryRecord[] }> {
+  const params = new URLSearchParams();
+  if (opts.q) params.set("q", opts.q);
+  if (opts.role) params.set("role", opts.role);
+  if (opts.accountId) params.set("accountId", opts.accountId);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.offset !== undefined) params.set("offset", String(opts.offset));
+  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/invoices?${params.toString()}`);
 }
 
-/**
- * Atomically merges migrated legacy master records (accounts, warehouses, inventory)
- * into the live workspace without overwriting or deleting existing user records.
- */
+export async function fetchAccountLegacyMoves(
+  uid: string,
+  accountId: string,
+): Promise<{ moves: LedgerEntryRecord[]; invoicesCount: number; vouchersCount: number }> {
+  return dbFetch(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts/${encodeURIComponent(accountId)}/legacy-moves`,
+  );
+}
+
+export async function fetchArchiveSummary(uid: string): Promise<ArchiveSummaryPayload> {
+  return dbFetch<ArchiveSummaryPayload>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/archive-summary`);
+}
+
+export async function importSmartProSqlIntoServer(
+  uid: string,
+  sqlText: string,
+  fileName: string,
+  replaceExisting = true,
+) {
+  const res = await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
+    {
+      method: "POST",
+      body: JSON.stringify({ sqlText, fileName, replaceExisting }),
+    },
+  );
+  applyBundle(res.bundle);
+  return res.report;
+}
+
+export async function importSqliteLegacyIntoServer(
+  uid: string,
+  base64: string,
+  fileName: string,
+  mode: "inspect" | "import" | "restore",
+  groupCategories?: Record<string, AccountCategory>,
+  replaceExisting?: boolean,
+) {
+  const res = await dbFetch<Record<string, unknown>>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/sqlite-legacy`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        base64,
+        fileName,
+        mode,
+        groupCategories,
+        ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+      }),
+    },
+  );
+  if (res.bundle) {
+    applyBundle(res.bundle as WorkspaceBundle);
+  }
+  return res;
+}
+
+export async function restoreJsonBackupIntoServer(
+  uid: string,
+  payload: Record<string, unknown>,
+) {
+  const res = await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/json`,
+    {
+      method: "POST",
+      body: JSON.stringify({ payload }),
+    },
+  );
+  applyBundle(res.bundle);
+  return res;
+}
+
 export async function mergeLegacyMasterBatch(
   uid: string,
   payload: {
@@ -1257,150 +875,75 @@ export async function mergeLegacyMasterBatch(
     inventory: readonly InventoryItemRecord[];
   },
 ): Promise<{ accountsAdded: number; warehousesAdded: number; inventoryAdded: number }> {
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const accIds = new Set(snap.accounts.map((a) => a.id));
-    const whIds = new Set(snap.warehouses.map((w) => w.id));
-    const invIds = new Set(snap.inventory.map((i) => i.id));
-
-    let accountsAdded = 0;
-    for (const acc of payload.accounts) {
-      if (!accIds.has(acc.id)) {
-        snap.accounts.push(acc);
-        accIds.add(acc.id);
-        accountsAdded += 1;
-      }
-    }
-    let warehousesAdded = 0;
-    for (const wh of payload.warehouses) {
-      if (!whIds.has(wh.id)) {
-        snap.warehouses.push(wh);
-        whIds.add(wh.id);
-        warehousesAdded += 1;
-      }
-    }
-    let inventoryAdded = 0;
-    for (const item of payload.inventory) {
-      if (!invIds.has(item.id)) {
-        snap.inventory.push(item);
-        invIds.add(item.id);
-        inventoryAdded += 1;
-      }
-    }
-    // Imported master records become visible only after durable IndexedDB commit.
-    await persistLocalSnapshotDurably(snap);
-    return { accountsAdded, warehousesAdded, inventoryAdded };
-  }
-
-  // Read existing IDs once per collection. Re-import must never overwrite a
-  // previously imported record that the user subsequently edited.
-  const [existingAccountDocs, existingWarehouseDocs, existingInventoryDocs] = await Promise.all([
-    getDocs(query(collection(db, "workspaces", uid, "accounts"), where("ownerId", "==", uid))),
-    getDocs(query(collection(db, "workspaces", uid, "warehouses"), where("ownerId", "==", uid))),
-    getDocs(query(collection(db, "workspaces", uid, "inventory"), where("ownerId", "==", uid))),
-  ]);
-  const accIds = new Set(existingAccountDocs.docs.map((document) => document.id));
-  const whIds = new Set(existingWarehouseDocs.docs.map((document) => document.id));
-  const invIds = new Set(existingInventoryDocs.docs.map((document) => document.id));
-  const ops: { col: "accounts" | "warehouses" | "inventory"; id: string; data: Record<string, unknown> }[] = [];
-  let accountsAdded = 0;
-  let warehousesAdded = 0;
-  let inventoryAdded = 0;
-  for (const a of payload.accounts) {
-    if (accIds.has(a.id)) continue;
-    accIds.add(a.id);
-    ops.push({ col: "accounts", id: a.id, data: { ...a, ownerId: uid, updatedAt: serverTimestamp() } });
-    accountsAdded += 1;
-  }
-  for (const w of payload.warehouses) {
-    if (whIds.has(w.id)) continue;
-    whIds.add(w.id);
-    ops.push({ col: "warehouses", id: w.id, data: { ...w, ownerId: uid, updatedAt: serverTimestamp() } });
-    warehousesAdded += 1;
-  }
-  for (const i of payload.inventory) {
-    if (invIds.has(i.id)) continue;
-    invIds.add(i.id);
-    ops.push({ col: "inventory", id: i.id, data: { ...i, ownerId: uid, updatedAt: serverTimestamp() } });
-    inventoryAdded += 1;
-  }
-  for (let start = 0; start < ops.length; start += 400) {
-    const batch = writeBatch(db);
-    for (const op of ops.slice(start, start + 400)) {
-      batch.set(doc(db, "workspaces", uid, op.col, op.id), op.data);
-    }
-    await batch.commit();
-  }
-  return { accountsAdded, warehousesAdded, inventoryAdded };
+  const out = await dbFetch<{ accountsAdded: number; warehousesAdded: number; inventoryAdded: number }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/merge-master`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+  await refreshWorkspaceFromServer(uid);
+  return out;
 }
 
-/**
- * Atomically posts verified, balanced legacy ledger entries to the live ledger
- * without duplicating already-posted entries.
- */
 export async function postLegacyLedgerBatch(
   uid: string,
   entries: readonly LedgerEntryRecord[],
 ): Promise<{ added: number; skippedDuplicates: number }> {
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const existingIds = new Set(snap.ledger.map((e) => e.id));
-    let added = 0;
-    let skippedDuplicates = 0;
-    for (const entry of entries) {
-      if (existingIds.has(entry.id)) {
-        skippedDuplicates += 1;
-      } else {
-        snap.ledger.push(entry);
-        existingIds.add(entry.id);
-        added += 1;
-      }
-    }
-    await persistLocalSnapshotDurably(snap);
-    return { added, skippedDuplicates };
-  }
-
-  for (let start = 0; start < entries.length; start += 400) {
-    const batch = writeBatch(db);
-    for (const entry of entries.slice(start, start + 400)) {
-      batch.set(doc(db, "workspaces", uid, "ledger", entry.id), { ...entry, ownerId: uid, updatedAt: serverTimestamp() }, { merge: true });
-    }
-    await batch.commit();
-  }
-  return { added: entries.length, skippedDuplicates: 0 };
+  const out = await dbFetch<{ added: number; skippedDuplicates: number }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/post-entries`,
+    {
+      method: "POST",
+      body: JSON.stringify({ entries }),
+    },
+  );
+  await refreshWorkspaceFromServer(uid);
+  return out;
 }
 
-/**
- * Rolls back ONLY the live records imported from a specific legacy SQLite source (matched by its prefix),
- * leaving all user-created records untouched.
- */
 export async function rollbackLegacyLivePrefix(
   uid: string,
   prefix: string,
 ): Promise<{ accountsRemoved: number; warehousesRemoved: number; inventoryRemoved: number; ledgerRemoved: number }> {
-  if (!prefix || prefix.length < 6) {
-    throw new Error("معرف دفعة الترحيل غير صالح للتراجع.");
-  }
-  const match = (id: string) => id.startsWith(`${prefix}_`);
-  if (uid === LOCAL_WORKSPACE_UID) {
-    const snap = readLocalSnapshot();
-    const beforeAcc = snap.accounts.length;
-    const beforeWh = snap.warehouses.length;
-    const beforeInv = snap.inventory.length;
-    const beforeLed = snap.ledger.length;
+  const out = await dbFetch<{ accountsRemoved: number; warehousesRemoved: number; inventoryRemoved: number; ledgerRemoved: number }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/rollback/${encodeURIComponent(prefix)}`,
+    { method: "POST" },
+  );
+  await refreshWorkspaceFromServer(uid);
+  return out;
+}
 
-    snap.accounts = snap.accounts.filter((a) => !match(a.id));
-    snap.warehouses = snap.warehouses.filter((w) => !match(w.id));
-    snap.inventory = snap.inventory.filter((i) => !match(i.id));
-    snap.ledger = snap.ledger.filter((e) => !match(e.id));
+export async function downloadUnifiedSqliteFile(uid = LOCAL_WORKSPACE_UID): Promise<void> {
+  const res = await fetch(`${apiBase()}/workspace/${encodeURIComponent(effectiveUid(uid))}/export/sqlite`);
+  if (!res.ok) throw new Error("تعذر تصدير ملف SQLite الموحّد.");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
-    writeLocalSnapshot(snap);
-    return {
-      accountsRemoved: beforeAcc - snap.accounts.length,
-      warehousesRemoved: beforeWh - snap.warehouses.length,
-      inventoryRemoved: beforeInv - snap.inventory.length,
-      ledgerRemoved: beforeLed - snap.ledger.length,
-    };
-  }
-  return { accountsRemoved: 0, warehousesRemoved: 0, inventoryRemoved: 0, ledgerRemoved: 0 };
+export async function fetchUnifiedJsonExport(uid = LOCAL_WORKSPACE_UID): Promise<unknown> {
+  return dbFetch<unknown>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/export/json`);
+}
+
+export async function listUnifiedSqliteTables(uid = LOCAL_WORKSPACE_UID): Promise<{ tables: UnifiedTableMeta[]; stats: UnifiedDbStats }> {
+  return dbFetch<{ tables: UnifiedTableMeta[]; stats: UnifiedDbStats }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/tables`,
+  );
+}
+
+export async function queryUnifiedSqliteTable(
+  uid: string,
+  table: string,
+  q = "",
+  limit = 40,
+  offset = 0,
+): Promise<{ table: string; columns: string[]; total: number; rows: Record<string, unknown>[] }> {
+  const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
+  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/tables/${encodeURIComponent(table)}?${params.toString()}`);
 }

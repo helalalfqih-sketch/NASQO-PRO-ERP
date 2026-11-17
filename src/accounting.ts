@@ -5,7 +5,9 @@ import {
   LEDGER_KINDS,
   SCHEMA_LIMITS,
   type AccountCategory,
+  type AccountGroupRecord,
   type AccountRecord,
+  type CashboxRecord,
   type CurrencyCode,
   type ExpenseCategory,
   type InventoryItemRecord,
@@ -235,9 +237,13 @@ export function computeAccountSummary(
 
     const effectiveAmount =
       currencyFilter === "مصارفة الكل بعملة ريال" ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
+    const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
+    const shouldWashCash = hasExplicitSides
+      ? Boolean(entry.settledOnReceipt)
+      : Boolean((account.isCashAccount && entry.payment === "cash") || entry.settledOnReceipt);
 
     if (isPrimary) {
-      if (account.isCashAccount && entry.payment === "cash") {
+      if (shouldWashCash) {
         // Cash settlement washes both sides while preserving turnover totals.
         creditTotal += effectiveAmount;
         debitTotal += effectiveAmount;
@@ -272,6 +278,7 @@ export function computeAccountSummary(
 export function computeCategoryTotals(
   accounts: readonly AccountRecord[],
   entries: readonly LedgerEntryRecord[],
+  currencyFilter?: string,
 ): Record<AccountCategory, { netSigned: number; debitTotal: number; creditTotal: number; count: number }> {
   const result: Record<AccountCategory, { netSigned: number; debitTotal: number; creditTotal: number; count: number }> =
     {
@@ -283,13 +290,64 @@ export function computeCategoryTotals(
       shop: { netSigned: 0, debitTotal: 0, creditTotal: 0, count: 0 },
     };
 
+  const filterSpecific =
+    Boolean(currencyFilter) &&
+    currencyFilter !== "الكل" &&
+    currencyFilter !== "جميع العملات بدون مصارفة" &&
+    currencyFilter !== "مصارفة الكل بعملة ريال";
+  const convertAllToRiyal = currencyFilter === "مصارفة الكل بعملة ريال";
+
+  const accMap = new Map<string, AccountRecord>();
   for (const account of accounts) {
-    const summary = computeAccountSummary(account, entries);
+    accMap.set(account.id, account);
     const bucket = result[account.category];
     bucket.count += 1;
-    bucket.debitTotal += summary.debitTotal;
-    bucket.creditTotal += summary.creditTotal;
-    bucket.netSigned += summary.creditTotal - summary.debitTotal;
+    if (account.openingBalance > 0 && (!filterSpecific || account.currency === currencyFilter)) {
+      if (account.openingDirection === "credit") {
+        bucket.creditTotal += account.openingBalance;
+      } else {
+        bucket.debitTotal += account.openingBalance;
+      }
+    }
+  }
+
+  for (const entry of entries) {
+    if (entry.deleted || !affectsAccountBalance(entry)) continue;
+    if (filterSpecific && entry.currency !== currencyFilter) continue;
+    const effectiveAmount = convertAllToRiyal ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
+
+    const primary = accMap.get(entry.accountId);
+    if (primary) {
+      const bucket = result[primary.category];
+      const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
+      const shouldWashCash = hasExplicitSides
+        ? Boolean(entry.settledOnReceipt)
+        : Boolean((primary.isCashAccount && entry.payment === "cash") || entry.settledOnReceipt);
+      if (shouldWashCash) {
+        bucket.creditTotal += effectiveAmount;
+        bucket.debitTotal += effectiveAmount;
+      } else if (entry.direction === "credit") {
+        bucket.creditTotal += effectiveAmount;
+      } else {
+        bucket.debitTotal += effectiveAmount;
+      }
+    }
+    if (entry.counterpartAccountId) {
+      const counter = accMap.get(entry.counterpartAccountId);
+      if (counter) {
+        const bucket = result[counter.category];
+        if (entry.direction === "credit") {
+          bucket.debitTotal += effectiveAmount;
+        } else {
+          bucket.creditTotal += effectiveAmount;
+        }
+      }
+    }
+  }
+
+  for (const key of ACCOUNT_CATEGORIES) {
+    const b = result[key];
+    b.netSigned = b.creditTotal - b.debitTotal;
   }
 
   return result;
@@ -303,6 +361,9 @@ export function computeStatementRows(
     searchQuery?: string;
     searchMode?: string;
     showPreviousBalance?: boolean;
+    fromDate?: string;
+    toDate?: string;
+    docKind?: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
   } = {},
 ): {
   rows: StatementRowWithBalance[];
@@ -310,12 +371,17 @@ export function computeStatementRows(
   creditTotal: number;
   netBalance: number;
   netDirection: "credit" | "debit" | "neutral";
+  previousBalance: number;
+  previousDirection: "credit" | "debit" | "neutral";
 } {
   const currency = options.currency ?? "الكل";
   const query = normalizeArabicSearch(options.searchQuery ?? "");
   const searchMode = options.searchMode ?? "الكل";
+  const fromDate = options.fromDate?.trim() || "";
+  const toDate = options.toDate?.trim() || "";
+  const docKind = options.docKind ?? "all";
 
-  const relevant = entries
+  const belongsAndCurrency = entries
     .filter((entry) => {
       if (entry.deleted) return false;
       const belongs = entry.accountId === account.id || entry.counterpartAccountId === account.id;
@@ -328,46 +394,65 @@ export function computeStatementRows(
       ) {
         return false;
       }
-      if (!query) return true;
-      return ledgerEntryMatchesQuery(entry, query, searchMode);
+      return true;
     })
     .sort((a, b) => a.createdAtMs - b.createdAtMs || a.entryNumber - b.entryNumber);
 
-  let running = options.showPreviousBalance
-    ? account.openingDirection === "credit"
-      ? account.openingBalance
-      : -account.openingBalance
-    : 0;
+  const signedEffect = (entry: LedgerEntryRecord): { debit: number; credit: number; netDelta: number } => {
+    const isPrimary = entry.accountId === account.id;
+    const amount =
+      currency === "مصارفة الكل بعملة ريال" ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
+    if (!affectsAccountBalance(entry)) {
+      return { debit: 0, credit: 0, netDelta: 0 };
+    }
+    const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
+    const shouldWashCash = hasExplicitSides
+      ? Boolean(entry.settledOnReceipt)
+      : Boolean((account.isCashAccount && entry.payment === "cash") || (isPrimary && entry.settledOnReceipt));
+    if (shouldWashCash) {
+      return { debit: amount, credit: amount, netDelta: 0 };
+    }
+    if (isPrimary) {
+      if (entry.direction === "credit") return { debit: 0, credit: amount, netDelta: amount };
+      return { debit: amount, credit: 0, netDelta: -amount };
+    }
+    if (entry.direction === "credit") return { debit: amount, credit: 0, netDelta: -amount };
+    return { debit: 0, credit: amount, netDelta: amount };
+  };
+
+  let prePeriodSigned = 0;
+  const relevant: LedgerEntryRecord[] = [];
+  for (const entry of belongsAndCurrency) {
+    const dt = entry.entryDate || "";
+    if (fromDate && dt && dt < fromDate) {
+      prePeriodSigned += signedEffect(entry).netDelta;
+      continue;
+    }
+    if (toDate && dt && dt > toDate) {
+      continue;
+    }
+    if (docKind !== "all" && entry.kind !== docKind) {
+      continue;
+    }
+    if (query && !ledgerEntryMatchesQuery(entry, query, searchMode)) {
+      continue;
+    }
+    relevant.push(entry);
+  }
+
+  const openingSigned =
+    account.openingDirection === "credit" ? account.openingBalance : -account.openingBalance;
+  const previousBalanceSigned = openingSigned + prePeriodSigned;
+
+  let running = options.showPreviousBalance ? previousBalanceSigned : 0;
   let debitTotal = 0;
   let creditTotal = 0;
 
   const chronological: StatementRowWithBalance[] = relevant.map((entry) => {
-    const isPrimary = entry.accountId === account.id;
-    const amount =
-      currency === "مصارفة الكل بعملة ريال" ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
-
-    if (affectsAccountBalance(entry)) {
-      if (account.isCashAccount && entry.payment === "cash") {
-        creditTotal += amount;
-        debitTotal += amount;
-      } else if (isPrimary) {
-        if (entry.direction === "credit") {
-          creditTotal += amount;
-          running += amount;
-        } else {
-          debitTotal += amount;
-          running -= amount;
-        }
-      } else {
-        if (entry.direction === "credit") {
-          debitTotal += amount;
-          running -= amount;
-        } else {
-          creditTotal += amount;
-          running += amount;
-        }
-      }
-    }
+    const eff = signedEffect(entry);
+    debitTotal += eff.debit;
+    creditTotal += eff.credit;
+    running += eff.netDelta;
 
     return {
       ...entry,
@@ -377,7 +462,8 @@ export function computeStatementRows(
 
   // Newest entries appear at the top of statements cleanly
   const rows = [...chronological].reverse();
-  const netSigned = creditTotal - debitTotal + (options.showPreviousBalance ? (account.openingDirection === "credit" ? account.openingBalance : -account.openingBalance) : 0);
+  const netSigned =
+    creditTotal - debitTotal + (options.showPreviousBalance ? previousBalanceSigned : 0);
 
   return {
     rows,
@@ -385,6 +471,13 @@ export function computeStatementRows(
     creditTotal,
     netBalance: Math.abs(netSigned),
     netDirection: Math.abs(netSigned) < 0.005 ? "neutral" : netSigned > 0 ? "credit" : "debit",
+    previousBalance: Math.abs(previousBalanceSigned),
+    previousDirection:
+      Math.abs(previousBalanceSigned) < 0.005
+        ? "neutral"
+        : previousBalanceSigned > 0
+          ? "credit"
+          : "debit",
   };
 }
 
@@ -1120,4 +1213,333 @@ export function buildWhatsAppMessageUrl(
     return `https://wa.me/${digits}?text=${encodedText}`;
   }
   return `https://wa.me/?text=${encodedText}`;
+}
+
+const AR_ONES = [
+  "",
+  "واحد",
+  "اثنان",
+  "ثلاثة",
+  "أربعة",
+  "خمسة",
+  "ستة",
+  "سبعة",
+  "ثمانية",
+  "تسعة",
+  "عشرة",
+  "أحد عشر",
+  "اثنا عشر",
+  "ثلاثة عشر",
+  "أربعة عشر",
+  "خمسة عشر",
+  "ستة عشر",
+  "سبعة عشر",
+  "ثمانية عشر",
+  "تسعة عشر",
+];
+
+const AR_TENS = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
+const AR_HUNDREDS = [
+  "",
+  "مائة",
+  "مائتان",
+  "ثلاثمائة",
+  "أربعمائة",
+  "خمسمائة",
+  "ستمائة",
+  "سبعمائة",
+  "ثمانمائة",
+  "تسعمائة",
+];
+
+function arabicThreeDigits(n: number): string {
+  const clean = Math.trunc(n) % 1000;
+  if (clean === 0) return "";
+  const hundreds = Math.floor(clean / 100);
+  const rest = clean % 100;
+  const parts: string[] = [];
+  if (hundreds > 0) parts.push(AR_HUNDREDS[hundreds]);
+  if (rest > 0) {
+    if (rest < 20) {
+      parts.push(AR_ONES[rest]);
+    } else {
+      const ones = rest % 10;
+      const tens = Math.floor(rest / 10);
+      if (ones > 0) {
+        parts.push(`${AR_ONES[ones]} و${AR_TENS[tens]}`);
+      } else {
+        parts.push(AR_TENS[tens]);
+      }
+    }
+  }
+  return parts.join(" و");
+}
+
+function integerToArabicWords(n: number): string {
+  const num = Math.trunc(Math.abs(n));
+  if (num === 0) return "صفر";
+
+  const scales: { divisor: number; singular: string; dual: string; plural: string; accSingular: string }[] = [
+    { divisor: 1_000_000_000, singular: "مليار", dual: "ملياران", plural: "مليارات", accSingular: "مليارًا" },
+    { divisor: 1_000_000, singular: "مليون", dual: "مليونان", plural: "ملايين", accSingular: "مليونًا" },
+    { divisor: 1_000, singular: "ألف", dual: "ألفان", plural: "آلاف", accSingular: "ألفًا" },
+  ];
+
+  let rem = num;
+  const parts: string[] = [];
+
+  for (const scale of scales) {
+    const group = Math.floor(rem / scale.divisor);
+    rem %= scale.divisor;
+    if (group === 0) continue;
+    if (group === 1) parts.push(scale.singular);
+    else if (group === 2) parts.push(scale.dual);
+    else if (group >= 3 && group <= 10) parts.push(`${arabicThreeDigits(group)} ${scale.plural}`);
+    else parts.push(`${arabicThreeDigits(group)} ${scale.accSingular}`);
+  }
+
+  if (rem > 0) {
+    parts.push(arabicThreeDigits(rem));
+  }
+  return parts.join(" و");
+}
+
+export function amountToArabicWords(amount: number, currency = "ريال"): string {
+  const safe = Number.isFinite(amount) ? Math.abs(amount) : 0;
+  const rounded = Math.round(safe * 100) / 100;
+  const intPart = Math.trunc(rounded);
+  const fracPart = Math.round((rounded - intPart) * 100);
+  const currencyLabel = currency?.trim() || "ريال";
+  const mainText = `${integerToArabicWords(intPart)} ${currencyLabel}`;
+  if (fracPart > 0) {
+    const subUnit = currencyLabel === "دولار" || currencyLabel === "يورو" ? "سنت" : "فلس";
+    return `${mainText} و${integerToArabicWords(fracPart)} ${subUnit} فقط لا غير`;
+  }
+  return `${mainText} فقط لا غير`;
+}
+
+export function formatSignedSmartBalance(debitMinusCredit: number): string {
+  const safe = Number.isFinite(debitMinusCredit) ? debitMinusCredit : 0;
+  if (Math.abs(safe) < 0.005) return "0";
+  const formatted = formatAmount(Math.abs(safe));
+  return safe < 0 ? `${formatted}-` : formatted;
+}
+
+export type AccountGroupSummaryRow = {
+  id: number;
+  legacyId: number;
+  name: string;
+  category: AccountCategory;
+  currency: string;
+  debitTotal: number;
+  creditTotal: number;
+  /** debitTotal - creditTotal: positive = عليه (receivable), negative = له (payable) */
+  netDebitMinusCredit: number;
+  accountCount: number;
+};
+
+export function computeAccountGroupsSummary(
+  groups: readonly AccountGroupRecord[],
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  currencyByGroupId: Record<number, string> = {},
+  defaultCurrency: string = "ريال",
+): AccountGroupSummaryRow[] {
+  const byGroupId = new Map<
+    number,
+    {
+      group: AccountGroupRecord;
+      currency: string;
+      debitTotal: number;
+      creditTotal: number;
+      accountIds: Set<string>;
+    }
+  >();
+
+  for (const g of groups) {
+    const chosenCurrency = currencyByGroupId[g.id] ?? defaultCurrency ?? g.currencyCode ?? "ريال";
+    byGroupId.set(g.id, {
+      group: g,
+      currency: chosenCurrency,
+      debitTotal: 0,
+      creditTotal: 0,
+      accountIds: new Set(),
+    });
+  }
+
+  const accToGroup = new Map<string, number>();
+  for (const acc of accounts) {
+    if (!acc.groupId) continue;
+    const target = byGroupId.get(acc.groupId);
+    if (!target) continue;
+    accToGroup.set(acc.id, acc.groupId);
+    target.accountIds.add(acc.id);
+    if (acc.openingBalance > 0 && (target.currency === "الكل" || acc.currency === target.currency)) {
+      if (acc.openingDirection === "credit") target.creditTotal += acc.openingBalance;
+      else target.debitTotal += acc.openingBalance;
+    }
+  }
+
+  for (const entry of entries) {
+    if (entry.deleted || !affectsAccountBalance(entry)) continue;
+    const gId = accToGroup.get(entry.accountId);
+    if (!gId) continue;
+    const bucket = byGroupId.get(gId);
+    if (!bucket) continue;
+    if (bucket.currency !== "الكل" && entry.currency !== bucket.currency) continue;
+    const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
+    if (hasExplicitSides && entry.settledOnReceipt) {
+      bucket.debitTotal += entry.amount;
+      bucket.creditTotal += entry.amount;
+    } else if (hasExplicitSides) {
+      bucket.debitTotal += entry.rawDain ?? (entry.direction === "debit" ? entry.amount : 0);
+      bucket.creditTotal += entry.rawMadin ?? (entry.direction === "credit" ? entry.amount : 0);
+    } else if (entry.direction === "credit") {
+      bucket.creditTotal += entry.amount;
+    } else {
+      bucket.debitTotal += entry.amount;
+    }
+  }
+
+  return Array.from(byGroupId.values())
+    .sort((a, b) => (a.group.legacyId ?? a.group.sortOrder ?? a.group.id) - (b.group.legacyId ?? b.group.sortOrder ?? b.group.id))
+    .map((item) => ({
+      id: item.group.id,
+      legacyId: item.group.legacyId ?? item.group.id,
+      name: item.group.name,
+      category: item.group.category,
+      currency: item.currency,
+      debitTotal: item.debitTotal,
+      creditTotal: item.creditTotal,
+      netDebitMinusCredit: item.debitTotal - item.creditTotal,
+      accountCount: item.accountIds.size,
+    }));
+}
+
+export type TrialBalanceReport = {
+  currency: string;
+  totalDebitAccounts: number;
+  totalCreditAccounts: number;
+  cashTotal: number;
+  netBalance: number;
+  resultLabel: "فائض" | "عجز" | "متزن";
+  liquidityRatioPercent: number;
+  salesTotal: number;
+  purchasesTotal: number;
+  inventoryValue: number;
+  netProfit: number;
+};
+
+export function computeTrialBalanceReport(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  inventory: readonly InventoryItemRecord[],
+  _cashboxes: readonly CashboxRecord[] = [],
+  options: { currency?: string; fromDate?: string; toDate?: string } = {},
+): TrialBalanceReport {
+  const currency = options.currency || "ريال";
+  const fromDate = options.fromDate || "";
+  const toDate = options.toDate || "";
+
+  const accNets = new Map<string, number>();
+  for (const acc of accounts) {
+    let init = 0;
+    if (acc.openingBalance > 0 && (currency === "الكل" || acc.currency === currency)) {
+      init = acc.openingDirection === "credit" ? -acc.openingBalance : acc.openingBalance;
+    }
+    accNets.set(acc.id, init);
+  }
+
+  let cashIn = 0;
+  let cashOut = 0;
+  let salesTotal = 0;
+  let purchasesTotal = 0;
+
+  for (const e of entries) {
+    if (e.deleted || !affectsAccountBalance(e)) continue;
+    if (currency !== "الكل" && e.currency !== currency) continue;
+    if (fromDate && e.entryDate < fromDate) continue;
+    if (toDate && e.entryDate > toDate) continue;
+
+    const hasExplicitSides = e.rawDain !== undefined || e.rawMadin !== undefined;
+    const dVal = hasExplicitSides
+      ? e.settledOnReceipt
+        ? 0
+        : (e.rawDain ?? (e.direction === "debit" ? e.amount : 0))
+      : e.settledOnReceipt
+        ? 0
+        : e.direction === "debit"
+          ? e.amount
+          : 0;
+    const cVal = hasExplicitSides
+      ? e.settledOnReceipt
+        ? 0
+        : (e.rawMadin ?? (e.direction === "credit" ? e.amount : 0))
+      : e.settledOnReceipt
+        ? 0
+        : e.direction === "credit"
+          ? e.amount
+          : 0;
+
+    accNets.set(e.accountId, (accNets.get(e.accountId) ?? 0) + (dVal - cVal));
+
+    // Cashbox cash inflows/outflows (vouchers linked to cashboxes + cash-settled invoices)
+    if (e.payment === "cash") {
+      if (e.kind === "voucher") {
+        if (e.direction === "credit") cashIn += e.amount;
+        else cashOut += e.amount;
+      } else if (e.settledOnReceipt) {
+        if (e.direction === "debit") cashIn += e.amount;
+        else cashOut += e.amount;
+      }
+    }
+
+    // Invoice-based sales vs purchases for profit estimation
+    if (e.kind === "invoice") {
+      const lbl = e.typeLabel || "";
+      if (lbl.includes("بيع") || e.direction === "debit") salesTotal += e.amount;
+      else purchasesTotal += e.amount;
+    } else if (e.kind === "return") {
+      const lbl = e.typeLabel || "";
+      if (lbl.includes("مبيعات") || e.direction === "credit") salesTotal -= e.amount;
+      else purchasesTotal -= e.amount;
+    }
+  }
+
+  let totalDebitAccounts = 0;
+  let totalCreditAccounts = 0;
+  for (const net of accNets.values()) {
+    if (net > 0.005) totalDebitAccounts += net;
+    else if (net < -0.005) totalCreditAccounts += Math.abs(net);
+  }
+
+  let inventoryValue = 0;
+  for (const item of inventory) {
+    const qty = item.quantityUnverified ? (item.computedQuantity ?? 0) : item.quantity;
+    if (qty > 0 && item.avgCost > 0) {
+      inventoryValue += qty * item.avgCost;
+    } else if (qty !== 0 && item.avgCost > 0 && !item.quantityUnverified) {
+      inventoryValue += qty * item.avgCost;
+    }
+  }
+
+  const cashTotal = Math.max(0, cashIn - cashOut);
+  const netBalance = totalDebitAccounts - totalCreditAccounts;
+  const liquidityRatioPercent =
+    totalCreditAccounts > 0 ? Math.round((cashTotal / totalCreditAccounts) * 1000) / 10 : 0;
+  const netProfit = salesTotal + inventoryValue - purchasesTotal;
+
+  return {
+    currency,
+    totalDebitAccounts,
+    totalCreditAccounts,
+    cashTotal,
+    netBalance,
+    resultLabel: Math.abs(netBalance) < 0.005 ? "متزن" : netBalance >= 0 ? "فائض" : "عجز",
+    liquidityRatioPercent,
+    salesTotal,
+    purchasesTotal,
+    inventoryValue,
+    netProfit,
+  };
 }

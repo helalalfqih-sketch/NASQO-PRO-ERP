@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { mountSmartProApi } from "./server/smartpro.ts";
+import { mountSqliteApi } from "./server/sqliteApi.ts";
+import { closeSqliteDb } from "./server/sqliteDb.ts";
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 const ALLOWED_CATEGORIES = [
@@ -32,7 +34,6 @@ const isProd = process.env.NODE_ENV === "production";
 
 async function createApp() {
   const app = express();
-  app.use(express.json({ limit: "64kb" }));
 
   // Defense in depth: even if a private backup is accidentally included in
   // static assets, never serve it over HTTP (including unauthenticated paths).
@@ -50,6 +51,11 @@ async function createApp() {
     }
     next();
   });
+
+  // Single unified SQLite database API (has its own scoped 32mb JSON limit for imports).
+  mountSqliteApi(app);
+
+  app.use(express.json({ limit: "64kb" }));
 
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ ok: true, service: "nasqo-pro-api" });
@@ -206,6 +212,7 @@ async function createApp() {
   });
 
   const shutdown = () => {
+    closeSqliteDb();
     httpServer.close(() => process.exit(0));
   };
   process.once("SIGTERM", shutdown);

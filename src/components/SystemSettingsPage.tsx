@@ -534,7 +534,7 @@ export function SystemSettingsPage({
               }}
               data-testid="settings-full-sqlite-import-btn"
             >
-              مركز استيراد وترحيل قواعد البيانات (SQLite / .back)
+              إدارة واستيراد قاعدة البيانات (.sqlite / .sql / .back)
             </button>
           ) : null}
           {onOpenGoogleDrive ? (

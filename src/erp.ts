@@ -14,7 +14,6 @@ import {
   type InventoryItemRecord,
   type LedgerEntryRecord,
 } from "./types.ts";
-import { saveErpDataToIndexedDb } from "./utils/localDatabase.ts";
 
 export type ErpModuleId =
   | "erp-hub"
@@ -750,39 +749,58 @@ export function createDefaultErpData(todayIso: string = new Date().toISOString()
   };
 }
 
-function erpStorageKey(uid: string): string {
-  return `nasqo-erp-modules-${uid || "local"}`;
+export function createEmptyErpData(): ErpWorkspaceData {
+  return {
+    employees: [],
+    leaveRequests: [],
+    deals: [],
+    purchaseOrders: [],
+    boms: [],
+    productionOrders: [],
+    costCenters: [],
+  };
 }
 
-export function loadErpWorkspaceData(uid: string): ErpWorkspaceData {
-  const defaults = createDefaultErpData();
-  if (typeof window === "undefined") return defaults;
-  try {
-    const raw = window.localStorage.getItem(erpStorageKey(uid));
-    if (!raw) return defaults;
-    const parsed = JSON.parse(raw) as Partial<ErpWorkspaceData>;
-    return {
-      employees: Array.isArray(parsed.employees) ? parsed.employees : defaults.employees,
-      leaveRequests: Array.isArray(parsed.leaveRequests) ? parsed.leaveRequests : defaults.leaveRequests,
-      deals: Array.isArray(parsed.deals) ? parsed.deals : defaults.deals,
-      purchaseOrders: Array.isArray(parsed.purchaseOrders) ? parsed.purchaseOrders : defaults.purchaseOrders,
-      boms: Array.isArray(parsed.boms) ? parsed.boms : defaults.boms,
-      productionOrders: Array.isArray(parsed.productionOrders) ? parsed.productionOrders : defaults.productionOrders,
-      costCenters: Array.isArray(parsed.costCenters) ? parsed.costCenters : defaults.costCenters,
-      lastPayrollRunMonth: typeof parsed.lastPayrollRunMonth === "string" ? parsed.lastPayrollRunMonth : undefined,
-    };
-  } catch {
-    return defaults;
+const erpMemoryCache = new Map<string, ErpWorkspaceData>();
+const erpListeners = new Set<(data: ErpWorkspaceData) => void>();
+
+export function hydrateErpWorkspaceCache(uid: string, data: ErpWorkspaceData): void {
+  const key = uid || "local-erp-workspace";
+  erpMemoryCache.set(key, data);
+  for (const listener of erpListeners) {
+    listener(data);
   }
 }
 
+export function subscribeErpCache(listener: (data: ErpWorkspaceData) => void): () => void {
+  erpListeners.add(listener);
+  return () => {
+    erpListeners.delete(listener);
+  };
+}
+
+export function loadErpWorkspaceData(uid: string): ErpWorkspaceData {
+  const key = uid || "local-erp-workspace";
+  return erpMemoryCache.get(key) ?? erpMemoryCache.get("local-erp-workspace") ?? createEmptyErpData();
+}
+
 export function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): void {
+  const key = uid || "local-erp-workspace";
+  erpMemoryCache.set(key, data);
+  for (const listener of erpListeners) {
+    listener(data);
+  }
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(erpStorageKey(uid), JSON.stringify(data));
-    void saveErpDataToIndexedDb(uid, data).catch(() => {});
+    const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
+    const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
+    void fetch(`${base}local-erp-workspace/erp`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).catch(() => {});
   } catch {
-    // Ignore storage quota errors cleanly
+    // Ignore non-browser test environments
   }
 }
 

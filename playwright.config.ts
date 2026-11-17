@@ -14,5 +14,9 @@ export default defineConfig({
     command: `npm run dev -- --port ${testPort}`,
     url: `http://127.0.0.1:${testPort}/tests/runtime-fixture.html`,
     reuseExistingServer: process.env.MOBILE_RUNTIME_TEST_PORT == null,
+    env: {
+      NASQO_SQLITE_PATH: "test-results/playwright-test.sqlite",
+      NASQO_SKIP_AUTO_SQL_IMPORT: "1",
+    },
   },
 });

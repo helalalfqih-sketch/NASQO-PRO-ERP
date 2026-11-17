@@ -64,9 +64,21 @@ export type WorkspaceSettings = {
   whatsappPhone: string;
 };
 
+export type AccountGroupRecord = {
+  id: number;
+  name: string;
+  category: AccountCategory;
+  currencyCode: CurrencyCode;
+  hasBill?: boolean;
+  isEmployee?: boolean;
+  sortOrder: number;
+  legacyId?: number;
+};
+
 export type AccountRecord = {
   id: string;
   ownerId: string;
+  groupId?: number;
   name: string;
   category: AccountCategory;
   phone: string;
@@ -87,6 +99,28 @@ export type AccountRecord = {
   legacyRef?: string;
 };
 
+export type CashboxRecord = {
+  id: number;
+  name: string;
+  details: string;
+  currencyCode: CurrencyCode;
+  legacyId?: number;
+};
+
+export type InvoiceLineInput = {
+  inventoryItemId?: string;
+  warehouseId?: string;
+  itemName: string;
+  unit?: string;
+  unitNum?: 1 | 2 | 3 | number;
+  quantity: number;
+  price: number;
+  total: number;
+  discount?: number;
+  bonus?: number;
+  details?: string;
+};
+
 export type LedgerEntryRecord = {
   id: string;
   ownerId: string;
@@ -94,11 +128,15 @@ export type LedgerEntryRecord = {
   accountName: string;
   counterpartAccountId: string;
   counterpartAccountName: string;
+  cashboxId?: number;
   kind: LedgerKind;
   typeLabel: string;
   payment: "cash" | "credit" | "balance";
   direction: "debit" | "credit";
   amount: number;
+  rawDain?: number;
+  rawMadin?: number;
+  settledOnReceipt?: boolean;
   currency: CurrencyCode;
   exchangeRate: number;
   details: string;
@@ -112,6 +150,10 @@ export type LedgerEntryRecord = {
   dueDate?: string;
   expenseCategory?: string;
   deliveryDays?: number;
+  sourceOrigin?: "native" | "smartpro_sql" | "legacy_sqlite";
+  docType?: number;
+  lineCount?: number;
+  lines?: InvoiceLineInput[];
   createdAtMs: number;
   legacyRef?: string;
 };
@@ -137,7 +179,17 @@ export type InventoryItemRecord = {
   sellingPrice?: number;
   minThreshold?: number;
   sku?: string;
+  unit2?: string;
+  count2?: number;
+  sprice2?: number;
+  unit3?: string;
+  count3?: number;
+  sprice3?: number;
+  defaultUnit?: number;
+  legacyId?: number;
   warehouseId: string;
+  /** Live quantity computed from invoice_lines/transfers when static count is unverified */
+  computedQuantity?: number;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
   legacyRef?: string;

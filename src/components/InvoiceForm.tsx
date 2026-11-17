@@ -195,6 +195,17 @@ export function InvoiceForm({
         entryNumber: Math.floor(Math.random() * 90000) + 10000,
         deleted: false,
         entryDate: new Date().toISOString().slice(0, 10),
+        lines: rows.map((r) => {
+          const item = inventory.find((candidate) => candidate.id === r.itemId);
+          return {
+            ...(item ? { inventoryItemId: item.id, warehouseId: targetWh?.id ?? item.warehouseId } : { warehouseId: targetWh?.id }),
+            itemName: r.productName.trim(),
+            unit: item?.unit ?? "حبة",
+            quantity: r.quantity,
+            price: r.unitPrice,
+            total: r.quantity * r.unitPrice,
+          };
+        }),
       };
 
       if (onCreateLedgerEntry) {
@@ -372,11 +383,11 @@ export function InvoiceForm({
 
           {rows.some((row) => inventory.some((item) => item.id === row.itemId && (item.quantityUnverified || (item.legacyRef && !item.sellingPrice)))) ? (
             <p role="status" style={{ color: "#92400e", fontSize: 11, margin: "4px 0" }}>
-              الأصناف التاريخية لا تحمل رصيدًا أو سعر بيع معتمدًا تلقائيًا؛ اعتمد الجرد وسعر البيع قبل ترحيل الفاتورة.
+              يلزم اعتماد الجرد وسعر البيع للصنف المحدد من شاشة المخزون قبل البيع.
             </p>
           ) : null}
           <label style={{ display: "grid", gap: 4, margin: "4px 0 8px", fontSize: 11, color: "var(--nasqo-muted)" }}>
-            ابحث عن الصنف أو الباركود من النسخة المستوردة
+            ابحث عن الصنف أو الباركود
             <KeyboardInput
               aria-label="البحث عن صنف أو باركود داخل الفاتورة"
               placeholder="اسم الصنف أو رقم الباركود..."

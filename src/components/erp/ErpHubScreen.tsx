@@ -26,8 +26,12 @@ import {
 } from "../../erp";
 import {
   LOCAL_WORKSPACE_UID,
+  downloadUnifiedSqliteFile,
+  fetchUnifiedJsonExport,
+  getUnifiedDbStats,
   resetLocalWorkspaceDatabase,
   syncLocalWorkspaceToIndexedDb,
+  type UnifiedDbStats,
 } from "../../firebase";
 import { MobileScroll, useKeyboard } from "../../mobile";
 import type {
@@ -38,12 +42,6 @@ import type {
   WorkspaceSettings,
 } from "../../types";
 import { triggerHaptic } from "../../utils/haptics";
-import {
-  exportIndexedDbSnapshot,
-  getLocalDatabaseStats,
-  saveErpDataToIndexedDb,
-  type LocalDatabaseStats,
-} from "../../utils/localDatabase";
 import { FlutterExportModal } from "./FlutterExportModal";
 
 function triggerJsonDownload(filename: string, payload: unknown) {
@@ -94,13 +92,20 @@ export function ErpHubScreen({
   const [flutterModalOpen, setFlutterModalOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [dbBusy, setDbBusy] = useState(false);
-  const [dbStats, setDbStats] = useState<LocalDatabaseStats>({
-    engine: "IndexedDB",
-    dbName: "nasqo_pro_erp_db",
+  const [dbStats, setDbStats] = useState<UnifiedDbStats>({
+    engine: "SQLite (node:sqlite WAL)",
+    dbName: "data/nasqo.sqlite",
+    schemaVersion: 1,
+    tablesCount: 29,
+    fileSizeBytes: 0,
     accountsCount: accounts.length,
     ledgerCount: ledger.length,
+    invoiceLinesCount: 0,
     warehousesCount: warehouses.length,
     inventoryCount: inventory.length,
+    archivedCount: 0,
+    transfersCount: 0,
+    offersCount: 0,
     erpModulesSaved: true,
     lastSyncedAt: null,
   });
@@ -112,7 +117,7 @@ export function ErpHubScreen({
 
   const refreshDbStats = useCallback(async () => {
     try {
-      const stats = await getLocalDatabaseStats(uid);
+      const stats = await getUnifiedDbStats(uid);
       setDbStats(stats);
     } catch {
       // Keep fallback counters
@@ -137,16 +142,9 @@ export function ErpHubScreen({
     triggerHaptic("light");
     setDbBusy(true);
     try {
-      await syncLocalWorkspaceToIndexedDb(uid, {
-        workspace,
-        accounts,
-        ledger,
-        warehouses,
-        inventory,
-      });
-      await saveErpDataToIndexedDb(uid, erpData);
+      await syncLocalWorkspaceToIndexedDb(uid);
       await refreshDbStats();
-      onToast?.("تمت مزامنة قاعدة البيانات المحلية (IndexedDB) بنجاح");
+      onToast?.("تمت مزامنة قاعدة SQLite الموحدة بنجاح");
     } finally {
       setDbBusy(false);
     }
@@ -156,17 +154,20 @@ export function ErpHubScreen({
     triggerHaptic("success");
     setDbBusy(true);
     try {
-      await syncLocalWorkspaceToIndexedDb(uid, {
-        workspace,
-        accounts,
-        ledger,
-        warehouses,
-        inventory,
-      });
-      await saveErpDataToIndexedDb(uid, erpData);
-      const dump = await exportIndexedDbSnapshot(uid);
-      triggerJsonDownload("nasqo_local_database_backup.json", dump);
-      onToast?.("تم تصدير نسخة قاعدة البيانات المحلية (JSON)");
+      const dump = await fetchUnifiedJsonExport(uid);
+      triggerJsonDownload("nasqo_unified_sqlite_backup.json", dump);
+      onToast?.("تم تصدير نسخة قاعدة SQLite الموحدة (JSON)");
+    } finally {
+      setDbBusy(false);
+    }
+  };
+
+  const handleDownloadSqliteBinary = async () => {
+    triggerHaptic("success");
+    setDbBusy(true);
+    try {
+      await downloadUnifiedSqliteFile(uid);
+      onToast?.("تم تنزيل ملف قاعدة SQLite الموحد (.sqlite)");
     } finally {
       setDbBusy(false);
     }
@@ -176,13 +177,12 @@ export function ErpHubScreen({
     triggerHaptic("warning");
     setDbBusy(true);
     try {
-      await resetLocalWorkspaceDatabase();
+      await resetLocalWorkspaceDatabase(uid);
       const freshErp = createDefaultErpData();
       onUpdateErpData?.(freshErp);
-      await saveErpDataToIndexedDb(uid, freshErp);
       setConfirmReset(false);
       await refreshDbStats();
-      onToast?.("تمت إعادة تهيئة قاعدة البيانات المحلية بالبيانات الافتراضية");
+      onToast?.("تمت إعادة تهيئة قاعدة SQLite بالبيانات الأساسية");
     } finally {
       setDbBusy(false);
     }
@@ -446,7 +446,7 @@ export function ErpHubScreen({
 
           <section className="erp-section" data-testid="local-db-section">
             <div className="erp-section-head">
-              <h3>قاعدة البيانات المحلية ({dbStats.engine})</h3>
+              <h3>قاعدة البيانات الموحدة ({dbStats.engine})</h3>
               <span dir="ltr">{dbStats.dbName}</span>
             </div>
             <div
@@ -535,9 +535,9 @@ export function ErpHubScreen({
                 }}
               >
                 <span>
-                  حفظ وحدات ERP: {dbStats.erpModulesSaved ? "متزامن محليًا" : "قيد الحفظ"}
+                  وحدات ERP: {dbStats.erpModulesSaved ? "محفوظة في SQLite" : "قيد الحفظ"} • البنود: {dbStats.invoiceLinesCount.toLocaleString("en-US")}
                 </span>
-                <span>التخزين يعمل دون إنترنت</span>
+                <span>{dbStats.tablesCount} جدولًا في ملف واحد</span>
               </div>
 
               <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
@@ -560,6 +560,26 @@ export function ErpHubScreen({
                 >
                   <ReloadIcon />
                   <span>مزامنة</span>
+                </button>
+                <button
+                  type="button"
+                  className="erp-secondary-btn"
+                  disabled={dbBusy}
+                  data-testid="local-db-sqlite-download-btn"
+                  onClick={() => void handleDownloadSqliteBinary()}
+                  style={{
+                    flex: 1,
+                    minHeight: "30px",
+                    fontSize: "11px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    padding: "4px 6px",
+                  }}
+                >
+                  <DownloadIcon />
+                  <span>تنزيل .sqlite</span>
                 </button>
                 <button
                   type="button"

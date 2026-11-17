@@ -22,6 +22,8 @@ export interface NasqoBackupPayload {
 export type BackupInspectionResult =
   | { kind: "json"; fileName: string; payload: NasqoBackupPayload }
   | { kind: "sqlite"; fileName: string }
+  | { kind: "sql"; fileName: string; sqlText: string }
+  | { kind: "encrypted"; fileName: string }
   | { kind: "zip"; fileName: string }
   | { kind: "unknown"; fileName: string };
 
@@ -92,6 +94,18 @@ export function inspectBackupBytes(
       if (parsed && typeof parsed === "object") {
         return { kind: "json", fileName, payload: parsed as NasqoBackupPayload };
       }
+    }
+    if (
+      fileName.toLowerCase().endsWith(".sql") ||
+      /\b(CREATE\s+TABLE|INSERT\s+INTO)\b/i.test(decoded.slice(0, 8000))
+    ) {
+      return { kind: "sql", fileName, sqlText: decoded };
+    }
+    if (
+      fileName.toLowerCase().endsWith(".enc") ||
+      (/^[A-Za-z0-9+/=]{64,}$/.test(decoded.replace(/\s+/g, "").slice(0, 256)) && !decoded.startsWith("{"))
+    ) {
+      return { kind: "encrypted", fileName };
     }
   } catch {
     // Non-JSON binary or malformed content
