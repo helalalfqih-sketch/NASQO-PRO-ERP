@@ -428,6 +428,7 @@ const ErpHrScreen = lazy(() => import("./components/erp/ErpHrScreen").then((mod)
 const ErpCrmPosScreen = lazy(() => import("./components/erp/ErpCrmPosScreen").then((mod) => ({ default: mod.ErpCrmPosScreen })));
 const ErpProcurementScreen = lazy(() => import("./components/erp/ErpProcurementScreen").then((mod) => ({ default: mod.ErpProcurementScreen })));
 const ErpManufacturingScreen = lazy(() => import("./components/erp/ErpManufacturingScreen").then((mod) => ({ default: mod.ErpManufacturingScreen })));
+const SmartProControlScreen = lazy(() => import("./components/erp/SmartProControlScreen").then((mod) => ({ default: mod.SmartProControlScreen })));
 
 function NasqoProductionShell() {
   const [user, setUser] = useState<User | null>(null);
@@ -435,13 +436,48 @@ function NasqoProductionShell() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [primaryMode, setPrimaryMode] = useState<"checking" | "off" | "on" | "error">("checking");
   const [startupError, setStartupError] = useState("");
   const [cloudInitializationError, setCloudInitializationError] = useState("");
   const localStartPending = useRef<Promise<void> | null>(null);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
 
+  // The database switch is server-controlled. A previously active primary
+  // database must never silently fall back to browser/Firestore writes when
+  // the central API is unreachable.
+  useEffect(() => {
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => abort.abort(), 5000);
+    const statusUrl = new URL("api/smartpro/status", new URL(import.meta.env.BASE_URL, window.location.origin));
+    void fetch(statusUrl, { signal: abort.signal, cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("database status unavailable");
+        return response.json() as Promise<{ primary?: boolean }>;
+      })
+      .then(({ primary }) => {
+        if (abort.signal.aborted) return;
+        if (primary) {
+          window.localStorage.setItem("nasqo-smartpro-primary-active", "1");
+          setPrimaryMode("on");
+        } else {
+          window.localStorage.removeItem("nasqo-smartpro-primary-active");
+          setPrimaryMode("off");
+        }
+      })
+      .catch(() => {
+        if (!abort.signal.aborted || !window.localStorage.getItem("nasqo-smartpro-primary-active")) {
+          setPrimaryMode(window.localStorage.getItem("nasqo-smartpro-primary-active") ? "error" : "off");
+        } else {
+          setPrimaryMode("error");
+        }
+      })
+      .finally(() => window.clearTimeout(timer));
+    return () => { abort.abort(); window.clearTimeout(timer); };
+  }, []);
+
   const enterLocalWorkspace = useCallback(async () => {
+    if (primaryMode !== "off") return;
     setLocalWorkspaceSession(true);
     const localUser = createLocalUserProfile();
     setUser(localUser);
@@ -465,24 +501,26 @@ function NasqoProductionShell() {
       // Do not unlock accounting writes against a stale localStorage fallback.
       setStartupError(error instanceof Error ? error.message : "تعذر فتح قاعدة بيانات الهاتف؛ أغلق علامات التبويب الأخرى وأعد المحاولة.");
     }
-  }, []);
+  }, [primaryMode]);
 
   useEffect(() => {
-    if (!authReady || !user || workspaceReady) return;
+    if (!authReady || !user || workspaceReady || primaryMode !== "off") return;
     // Only show a real failure, never a speculative "old tab" alarm at 5s.
     const deadline = window.setTimeout(() => {
       setStartupError((previous) => previous ||
         "لم يكتمل استرجاع البيانات المحلية. يمكن إعادة محاولة فتحها دون حذف أي سجل.");
     }, 12_000);
     return () => window.clearTimeout(deadline);
-  }, [authReady, user, workspaceReady]);
+  }, [authReady, user, workspaceReady, primaryMode]);
 
   useEffect(() => {
     const wantsAutostart =
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("autostart") === "1";
 
-    if (wantsAutostart || isLocalWorkspaceSession()) {
+    if (primaryMode === "checking" || primaryMode === "error") return;
+
+    if (primaryMode === "off" && (wantsAutostart || isLocalWorkspaceSession())) {
       void enterLocalWorkspace();
     }
 
@@ -493,7 +531,7 @@ function NasqoProductionShell() {
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       window.clearTimeout(fallbackTimer);
       if (nextUser) {
-        if (wantsAutostart || isLocalWorkspaceSession()) {
+        if (primaryMode === "off" && (wantsAutostart || isLocalWorkspaceSession())) {
           return;
         }
         setLocalWorkspaceSession(false);
@@ -504,13 +542,14 @@ function NasqoProductionShell() {
         setWorkspaceReady(true);
         setStartupError("");
         setCloudInitializationError("");
+        if (primaryMode === "on") return; // Never seed or write to the legacy workspace in central mode.
         void ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName).catch((err) => {
           console.error("Failed initializing workspace:", err);
           if (auth.currentUser?.uid === nextUser.uid) {
             setCloudInitializationError("تعذر إكمال تهيئة البيانات السحابية. ستبقى التعديلات مقفلة حتى تصل بيانات الحساب الحقيقية.");
           }
         });
-      } else if (!wantsAutostart && !isLocalWorkspaceSession()) {
+      } else if (primaryMode === "on" || (!wantsAutostart && !isLocalWorkspaceSession())) {
         setUser(null);
         setAuthReady(true);
         setWorkspaceReady(false);
@@ -522,7 +561,7 @@ function NasqoProductionShell() {
       window.clearTimeout(fallbackTimer);
       unsub();
     };
-  }, [enterLocalWorkspace]);
+  }, [enterLocalWorkspace, primaryMode]);
 
   const handleSignIn = async () => {
     setAuthBusy(true);
@@ -536,6 +575,22 @@ function NasqoProductionShell() {
       setAuthBusy(false);
     }
   };
+
+  if (primaryMode === "error") {
+    return (
+      <div className="nasqo-app" dir="rtl">
+        <div className="auth-gate-shell">
+          <main className="auth-gate-main">
+            <section className="auth-card">
+              <h1>تعذر الاتصال بقاعدة SmartPro المركزية</h1>
+              <p role="alert">لن يتم فتح البيانات المحلية بدلًا من قاعدة البيانات الأساسية حتى لا تتوزع التعديلات بين نظامين.</p>
+              <button className="auth-google-btn" onClick={() => window.location.reload()}>إعادة الاتصال</button>
+            </section>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   if (!authReady || (user && !workspaceReady)) {
     return (
@@ -617,14 +672,18 @@ function NasqoProductionShell() {
                   {authError}
                 </p>
               ) : null}
-              <button
-                className="auth-google-btn"
-                onClick={() => void enterLocalWorkspace()}
-                data-testid="local-erp-signin-button"
-              >
-                <RocketIcon />
-                <span>الدخول السريع — نظام ERP متكامل</span>
-              </button>
+              {primaryMode === "off" ? (
+                <button
+                  className="auth-google-btn"
+                  onClick={() => void enterLocalWorkspace()}
+                  data-testid="local-erp-signin-button"
+                >
+                  <RocketIcon />
+                  <span>الدخول السريع — نظام ERP متكامل</span>
+                </button>
+              ) : (
+                <p>قاعدة SmartPro المركزية هي مصدر البيانات الأساسي. للدخول بصلاحياتك، سجّل باستخدام حساب Google المخوّل.</p>
+              )}
               <div className="auth-gsi-wrap">
                 <GoogleSignInButton
                   onClick={() => void handleSignIn()}
@@ -637,6 +696,16 @@ function NasqoProductionShell() {
             </section>
           </main>
         </div>
+      </div>
+    );
+  }
+
+  if (primaryMode === "on") {
+    return (
+      <div className="nasqo-app" dir="rtl">
+        <Suspense fallback={<div role="status" className="erp-lazy-loading">جاري فتح قاعدة SmartPro...</div>}>
+          <SmartProControlScreen key={user.uid} />
+        </Suspense>
       </div>
     );
   }
@@ -2861,6 +2930,19 @@ const ERP_SCREEN_TITLES: Record<ErpModuleId, string> = {
   "erp-manufacturing": "التصنيع ومراكز التكلفة",
 };
 
+function smartProControlScreen(): FlowScreen {
+  return {
+    id: "smartpro-control",
+    headerHeight: 54,
+    header: (flow) => <SimpleAppHeader title="SmartPro — الإدارة الكاملة" onBack={flow.pop} />,
+    render: () => (
+      <Suspense fallback={<div role="status" className="erp-lazy-loading">جاري فتح قاعدة SmartPro...</div>}>
+        <SmartProControlScreen />
+      </Suspense>
+    ),
+  };
+}
+
 function erpModuleScreen(moduleId: ErpModuleId): FlowScreen {
   return {
     id: `${moduleId}-${Date.now()}`,
@@ -2962,6 +3044,7 @@ function ErpModulePage({ moduleId, flow }: { moduleId: ErpModuleId; flow: FlowCo
       onUpdateErpData={ctx.updateErpData}
       onOpenModule={(nextId) => flow.push(erpModuleScreen(nextId))}
       onOpenInventory={() => flow.push(inventoryReportScreen())}
+      onOpenSmartPro={() => flow.push(smartProControlScreen())}
       onToast={ctx.showToast}
     />
   );

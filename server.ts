@@ -2,6 +2,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type NextFunction, type Request, type Response } from "express";
+import { mountSmartProApi } from "./server/smartpro.ts";
 import { GoogleGenAI, ThinkingLevel, Type } from "@google/genai";
 
 const ALLOWED_CATEGORIES = [
@@ -53,6 +54,9 @@ async function createApp() {
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ ok: true, service: "nasqo-pro-api" });
   });
+
+  // Protected, role-based SmartPro database API; all changes are audited.
+  mountSmartProApi(app);
 
   app.post("/api/ai/categorize-expense", async (req: Request, res: Response) => {
     const apiKey = process.env.GEMINI_API_KEY;

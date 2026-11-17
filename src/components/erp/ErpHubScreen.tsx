@@ -73,6 +73,7 @@ export function ErpHubScreen({
   onUpdateErpData,
   onOpenModule,
   onOpenInventory,
+  onOpenSmartPro,
   onToast,
 }: {
   uid?: string;
@@ -87,6 +88,7 @@ export function ErpHubScreen({
   onUpdateErpData?: (next: ErpWorkspaceData) => void;
   onOpenModule: (moduleId: ErpModuleId) => void;
   onOpenInventory: () => void;
+  onOpenSmartPro: () => void;
   onToast?: (msg: string) => void;
 }) {
   const [flutterModalOpen, setFlutterModalOpen] = useState(false);
@@ -283,6 +285,9 @@ export function ErpHubScreen({
             <p className="erp-hero-sub">
               كل عملية في نقاط البيع أو المشتريات أو الرواتب أو التصنيع تُحدّث المخزون والأستاذ العام لحظيًا.
             </p>
+            <button type="button" className="erp-smartpro-launch" data-testid="open-smartpro-control" onClick={onOpenSmartPro}>
+              قاعدة SmartPro المركزية — إدارة السجلات والصلاحيات
+            </button>
           </section>
 
           <section className="erp-kpi-grid" aria-label="المؤشرات التنفيذية">

@@ -1,0 +1,46 @@
+.smartpro-scroll { background: #f4f8fc; }
+.smartpro-center { min-height: 100%; padding: 12px 12px 110px; color: #15314e; font-family: Tahoma, Arial, sans-serif; }
+.smartpro-hero { border-radius: 15px; padding: 18px 16px; background: linear-gradient(135deg, #104c87, #086eaa); color: white; display: grid; gap: 9px; box-shadow: 0 4px 18px #123e6626; }
+.smartpro-hero small { font-size: 11px; opacity: .84; }
+.smartpro-hero h2 { font-size: 21px; margin: 0; color: white; }
+.smartpro-hero p { font-size: 12px; line-height: 1.7; margin: 0; }
+.smartpro-role { display: block; border: 1px solid #ffffff55; background: #ffffff19; padding: 7px 10px; border-radius: 8px; font-size: 11px; direction: ltr; text-align: right; }
+.smartpro-tabs { display: flex; gap: 5px; overflow-x: auto; padding: 12px 0 8px; }
+.smartpro-tabs button { flex: 1 0 auto; padding: 9px 7px; border-radius: 9px; background: #e0eaf2; color: #234967; font-size: 12px; font-weight: 700; }
+.smartpro-tabs button[aria-current="page"] { background: #0f71b8; color: #fff; }
+.smartpro-panel { margin-top: 10px; padding: 13px; display: grid; gap: 12px; border-radius: 14px; border: 1px solid #dce6f0; background: #fff; box-shadow: 0 2px 10px #133c5e0d; }
+.smartpro-panel h3 { font-size: 16px; margin: 0; }
+.smartpro-panel > p { margin: 0; font-size: 12px; line-height: 1.6; }
+.smartpro-label { display: grid; gap: 5px; font-size: 12px; font-weight: 700; color: #2a4a66; }
+.smartpro-label input, .smartpro-label textarea, .smartpro-label select, .smartpro-actions input, .smartpro-dialog input { display: block; width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid #bfcfdb; border-radius: 8px; background: #fff; color: #1d3749; font: inherit; font-size: 13px; outline-color: #0f72b1; }
+.smartpro-label textarea { resize: vertical; }
+.smartpro-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.smartpro-actions input { min-width: 140px; flex: 1 1 100%; }
+.smartpro-center button { border-radius: 8px; padding: 8px 10px; min-height: 36px; border: 1px solid #cbdce9; background: #eff5fb; color: #125282; font-size: 12px; font-weight: 700; }
+.smartpro-center button:disabled { opacity: .45; cursor: not-allowed; }
+.smartpro-center button.smartpro-primary { color: #fff; background: #096db4; border-color: #096db4; }
+.smartpro-center button.smartpro-danger { color: #fff; background: #b72a39; border-color: #b72a39; }
+.smartpro-center button.smartpro-danger-text { color: #b72a39; background: #fff1f2; border-color: #fbd0d0; }
+.smartpro-caption { font-size: 11px !important; color: #567184; }
+.smartpro-alert, .smartpro-success { border: 1px solid #eccfcf; padding: 11px; margin: 9px 0; background: #fff2f2; color: #ad253c; border-radius: 9px; font-size: 12px; line-height: 1.7; }
+.smartpro-success { background: #f0fbf3; border-color: #b5debf; color: #1e7040; }
+.smartpro-records { display: grid; gap: 8px; }
+.smartpro-record { border: 1px solid #e0e8ee; border-radius: 10px; padding: 9px; background: #fafcfe; display: grid; gap: 8px; }
+.smartpro-record-head { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
+.smartpro-record-head b { flex: 0 0 auto; background: #e4f1fc; color: #126195; border-radius: 6px; padding: 3px 7px; font-size: 11px; }
+.smartpro-record-head strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.smartpro-record-details { display: flex; flex-wrap: wrap; gap: 5px 12px; font-size: 10px; color: #5d7484; }
+.smartpro-record-details b { color: #334c5e; }
+.smartpro-record-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.smartpro-pagination { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
+.smartpro-dialog { position: fixed; inset: 0; z-index: 20000; display: grid; place-items: center; padding: 20px; background: #08243d9c; }
+.smartpro-dialog-body { display: grid; gap: 12px; width: min(94vw, 470px); max-height: 85dvh; overflow-y: auto; padding: 16px; background: #fff; border-radius: 15px; box-shadow: 0 12px 38px #0003; }
+.smartpro-dialog-body h3 { font-size: 17px; margin: 0; }
+.smartpro-dialog-body > p { font-size: 12px; line-height: 1.7; margin: 0; }
+.smartpro-dialog-body code { direction: ltr; font-size: 12px; font-weight: 700; padding: 9px; background: #edf4f9; border-radius: 6px; }
+.smartpro-fields { display: grid; gap: 11px; }
+.smartpro-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.smartpro-role-item { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; border-bottom: 1px solid #e1e8ed; padding: 8px 0; font-size: 12px; }
+.smartpro-role-item b { overflow-wrap: anywhere; }
+.smartpro-audit-row { display: grid; gap: 4px; border-bottom: 1px solid #e1e8ed; padding: 7px 0; font-size: 12px; }
+.smartpro-audit-row small { color: #668091; }
