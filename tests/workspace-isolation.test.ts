@@ -119,3 +119,50 @@ test("empty v1 mirror cannot mask surviving localStorage after older cross-works
   db1.close();
   assert.equal(await readSnapshotFromIndexedDb(uid), null);
 });
+
+test("read-only startup does not create an empty DB or force a version upgrade", async () => {
+  const factory = installIsolatedBrowser();
+  const local = "local-erp-workspace";
+  assert.equal(await readSnapshotFromIndexedDb(local), null);
+  // A failed versionless probe must not prevent the first durable v2 write.
+  await writeSnapshotToIndexedDb(snapshot(local, 6));
+  assert.equal((await readSnapshotFromIndexedDb(local))?.inventory[0]?.quantity, 6);
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = factory.open(LOCAL_DB_NAME);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  assert.equal(db.version, LOCAL_DB_VERSION);
+  db.close();
+});
+
+test("read-only startup reads v1 while a prior tab keeps its v1 connection open", async () => {
+  const factory = installIsolatedBrowser();
+  const uid = "local-erp-workspace";
+  const old = snapshot(uid, 44);
+  const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = factory.open(LOCAL_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      for (const name of ["workspaces", "accounts", "ledger", "warehouses", "inventory"])
+        db.createObjectStore(name, { keyPath: "id" });
+      db.createObjectStore("erp_modules", { keyPath: "uid" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = legacy.transaction(["workspaces", "accounts", "warehouses", "inventory"], "readwrite");
+      tx.objectStore("workspaces").put(old.workspace);
+      tx.objectStore("accounts").put(old.accounts[0]);
+      tx.objectStore("warehouses").put(old.warehouses[0]);
+      tx.objectStore("inventory").put(old.inventory[0]);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    assert.equal((await readSnapshotFromIndexedDb(uid))?.inventory[0]?.quantity, 44);
+  } finally {
+    legacy.close();
+  }
+});

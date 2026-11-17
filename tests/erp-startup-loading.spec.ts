@@ -67,3 +67,54 @@ test("blocked v1 IndexedDB upgrade shows recovery instead of infinite spinner an
     await context.close();
   }
 });
+
+
+test("existing v1 accounting records open immediately even while another old tab holds v1", async ({ browser }) => {
+  test.setTimeout(35_000);
+  const context = await browser.newContext();
+  try {
+    const oldTab = await context.newPage();
+    await oldTab.goto("/");
+    await oldTab.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("nasqo_pro_erp_db", 1);
+        request.onupgradeneeded = () => {
+          const next = request.result;
+          for (const name of ["workspaces", "accounts", "ledger", "warehouses", "inventory"])
+            next.createObjectStore(name, { keyPath: "id" });
+          next.createObjectStore("erp_modules", { keyPath: "uid" });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(["workspaces", "accounts", "warehouses", "inventory"], "readwrite");
+        tx.objectStore("workspaces").put({
+          id: "local-erp-workspace", ownerId: "local-erp-workspace", companyName: "بيانات محلية محفوظة",
+          defaultCurrency: "ريال", whatsappProvider: "nasqo", whatsappInstantEnabled: false, whatsappPhone: "",
+        });
+        tx.objectStore("accounts").put({
+          id: "acc_legacy_open", ownerId: "local-erp-workspace", name: "حساب موجود من الإصدار القديم",
+          category: "clients", sortOrder: 1, codeNumber: 11, currency: "ريال", openingBalance: 0,
+          phone: "", creditLimit: 0, isCashAccount: false, accountImage: "1",
+          settlement: false, documentNumberRequired: false, messageMethod: "sms", sendMode: "never",
+          note: "", openingDirection: "debit",
+        });
+        tx.objectStore("warehouses").put({ id: "wh_old", ownerId: "local-erp-workspace", name: "مخزن قديم", codeNumber: 1, details: "", isDefault: true });
+        tx.objectStore("inventory").put({ id: "item_old", ownerId: "local-erp-workspace", name: "صنف قديم", quantity: 9, avgCost: 1, unit: "حبة", warehouseId: "wh_old" });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      (window as Window & { __heldLegacyDb?: IDBDatabase }).__heldLegacyDb = db;
+    });
+    const newApp = await context.newPage();
+    await newApp.addInitScript(() => localStorage.setItem("nasqo-local-session-active", "1"));
+    await newApp.goto("/?autostart=1");
+    await expect(newApp.getByTestId("dashboard-screen")).toBeVisible({ timeout: 4_000 });
+    await expect(newApp.getByTestId("startup-slow-help")).toHaveCount(0);
+    await expect(newApp.getByTestId("startup-storage-error")).toHaveCount(0);
+    await oldTab.evaluate(() => (window as Window & { __heldLegacyDb?: IDBDatabase }).__heldLegacyDb?.close());
+  } finally {
+    await context.close();
+  }
+});
