@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("public NASQO SQLite page shows mobile login and no blank overlay", async ({ browser }) => {
+test("NASQO SQLite page shows mobile login without clipped grid", async ({ browser }) => {
   test.setTimeout(65000);
   const ctx = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -14,7 +14,11 @@ test("public NASQO SQLite page shows mobile login and no blank overlay", async (
   page.on("console", msg => { if (msg.type() === "error") errors.push("CONSOLE: " + msg.text()); });
   page.on("response", response => { if (response.status() >= 400) errors.push("HTTP: " + response.status() + " " + response.url()); });
   try {
-    await page.goto("https://erp.indexesstore.com/nsqo-app/?autostart=1", {waitUntil:"domcontentloaded",timeout:30000});
+    await page.route("**/api/db/auth/status", route => route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ mode: "password", authenticated: false }),
+    }));
+    await page.goto("/?autostart=1", {waitUntil:"domcontentloaded",timeout:30000});
     await page.waitForTimeout(5500);
     console.log("PUBLIC_MOBILE_TEXT", JSON.stringify((await page.locator("body").innerText()).slice(0,1400)));
     console.log("PUBLIC_MOBILE_ERRORS", JSON.stringify(errors.slice(0,30)));
