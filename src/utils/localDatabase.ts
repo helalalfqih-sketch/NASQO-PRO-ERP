@@ -60,12 +60,12 @@ function openLocalDb(): Promise<IDBDatabase> {
     const complete = () => {
       if (finished) return false;
       finished = true;
-      window.clearTimeout(deadline);
+      clearTimeout(deadline);
       return true;
     };
     // A blocked upgrade used to leave the app on its loading screen forever.
     // A timeout does not delete or reset any browser database.
-    const deadline = window.setTimeout(() => {
+    const deadline = setTimeout(() => {
       if (complete()) reject(new Error(
         "تأخر فتح قاعدة البيانات المحلية. أغلق نوافذ نسق برو الأخرى ثم اضغط إعادة المحاولة. بياناتك لم تُحذف.",
       ));
