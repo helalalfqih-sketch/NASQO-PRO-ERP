@@ -44,6 +44,7 @@ jobs:
           npx playwright install --with-deps chromium
           npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts tests/smartpro-admin-ui.spec.ts tests/unified-sqlite-e2e.spec.ts --reporter=line
           npx playwright test tests/legacy-real-data.spec.ts --reporter=line
+          npx playwright test tests/public-deployment-mobile.spec.ts --reporter=line
       - name: Prepare release
         run: |
           mkdir -p release/dist
