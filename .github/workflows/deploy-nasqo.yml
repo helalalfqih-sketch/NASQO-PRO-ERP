@@ -37,7 +37,7 @@ jobs:
       - name: Verify Android Back navigation in Chromium
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts --reporter=line
+          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts --reporter=line
           NASQO_PRIVATE_E2E_SOURCE=backup_2026.11.08_03.49.26.back npx playwright test tests/legacy-real-data.spec.ts --reporter=line
       - name: Prepare release
         run: |

@@ -1,6 +1,8 @@
 import {
   createContext,
   useCallback,
+  lazy,
+  Suspense,
   useContext,
   useEffect,
   useMemo,
@@ -81,24 +83,24 @@ import { BackupNameModal } from "./components/BackupNameModal";
 import { DashboardScreen } from "./components/DashboardScreen";
 import { ExpenseCategorySelector } from "./components/ExpenseCategorySelector";
 import { GoogleDriveModal } from "./components/GoogleDriveModal";
-import { LegacyFinancialImportModal } from "./components/LegacyFinancialImportModal";
-import { FullSqliteImportModal } from "./components/FullSqliteImportModal";
-import { LegacyArchiveExplorerModal } from "./components/LegacyArchiveExplorerModal";
+
+
+
 import { CustomerLegacyArchiveSection } from "./components/CustomerLegacyArchiveSection";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
 import { PrintOptionsModal } from "./components/PrintOptionsModal";
-import { QrScannerModal } from "./components/QrScannerModal";
+
 import { SystemSettingsPage } from "./components/SystemSettingsPage";
 import { TransferModal } from "./components/TransferModal";
 import { WhatsAppIcon } from "./components/WhatsAppIcon";
-import { ErpHubScreen } from "./components/erp/ErpHubScreen";
-import { ErpFinanceScreen } from "./components/erp/ErpFinanceScreen";
-import { ErpHrScreen } from "./components/erp/ErpHrScreen";
-import { ErpCrmPosScreen } from "./components/erp/ErpCrmPosScreen";
-import { ErpProcurementScreen } from "./components/erp/ErpProcurementScreen";
-import { ErpManufacturingScreen } from "./components/erp/ErpManufacturingScreen";
+
+
+
+
+
+
 import {
   loadErpWorkspaceData,
   saveErpWorkspaceData,
@@ -416,23 +418,71 @@ function createLocalUserProfile(): User {
   } as User;
 }
 
+const LegacyFinancialImportModal = lazy(() => import("./components/LegacyFinancialImportModal").then((mod) => ({ default: mod.LegacyFinancialImportModal })));
+const FullSqliteImportModal = lazy(() => import("./components/FullSqliteImportModal").then((mod) => ({ default: mod.FullSqliteImportModal })));
+const LegacyArchiveExplorerModal = lazy(() => import("./components/LegacyArchiveExplorerModal").then((mod) => ({ default: mod.LegacyArchiveExplorerModal })));
+const QrScannerModal = lazy(() => import("./components/QrScannerModal").then((mod) => ({ default: mod.QrScannerModal })));
+const ErpHubScreen = lazy(() => import("./components/erp/ErpHubScreen").then((mod) => ({ default: mod.ErpHubScreen })));
+const ErpFinanceScreen = lazy(() => import("./components/erp/ErpFinanceScreen").then((mod) => ({ default: mod.ErpFinanceScreen })));
+const ErpHrScreen = lazy(() => import("./components/erp/ErpHrScreen").then((mod) => ({ default: mod.ErpHrScreen })));
+const ErpCrmPosScreen = lazy(() => import("./components/erp/ErpCrmPosScreen").then((mod) => ({ default: mod.ErpCrmPosScreen })));
+const ErpProcurementScreen = lazy(() => import("./components/erp/ErpProcurementScreen").then((mod) => ({ default: mod.ErpProcurementScreen })));
+const ErpManufacturingScreen = lazy(() => import("./components/erp/ErpManufacturingScreen").then((mod) => ({ default: mod.ErpManufacturingScreen })));
+
 function NasqoProductionShell() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [startupError, setStartupError] = useState("");
+  const [startupSlow, setStartupSlow] = useState(false);
+  const localStartPending = useRef<Promise<void> | null>(null);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
 
   const enterLocalWorkspace = useCallback(async () => {
     setLocalWorkspaceSession(true);
     const localUser = createLocalUserProfile();
-    await ensureWorkspaceSeeded(localUser.uid, localUser.displayName);
     setUser(localUser);
     setAuthReady(true);
-    setWorkspaceReady(true);
+    setWorkspaceReady(false);
+    setStartupError("");
+    setStartupSlow(false);
+    // React StrictMode and fast double-taps must not start parallel migrations.
+    let pending = localStartPending.current;
+    if (!pending) {
+      pending = ensureWorkspaceSeeded(localUser.uid, localUser.displayName);
+      localStartPending.current = pending;
+      void pending.then(
+        () => { if (localStartPending.current === pending) localStartPending.current = null; },
+        () => { if (localStartPending.current === pending) localStartPending.current = null; },
+      );
+    }
+    try {
+      await pending;
+      setWorkspaceReady(true);
+    } catch (error) {
+      // Do not unlock accounting writes against a stale localStorage fallback.
+      setStartupError(error instanceof Error ? error.message : "تعذر فتح قاعدة بيانات الهاتف؛ أغلق علامات التبويب الأخرى وأعد المحاولة.");
+    }
   }, []);
+
+  useEffect(() => {
+    if (authReady && (!user || workspaceReady)) {
+      setStartupSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setStartupSlow(true), 5_000);
+    const deadline = window.setTimeout(() => {
+      setStartupError((previous) => previous ||
+        "انتهت مهلة تهيئة مساحة العمل. قد تكون قاعدة البيانات محجوبة أو الاتصال بطيئًا. أغلق النوافذ الأخرى وأعد المحاولة دون حذف البيانات.");
+    }, 15_000);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(deadline);
+    };
+  }, [authReady, user, workspaceReady]);
 
   useEffect(() => {
     const wantsAutostart =
@@ -456,17 +506,20 @@ function NasqoProductionShell() {
         setLocalWorkspaceSession(false);
         setUser(nextUser);
         setAuthReady(true);
+        setWorkspaceReady(false);
+        setStartupError("");
         try {
           await ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName);
+          setWorkspaceReady(true);
         } catch (err) {
           console.error("Failed initializing workspace:", err);
-        } finally {
-          setWorkspaceReady(true);
+          setStartupError(err instanceof Error ? err.message : "تعذر الاتصال بقاعدة بيانات مساحة العمل.");
         }
       } else if (!wantsAutostart && !isLocalWorkspaceSession()) {
         setUser(null);
         setAuthReady(true);
         setWorkspaceReady(false);
+        setStartupError("");
       }
     });
     return () => {
@@ -507,8 +560,38 @@ function NasqoProductionShell() {
               <span className="drawer-hero-mark">
                 <CubeIcon />
               </span>
-              <h1>جاري تحميل منظومة الـ ERP...</h1>
-              <p>يتم تجهيز الأستاذ العام، المخازن، الرواتب، المبيعات، والمشتريات.</p>
+              {startupError ? (
+                <>
+                  <h1>تعذر فتح مساحة العمل</h1>
+                  <p role="alert" className="auth-error" data-testid="startup-storage-error">{startupError}</p>
+                  <button
+                    type="button"
+                    className="auth-google-btn"
+                    data-testid="startup-retry-button"
+                    onClick={() => {
+                      if (user?.uid === LOCAL_WORKSPACE_UID) void enterLocalWorkspace();
+                      else window.location.reload();
+                    }}
+                  >
+                    <ReloadIcon /> إعادة المحاولة دون حذف البيانات
+                  </button>
+                  <p>إذا كانت هناك نافذة أخرى لنسق برو مفتوحة، أغلقها أولًا. لا تمسح بيانات المتصفح أو ذاكرة التطبيق.</p>
+                </>
+              ) : (
+                <>
+                  <h1>جاري تحميل منظومة الـ ERP...</h1>
+                  <p>يتم تجهيز بيانات مساحة العمل المحفوظة بأمان.</p>
+                  {startupSlow ? (
+                    <div className="startup-slow-help" role="status" data-testid="startup-slow-help">
+                      <p>استغرق فتح قاعدة البيانات وقتًا أطول من المعتاد. قد تكون نافذة قديمة تعطل التحديث.</p>
+                      <button type="button" className="auth-google-btn" onClick={() => window.location.reload()}>
+                        <ReloadIcon /> إعادة محاولة فتح التطبيق
+                      </button>
+                      <p>أغلق النوافذ الأخرى أولًا، دون مسح بيانات نسق برو.</p>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </section>
           </main>
         </div>
@@ -1807,14 +1890,18 @@ function AuthenticatedWorkspace({
           onSaveLocal={saveLocalNamedBackup}
           onSaveToGoogle={saveCloudNamedBackup}
         />
-        <LegacyFinancialImportModal
-          open={overlay === "legacy-financial-import"}
+        <Suspense fallback={<p role="status" className="erp-lazy-loading">جاري فتح مركز البيانات...</p>}>
+        {overlay === "legacy-financial-import" ? (
+          <LegacyFinancialImportModal
+          open
           onClose={() => setOverlay(null)}
           workspaceId={user.uid}
           onNotify={showToast}
-        />
-        <FullSqliteImportModal
-          open={overlay === "full-sqlite-import"}
+          />
+        ) : null}
+        {overlay === "full-sqlite-import" ? (
+          <FullSqliteImportModal
+          open
           onClose={() => setOverlay(null)}
           workspaceId={user.uid}
           liveWorkspace={workspace}
@@ -1823,14 +1910,18 @@ function AuthenticatedWorkspace({
           liveInventory={inventory}
           liveLedger={ledger}
           onNotify={showToast}
-        />
-        <LegacyArchiveExplorerModal
-          open={overlay === "legacy-archive-explorer"}
+          />
+        ) : null}
+        {overlay === "legacy-archive-explorer" ? (
+          <LegacyArchiveExplorerModal
+          open
           onClose={() => setOverlay(null)}
           initialRoleFilter={legacyExplorerFilter}
           initialSearch={legacyExplorerQuery}
           workspaceId={user.uid}
-        />
+          />
+        ) : null}
+        </Suspense>
         <GoogleDriveModal
           open={overlay === "google-drive"}
           onClose={() => setOverlay(null)}
@@ -1886,7 +1977,9 @@ function AuthenticatedWorkspace({
           onDismiss={handleDismissNotification}
           onSelectNotification={handleSelectNotification}
         />
-        <QrScannerModal
+        {overlay === "qr-scanner" ? (
+          <Suspense fallback={<p role="status" className="erp-lazy-loading">جاري فتح الماسح...</p>}>
+            <QrScannerModal
           open={overlay === "qr-scanner"}
           onClose={() => setOverlay(null)}
           uid={user.uid}
@@ -1897,7 +1990,9 @@ function AuthenticatedWorkspace({
             setOverlay(null);
             flowRef.current?.push(inventoryReportScreen());
           }}
-        />
+            />
+          </Suspense>
+        ) : null}
 
         <input
           ref={jsonRestoreInputRef}
@@ -2770,7 +2865,11 @@ function erpModuleScreen(moduleId: ErpModuleId): FlowScreen {
     id: `${moduleId}-${Date.now()}`,
     headerHeight: 54,
     header: (flow) => <SimpleAppHeader title={ERP_SCREEN_TITLES[moduleId]} onBack={flow.pop} />,
-    render: (flow) => <ErpModulePage moduleId={moduleId} flow={flow} />,
+    render: (flow) => (
+      <Suspense fallback={<div role="status" className="erp-lazy-loading" data-testid="erp-module-loading">جاري فتح شاشة الـ ERP...</div>}>
+        <ErpModulePage moduleId={moduleId} flow={flow} />
+      </Suspense>
+    ),
   };
 }
 

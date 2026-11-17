@@ -12,7 +12,6 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  getDocFromServer,
   getDocs,
   getFirestore,
   limit,
@@ -104,17 +103,6 @@ export function handleFirestoreError(
   console.error("Firestore Error: ", JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
-
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, "test", "connection"));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("the client is offline")) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-void testConnection();
 
 // Google Drive integration intentionally has per-file access only. The app
 // can manage files it creates or that the user explicitly shares with it,
@@ -415,9 +403,13 @@ export async function ensureWorkspaceSeeded(uid: string, displayName?: string | 
           await writeSnapshotToIndexedDb(localSnap);
           notifyLocalListeners(localSnap);
         }
-      } catch {
-        // Fallback cleanly to localStorage snapshot
+      } catch (err) {
+        // A blocked/failed IndexedDB is NOT an empty database. Never open the
+        // ledger with stale localStorage and allow writes over live records.
+        throw err;
       }
+    } else {
+      notifyLocalListeners(localSnap);
     }
     return;
   }
