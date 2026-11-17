@@ -112,13 +112,14 @@ export async function loadSingleHistoricalInvoice(
     const pricedTable = table === "bin" ? "bin_bill_details" : "bill_details";
     const freeTable = table === "bin" ? "bin_bill_details2" : "bill_details2";
 
-    const [pricedRows, freeRows, customers, products, currencies, boxes, savedRoles] = await Promise.all([
+    const [pricedRows, freeRows, customers, products, currencies, boxes, stores, savedRoles] = await Promise.all([
       rowsByFk(db, batchId, pricedTable, moveId),
       rowsByFk(db, batchId, freeTable, moveId),
       allRows(db, batchId, "customers"),
       allRows(db, batchId, "products"),
       allRows(db, batchId, "currencies"),
       allRows(db, batchId, "boxes"),
+      allRows(db, batchId, "stores"),
       getSetting<RoleMapping>(db, `roles:${sha256}`),
     ]);
 
@@ -127,6 +128,7 @@ export async function loadSingleHistoricalInvoice(
       products,
       currencies,
       boxes,
+      stores,
       input_move: table === "input_move" ? [move] : [],
       bin: table === "bin" ? [move] : [],
       bill_details: table === "input_move" ? pricedRows : [],

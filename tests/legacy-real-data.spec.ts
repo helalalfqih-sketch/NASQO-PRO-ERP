@@ -82,7 +82,12 @@ test("real private source: 26,001 rows, 125 accounts, 1,402 products, 5 stores a
   const archive = page.getByRole("dialog");
   await archive.getByPlaceholder(/بحث بالرقم/).fill(`#${invoiceId}`);
   await archive.getByRole("button", { name: "فتح البنود" }).first().click();
-  await expect(archive.getByTestId("legacy-invoice-detail").locator("tbody tr")).toHaveCount(totalLines, { timeout: 20_000 });
+  const invoicePreview = archive.getByTestId("legacy-invoice-detail");
+  await expect(invoicePreview.locator("tbody tr")).toHaveCount(totalLines, { timeout: 20_000 });
+  await expect(invoicePreview.getByText("عدد القطع")).toBeVisible();
+  await expect(invoicePreview.getByText("مجموع البنود")).toBeVisible();
+  await invoicePreview.locator("tbody tr").first().getByRole("button").click();
+  await expect(invoicePreview.getByTestId("legacy-invoice-line-info")).toBeVisible();
   await archive.getByRole("button", { name: "✕" }).click();
 
   await page.reload();

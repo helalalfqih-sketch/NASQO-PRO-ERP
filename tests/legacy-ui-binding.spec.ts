@@ -50,7 +50,23 @@ test("SQLite one-click import populates live screens, persists and searches sour
   await archive.getByPlaceholder(/بحث بالرقم/).fill("BAR-9988");
   await expect(archive.getByText("عميل اختبار نسق").first()).toBeVisible();
   await archive.getByRole("button", { name: "فتح البنود" }).click();
-  await expect(archive.getByTestId("legacy-invoice-detail").getByText("فلتر محرك مميز")).toBeVisible();
+  const preview = archive.getByTestId("legacy-invoice-detail");
+  await expect(preview.getByText("فلتر محرك مميز")).toBeVisible();
+  await expect(preview.getByText("عميل اختبار نسق")).toBeVisible();
+  await expect(preview.getByText("مخزن اختبار نسق")).toBeVisible();
+  await expect(preview.getByText(/فاتورة تاريخية غير مُرحّلة للأستاذ العام/)).toBeVisible();
+  await expect(preview.getByText("300", { exact: true }).first()).toBeVisible();
+  await preview.getByRole("button", { name: "تفاصيل بند فلتر محرك مميز" }).click();
+  await expect(preview.getByTestId("legacy-invoice-line-info")).toBeVisible();
+  await preview.getByRole("searchbox", { name: "البحث داخل بنود الفاتورة" }).fill("صنف غير موجود");
+  await expect(preview.getByText("لا توجد بنود مطابقة للبحث.")).toBeVisible();
+  await preview.getByRole("searchbox", { name: "البحث داخل بنود الفاتورة" }).fill("فلتر");
+  await expect(preview.locator("tbody tr")).toHaveCount(1);
+  const [readCopy] = await Promise.all([
+    page.waitForEvent("download"),
+    preview.getByRole("button", { name: "حفظ نسخة قراءة من الفاتورة" }).click(),
+  ]);
+  expect(readCopy.suggestedFilename()).toBe("nasqo-historical-input_move-30.txt");
   await archive.getByRole("button", { name: "✕" }).click();
   await page.reload();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
@@ -96,6 +112,21 @@ test("SQLite one-click import populates live screens, persists and searches sour
   expect(approved?.quantity).toBe(7);
   expect(approved?.quantityUnverified).not.toBe(true);
   expect(approved?.sellingPrice).toBe(200);
+
+  // The same imported SKU must be searchable in the live POS and new invoice,
+  // without posting a test sale into the ledger.
+  await page.getByTestId("quick-erp-crm").click();
+  await expect(page.getByTestId("erp-crm-screen")).toBeVisible();
+  await page.getByRole("textbox", { name: "البحث عن صنف أو باركود في نقطة البيع" }).fill("BAR-9988");
+  await expect(page.getByText("فلتر محرك مميز").first()).toBeVisible();
+  await page.getByTestId("open-invoice-form-btn").click();
+  const newInvoiceForm = page.getByTestId("invoice-form-modal");
+  await expect(newInvoiceForm).toBeVisible();
+  await newInvoiceForm.getByRole("textbox", { name: "البحث عن صنف أو باركود داخل الفاتورة" }).fill("BAR-9988");
+  await expect(newInvoiceForm.getByText("1 صنف مطابق للبحث")).toBeVisible();
+  await newInvoiceForm.getByRole("button", { name: "✕" }).click();
+  await page.getByLabel("رجوع", { exact: true }).click();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible();
 
   // Reopen saved original locally without uploading it again; reimport must
   // preserve the user's subsequent stocktake and price approval.

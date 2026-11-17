@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CheckCircledIcon, PlusIcon } from "@radix-ui/react-icons";
-import { formatAmount } from "../../accounting";
+import { formatAmount, normalizeArabicSearch } from "../../accounting";
 import {
   parsePositiveNumber,
   type ErpDealRecord,
@@ -55,6 +55,7 @@ export function ErpCrmPosScreen({
   onToast: (msg: string) => void;
 }) {
   const [tab, setTab] = useState<CrmPosTab>("pos");
+  const [catalogSearch, setCatalogSearch] = useState("");
   const keyboard = useKeyboard();
 
   const salesAndClientAccounts = useMemo(() => {
@@ -100,6 +101,13 @@ export function ErpCrmPosScreen({
         };
       });
   }, [cart, inventory]);
+
+  const visibleCatalog = useMemo(() => {
+    const query = normalizeArabicSearch(catalogSearch);
+    return inventory.filter((item) => !query || normalizeArabicSearch(
+      `${item.name} ${item.sku ?? ""} ${item.unit} ${item.legacyRef ?? ""}`,
+    ).includes(query));
+  }, [catalogSearch, inventory]);
 
   const subtotal = useMemo(
     () => cartLines.reduce((sum, l) => sum + l.lineTotal, 0),
@@ -394,8 +402,17 @@ export function ErpCrmPosScreen({
                   <span>فاتورة مفصلة</span>
                 </button>
               </div>
+              <label className="erp-field" style={{ margin: "8px 0" }}>
+                <span>البحث في الأصناف المستوردة</span>
+                <KeyboardInput
+                  aria-label="البحث عن صنف أو باركود في نقطة البيع"
+                  placeholder="ابحث بالاسم أو الباركود..."
+                  value={catalogSearch}
+                  onChange={(event) => setCatalogSearch(event.target.value)}
+                />
+              </label>
               <div className="erp-list">
-                {inventory.map((item) => {
+                {visibleCatalog.map((item) => {
                   const qtyInCart = cart[item.id] ?? 0;
                   const sellPrice = approvedLiveSellingPrice(item);
                   const saleBlocked = !canSellFromVerifiedStock(item);

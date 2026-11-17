@@ -295,12 +295,19 @@ export type LegacyInvoice = {
   match: "matches_header" | "mismatch" | "no_lines";
   deleted: boolean;
   postingStatus: "historical_unposted";
+  /** Exact source context; these fields never imply live posting approval. */
+  sourceBoxName: string;
+  warehouseNames: string[];
+  sourceTime: string | null;
+  headerDiscount: number | null;
 };
 
 export type DocumentContext = {
   customers: Map<string, Row>;
   products: Map<string, Row>;
   currencies: Map<string, Row>;
+  stores: Map<string, Row>;
+  boxes: Map<string, Row>;
   evidence: Map<number, BillTypeEvidence>;
   roles: RoleMapping;
 };
@@ -310,6 +317,8 @@ export function documentContext(tables: Tables, roles: RoleMapping, evidence: Bi
     customers: new Map((tables.customers ?? []).map((c) => [String(c.id), c])),
     products: new Map((tables.products ?? []).map((p) => [String(p.id), p])),
     currencies: new Map((tables.currencies ?? []).map((c) => [String(c.id), c])),
+    stores: new Map((tables.stores ?? []).map((store) => [String(store.id), store])),
+    boxes: new Map((tables.boxes ?? []).map((box) => [String(box.id), box])),
     evidence: new Map(evidence.map((e) => [e.billType, e])),
     roles,
   };
@@ -373,6 +382,18 @@ export function composeInvoice(
   const person = ctx.customers.get(String(move.per_id));
   const currency = ctx.currencies.get(String(move.cur));
   const mapped = ctx.roles[String(billType)];
+  const storeIds = [...new Set(lines.map((line) => line.storeId).filter((id): id is number => id !== null && Number.isFinite(id)))];
+  const warehouseNames = storeIds.map((id) => {
+    const store = ctx.stores.get(String(id));
+    return store ? text(store.name) : `مخزن #${id}`;
+  });
+  const box = ctx.boxes.get(String(move.cboxid));
+  const sourceTime = move.hour !== undefined && move.mint !== undefined &&
+    Number.isInteger(Number(move.hour)) && Number.isInteger(Number(move.mint)) &&
+    Number(move.hour) >= 0 && Number(move.hour) <= 23 && Number(move.mint) >= 0 && Number(move.mint) <= 59
+    ? `${String(move.hour).padStart(2, "0")}:${String(move.mint).padStart(2, "0")}` : null;
+  const headerDiscount = move.discount_amount !== undefined && move.discount_amount !== null
+    ? num(move.discount_amount) : null;
   return {
     id: Number(move.id),
     table,
@@ -395,6 +416,10 @@ export function composeInvoice(
     match,
     deleted: table === "bin",
     postingStatus: "historical_unposted",
+    sourceBoxName: box ? text(box.name) : (move.cboxid === undefined ? "" : `#${text(move.cboxid)}`),
+    warehouseNames,
+    sourceTime,
+    headerDiscount,
   };
 }
 
