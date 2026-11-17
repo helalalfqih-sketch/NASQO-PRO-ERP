@@ -26,5 +26,16 @@ test("public NASQO SQLite page shows mobile login and no blank overlay", async (
     expect(errors.filter(e=>e.startsWith("PAGE:"))).toEqual([]);
     await expect(page.getByText("نسقو برو — قاعدة SQLite المحلية")).toBeVisible();
     await expect(page.getByTestId("sqlite-admin-login")).toBeVisible();
+    const card = await page.locator(".auth-gate-single-panel .auth-card").boundingBox();
+    const field = await page.getByLabel("كلمة مرور قاعدة SQLite").boundingBox();
+    const login = await page.getByTestId("sqlite-admin-login").boundingBox();
+    expect(card).not.toBeNull();
+    expect(field).not.toBeNull();
+    expect(login).not.toBeNull();
+    expect(card!.y).toBeGreaterThanOrEqual(0);
+    expect(card!.y + card!.height).toBeLessThanOrEqual(844);
+    expect(field!.y).toBeGreaterThanOrEqual(card!.y);
+    expect(login!.y + login!.height).toBeLessThanOrEqual(844);
+
   } finally { await ctx.close(); }
 });

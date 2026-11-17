@@ -648,7 +648,7 @@ function NasqoProductionShell() {
   if (sqliteAccess !== "ready") {
     return (
       <div className="nasqo-app" dir="rtl">
-        <div className="auth-gate-shell">
+        <div className="auth-gate-shell auth-gate-single-panel">
           <main className="auth-gate-main">
             <section className="auth-card">
               <h1>نسقو برو — قاعدة SQLite المحلية</h1>
@@ -685,7 +685,7 @@ function NasqoProductionShell() {
   if (primaryMode === "error") {
     return (
       <div className="nasqo-app" dir="rtl">
-        <div className="auth-gate-shell">
+        <div className="auth-gate-shell auth-gate-single-panel">
           <main className="auth-gate-main">
             <section className="auth-card">
               <h1>تعذر الاتصال بقاعدة SmartPro المركزية</h1>

@@ -1334,6 +1334,17 @@ button[aria-pressed="true"] > .period-radio-mark { border-color: var(--nasqo-ora
   background: var(--nasqo-canvas);
 }
 
+/* The SQLite login and error states have no header. Without this rule,
+   their sole <main> lands in the first 56px grid row and its entire login
+   card becomes clipped on narrow Android/WebView screens. */
+.auth-gate-shell.auth-gate-single-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+.auth-gate-single-panel .auth-gate-main {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .auth-gate-shell .app-header .brand-mark {
   display: grid;
 }
