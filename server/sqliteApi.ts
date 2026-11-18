@@ -22,6 +22,7 @@ import {
 } from "./smartproSqlImporter.ts";
 import {
   DEFAULT_WORKSPACE_ID,
+  SqliteValidationError,
   batchUpdateInventoryItemRows,
   deleteLedgerEntryRow,
   ensureEmptyWorkspace,
@@ -83,6 +84,10 @@ function route(fn: (req: Request, res: Response, db: DatabaseSync) => Promise<vo
     } catch (error) {
       if (error instanceof HttpError) {
         res.status(error.status).json({ error: error.message });
+        return;
+      }
+      if (error instanceof SqliteValidationError) {
+        res.status(400).json({ error: error.message });
         return;
       }
       const message = error instanceof Error ? error.message : "خطأ غير متوقع في قاعدة البيانات.";

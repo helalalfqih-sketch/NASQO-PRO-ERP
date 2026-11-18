@@ -139,6 +139,8 @@ export type LedgerEntryRecord = {
   settledOnReceipt?: boolean;
   currency: CurrencyCode;
   exchangeRate: number;
+  taxAmount?: number;
+  discount?: number;
   details: string;
   documentNumber: string;
   warehouseId: string;

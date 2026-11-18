@@ -16,8 +16,10 @@ import { importLegacySqliteIntoUnifiedDb } from "../server/legacySqliteImporter.
 import { importSmartProSqlDump } from "../server/smartproSqlImporter.ts";
 import {
   DEFAULT_WORKSPACE_ID,
+  SqliteValidationError,
   batchUpdateInventoryItemRows,
   closeSqliteDb,
+  deleteLedgerEntryRow,
   ensureEmptyWorkspace,
   ensureStarterWorkspace,
   exportCleanSqliteSnapshotBytes,
@@ -794,6 +796,258 @@ test("6. schema v2 migration, multi-unit stock math, in-place invoice edits, del
     assert.equal(datedStmt.rows.length, 1); // Only 2026-02-15 voucher
     assert.equal(datedStmt.netBalance, 2500); // 2900 credit - 400 debit
     assert.equal(datedStmt.netDirection, "credit");
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("7. exact negative stock reversals, invoice line/total enforcement, and period opening balance report", () => {
+  const { dir, filePath } = makeTempDbPath();
+  try {
+    const db = getSqliteDb(filePath);
+    ensureEmptyWorkspace(db, DEFAULT_WORKSPACE_ID);
+
+    const whMain = upsertWarehouseRow(db, DEFAULT_WORKSPACE_ID, { name: "المخزن الرئيسي", isDefault: true, codeNumber: 1 });
+    const whBranch = upsertWarehouseRow(db, DEFAULT_WORKSPACE_ID, { name: "فرع تعز", codeNumber: 2 });
+    const accClient = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, { name: "عميل نقدي", category: "clients", currency: "ريال" });
+    const accSupplier = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, { name: "مورد بضاعة", category: "purchases", currency: "ريال" });
+
+    // A) Verified item with opening quantity = 5; oversell 8 -> -3 -> soft-delete/restore/hard-delete must return to 5
+    const itemVerified = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+      id: "prod_oversell",
+      name: "كشاف يدوي",
+      unit: "حبة",
+      quantity: 5,
+      avgCost: 100,
+      sellingPrice: 150,
+      warehouseId: whMain.id,
+      quantityUnverified: false,
+    });
+    assert.equal(itemVerified.quantity, 5);
+
+    const oversellSale = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      kind: "invoice",
+      typeLabel: "فاتورة بيع آجل",
+      payment: "credit",
+      direction: "debit",
+      amount: 1200,
+      currency: "ريال",
+      warehouseId: whMain.id,
+      warehouseName: whMain.name,
+      invoiceContent: "items",
+      entryNumber: 501,
+      entryDate: "2026-06-05",
+      lines: [
+        { inventoryItemId: itemVerified.id, warehouseId: whMain.id, itemName: itemVerified.name, unit: "حبة", quantity: 8, price: 150, total: 1200 },
+      ],
+    });
+    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, -3);
+
+    setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, oversellSale.id, true);
+    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, 5);
+
+    setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, oversellSale.id, false);
+    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, -3);
+
+    deleteLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, oversellSale.id);
+    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, 5);
+
+    // B) Invoice line recomputation + mismatch rejection
+    // Caller spoofs line.total=9999 while 2*150 - 20 = 280; server recomputes line.total to 280!
+    const validSale = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      kind: "invoice",
+      typeLabel: "فاتورة بيع آجل",
+      payment: "credit",
+      direction: "debit",
+      amount: 280,
+      currency: "ريال",
+      warehouseId: whMain.id,
+      warehouseName: whMain.name,
+      invoiceContent: "items",
+      entryNumber: 502,
+      entryDate: "2026-06-05",
+      lines: [
+        { inventoryItemId: itemVerified.id, warehouseId: whMain.id, itemName: itemVerified.name, unit: "حبة", quantity: 2, price: 150, discount: 20, total: 9999 },
+      ],
+    });
+    const savedDetail = fetchInvoiceDetail(db, DEFAULT_WORKSPACE_ID, validSale.id);
+    assert.equal(savedDetail?.lines[0].total, 280);
+    assert.equal(savedDetail?.entry.amount, 280);
+
+    // Reject mismatched header amount
+    assert.throws(
+      () =>
+        insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+          accountId: accClient.id,
+          accountName: accClient.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 500,
+          warehouseId: whMain.id,
+          invoiceContent: "items",
+          entryNumber: 503,
+          entryDate: "2026-06-05",
+          lines: [
+            { inventoryItemId: itemVerified.id, warehouseId: whMain.id, itemName: itemVerified.name, unit: "حبة", quantity: 2, price: 150, discount: 20, total: 280 },
+          ],
+        }),
+      (err) => err instanceof SqliteValidationError,
+    );
+
+    // Reject header-only PATCH altering amount away from existing lines sum
+    assert.throws(
+      () =>
+        updateLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, validSale.id, {
+          accountId: accClient.id,
+          accountName: accClient.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 999,
+          warehouseId: whMain.id,
+          invoiceContent: "items",
+          entryNumber: 502,
+          entryDate: "2026-06-05",
+        }),
+      (err) => err instanceof SqliteValidationError,
+    );
+
+    // Accept explicit VAT (taxAmount: 42 -> 280 + 42 = 322)
+    const vatSale = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      kind: "invoice",
+      typeLabel: "ف.مبيعات نقدية",
+      payment: "cash",
+      direction: "debit",
+      amount: 322,
+      taxAmount: 42,
+      currency: "ريال",
+      warehouseId: whMain.id,
+      invoiceContent: "items",
+      entryNumber: 504,
+      entryDate: "2026-06-06",
+      lines: [
+        { inventoryItemId: itemVerified.id, warehouseId: whMain.id, itemName: itemVerified.name, unit: "حبة", quantity: 2, price: 140, discount: 0, total: 280 },
+      ],
+    });
+    assert.equal(vatSale.amount, 322);
+    deleteLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, vatSale.id);
+
+    // Stock after validSale(2) should be 5 - 2 = 3
+    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, 3);
+
+    // C) Period report with opening balance + pre-period purchase/transfer:
+    // Item verified (10 - 2 = 8): let's set verified opening = 10 by creating itemOpening(10) and selling 2 on 2026-06-05
+    const itemPeriod = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+      id: "prod_period_open",
+      name: "بطارية صيانة",
+      unit: "حبة",
+      quantity: 10,
+      avgCost: 100,
+      warehouseId: whMain.id,
+      quantityUnverified: false,
+    });
+    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      kind: "invoice",
+      typeLabel: "فاتورة بيع آجل",
+      payment: "credit",
+      direction: "debit",
+      amount: 300,
+      currency: "ريال",
+      warehouseId: whMain.id,
+      invoiceContent: "items",
+      entryNumber: 505,
+      entryDate: "2026-06-05",
+      lines: [
+        { inventoryItemId: itemPeriod.id, warehouseId: whMain.id, itemName: itemPeriod.name, unit: "حبة", quantity: 2, price: 150, total: 300 },
+      ],
+    });
+
+    // Plus unverified item bought before period (10 on 2026-01-10), transferred (3 on 2026-02-05), sold in June (4 on 2026-06-10)
+    const itemFlow = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+      id: "prod_period_flow",
+      name: "كابل طاقة",
+      unit: "حبة",
+      quantity: 0,
+      avgCost: 50,
+      warehouseId: whMain.id,
+      quantityUnverified: true,
+    });
+    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accSupplier.id,
+      accountName: accSupplier.name,
+      kind: "invoice",
+      typeLabel: "فاتورة شراء آجلة",
+      payment: "credit",
+      direction: "credit",
+      amount: 500,
+      currency: "ريال",
+      warehouseId: whMain.id,
+      invoiceContent: "items",
+      entryNumber: 506,
+      entryDate: "2026-01-10",
+      lines: [
+        { inventoryItemId: itemFlow.id, warehouseId: whMain.id, itemName: itemFlow.name, unit: "حبة", quantity: 10, price: 50, total: 500 },
+      ],
+    });
+    const txRes = db
+      .prepare(
+        `INSERT INTO stock_transfers (workspace_id, from_warehouse_id, to_warehouse_id, raw_from_store_id, raw_to_store_id, transfer_date, transfer_type, details)
+         VALUES (?, ?, ?, 1, 2, '2026-02-05', 1, 'تحويل قبل الفترة')`,
+      )
+      .run(DEFAULT_WORKSPACE_ID, whMain.id, whBranch.id);
+    db.prepare(
+      `INSERT INTO stock_transfer_lines (workspace_id, transfer_id, inventory_item_id, quantity, unit, unit_num)
+       VALUES (?, ?, ?, 3, 'حبة', 1)`,
+    ).run(DEFAULT_WORKSPACE_ID, Number(txRes.lastInsertRowid), itemFlow.id);
+    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      kind: "invoice",
+      typeLabel: "فاتورة بيع آجل",
+      payment: "credit",
+      direction: "debit",
+      amount: 360,
+      currency: "ريال",
+      warehouseId: whMain.id,
+      invoiceContent: "items",
+      entryNumber: 507,
+      entryDate: "2026-06-10",
+      lines: [
+        { inventoryItemId: itemFlow.id, warehouseId: whMain.id, itemName: itemFlow.name, unit: "حبة", quantity: 4, price: 90, total: 360 },
+      ],
+    });
+
+    const juneReport = getInventoryMovementsReport(db, DEFAULT_WORKSPACE_ID, {
+      warehouseId: whMain.id,
+      fromDate: "2026-06-01",
+      toDate: "2026-06-30",
+      profitBasis: "avg",
+    });
+    const periodRow = juneReport.itemRows.find((r) => r.id === itemPeriod.id)!;
+    assert.equal(periodRow.openingQty, 10);
+    assert.equal(periodRow.sellQty, 2);
+    assert.equal(periodRow.availableQty, 8); // NOT -2!
+    assert.equal(periodRow.remainingValue, 800);
+    assert.ok(!juneReport.anomalies.negativeComputedItems.some((n) => n.id === itemPeriod.id));
+
+    const flowRow = juneReport.itemRows.find((r) => r.id === itemFlow.id)!;
+    assert.equal(flowRow.openingQty, 7); // 10 bought - 3 transferred out before June
+    assert.equal(flowRow.sellQty, 4);
+    assert.equal(flowRow.availableQty, 3); // 7 - 4 = 3
+    assert.equal(flowRow.unitCost, 50); // Falls back to January purchase cost even when June buyQty=0
+    assert.equal(flowRow.profit, 160); // 360 - 4*50 = 160
   } finally {
     closeSqliteDb();
     fs.rmSync(dir, { recursive: true, force: true });

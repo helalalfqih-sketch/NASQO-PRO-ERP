@@ -2782,7 +2782,7 @@ function InventoryReportPage({
     return () => {
       active = false;
     };
-  }, [ctx.uid, ctx.ledger.length, fromDate, profitBasis, selectedCurrency, selectedWarehouseId, toDate]);
+  }, [ctx.uid, ctx.ledger, ctx.inventory, fromDate, profitBasis, selectedCurrency, selectedWarehouseId, toDate]);
 
   const inventoryById = useMemo(() => new Map(ctx.inventory.map((i) => [i.id, i])), [ctx.inventory]);
 
@@ -2799,6 +2799,10 @@ function InventoryReportPage({
     }
     return baseRows;
   }, [movementReport, onlyMoved, searchQuery]);
+  const showOpeningCol = useMemo(
+    () => Boolean(fromDate) || reportRows.some((r) => (r.openingQty ?? 0) !== 0),
+    [fromDate, reportRows],
+  );
 
   const fallbackSummary = computeInventorySummary(ctx.inventory, selectedWarehouseId || undefined);
   const bulkTargetItems = useMemo(() => {
@@ -2959,13 +2963,13 @@ function InventoryReportPage({
                 checked={!onlyMoved}
                 onChange={(e) => setOnlyMoved(!e.target.checked)}
               />
-              إظهار الكل ({ctx.inventory.length})
+              إظهار كل أصناف الدليل ({ctx.inventory.length}{selectedWarehouseId ? " — كل المخازن" : ""})
             </label>
           </div>
           <div className="reference-date-strip">
             <ArrowRightIcon />
             <span>
-              أصناف حركة المخزن: <b>{reportRows.length}</b> (المتحركة: {totals.activeItemsCount})
+              أصناف التقرير: <b>{reportRows.length}</b> (ذات حركة في النطاق: {totals.activeItemsCount})
             </span>
             <span>
               حتى <bdi>{toDate || new Date().toLocaleDateString("en-GB")}</bdi>
@@ -2980,6 +2984,7 @@ function InventoryReportPage({
                 const header = [
                   "الرقم",
                   "اسم الصنف",
+                  ...(showOpeningCol ? ["رصيد سابق"] : []),
                   "كمية الشراء",
                   "كمية البيع",
                   "وارد",
@@ -2998,6 +3003,7 @@ function InventoryReportPage({
                     [
                       r.code ?? "",
                       r.name,
+                      ...(showOpeningCol ? [r.openingQty ?? 0] : []),
                       r.buyQty,
                       r.sellQty,
                       r.transferInQty,
@@ -3079,12 +3085,12 @@ function InventoryReportPage({
             <strong>تنبيهات المطابقة المخزنية في SQLite:</strong>
             {movementReport.anomalies.unverifiedItemsCount > 0 ? (
               <span>
-                • أصناف بدون جرد افتتاحي معتمد: <b>{movementReport.anomalies.unverifiedItemsCount}</b> (الكمية المتوفرة أدناه محسوبة مباشرة من فواتير الشراء والبيع والتحويلات)
+                • أصناف الدليل الكلي بدون جرد افتتاحي معتمد: <b>{movementReport.anomalies.unverifiedItemsCount}</b> (الكمية المتوفرة أدناه محسوبة من الرصيد السابق + فواتير الشراء والبيع والتحويلات)
               </span>
             ) : null}
             {movementReport.anomalies.unresolvedTransfersCount > 0 ? (
               <span>
-                • تحويلات مخزنية بمخزن مصدري/وجهي غير موجود أو صفري: <b>{movementReport.anomalies.unresolvedTransfersCount}</b> (أرقام:{" "}
+                • تحويلات مخزنية بمخزن مصدري/وجهي غير موجود في الدليل أو صفري: <b>{movementReport.anomalies.unresolvedTransfersCount}</b> (أرقام:{" "}
                 {movementReport.anomalies.unresolvedTransfers
                   .map((t) => `#${t.id} (${t.rawFromStoreId ?? "؟"}→${t.rawToStoreId ?? "؟"})`)
                   .join("، ")}
@@ -3093,7 +3099,7 @@ function InventoryReportPage({
             ) : null}
             {movementReport.anomalies.negativeComputedItems.length > 0 ? (
               <span>
-                • أصناف برصيد حركات سالب (بيع/تحويل بدون فاتورة شراء مسجلة): <b>{movementReport.anomalies.negativeComputedItems.length}</b>
+                • أصناف برصيد متاح سالب (بيع/تحويل بدون رصيد افتتاحي أو شراء مسجل): <b>{movementReport.anomalies.negativeComputedItems.length}</b>
               </span>
             ) : null}
           </section>
@@ -3115,6 +3121,7 @@ function InventoryReportPage({
                 <th scope="col">تحديد</th>
                 <th scope="col">الرقم</th>
                 <th scope="col">اسم الصنف</th>
+                {showOpeningCol ? <th scope="col">رصيد سابق</th> : null}
                 <th scope="col">كمية الشراء</th>
                 <th scope="col">كمية البيع</th>
                 <th scope="col">وارد</th>
@@ -3132,8 +3139,7 @@ function InventoryReportPage({
               {reportRows.map((row) => {
                 const liveItem = inventoryById.get(row.id);
                 const checked = selectedIds.has(row.id);
-                const showVerifiedOverride = liveItem && !liveItem.quantityUnverified && !row.hasMovement;
-                const shownAvailable = showVerifiedOverride ? liveItem.quantity : row.availableQty;
+                const shownAvailable = movementReport ? row.availableQty : (liveItem?.quantity ?? row.availableQty);
                 return (
                   <tr key={row.id} className={checked ? "inv-row-selected" : undefined}>
                     <td style={{ textAlign: "center" }}>
@@ -3152,6 +3158,7 @@ function InventoryReportPage({
                       {row.name}
                       {row.sku ? <small className="inv-sku-meta"> ({row.sku})</small> : null}
                     </td>
+                    {showOpeningCol ? <td>{formatAmount(row.openingQty ?? 0)}</td> : null}
                     <td>{formatAmount(row.buyQty)}</td>
                     <td>{formatAmount(row.sellQty)}</td>
                     <td style={{ color: row.transferInQty > 0 ? "#047857" : undefined }}>{formatAmount(row.transferInQty)}</td>
@@ -3199,7 +3206,7 @@ function InventoryReportPage({
               })}
               {reportRows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} style={{ textAlign: "center", padding: 16, color: "#64748b" }}>
+                  <td colSpan={showOpeningCol ? 15 : 14} style={{ textAlign: "center", padding: 16, color: "#64748b" }}>
                     {movementReport ? "لا توجد حركات أصناف في النطاق المحدد." : "جاري تحميل تقرير حركة المخازن من SQLite..."}
                   </td>
                 </tr>
@@ -7816,7 +7823,7 @@ function TrialBalanceModal({ open, onClose }: { open: boolean; onClose: () => vo
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
             >
-              <option value="ريال">ريال</option>
+              <option value="ريال">ريال (العملة الأساسية)</option>
               <option value="دولار">دولار</option>
               <option value="يورو">يورو</option>
               <option value="عملة 2">عملة 2</option>
@@ -7875,7 +7882,9 @@ function TrialBalanceModal({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
 
         <div className="trial-balance-sections">
-          <div className="smart-section-band">الحسابات</div>
+          <div className="smart-section-band">
+            الحسابات — {currency === "ريال" ? "ريال (العملة الأساسية المسجلة)" : currency === "الكل" ? "جميع العملات" : currency}
+          </div>
           <div className="trial-balance-rows">
             <div className="trial-balance-row">
               <span className="trial-row-label">اجمالي المدين (لكم)</span>

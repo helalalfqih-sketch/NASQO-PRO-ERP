@@ -185,6 +185,7 @@ export function InvoiceForm({
         payment,
         direction: "debit",
         amount: grandTotal,
+        ...(includeVat && vatAmount > 0 ? { taxAmount: vatAmount } : {}),
         currency,
         exchangeRate: 1,
         details: detailsText,

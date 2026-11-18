@@ -34,6 +34,13 @@ import {
 
 export const DEFAULT_WORKSPACE_ID = "local-erp-workspace";
 
+export class SqliteValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SqliteValidationError";
+  }
+}
+
 let cachedDb: DatabaseSync | null = null;
 let cachedDbPath = "";
 
@@ -1056,9 +1063,118 @@ function applyEntryLinesStockDelta(
   const upd = db.prepare("UPDATE inventory_items SET quantity = ?, updated_at = ? WHERE workspace_id = ? AND id = ?");
   for (const [itemId, info] of deltaByItem.entries()) {
     if (info.unverified) continue;
-    const nextQty = Math.round(Math.max(0, info.curQty + info.delta) * 10000) / 10000;
+    // Preserve exact signed arithmetic (never clamp to 0) so reversing/deleting an oversold bill restores true stock.
+    const nextQty = Math.round((info.curQty + info.delta) * 10000) / 10000;
     upd.run(nextQty, now, workspaceId, itemId);
   }
+}
+
+type NormalizedInvoiceLine = {
+  inventoryItemId?: string;
+  warehouseId?: string;
+  itemName: string;
+  price: number;
+  quantity: number;
+  discount: number;
+  bonus: number;
+  total: number;
+  unit: string;
+  unitNum: 1 | 2 | 3;
+  details: string;
+};
+
+function normalizeAndReconcileInvoiceLines(
+  rawLines: readonly InvoiceLineInput[] | undefined,
+  headerInput: {
+    amount?: number;
+    taxAmount?: number;
+    discount?: number;
+  },
+): { lines: NormalizedInvoiceLine[]; linesTotal: number; expectedAmount: number | null } {
+  const round2 = (v: number) => Math.round(v * 100) / 100;
+  if (!Array.isArray(rawLines) || rawLines.length === 0) {
+    return { lines: [], linesTotal: 0, expectedAmount: null };
+  }
+
+  const nonEmpty = rawLines.filter(
+    (line) =>
+      line &&
+      (String(line.itemName || "").trim().length > 0 ||
+        Boolean(line.inventoryItemId) ||
+        Number(line.quantity || 0) !== 0 ||
+        Number(line.price || 0) !== 0),
+  );
+  if (nonEmpty.length === 0) {
+    return { lines: [], linesTotal: 0, expectedAmount: null };
+  }
+
+  const lines: NormalizedInvoiceLine[] = [];
+  let linesTotal = 0;
+  for (const line of nonEmpty) {
+    const itemName = String(line.itemName || "").trim().slice(0, 140);
+    const qty = Number(line.quantity);
+    const price = Number(line.price);
+    const discount = line.discount === undefined || line.discount === null ? 0 : Number(line.discount);
+    const bonus = line.bonus === undefined || line.bonus === null ? 0 : Number(line.bonus);
+
+    if (!itemName) {
+      throw new SqliteValidationError("اسم الصنف مطلوب في كل سطر من سطور الفاتورة.");
+    }
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new SqliteValidationError(`كمية الصنف "${itemName}" يجب أن تكون أكبر من صفر.`);
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      throw new SqliteValidationError(`سعر الصنف "${itemName}" لا يمكن أن يكون سالبًا.`);
+    }
+    if (!Number.isFinite(discount) || discount < 0 || !Number.isFinite(bonus) || bonus < 0) {
+      throw new SqliteValidationError(`الخصم أو البونص للصنف "${itemName}" غير صالح.`);
+    }
+    const gross = qty * price;
+    if (discount > gross + 0.01) {
+      throw new SqliteValidationError(`خصم السطر للصنف "${itemName}" يتجاوز قيمته الإجمالية.`);
+    }
+    const total = round2(Math.max(0, gross - discount));
+    const unitNumRaw = Number(line.unitNum ?? 1);
+    const unitNum: 1 | 2 | 3 = unitNumRaw === 2 || unitNumRaw === 3 ? unitNumRaw : 1;
+
+    lines.push({
+      ...(line.inventoryItemId ? { inventoryItemId: line.inventoryItemId } : {}),
+      ...(line.warehouseId ? { warehouseId: line.warehouseId } : {}),
+      itemName,
+      price: Math.round(price * 10000) / 10000,
+      quantity: Math.round(qty * 10000) / 10000,
+      discount: round2(discount),
+      bonus: Math.round(bonus * 10000) / 10000,
+      total,
+      unit: String(line.unit || "حبة").trim().slice(0, 32) || "حبة",
+      unitNum,
+      details: String(line.details ?? "").trim().slice(0, 300),
+    });
+    linesTotal = round2(linesTotal + total);
+  }
+
+  const taxAmount = Number.isFinite(Number(headerInput.taxAmount))
+    ? Math.max(0, round2(Number(headerInput.taxAmount)))
+    : 0;
+  const headerDiscount = Number.isFinite(Number(headerInput.discount))
+    ? Math.max(0, round2(Number(headerInput.discount)))
+    : 0;
+  const expectedAmount = round2(Math.max(0, linesTotal + taxAmount - headerDiscount));
+
+  if (
+    headerInput.amount !== undefined &&
+    headerInput.amount !== null &&
+    Number.isFinite(Number(headerInput.amount))
+  ) {
+    const provided = round2(Math.max(0, Number(headerInput.amount)));
+    if (Math.abs(provided - expectedAmount) > 0.02) {
+      throw new SqliteValidationError(
+        `إجمالي الفاتورة (${provided}) لا يطابق مجموع السطور المحسوب (${expectedAmount}).`,
+      );
+    }
+  }
+
+  return { lines, linesTotal, expectedAmount };
 }
 
 function insertInvoiceLinesForEntry(
@@ -1066,7 +1182,7 @@ function insertInvoiceLinesForEntry(
   workspaceId: string,
   entryId: string,
   defaultWarehouseId: string,
-  lines: readonly InvoiceLineInput[],
+  lines: readonly NormalizedInvoiceLine[],
 ): void {
   if (lines.length === 0) return;
   const insLine = db.prepare(
@@ -1079,13 +1195,6 @@ function insertInvoiceLinesForEntry(
   const findWh = db.prepare("SELECT id FROM warehouses WHERE workspace_id = ? AND id = ?");
 
   for (const line of lines) {
-    const qty = Number(line.quantity) || 0;
-    const price = Math.max(0, Number(line.price) || 0);
-    const discount = Math.max(0, Number(line.discount ?? 0) || 0);
-    const total =
-      Number.isFinite(Number(line.total)) && Number(line.total) > 0
-        ? Number(line.total)
-        : Math.max(0, qty * price - discount);
     const matchedItem = line.inventoryItemId
       ? (findItem.get(workspaceId, line.inventoryItemId) as { id: string } | undefined)
       : undefined;
@@ -1093,8 +1202,6 @@ function insertInvoiceLinesForEntry(
     const matchedWh = lineWhIdRaw
       ? (findWh.get(workspaceId, lineWhIdRaw) as { id: string } | undefined)
       : undefined;
-    const unitNumRaw = Number(line.unitNum ?? 1);
-    const unitNum = unitNumRaw === 2 || unitNumRaw === 3 ? unitNumRaw : 1;
 
     insLine.run(
       workspaceId,
@@ -1102,15 +1209,15 @@ function insertInvoiceLinesForEntry(
       matchedItem ? "item" : "free",
       matchedItem?.id ?? null,
       matchedWh?.id ?? null,
-      String(line.itemName).trim().slice(0, 140),
-      price,
-      qty,
-      total,
-      discount,
-      Math.max(0, Number(line.bonus ?? 0) || 0),
-      String(line.unit || "حبة").trim().slice(0, 32),
-      unitNum,
-      String(line.details ?? "").trim().slice(0, 300),
+      line.itemName,
+      line.price,
+      line.quantity,
+      line.total,
+      line.discount,
+      line.bonus,
+      line.unit,
+      line.unitNum,
+      line.details,
     );
   }
 }
@@ -1185,16 +1292,19 @@ export function insertLedgerEntryRow(
     if (cb) cashboxId = cb.id;
   }
 
+  const { lines, expectedAmount } = normalizeAndReconcileInvoiceLines(input.lines, {
+    amount: input.amount !== undefined ? clean.amount : undefined,
+    taxAmount: input.taxAmount,
+    discount: input.discount,
+  });
+  const finalAmount = expectedAmount !== null ? expectedAmount : clean.amount;
+
   const settled =
     Boolean(input.settledOnReceipt) ||
     Boolean(accRow.is_cash_account && clean.payment === "cash");
-  const rawDain = settled ? clean.amount : clean.direction === "debit" ? clean.amount : 0;
-  const rawMadin = settled ? clean.amount : clean.direction === "credit" ? clean.amount : 0;
+  const rawDain = settled ? finalAmount : clean.direction === "debit" ? finalAmount : 0;
+  const rawMadin = settled ? finalAmount : clean.direction === "credit" ? finalAmount : 0;
   const docType = inferDocTypeForLedger(clean.kind, clean.direction, clean.invoiceContent, input.docType);
-
-  const lines: InvoiceLineInput[] = Array.isArray(input.lines)
-    ? input.lines.filter((line) => line && String(line.itemName || "").trim() && Number(line.quantity) > 0)
-    : [];
 
   const runWrite = () => {
     db.prepare(
@@ -1207,7 +1317,7 @@ export function insertLedgerEntryRow(
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'native', 'posted', ?, ?)`,
     ).run(
       id, workspaceId, clean.accountId, clean.accountName, clean.counterpartAccountId, clean.counterpartAccountName,
-      cashboxId, clean.kind, clean.typeLabel, clean.payment, clean.direction, clean.amount, rawDain, rawMadin, settled ? 1 : 0,
+      cashboxId, clean.kind, clean.typeLabel, clean.payment, clean.direction, finalAmount, rawDain, rawMadin, settled ? 1 : 0,
       clean.currency, clean.exchangeRate, clean.details, clean.documentNumber, clean.warehouseId, clean.warehouseName,
       clean.invoiceContent, clean.entryNumber, clean.deleted ? 1 : 0, clean.entryDate, clean.dueDate ?? null,
       clean.expenseCategory ?? null, clean.deliveryDays ?? null, docType, createdAtMs, clean.legacyRef ?? null,
@@ -1223,7 +1333,7 @@ export function insertLedgerEntryRow(
 
     writeAudit(db, workspaceId, workspaceId, "ledger_entries", id, "insert", {
       entryNumber: clean.entryNumber,
-      amount: clean.amount,
+      amount: finalAmount,
       linesCount: lines.length,
     });
   };
@@ -1286,11 +1396,47 @@ export function updateLedgerEntryRow(
     ? 0
     : stockSignForEntry(String(existing.kind ?? ""), String(existing.direction ?? ""), existing.doc_type as number | null | undefined);
   const newSign = existing.deleted ? 0 : stockSignForEntry(clean.kind, clean.direction, newDocType);
-  const now = nowIso();
   const hasNewLines = Array.isArray(input.lines);
-  const cleanLines: InvoiceLineInput[] = hasNewLines
-    ? input.lines!.filter((line) => line && String(line.itemName || "").trim() && Number(line.quantity) > 0)
-    : [];
+  let cleanLines: NormalizedInvoiceLine[] = [];
+  let finalAmount = clean.amount;
+  if (hasNewLines) {
+    const normalized = normalizeAndReconcileInvoiceLines(input.lines, {
+      amount: input.amount !== undefined ? clean.amount : undefined,
+      taxAmount: input.taxAmount,
+      discount: input.discount,
+    });
+    cleanLines = normalized.lines;
+    if (normalized.expectedAmount !== null) {
+      finalAmount = normalized.expectedAmount;
+    }
+  } else {
+    const existingLineStats = db
+      .prepare(
+        `SELECT COUNT(*) AS cnt,
+                COALESCE(SUM(ROUND(MAX(0, quantity * price - COALESCE(discount, 0)), 2)), 0) AS lines_sum
+         FROM invoice_lines
+         WHERE workspace_id = ? AND entry_id = ?`,
+      )
+      .get(workspaceId, entryId) as { cnt: number; lines_sum: number };
+    if (Number(existingLineStats?.cnt ?? 0) > 0) {
+      const round2 = (v: number) => Math.round(v * 100) / 100;
+      const taxAmount = Number.isFinite(Number(input.taxAmount)) ? Math.max(0, round2(Number(input.taxAmount))) : 0;
+      const headerDiscount = Number.isFinite(Number(input.discount)) ? Math.max(0, round2(Number(input.discount))) : 0;
+      const expectedExisting = round2(Math.max(0, Number(existingLineStats.lines_sum ?? 0) + taxAmount - headerDiscount));
+      const amountModified =
+        input.amount !== undefined &&
+        Math.abs(round2(clean.amount) - round2(Number(existing.amount ?? 0))) > 0.02;
+      if ((existing.source_origin === "native" || amountModified) && Math.abs(round2(clean.amount) - expectedExisting) > 0.02) {
+        throw new SqliteValidationError(
+          `إجمالي الفاتورة (${round2(clean.amount)}) لا يطابق مجموع السطور المحسوب (${expectedExisting}).`,
+        );
+      }
+    }
+  }
+
+  const now = nowIso();
+  const finalRawDain = settled ? finalAmount : clean.direction === "debit" ? finalAmount : 0;
+  const finalRawMadin = settled ? finalAmount : clean.direction === "credit" ? finalAmount : 0;
 
   const runUpdate = () => {
     if (hasNewLines) {
@@ -1310,8 +1456,8 @@ export function updateLedgerEntryRow(
        WHERE workspace_id = ? AND id = ?`,
     ).run(
       clean.accountId, clean.accountName, clean.counterpartAccountId, clean.counterpartAccountName,
-      cashboxId, clean.kind, clean.typeLabel, clean.payment, clean.direction, clean.amount,
-      rawDain, rawMadin, settled ? 1 : 0, clean.currency, clean.exchangeRate,
+      cashboxId, clean.kind, clean.typeLabel, clean.payment, clean.direction, finalAmount,
+      finalRawDain, finalRawMadin, settled ? 1 : 0, clean.currency, clean.exchangeRate,
       clean.details, clean.documentNumber, clean.warehouseId, clean.warehouseName, clean.invoiceContent,
       clean.entryNumber, clean.entryDate, clean.dueDate ?? null, clean.expenseCategory ?? null,
       clean.deliveryDays ?? null, newDocType, workspaceId, entryId,
@@ -1323,7 +1469,7 @@ export function updateLedgerEntryRow(
     }
 
     writeAudit(db, workspaceId, workspaceId, "ledger_entries", entryId, "update", {
-      amount: clean.amount,
+      amount: finalAmount,
       linesUpdated: hasNewLines ? cleanLines.length : undefined,
     });
   };
@@ -1461,7 +1607,7 @@ export function getInventoryMovementsReport(
     txBaseParams.push(options.itemId);
   }
   if (fromDate) {
-    txBaseParts.push("(st.transfer_date = '' OR st.transfer_date >= ?)");
+    txBaseParts.push("st.transfer_date != '' AND st.transfer_date >= ?");
     txBaseParams.push(fromDate);
   }
   if (toDate) {
@@ -1537,6 +1683,144 @@ export function getInventoryMovementsReport(
     return acc;
   };
 
+  // All-time invoice aggregates per item (for verified baseline stock offset & fallback average cost across sub-periods)
+  const allTimeWhereParts = [
+    "le.workspace_id = ?",
+    "le.deleted = 0",
+    "il.line_kind = 'item'",
+    "il.inventory_item_id IS NOT NULL",
+  ];
+  const allTimeParams: (string | number)[] = [workspaceId];
+  if (options?.itemId) {
+    allTimeWhereParts.push("il.inventory_item_id = ?");
+    allTimeParams.push(options.itemId);
+  }
+  const allTimeInvoiceNetByItem = new Map<string, number>();
+  const allTimePurchaseTotals = new Map<string, { qty: number; val: number }>();
+  for (const r of db
+    .prepare(
+      `SELECT il.inventory_item_id AS item_id,
+              SUM(CASE WHEN le.doc_type IN (3, 9) OR (le.doc_type IS NULL AND le.kind = 'invoice' AND le.direction = 'credit')
+                THEN (il.quantity * (CASE COALESCE(il.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END) + COALESCE(il.bonus, 0))
+                ELSE 0 END) AS purchases_qty,
+              SUM(CASE WHEN le.doc_type IN (3, 9) OR (le.doc_type IS NULL AND le.kind = 'invoice' AND le.direction = 'credit')
+                THEN il.total ELSE 0 END) AS purchases_val,
+              SUM(CASE WHEN le.doc_type IN (2, 7) OR (le.doc_type IS NULL AND le.kind = 'invoice' AND le.direction = 'debit')
+                THEN (il.quantity * (CASE COALESCE(il.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END) + COALESCE(il.bonus, 0))
+                ELSE 0 END) AS sales_qty,
+              SUM(CASE WHEN le.doc_type = 4 OR (le.doc_type IS NULL AND le.kind = 'return' AND le.direction = 'credit')
+                THEN (il.quantity * (CASE COALESCE(il.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END) + COALESCE(il.bonus, 0))
+                ELSE 0 END) AS sales_return_qty,
+              SUM(CASE WHEN le.doc_type = 5 OR (le.doc_type IS NULL AND le.kind = 'return' AND le.direction = 'debit')
+                THEN (il.quantity * (CASE COALESCE(il.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END) + COALESCE(il.bonus, 0))
+                ELSE 0 END) AS purchase_return_qty,
+              SUM(CASE WHEN le.doc_type = 5 OR (le.doc_type IS NULL AND le.kind = 'return' AND le.direction = 'debit')
+                THEN il.total ELSE 0 END) AS purchase_return_val
+       FROM invoice_lines il
+       JOIN ledger_entries le ON le.id = il.entry_id
+       JOIN inventory_items ii ON ii.id = il.inventory_item_id AND ii.workspace_id = il.workspace_id
+       WHERE ${allTimeWhereParts.join(" AND ")}
+       GROUP BY il.inventory_item_id`,
+    )
+    .all(...allTimeParams) as Array<{
+      item_id: string;
+      purchases_qty: number;
+      purchases_val: number;
+      sales_qty: number;
+      sales_return_qty: number;
+      purchase_return_qty: number;
+      purchase_return_val: number;
+    }>) {
+    const net =
+      Number(r.purchases_qty ?? 0) +
+      Number(r.sales_return_qty ?? 0) -
+      Number(r.sales_qty ?? 0) -
+      Number(r.purchase_return_qty ?? 0);
+    allTimeInvoiceNetByItem.set(r.item_id, net);
+    allTimePurchaseTotals.set(r.item_id, {
+      qty: Number(r.purchases_qty ?? 0) - Number(r.purchase_return_qty ?? 0),
+      val: Number(r.purchases_val ?? 0) - Number(r.purchase_return_val ?? 0),
+    });
+  }
+
+  // Prior period net stock per (item, warehouse) strictly before fromDate
+  const priorNetByItemWh = new Map<string, number>();
+  if (fromDate) {
+    const priorInvParts = [
+      "le.workspace_id = ?",
+      "le.deleted = 0",
+      "il.line_kind = 'item'",
+      "il.inventory_item_id IS NOT NULL",
+      "le.entry_date < ?",
+    ];
+    const priorInvParams: (string | number)[] = [workspaceId, fromDate];
+    if (options?.itemId) {
+      priorInvParts.push("il.inventory_item_id = ?");
+      priorInvParams.push(options.itemId);
+    }
+    if (currency && currency !== "الكل" && currency !== "جميع العملات") {
+      priorInvParts.push("le.currency = ?");
+      priorInvParams.push(currency);
+    }
+    for (const r of db
+      .prepare(
+        `SELECT il.inventory_item_id AS item_id,
+                COALESCE(NULLIF(il.warehouse_id, ''), NULLIF(le.warehouse_id, ''), ii.warehouse_id) AS wh_id,
+                SUM(CASE
+                  WHEN le.doc_type IN (3, 9, 4) OR (le.doc_type IS NULL AND ((le.kind = 'invoice' AND le.direction = 'credit') OR (le.kind = 'return' AND le.direction = 'credit')))
+                    THEN (il.quantity * (CASE COALESCE(il.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END) + COALESCE(il.bonus, 0))
+                  WHEN le.doc_type IN (2, 7, 5) OR (le.doc_type IS NULL AND ((le.kind = 'invoice' AND le.direction = 'debit') OR (le.kind = 'return' AND le.direction = 'debit')))
+                    THEN -(il.quantity * (CASE COALESCE(il.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END) + COALESCE(il.bonus, 0))
+                  ELSE 0
+                END) AS net_qty
+         FROM invoice_lines il
+         JOIN ledger_entries le ON le.id = il.entry_id
+         JOIN inventory_items ii ON ii.id = il.inventory_item_id AND ii.workspace_id = il.workspace_id
+         WHERE ${priorInvParts.join(" AND ")}
+         GROUP BY il.inventory_item_id, wh_id`,
+      )
+      .all(...priorInvParams) as Array<{ item_id: string; wh_id: string; net_qty: number }>) {
+      if (!r.wh_id) continue;
+      const k = `${r.item_id}::${r.wh_id}`;
+      priorNetByItemWh.set(k, (priorNetByItemWh.get(k) ?? 0) + Number(r.net_qty ?? 0));
+    }
+
+    const priorTxParts = ["stl.workspace_id = ?", "stl.inventory_item_id IS NOT NULL", "(st.transfer_date = '' OR st.transfer_date < ?)"];
+    const priorTxParams: (string | number)[] = [workspaceId, fromDate];
+    if (options?.itemId) {
+      priorTxParts.push("stl.inventory_item_id = ?");
+      priorTxParams.push(options.itemId);
+    }
+    for (const r of db
+      .prepare(
+        `SELECT stl.inventory_item_id AS item_id, st.to_warehouse_id AS wh_id,
+                SUM(stl.quantity * (CASE COALESCE(stl.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END)) AS qty
+         FROM stock_transfer_lines stl
+         JOIN stock_transfers st ON st.id = stl.transfer_id AND st.workspace_id = stl.workspace_id
+         JOIN inventory_items ii ON ii.id = stl.inventory_item_id AND ii.workspace_id = stl.workspace_id
+         WHERE ${priorTxParts.join(" AND ")} AND st.to_warehouse_id IS NOT NULL
+         GROUP BY stl.inventory_item_id, st.to_warehouse_id`,
+      )
+      .all(...priorTxParams) as Array<{ item_id: string; wh_id: string; qty: number }>) {
+      const k = `${r.item_id}::${r.wh_id}`;
+      priorNetByItemWh.set(k, (priorNetByItemWh.get(k) ?? 0) + Number(r.qty ?? 0));
+    }
+    for (const r of db
+      .prepare(
+        `SELECT stl.inventory_item_id AS item_id, st.from_warehouse_id AS wh_id,
+                SUM(stl.quantity * (CASE COALESCE(stl.unit_num, 1) WHEN 2 THEN COALESCE(NULLIF(ii.count2, 0), 1) WHEN 3 THEN COALESCE(NULLIF(ii.count2, 0), 1) * COALESCE(NULLIF(ii.count3, 0), 1) ELSE 1 END)) AS qty
+         FROM stock_transfer_lines stl
+         JOIN stock_transfers st ON st.id = stl.transfer_id AND st.workspace_id = stl.workspace_id
+         JOIN inventory_items ii ON ii.id = stl.inventory_item_id AND ii.workspace_id = stl.workspace_id
+         WHERE ${priorTxParts.join(" AND ")} AND st.from_warehouse_id IS NOT NULL
+         GROUP BY stl.inventory_item_id, st.from_warehouse_id`,
+      )
+      .all(...priorTxParams) as Array<{ item_id: string; wh_id: string; qty: number }>) {
+      const k = `${r.item_id}::${r.wh_id}`;
+      priorNetByItemWh.set(k, (priorNetByItemWh.get(k) ?? 0) - Number(r.qty ?? 0));
+    }
+  }
+
   const globalPurchaseTotals = new Map<string, { qty: number; val: number }>();
   for (const r of invoiceWhRows) {
     if (r.wh_id) {
@@ -1562,11 +1846,9 @@ export function getInventoryMovementsReport(
     ensureAcc(r.item_id, r.wh_id).transferOutQty += Number(r.qty ?? 0);
   }
 
-  const netTotalByItem = new Map<string, number>();
   for (const acc of stockMap.values()) {
     acc.netComputedQty =
       acc.purchasesQty + acc.salesReturnQty + acc.transferInQty - acc.salesQty - acc.purchaseReturnQty - acc.transferOutQty;
-    netTotalByItem.set(acc.inventoryItemId, (netTotalByItem.get(acc.inventoryItemId) ?? 0) + acc.netComputedQty);
   }
 
   const warehouseStocks = [...stockMap.values()].filter(
@@ -1673,10 +1955,33 @@ export function getInventoryMovementsReport(
     const sellTotal = round2(grossSellVal - srVal);
     const transferInQty = round2(txIn);
     const transferOutQty = round2(txOut);
-    const availableQty = round2(buyQty + transferInQty - sellQty - transferOutQty);
+
+    const baselineOpening = ci.quantity_unverified
+      ? 0
+      : Number(ci.quantity ?? 0) - (allTimeInvoiceNetByItem.get(ci.id) ?? 0);
+    const baselineForScope =
+      !options?.warehouseId || options.warehouseId === ci.warehouse_id ? baselineOpening : 0;
+    let priorMovementNet = 0;
+    if (fromDate) {
+      if (options?.warehouseId) {
+        priorMovementNet = priorNetByItemWh.get(`${ci.id}::${options.warehouseId}`) ?? 0;
+      } else {
+        for (const [key, qty] of priorNetByItemWh.entries()) {
+          if (key.startsWith(`${ci.id}::`)) priorMovementNet += qty;
+        }
+      }
+    }
+    const openingQty = round2(baselineForScope + priorMovementNet);
+    const availableQty = round2(openingQty + buyQty + transferInQty - sellQty - transferOutQty);
 
     const gTot = globalPurchaseTotals.get(ci.id);
-    const globalAvgCost = gTot && gTot.qty > 0 ? gTot.val / gTot.qty : Number(ci.avg_cost ?? 0);
+    const allTot = allTimePurchaseTotals.get(ci.id);
+    const globalAvgCost =
+      gTot && gTot.qty > 0
+        ? gTot.val / gTot.qty
+        : allTot && allTot.qty > 0
+          ? allTot.val / allTot.qty
+          : Number(ci.avg_cost ?? 0);
     const localAvgCost = buyQty > 0 ? buyTotal / buyQty : globalAvgCost;
     const lastPrice = lastPurchasePriceByItem.get(ci.id) ?? localAvgCost;
 
@@ -1699,8 +2004,8 @@ export function getInventoryMovementsReport(
       transferInQty !== 0 ||
       transferOutQty !== 0;
 
-    if (hasMovement) {
-      activeItemsCount += 1;
+    if (hasMovement || (!ci.quantity_unverified && openingQty !== 0)) {
+      if (hasMovement) activeItemsCount += 1;
       totalSales += sellTotal;
       totalPurchases += buyTotal;
       totalProfit += profit;
@@ -1716,6 +2021,7 @@ export function getInventoryMovementsReport(
       unit2: ci.unit2 || "",
       count2: ci.count2 ?? null,
       warehouseId: ci.warehouse_id,
+      openingQty,
       buyQty,
       sellQty,
       transferInQty,
@@ -1844,14 +2150,12 @@ export function getInventoryMovementsReport(
     .prepare("SELECT COUNT(*) AS cnt FROM inventory_items WHERE workspace_id = ? AND quantity_unverified = 1")
     .get(workspaceId) as { cnt: number } | undefined;
 
-  const itemNames = new Map(catalogItems.map((r) => [r.id, r.name]));
-
-  const negativeComputedItems = [...netTotalByItem.entries()]
-    .filter(([, net]) => net < -0.0001)
-    .map(([id, netComputedQty]) => ({
-      id,
-      name: itemNames.get(id) ?? id,
-      netComputedQty,
+  const negativeComputedItems = itemRows
+    .filter((row) => row.availableQty < -0.0001)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      netComputedQty: row.availableQty,
     }))
     .slice(0, 50);
 
@@ -1922,8 +2226,23 @@ export function getCashboxesReport(db: DatabaseSync, workspaceId: string) {
 }
 
 export function deleteLedgerEntryRow(db: DatabaseSync, workspaceId: string, entryId: string): void {
-  db.prepare("DELETE FROM ledger_entries WHERE workspace_id = ? AND id = ?").run(workspaceId, entryId);
-  writeAudit(db, workspaceId, workspaceId, "ledger_entries", entryId, "delete", {});
+  const existing = db
+    .prepare("SELECT id, deleted, kind, direction, doc_type FROM ledger_entries WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, entryId) as
+    | { id: string; deleted: number; kind: string; direction: string; doc_type: number | null }
+    | undefined;
+  if (!existing) return;
+
+  const runDelete = () => {
+    if (!existing.deleted) {
+      const sign = stockSignForEntry(existing.kind, existing.direction, existing.doc_type);
+      applyEntryLinesStockDelta(db, workspaceId, entryId, -sign, nowIso());
+    }
+    db.prepare("DELETE FROM ledger_entries WHERE workspace_id = ? AND id = ?").run(workspaceId, entryId);
+    writeAudit(db, workspaceId, workspaceId, "ledger_entries", entryId, "delete", {});
+  };
+  if (db.isTransaction) runDelete();
+  else withTransaction(db, runDelete);
 }
 
 export function upsertWarehouseRow(

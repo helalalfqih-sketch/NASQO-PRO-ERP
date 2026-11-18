@@ -121,10 +121,23 @@ export async function signInWithGoogle(): Promise<User> {
   // sensitive/restricted Drive permissions belong to the separate Drive flow.
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  const result = await signInWithPopup(auth, provider);
-  // A previously cached Drive token must never carry over to a new sign-in.
-  clearGoogleAccessToken();
-  return result.user;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      signInWithPopup(auth, provider),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("انتهت مهلة نافذة تسجيل الدخول. أغلق أي نافذة معلقة وأعد المحاولة.")),
+          45_000,
+        );
+      }),
+    ]);
+    // A previously cached Drive token must never carry over to a new sign-in.
+    clearGoogleAccessToken();
+    return result.user;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 export async function connectGoogleDrive(): Promise<{ user: User; accessToken: string }> {
@@ -278,20 +291,39 @@ function apiBase(): string {
   return new URL("api/db", baseUrl).pathname.replace(/\/$/, "");
 }
 
-async function dbFetch<T>(subPath: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBase()}${subPath}`, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...(init?.headers ?? {}),
-    },
-  });
-  const payload = await response.json().catch(() => ({ error: "تعذر قراءة استجابة قاعدة SQLite." }));
-  if (!response.ok) {
-    throw new Error((payload as { error?: string }).error || "تعذر الاتصال بقاعدة بيانات SQLite الموحدة.");
+async function dbFetch<T>(subPath: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
+  const controller = new AbortController();
+  const externalSignal = init?.signal;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
   }
-  return payload as T;
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${apiBase()}${subPath}`, {
+      ...init,
+      signal: controller.signal,
+      cache: "no-store",
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    const payload = await response.json().catch(() => ({ error: "تعذر قراءة استجابة قاعدة SQLite." }));
+    if (!response.ok) {
+      throw new Error((payload as { error?: string }).error || "تعذر الاتصال بقاعدة بيانات SQLite الموحدة.");
+    }
+    return payload as T;
+  } catch (err) {
+    if ((err instanceof Error && err.name === "AbortError") && !externalSignal?.aborted) {
+      throw new Error("انتهت مهلة الاتصال بالخادم. يرجى إعادة المحاولة.");
+    }
+    throw err;
+  } finally {
+    globalThis.clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
+  }
 }
 
 let activeBundle: WorkspaceBundle | null = null;
@@ -524,6 +556,7 @@ export type InventoryMovementItemRow = {
   unit2: string;
   count2: number | null;
   warehouseId: string;
+  openingQty?: number;
   buyQty: number;
   sellQty: number;
   transferInQty: number;
@@ -820,6 +853,7 @@ export async function importSmartProSqlIntoServer(
       method: "POST",
       body: JSON.stringify({ sqlText, fileName, replaceExisting }),
     },
+    120_000,
   );
   applyBundle(res.bundle);
   return res.report;
@@ -845,6 +879,7 @@ export async function importSqliteLegacyIntoServer(
         ...(replaceExisting !== undefined ? { replaceExisting } : {}),
       }),
     },
+    120_000,
   );
   if (res.bundle) {
     applyBundle(res.bundle as WorkspaceBundle);
@@ -862,6 +897,7 @@ export async function restoreJsonBackupIntoServer(
       method: "POST",
       body: JSON.stringify({ payload }),
     },
+    120_000,
   );
   applyBundle(res.bundle);
   return res;
