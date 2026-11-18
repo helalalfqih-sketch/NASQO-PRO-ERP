@@ -465,6 +465,7 @@ CREATE TABLE IF NOT EXISTS erp_cost_centers (
 CREATE TABLE IF NOT EXISTS erp_meta (
   workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
   last_payroll_run_month TEXT,
+  vat_config_json TEXT NOT NULL DEFAULT '{}',
   updated_at TEXT NOT NULL
 );
 

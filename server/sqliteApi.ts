@@ -288,7 +288,10 @@ export function mountSqliteApi(app: Express): void {
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
       ensureEmptyWorkspace(db, uid);
-      res.json(getCashboxesReport(db, uid));
+      const currency = typeof req.query.currency === "string" ? req.query.currency.trim() : undefined;
+      const fromDate = typeof req.query.fromDate === "string" ? req.query.fromDate.trim() : undefined;
+      const toDate = typeof req.query.toDate === "string" ? req.query.toDate.trim() : undefined;
+      res.json(getCashboxesReport(db, uid, { currency, fromDate, toDate }));
     }),
   );
 

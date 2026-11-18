@@ -84,6 +84,10 @@ function openAndInit(filePath: string): DatabaseSync {
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(UNIFIED_SQLITE_DDL);
   db.exec(SQLITE_SCHEMA_MIGRATION_V2_DDL);
+  const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
+  if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
+    db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
+  }
   const verRow = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   if (Number(verRow?.user_version ?? 0) < SQLITE_SCHEMA_V2) {
     db.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_V2};`);
@@ -294,17 +298,30 @@ export function saveErpDataRows(db: DatabaseSync, workspaceId: string, data: Erp
     );
   }
 
+  const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
+  if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
+    db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
+  }
   db.prepare(
-    `INSERT INTO erp_meta (workspace_id, last_payroll_run_month, updated_at)
-     VALUES (?, ?, ?)
-     ON CONFLICT(workspace_id) DO UPDATE SET last_payroll_run_month = excluded.last_payroll_run_month, updated_at = excluded.updated_at`,
-  ).run(workspaceId, data.lastPayrollRunMonth ?? null, now);
+    `INSERT INTO erp_meta (workspace_id, last_payroll_run_month, vat_config_json, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(workspace_id) DO UPDATE SET
+       last_payroll_run_month = excluded.last_payroll_run_month,
+       vat_config_json = excluded.vat_config_json,
+       updated_at = excluded.updated_at`,
+  ).run(workspaceId, data.lastPayrollRunMonth ?? null, JSON.stringify(data.vatConfig ?? {}), now);
 }
 
 export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorkspaceData {
-  const meta = db.prepare("SELECT last_payroll_run_month FROM erp_meta WHERE workspace_id = ?").get(workspaceId) as
-    | { last_payroll_run_month?: string | null }
-    | undefined;
+  const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
+  const hasVatCol = erpMetaCols.some((c) => c.name === "vat_config_json");
+  const meta = db
+    .prepare(
+      hasVatCol
+        ? "SELECT last_payroll_run_month, vat_config_json FROM erp_meta WHERE workspace_id = ?"
+        : "SELECT last_payroll_run_month FROM erp_meta WHERE workspace_id = ?",
+    )
+    .get(workspaceId) as { last_payroll_run_month?: string | null; vat_config_json?: string | null } | undefined;
   if (!meta) {
     return createEmptyErpData();
   }
@@ -414,6 +431,24 @@ export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorks
     status: (r.status === "closed" ? "closed" : "active") as "active" | "closed",
   }));
 
+  let parsedVatConfig: ErpWorkspaceData["vatConfig"] | undefined;
+  if (meta.vat_config_json) {
+    try {
+      const candidate = JSON.parse(String(meta.vat_config_json)) as Record<string, unknown>;
+      if (candidate && typeof candidate === "object" && typeof candidate.jurisdiction === "string") {
+        parsedVatConfig = {
+          jurisdiction: (["none", "sa_15", "ae_5", "custom"].includes(candidate.jurisdiction)
+            ? candidate.jurisdiction
+            : "none") as NonNullable<ErpWorkspaceData["vatConfig"]>["jurisdiction"],
+          ratePercent: Math.max(0, Math.min(100, Number(candidate.ratePercent ?? 0) || 0)),
+          basis: candidate.basis === "estimated_gross" ? "estimated_gross" : "recorded_only",
+        };
+      }
+    } catch {
+      parsedVatConfig = undefined;
+    }
+  }
+
   return {
     employees,
     leaveRequests,
@@ -423,6 +458,7 @@ export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorks
     productionOrders,
     costCenters,
     ...(meta.last_payroll_run_month ? { lastPayrollRunMonth: String(meta.last_payroll_run_month) } : {}),
+    ...(parsedVatConfig ? { vatConfig: parsedVatConfig } : {}),
   };
 }
 
@@ -823,7 +859,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     .prepare("SELECT * FROM ledger_entries WHERE workspace_id = ? ORDER BY created_at_ms ASC, entry_number ASC")
     .all(workspaceId) as Record<string, unknown>[];
   const cashboxRows = db
-    .prepare("SELECT id, name, details, currency_code, legacy_id FROM cashboxes WHERE workspace_id = ? AND state = 1 ORDER BY sort_order ASC, id ASC")
+    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? AND state = 1 ORDER BY sort_order ASC, id ASC")
     .all(workspaceId) as Record<string, unknown>[];
   const backupRows = db
     .prepare("SELECT id, name, exported_at_iso FROM backups WHERE workspace_id = ? ORDER BY created_at DESC")
@@ -845,6 +881,10 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     name: String(c.name ?? ""),
     details: String(c.details ?? ""),
     currencyCode: String(c.currency_code ?? "ريال") as CurrencyCode,
+    state: Number(c.state ?? 1),
+    boxType: Number(c.box_type ?? 1),
+    sortOrder: Number(c.sort_order ?? 0),
+    isActive: Number(c.state ?? 1) === 1,
     ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
   }));
 
@@ -2211,39 +2251,99 @@ export function getInventoryMovementsReport(
   };
 }
 
-export function getCashboxesReport(db: DatabaseSync, workspaceId: string) {
+export function getCashboxesReport(
+  db: DatabaseSync,
+  workspaceId: string,
+  options?: { currency?: string; fromDate?: string; toDate?: string },
+) {
+  const currency = options?.currency?.trim() || "";
+  const fromDate = options?.fromDate?.trim() || "";
+  const toDate = options?.toDate?.trim() || "";
+
+  const scopeParts = ["le.deleted = 0", "(le.settled_on_receipt = 1 OR le.payment = 'cash')"];
+  const scopeParams: (string | number)[] = [];
+  if (currency && currency !== "الكل" && currency !== "جميع العملات") {
+    scopeParts.push("le.currency = ?");
+    scopeParams.push(currency);
+  }
+  if (fromDate) {
+    scopeParts.push("le.entry_date >= ?");
+    scopeParams.push(fromDate);
+  }
+  if (toDate) {
+    scopeParts.push("le.entry_date <= ?");
+    scopeParams.push(toDate);
+  }
+  const activeScope = scopeParts.join(" AND ");
+  const inCondition = `((le.kind IN ('voucher', 'transfer', 'simple-entry') AND le.direction = 'credit') OR (le.kind NOT IN ('voucher', 'transfer', 'simple-entry') AND (le.doc_type IN (2, 7, 5) OR (le.doc_type IS NULL AND le.direction = 'debit'))))`;
+  const outCondition = `((le.kind IN ('voucher', 'transfer', 'simple-entry') AND le.direction = 'debit') OR (le.kind NOT IN ('voucher', 'transfer', 'simple-entry') AND (le.doc_type IN (3, 9, 4) OR (le.doc_type IS NULL AND le.direction = 'credit'))))`;
+
   const rows = db
     .prepare(
-      `SELECT cb.id, cb.name, cb.currency_code,
-              COALESCE(SUM(CASE
-                WHEN le.deleted = 0 AND (le.settled_on_receipt = 1 OR le.payment = 'cash') AND (le.doc_type IN (2, 7, 5) OR le.direction = 'debit')
-                  THEN le.amount ELSE 0 END), 0) AS total_in,
-              COALESCE(SUM(CASE
-                WHEN le.deleted = 0 AND (le.settled_on_receipt = 1 OR le.payment = 'cash') AND (le.doc_type IN (3, 9, 4) OR le.direction = 'credit')
-                  THEN le.amount ELSE 0 END), 0) AS total_out,
-              COUNT(CASE WHEN le.deleted = 0 THEN 1 END) AS entry_count
+      `SELECT cb.id, cb.name, cb.currency_code, cb.state, cb.box_type, cb.sort_order, cb.legacy_id,
+              COALESCE(SUM(CASE WHEN ${activeScope} AND ${inCondition} THEN le.amount ELSE 0 END), 0) AS total_in,
+              COALESCE(SUM(CASE WHEN ${activeScope} AND ${outCondition} THEN le.amount ELSE 0 END), 0) AS total_out,
+              COUNT(CASE WHEN ${scopeParts.filter((_, idx) => idx !== 1).join(" AND ")} THEN 1 END) AS entry_count
        FROM cashboxes cb
        LEFT JOIN ledger_entries le ON le.workspace_id = cb.workspace_id AND le.cashbox_id = cb.id
-       WHERE cb.workspace_id = ? AND cb.state = 1
+       WHERE cb.workspace_id = ?
        GROUP BY cb.id
        ORDER BY cb.sort_order ASC, cb.id ASC`,
     )
-    .all(workspaceId) as Array<Record<string, unknown>>;
+    .all(...scopeParams, ...scopeParams, ...scopeParams, workspaceId) as Array<Record<string, unknown>>;
+
+  const unlinkedRow = db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN ${inCondition} THEN le.amount ELSE 0 END), 0) AS unlinked_in,
+         COALESCE(SUM(CASE WHEN ${outCondition} THEN le.amount ELSE 0 END), 0) AS unlinked_out,
+         COUNT(*) AS unlinked_count
+       FROM ledger_entries le
+       WHERE le.workspace_id = ? AND le.cashbox_id IS NULL AND ${activeScope}`,
+    )
+    .get(workspaceId, ...scopeParams) as Record<string, unknown> | undefined;
+
+  const mapped = rows.map((r) => {
+    const totalIn = Number(r.total_in ?? 0);
+    const totalOut = Number(r.total_out ?? 0);
+    const state = Number(r.state ?? 1);
+    return {
+      id: Number(r.id),
+      name: String(r.name ?? ""),
+      currencyCode: String(r.currency_code ?? "ريال"),
+      state,
+      boxType: Number(r.box_type ?? 1),
+      sortOrder: Number(r.sort_order ?? 0),
+      isActive: state === 1,
+      totalIn,
+      totalOut,
+      netBalance: totalIn - totalOut,
+      entryCount: Number(r.entry_count ?? 0),
+      ...(r.legacy_id !== null && r.legacy_id !== undefined ? { legacyId: Number(r.legacy_id) } : {}),
+    };
+  });
+
+  const linkedCashboxesNet = mapped.reduce((sum, r) => sum + r.netBalance, 0);
+  const unlinkedCashIn = Number(unlinkedRow?.unlinked_in ?? 0);
+  const unlinkedCashOut = Number(unlinkedRow?.unlinked_out ?? 0);
+  const unlinkedCashNet = unlinkedCashIn - unlinkedCashOut;
+  const activeCount = mapped.filter((r) => r.isActive).length;
 
   return {
-    cashboxes: rows.map((r) => {
-      const totalIn = Number(r.total_in ?? 0);
-      const totalOut = Number(r.total_out ?? 0);
-      return {
-        id: Number(r.id),
-        name: String(r.name ?? ""),
-        currencyCode: String(r.currency_code ?? "ريال"),
-        totalIn,
-        totalOut,
-        netBalance: totalIn - totalOut,
-        entryCount: Number(r.entry_count ?? 0),
-      };
-    }),
+    cashboxes: mapped,
+    reconciliation: {
+      currencyFilter: currency || "الكل",
+      fromDate: fromDate || null,
+      toDate: toDate || null,
+      linkedCashboxesNet,
+      unlinkedCashIn,
+      unlinkedCashOut,
+      unlinkedCashNet,
+      unlinkedCashCount: Number(unlinkedRow?.unlinked_count ?? 0),
+      totalCashNet: linkedCashboxesNet + unlinkedCashNet,
+      activeCount,
+      inactiveCount: mapped.length - activeCount,
+    },
   };
 }
 

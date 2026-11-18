@@ -17,6 +17,7 @@ import { createLedgerEntry } from "../firebase";
 import {
   CURRENCIES,
   type AccountRecord,
+  type CashboxRecord,
   type CurrencyCode,
   type LedgerEntryRecord,
 } from "../types";
@@ -26,6 +27,7 @@ interface TransferModalProps {
   open: boolean;
   uid: string;
   accounts: readonly AccountRecord[];
+  cashboxes?: readonly CashboxRecord[];
   ledger: readonly LedgerEntryRecord[];
   defaultAccountId?: string;
   onClose: () => void;
@@ -46,6 +48,7 @@ export function TransferModal({
   open,
   uid,
   accounts,
+  cashboxes: sqliteCashboxes = [],
   ledger,
   defaultAccountId,
   onClose,
@@ -69,6 +72,7 @@ export function TransferModal({
   const [transferNumber, setTransferNumber] = useState("");
   const [details, setDetails] = useState("");
   const [cashboxId, setCashboxId] = useState("");
+  const [sqliteCashboxId, setSqliteCashboxId] = useState<number | undefined>(() => sqliteCashboxes[0]?.id);
   const [direction, setDirection] = useState<"outgoing" | "incoming">("outgoing");
   const [saving, setSaving] = useState(false);
 
@@ -87,7 +91,10 @@ export function TransferModal({
     if (!cashboxId && (cashboxes[0] || accounts[0])) {
       setCashboxId((cashboxes[0] ?? accounts[0])?.id ?? "");
     }
-  }, [accounts, cashboxId, cashboxes, defaultAccountId, open, selectedAccountId]);
+    if (!sqliteCashboxId && sqliteCashboxes[0]?.id) {
+      setSqliteCashboxId(sqliteCashboxes[0].id);
+    }
+  }, [accounts, cashboxId, cashboxes, defaultAccountId, open, selectedAccountId, sqliteCashboxId, sqliteCashboxes]);
 
   const filteredAccounts = useMemo(
     () => (search.trim() ? accounts.filter((a) => accountMatchesQuery(a, search)) : accounts),
@@ -156,6 +163,7 @@ export function TransferModal({
         accountName: activeAccount.name,
         counterpartAccountId: cashboxAcc?.id ?? "",
         counterpartAccountName: cashboxAcc?.name ?? "الصندوق",
+        ...(sqliteCashboxId ? { cashboxId: sqliteCashboxId } : {}),
         kind: "transfer",
         typeLabel: direction === "outgoing" ? "حوالة صادرة" : "حوالة واردة",
         payment: "cash",
@@ -405,6 +413,23 @@ export function TransferModal({
             ))}
           </select>
         </label>
+
+        {sqliteCashboxes.length > 0 ? (
+          <label className="transfer-cashbox-row">
+            <span>صندوق النقدية</span>
+            <select
+              aria-label="صندوق النقدية للحوالة"
+              value={sqliteCashboxId ?? ""}
+              onChange={(e) => setSqliteCashboxId(Number(e.target.value))}
+            >
+              {sqliteCashboxes.map((cb) => (
+                <option key={cb.id} value={cb.id}>
+                  {cb.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         <div className="transfer-direction-row" role="radiogroup" aria-label="اتجاه الحوالة">
           <label>

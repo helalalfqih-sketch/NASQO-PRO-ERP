@@ -302,3 +302,63 @@ test("computeCostCenterMetrics aggregates linked ledger category spending agains
   assert.equal(hrCc.remaining, 55000);
   assert.equal(hrCc.utilizationPct, 8);
 });
+
+test("financial statements support currency/period filters, cash/inventory reconciliation, and VAT modes", () => {
+  const mixedEntries: LedgerEntryRecord[] = [
+    ...sampleEntries,
+    {
+      ...sampleEntries[0],
+      id: "e_usd",
+      amount: 1000,
+      currency: "دولار",
+      entryDate: "2026-11-13",
+      entryNumber: 4,
+    },
+    {
+      ...sampleEntries[0],
+      id: "e_linked_cb",
+      cashboxId: 1,
+      amount: 2000,
+      currency: "ريال",
+      entryDate: "2026-11-14",
+      entryNumber: 5,
+    },
+  ];
+  const cashboxes = [{ id: 1, name: "الصندوق الرئيسي", details: "", currencyCode: "ريال" as const, state: 1, isActive: true }];
+
+  const riyalIncome = computeIncomeStatement(sampleAccounts, mixedEntries, {
+    currency: "ريال",
+    fromDate: "2026-11-10",
+    toDate: "2026-11-12",
+  });
+  assert.equal(riyalIncome.netSales, 15000);
+  assert.equal(riyalIncome.scope?.excludedByCurrencyCount, 1);
+  assert.equal(riyalIncome.scope?.excludedByDateCount, 1);
+
+  const unverifiedInv: InventoryItemRecord[] = [
+    { ...sampleInventory[0], quantity: 0, avgCost: 200, quantityUnverified: true, computedQuantity: 5 },
+  ];
+  const bsVerifiedOnly = computeBalanceSheet(sampleAccounts, mixedEntries, unverifiedInv, {
+    currency: "ريال",
+    cashboxes,
+    useUnifiedCash: true,
+    includeUnverifiedInventory: false,
+    estimatedInventoryReportValue: 1000,
+  });
+  assert.equal(bsVerifiedOnly.inventoryValue, 0);
+  assert.equal(bsVerifiedOnly.inventoryReconciliation?.unverifiedEstimatedValue, 1000);
+  assert.equal(bsVerifiedOnly.inventoryReconciliation?.differenceVsInventoryReport, 1000);
+  assert.equal(bsVerifiedOnly.cashReconciliation?.linkedCashboxesNet, 2000);
+  assert.equal(bsVerifiedOnly.cashReconciliation?.unassignedCashNet, 10000); // +15000 sale - 5000 salary voucher
+  assert.equal(bsVerifiedOnly.cashAndBank, 12000);
+  assert.equal(bsVerifiedOnly.totalAssets, bsVerifiedOnly.totalLiabilitiesAndEquity);
+
+  const vatRecorded = computeVatSummary(sampleAccounts, mixedEntries, 0.15, {
+    currency: "ريال",
+    vatMode: "recorded_only",
+    jurisdictionCode: "none",
+  });
+  assert.equal(vatRecorded.outputVat, 0);
+  assert.equal(vatRecorded.netVatPayable, 0);
+  assert.equal(vatRecorded.entriesWithRecordedTaxCount, 0);
+});

@@ -2189,6 +2189,7 @@ function AuthenticatedWorkspace({
           open={overlay === "transfer"}
           uid={user.uid}
           accounts={accounts}
+          cashboxes={cashboxes}
           ledger={ledger}
           defaultAccountId={transferAccountId}
           onClose={() => setOverlay(null)}
@@ -3604,11 +3605,15 @@ function ErpModulePage({ moduleId, flow }: { moduleId: ErpModuleId; flow: FlowCo
   if (moduleId === "erp-finance") {
     return (
       <ErpFinanceScreen
+        uid={ctx.uid}
         companyName={companyName}
         currency={currency}
         accounts={ctx.accounts}
         ledger={ctx.ledger}
         inventory={ctx.inventory}
+        cashboxes={ctx.cashboxes}
+        erpData={ctx.erpData}
+        onUpdateErpData={ctx.updateErpData}
         onToast={ctx.showToast}
       />
     );
@@ -7544,7 +7549,7 @@ function TransactionModal({
           )}
         </div>
         <div className="transaction-cashbox-row">
-          {ctx.cashboxes.length > 0 ? (
+          {ctx.cashboxes.length > 0 || editingEntry?.cashboxId ? (
             <select
               className="transaction-fund"
               aria-label="صندوق النقد"
@@ -7556,6 +7561,11 @@ function TransactionModal({
                   {cb.name}
                 </option>
               ))}
+              {editingEntry?.cashboxId && !ctx.cashboxes.some((c) => c.id === editingEntry.cashboxId) ? (
+                <option value={editingEntry.cashboxId}>
+                  صندوق #{editingEntry.cashboxId} (غير نشط)
+                </option>
+              ) : null}
             </select>
           ) : null}
           <select
@@ -7571,6 +7581,15 @@ function TransactionModal({
             ))}
           </select>
         </div>
+        {ctx.cashboxes.length > 0 ? (
+          <div style={{ fontSize: 11, color: "#475569", display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>الصناديق النشطة: {ctx.cashboxes.length}</span>
+            <span>
+              عملة الصندوق:{" "}
+              <bdi>{ctx.cashboxes.find((c) => c.id === cashboxId)?.currencyCode ?? currency}</bdi>
+            </span>
+          </div>
+        ) : null}
         <strong
           className={`transaction-balance-strip ${summary?.tone ?? "neutral"}`}
           data-testid="transaction-balance-strip"
@@ -8735,13 +8754,16 @@ function ChartOfAccountsModal({ open, onClose }: { open: boolean; onClose: () =>
 function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ctx = useWorkspace();
   const [report, setReport] = useState<Awaited<ReturnType<typeof fetchCashboxesReport>> | null>(null);
+  const [currencyFilter, setCurrencyFilter] = useState<string>(ctx.workspace?.defaultCurrency || "ريال");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let active = true;
     setLoading(true);
-    void fetchCashboxesReport(ctx.uid)
+    void fetchCashboxesReport(ctx.uid, {
+      currency: currencyFilter === "الكل" ? undefined : currencyFilter,
+    })
       .then((res) => {
         if (active) setReport(res);
       })
@@ -8754,7 +8776,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
     return () => {
       active = false;
     };
-  }, [ctx.uid, ctx.ledger.length, open]);
+  }, [ctx.uid, ctx.ledger.length, currencyFilter, open]);
 
   if (!open) return null;
   const cashAccounts = ctx.accounts.filter((a) => a.isCashAccount);
@@ -8767,7 +8789,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
         role="dialog"
         aria-modal="true"
         aria-labelledby="cashboxes-report-title"
-        style={{ maxWidth: 560, width: "94vw", maxHeight: "84vh", display: "flex", flexDirection: "column" }}
+        style={{ maxWidth: 580, width: "94vw", maxHeight: "84vh", display: "flex", flexDirection: "column" }}
       >
         <header className="smart-modal-header">
           <button type="button" className="smart-modal-close" onClick={onClose} aria-label="إغلاق">
@@ -8776,6 +8798,26 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
           <h2 id="cashboxes-report-title">صناديق النقدية والتدفق النقدي</h2>
           <span className="smart-modal-spacer" aria-hidden="true" />
         </header>
+
+        <div style={{ padding: "8px 10px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, borderBottom: "1px solid var(--nasqo-line)", fontSize: 12 }}>
+          <span>النطاق: كامل السجل · المصدر: SQLite</span>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span>العملة</span>
+            <select
+              aria-label="عملة تقرير الصناديق"
+              value={currencyFilter}
+              onChange={(e) => setCurrencyFilter(e.target.value)}
+              style={{ height: 30, border: "1px solid var(--nasqo-line)", borderRadius: 6, padding: "0 6px" }}
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              <option value="الكل">الكل</option>
+            </select>
+          </label>
+        </div>
 
         <div className="account-groups-table-wrap" style={{ flex: 1, overflow: "auto", padding: "8px 10px" }}>
           {loading ? (
@@ -8786,6 +8828,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
                 <thead>
                   <tr>
                     <th>الصندوق</th>
+                    <th>الحالة</th>
                     <th>العملة</th>
                     <th>وارد</th>
                     <th>صادر</th>
@@ -8797,6 +8840,11 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
                   {(report?.cashboxes ?? []).map((cb) => (
                     <tr key={cb.id}>
                       <td className="ag-name-cell">{cb.name}</td>
+                      <td>
+                        <span style={{ color: cb.isActive === false ? "#dc2626" : "#059669", fontWeight: 700 }}>
+                          {cb.isActive === false ? "موقوف" : "نشط"}
+                        </span>
+                      </td>
                       <td>{cb.currencyCode}</td>
                       <td style={{ color: "#059669" }}>{formatAmount(cb.totalIn)}</td>
                       <td style={{ color: "#dc2626" }}>{formatAmount(cb.totalOut)}</td>
@@ -8806,21 +8854,53 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
                   ))}
                   {(report?.cashboxes ?? []).length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: "center", padding: 12, color: "#64748b" }}>
+                      <td colSpan={7} style={{ textAlign: "center", padding: 12, color: "#64748b" }}>
                         لا توجد صناديق نقدية مسجلة في القاعدة.
                       </td>
                     </tr>
                   ) : null}
                 </tbody>
               </table>
+
+              {report?.reconciliation ? (
+                <div
+                  data-testid="cashboxes-report-reconciliation"
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: "1px solid var(--nasqo-line)",
+                    background: "#f8fafc",
+                    fontSize: 11.5,
+                    display: "grid",
+                    gap: 4,
+                    marginBottom: 10,
+                  }}
+                >
+                  <strong>تسوية إجمالي النقدية ({report.reconciliation.currencyFilter}):</strong>
+                  <div>
+                    مجموع صافي الصناديق المربوطة: <b>{formatAmount(report.reconciliation.linkedCashboxesNet)}</b>
+                  </div>
+                  <div>
+                    حركات نقدية مسددة بدون ربط صندوق ({report.reconciliation.unlinkedCashCount} حركة):{" "}
+                    <b>{formatAmount(report.reconciliation.unlinkedCashNet)}</b> (وارد{" "}
+                    {formatAmount(report.reconciliation.unlinkedCashIn)} − صادر{" "}
+                    {formatAmount(report.reconciliation.unlinkedCashOut)})
+                  </div>
+                  <div>
+                    إجمالي صافي النقدية الموحد (يطابق الميزانية):{" "}
+                    <b style={{ color: "#0369a1" }}>{formatAmount(report.reconciliation.totalCashNet)}</b>
+                  </div>
+                </div>
+              ) : null}
+
               {cashAccounts.length > 0 ? (
                 <div style={{ marginTop: 8 }}>
                   <strong style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
-                    حسابات النقدية المباشرة ({cashAccounts.length}):
+                    حسابات الدليل المُعلّمة كنقدية ({cashAccounts.length}) — ليست صناديق خزينة:
                   </strong>
                   <div style={{ display: "grid", gap: 6 }}>
                     {cashAccounts.map((acc) => {
-                      const s = computeAccountSummary(acc, ctx.ledger);
+                      const s = computeAccountSummary(acc, ctx.ledger, currencyFilter === "الكل" ? undefined : currencyFilter);
                       return (
                         <button
                           key={acc.id}
@@ -8858,7 +8938,12 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
         </div>
 
         <footer className="account-groups-footer">
-          <span>صناديق النقدية المعتمدة: {ctx.cashboxes.length}</span>
+          <span>
+            الصناديق النشطة المتاحة للسندات: {ctx.cashboxes.length}
+            {report?.reconciliation && report.reconciliation.inactiveCount > 0
+              ? ` (موقوف: ${report.reconciliation.inactiveCount})`
+              : ""}
+          </span>
           <button type="button" className="ag-btn close" onClick={onClose}>
             إغلاق
           </button>

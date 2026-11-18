@@ -104,6 +104,10 @@ export type CashboxRecord = {
   name: string;
   details: string;
   currencyCode: CurrencyCode;
+  state?: number;
+  boxType?: number;
+  sortOrder?: number;
+  isActive?: boolean;
   legacyId?: number;
 };
 

@@ -34,6 +34,7 @@ import {
   insertInventoryItemRow,
   insertLedgerEntryRow,
   listUnifiedTablesMeta,
+  loadErpDataRows,
   queryUnifiedTable,
   resetWorkspaceToEmpty,
   restoreUnifiedJsonBundle,
@@ -1079,6 +1080,66 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
     );
     deleteAccountRow(db, DEFAULT_WORKSPACE_ID, tempAcc.id);
     assert.equal(db.prepare("SELECT id FROM accounts WHERE id = ?").get(tempAcc.id), undefined);
+
+    // E) Cashboxes report includes active+inactive boxes, uses accounting voucher signs, and persists VAT config
+    const activeCbRes = db
+      .prepare(
+        `INSERT INTO cashboxes (workspace_id, name, details, state, currency_code, box_type, sort_order)
+         VALUES (?, 'الصندوق الرئيسي اختبار', '', 1, 'ريال', 1, 0)`,
+      )
+      .run(DEFAULT_WORKSPACE_ID);
+    const mainCbId = Number(activeCbRes.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO cashboxes (workspace_id, name, details, state, currency_code, box_type, sort_order)
+       VALUES (?, 'صندوق موقوف اختبار', '', 0, 'ريال', 1, 5)`,
+    ).run(DEFAULT_WORKSPACE_ID);
+    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      cashboxId: mainCbId,
+      kind: "voucher",
+      typeLabel: "له (سند)",
+      payment: "cash",
+      direction: "credit",
+      amount: 250,
+      currency: "ريال",
+      entryNumber: 120,
+      deleted: false,
+      entryDate: "2026-06-15",
+    });
+    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      cashboxId: mainCbId,
+      kind: "voucher",
+      typeLabel: "عليه (سند)",
+      payment: "cash",
+      direction: "debit",
+      amount: 90,
+      currency: "ريال",
+      entryNumber: 121,
+      deleted: false,
+      entryDate: "2026-06-16",
+    });
+    const cbFull = getCashboxesReport(db, DEFAULT_WORKSPACE_ID, { currency: "ريال" });
+    const mainBox = cbFull.cashboxes.find((b) => b.id === mainCbId)!;
+    const inactiveBox = cbFull.cashboxes.find((b) => b.name === "صندوق موقوف اختبار")!;
+    assert.equal(mainBox.isActive, true);
+    assert.equal(mainBox.totalIn, 250); // Credit receipt voucher adds to cashbox inflow
+    assert.equal(mainBox.totalOut, 90); // Debit payment voucher adds to cashbox outflow
+    assert.equal(mainBox.netBalance, 160);
+    assert.equal(inactiveBox.isActive, false);
+    assert.equal(cbFull.reconciliation?.inactiveCount, 1);
+
+    saveErpDataRows(db, DEFAULT_WORKSPACE_ID, {
+      ...loadErpDataRows(db, DEFAULT_WORKSPACE_ID),
+      vatConfig: { jurisdiction: "sa_15", ratePercent: 15, basis: "estimated_gross" },
+    });
+    assert.deepEqual(loadErpDataRows(db, DEFAULT_WORKSPACE_ID).vatConfig, {
+      jurisdiction: "sa_15",
+      ratePercent: 15,
+      basis: "estimated_gross",
+    });
   } finally {
     closeSqliteDb();
     fs.rmSync(dir, { recursive: true, force: true });

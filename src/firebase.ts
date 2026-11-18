@@ -650,18 +650,44 @@ export async function fetchInventoryMovementsReport(
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/report${suffix}`);
 }
 
-export async function fetchCashboxesReport(uid: string): Promise<{
+export async function fetchCashboxesReport(
+  uid: string,
+  params?: { currency?: string; fromDate?: string; toDate?: string },
+): Promise<{
   cashboxes: Array<{
     id: number;
     name: string;
     currencyCode: string;
+    state?: number;
+    boxType?: number;
+    sortOrder?: number;
+    isActive?: boolean;
+    legacyId?: number;
     totalIn: number;
     totalOut: number;
     netBalance: number;
     entryCount: number;
   }>;
+  reconciliation?: {
+    currencyFilter: string;
+    fromDate: string | null;
+    toDate: string | null;
+    linkedCashboxesNet: number;
+    unlinkedCashIn: number;
+    unlinkedCashOut: number;
+    unlinkedCashNet: number;
+    unlinkedCashCount: number;
+    totalCashNet: number;
+    activeCount: number;
+    inactiveCount: number;
+  };
 }> {
-  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/cashboxes/report`);
+  const qs = new URLSearchParams();
+  if (params?.currency) qs.set("currency", params.currency);
+  if (params?.fromDate) qs.set("fromDate", params.fromDate);
+  if (params?.toDate) qs.set("toDate", params.toDate);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/cashboxes/report${suffix}`);
 }
 
 export async function deleteAccount(uid: string, accountId: string): Promise<void> {

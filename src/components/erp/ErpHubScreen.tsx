@@ -113,7 +113,19 @@ export function ErpHubScreen({
   const income = useMemo(() => computeIncomeStatement(accounts, ledger), [accounts, ledger]);
   const invSummary = useMemo(() => computeInventorySummary(inventory), [inventory]);
   const payroll = useMemo(() => computePayrollTotals(erpData.employees), [erpData.employees]);
-  const vat = useMemo(() => computeVatSummary(accounts, ledger, 0.15), [accounts, ledger]);
+  const vatConfig = erpData.vatConfig ?? {
+    jurisdiction: "none" as const,
+    ratePercent: 0,
+    basis: "recorded_only" as const,
+  };
+  const vat = useMemo(
+    () =>
+      computeVatSummary(accounts, ledger, vatConfig.ratePercent / 100, {
+        vatMode: vatConfig.basis,
+        jurisdictionCode: vatConfig.jurisdiction,
+      }),
+    [accounts, ledger, vatConfig.basis, vatConfig.jurisdiction, vatConfig.ratePercent],
+  );
 
   const refreshDbStats = useCallback(async () => {
     try {
@@ -323,7 +335,13 @@ export function ErpHubScreen({
                   {formatAmount(Math.abs(vat.netVatPayable))}
                 </bdi>
               </strong>
-              <span>{vat.netVatPayable < 0 ? "دائن مسترد · 15%" : "15% VAT"}</span>
+              <span>
+                {vatConfig.jurisdiction === "none"
+                  ? "غير مفعّل · 0% مسجلة"
+                  : vatConfig.basis === "recorded_only"
+                    ? "مسجل بالفواتير"
+                    : `${vatConfig.ratePercent}% تقديري`}
+              </span>
             </article>
           </section>
 

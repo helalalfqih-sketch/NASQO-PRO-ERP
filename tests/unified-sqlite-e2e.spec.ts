@@ -34,7 +34,7 @@ async function sampleSqlite() {
 test("unified single SQLite backend persists data, imports SQLite, opens invoice lines, exports .sqlite, and uses zero IndexedDB/Firestore", async ({
   page,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const firestoreRequests: string[] = [];
   page.on("request", (req) => {
     if (req.url().includes("firestore.googleapis.com")) {
@@ -302,8 +302,45 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.getByLabel("رجوع", { exact: true }).click();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
 
+  // Verify Cashboxes Report shows status + reconciliation and matches TransactionModal cashboxes
+  await page.getByRole("button", { name: "صناديق النقدية", exact: true }).click();
+  const cbModal = page.getByTestId("cashboxes-report-modal");
+  await expect(cbModal).toBeVisible();
+  await expect(cbModal.getByTestId("cashboxes-report-reconciliation")).toBeVisible({ timeout: 10_000 });
+  await expect(cbModal.getByText("الصناديق النشطة المتاحة للسندات:")).toBeVisible();
+  await cbModal.locator("button.ag-btn.close").click();
+  await expect(cbModal).toHaveCount(0);
+
+  // Verify ERP Finance scope controls, Balance Sheet cash/inventory reconciliation, and explicit VAT regime/persistence
+  await page.getByTestId("open-erp-hub-btn").click();
+  await expect(page.getByTestId("erp-hub-screen")).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId("erp-mod-btn-erp-finance").click();
+  const financeScreen = page.getByTestId("erp-finance-screen");
+  await expect(financeScreen).toBeVisible({ timeout: 10_000 });
+  await expect(financeScreen.getByTestId("erp-finance-scope-bar")).toBeVisible();
+  await expect(financeScreen.getByTestId("erp-finance-period-select")).toBeVisible();
+  await expect(financeScreen.getByTestId("erp-finance-currency-select")).toBeVisible();
+  await expect(financeScreen.getByTestId("erp-finance-scope-summary")).toContainText("قاعدة SQLite الموحدة");
+
+  await financeScreen.getByRole("tab", { name: "الميزانية" }).click();
+  await expect(financeScreen.getByTestId("erp-balance-reconciliation")).toBeVisible({ timeout: 10_000 });
+  await expect(financeScreen.getByTestId("erp-balance-reconciliation")).toContainText("تسوية النقدية");
+  await expect(financeScreen.getByTestId("erp-balance-reconciliation")).toContainText("تسوية المخزون");
+
+  await financeScreen.getByRole("tab", { name: "الضرائب VAT" }).click();
+  await expect(financeScreen.getByTestId("erp-vat-jurisdiction-select")).toHaveValue("none");
+  await expect(financeScreen.getByTestId("erp-vat-warning")).toBeVisible();
+  await financeScreen.getByTestId("erp-vat-jurisdiction-select").selectOption("sa_15");
+  await financeScreen.getByTestId("erp-vat-save-btn").click();
+
   await page.reload();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("open-erp-hub-btn").click();
+  await expect(page.getByTestId("erp-hub-screen")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("erp-hub-screen")).toContainText("15% تقديري");
+  await page.getByTestId("erp-mod-btn-erp-finance").click();
+  await page.getByTestId("erp-finance-screen").getByRole("tab", { name: "الضرائب VAT" }).click();
+  await expect(page.getByTestId("erp-vat-jurisdiction-select")).toHaveValue("sa_15");
 
   // Verify again zero IndexedDB stores & zero Firestore requests throughout entire session
   const postDbs = await page.evaluate(async () => {
