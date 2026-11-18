@@ -589,8 +589,13 @@ function NasqoProductionShell() {
 
     if (primaryMode === "checking" || primaryMode === "error") return;
 
-    if (primaryMode === "off" && (wantsAutostart || isLocalWorkspaceSession())) {
-      void enterLocalWorkspace();
+    // The single SQLite workspace is not Google/Firestore. A stale Firebase
+    // session must never replace the local SQLite user or block its writes.
+    if (primaryMode === "off") {
+      if (sqliteAccess === "ready") {
+        void enterLocalWorkspace();
+      }
+      return;
     }
 
     const fallbackTimer = window.setTimeout(() => {
@@ -600,9 +605,6 @@ function NasqoProductionShell() {
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       window.clearTimeout(fallbackTimer);
       if (nextUser) {
-        if (primaryMode === "off" && (wantsAutostart || isLocalWorkspaceSession())) {
-          return;
-        }
         setLocalWorkspaceSession(false);
         setUser(nextUser);
         setAuthReady(true);
@@ -611,13 +613,8 @@ function NasqoProductionShell() {
         setWorkspaceReady(true);
         setStartupError("");
         setCloudInitializationError("");
-        if (primaryMode === "on") return; // Never seed or write to the legacy workspace in central mode.
-        void ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName).catch((err) => {
-          console.error("Failed initializing workspace:", err);
-          if (auth.currentUser?.uid === nextUser.uid) {
-            setCloudInitializationError("تعذر إكمال تهيئة البيانات السحابية. ستبقى التعديلات مقفلة حتى تصل بيانات الحساب الحقيقية.");
-          }
-        });
+        // Legacy central SmartPro mode uses its own server; never seed cloud
+        // data from this authentication listener.
       } else if (primaryMode === "on" || (!wantsAutostart && !isLocalWorkspaceSession())) {
         setUser(null);
         setAuthReady(true);
@@ -630,7 +627,7 @@ function NasqoProductionShell() {
       window.clearTimeout(fallbackTimer);
       unsub();
     };
-  }, [enterLocalWorkspace, primaryMode]);
+  }, [enterLocalWorkspace, primaryMode, sqliteAccess]);
 
   const handleSignIn = async () => {
     setAuthBusy(true);
@@ -1924,7 +1921,7 @@ function AuthenticatedWorkspace({
     <WorkspaceContext.Provider value={ctx}>
       <div className="nasqo-app" dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
-        {user.uid !== LOCAL_WORKSPACE_UID && syncing ? (
+        {user.uid !== LOCAL_WORKSPACE_UID && syncing && cloudInitializationError ? (
           <div className="nasqo-cloud-hydration-lock" role="status" data-testid="cloud-hydration-lock">
             <section>
               <h2>واجهة نسق برو جاهزة</h2>
