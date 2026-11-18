@@ -21,10 +21,14 @@ test("buildLocalBackupDownloadName preserves .back or .json and appends .back wh
   assert.equal(buildLocalBackupDownloadName("نسخة-نوفمبر"), "نسخة-نوفمبر.back");
 });
 
-test("inspectBackupBytes detects JSON .back files, SQLite .back files, and ZIP .back files", () => {
+test("inspectBackupBytes detects valid JSON .back files, SQLite .back files, and ZIP .back files, and rejects invalid/empty JSON objects", () => {
   const jsonBytes = new TextEncoder().encode(
     JSON.stringify({
+      format: "nasqo-pro-erp-backup",
+      version: 2,
       name: "backup_2026.11.08_03.49.26.back",
+      workspace: { companyName: "شركة اختبار" },
+      warehouses: [{ id: "w1", name: "الرئيسي" }],
       accounts: [{ id: "a1", name: "شركة النور" }],
       ledger: [{ id: "l1", accountId: "a1", amount: 500 }],
     }),
@@ -35,8 +39,31 @@ test("inspectBackupBytes detects JSON .back files, SQLite .back files, and ZIP .
     const collections = extractBackupCollections(jsonResult.payload);
     assert.equal(collections.accounts.length, 1);
     assert.equal(collections.ledger.length, 1);
-    assert.equal(collections.totalRecords, 2);
+    assert.equal(collections.warehouses.length, 1);
+    assert.equal(collections.totalRecords, 3);
   }
+
+  for (const invalidRaw of ["{}", "[]", '{"arbitrary": 123}', '{"accounts":"not-an-array"}', "{broken"]) {
+    const res = inspectBackupBytes(new TextEncoder().encode(invalidRaw), "bad.json");
+    assert.equal(res.kind, "invalid-json");
+  }
+
+  const intentionalEmpty = inspectBackupBytes(
+    new TextEncoder().encode(
+      JSON.stringify({
+        format: "nasqo-unified-sqlite-export-v2",
+        version: 2,
+        emptyBackup: true,
+        workspace: { companyName: "مساحة فارغة" },
+        accounts: [],
+        warehouses: [],
+        inventory: [],
+        ledger: [],
+      }),
+    ),
+    "empty-v2.json",
+  );
+  assert.equal(intentionalEmpty.kind, "json");
 
   const sqliteBytes = new TextEncoder().encode("SQLite format 3\u0000dummy");
   assert.equal(

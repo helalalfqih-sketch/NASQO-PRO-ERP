@@ -39,9 +39,12 @@ export function ExpenseCategorySelector({
 
     triggerHaptic("light");
     setLoading(true);
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => controller.abort(), 12_000);
     try {
       const response = await fetch("/api/ai/categorize-expense", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: description.trim(),
@@ -83,6 +86,7 @@ export function ExpenseCategorySelector({
       setAiError("تعذر الوصول لخادم التصنيف الذكي — تم اقتراح تصنيف محلي.");
       triggerHaptic("warning");
     } finally {
+      globalThis.clearTimeout(timer);
       setLoading(false);
     }
   };

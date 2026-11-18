@@ -156,22 +156,38 @@ export function FullSqliteImportModal({
     }
   };
 
-  const handleImportUpload = async () => {
+  const handleImportUpload = async (replaceAll = false) => {
     if (!upload) return;
     setError("");
     setNotice("");
     setBusy(true);
     try {
       if (upload.kind === "sql") {
-        const report = await importSmartProSqlIntoServer(workspaceId, upload.sqlText, upload.fileName, replaceExistingSql);
+        const report = await importSmartProSqlIntoServer(
+          workspaceId,
+          upload.sqlText,
+          upload.fileName,
+          replaceAll || replaceExistingSql,
+        );
         const imported = (report.imported as Record<string, number>) ?? {};
         const msg = `تم استيراد ${Number(report.totalSourceRows ?? 0).toLocaleString("en-US")} سجلًا من ${upload.fileName} إلى قاعدة SQLite الموحدة (الحسابات: ${imported.accounts ?? 0} • القيود: ${imported.ledgerEntries ?? 0} • البنود: ${imported.invoiceLines ?? 0} • الأصناف: ${imported.inventoryItems ?? 0}).`;
         setNotice(msg);
         onNotify(msg);
       } else {
-        const res = await importSqliteLegacyIntoServer(workspaceId, upload.base64, upload.fileName, "import");
-        const added = (res.added as Record<string, number>) ?? {};
-        const msg = `تم حفظ الأرشيف وإظهار البيانات داخل قاعدة SQLite الموحدة (حسابات مضافة: ${added.accounts ?? 0} • قيود: ${added.ledger ?? 0} • بنود: ${added.invoiceLines ?? 0}).`;
+        const mode = replaceAll ? "restore" : "import";
+        const res = await importSqliteLegacyIntoServer(
+          workspaceId,
+          upload.base64,
+          upload.fileName,
+          mode,
+          undefined,
+          replaceAll,
+        );
+        const inner = (res.result as { added?: Record<string, number> } | undefined) ?? (res as { added?: Record<string, number> });
+        const added = inner.added ?? {};
+        const msg = replaceAll
+          ? `تم استبدال مساحة العمل باستعادة ${upload.fileName} (الحسابات: ${added.accounts ?? 0} • القيود: ${added.ledger ?? 0} • البنود: ${added.invoiceLines ?? 0}).`
+          : `تم استيراد ودمج البيانات داخل SQLite الموحدة (حسابات مضافة: ${added.accounts ?? 0} • قيود: ${added.ledger ?? 0} • بنود: ${added.invoiceLines ?? 0}).`;
         setNotice(msg);
         onNotify(msg);
       }
@@ -184,6 +200,8 @@ export function FullSqliteImportModal({
   };
 
   const handleDownloadJson = async () => {
+    setError("");
+    setNotice("");
     setBusy(true);
     try {
       const payload = await fetchUnifiedJsonExport(workspaceId);
@@ -194,7 +212,25 @@ export function FullSqliteImportModal({
       a.download = `nasqo-unified-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("تم تصدير النسخة الشاملة من SQLite (JSON)");
       onNotify("تم تصدير النسخة الشاملة من SQLite (JSON)");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر تصدير نسخة JSON.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDownloadSqlite = async () => {
+    setError("");
+    setNotice("");
+    setBusy(true);
+    try {
+      await downloadUnifiedSqliteFile(workspaceId);
+      setNotice("تم تنزيل قاعدة SQLite الموحدة (.sqlite)");
+      onNotify("تم تنزيل قاعدة SQLite الموحدة (.sqlite)");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر تنزيل قاعدة SQLite.");
     } finally {
       setBusy(false);
     }
@@ -325,26 +361,42 @@ export function FullSqliteImportModal({
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {upload ? (
-                  <button
-                    type="button"
-                    data-testid="legacy-import-and-show"
-                    disabled={busy}
-                    onClick={() => void handleImportUpload()}
-                    style={{ background: "#0f766e", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-                  >
-                    استيراد وحفظ داخل SQLite الموحدة وإظهار البيانات
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      data-testid="legacy-import-and-show"
+                      disabled={busy}
+                      onClick={() => void handleImportUpload(false)}
+                      style={{ background: "#0f766e", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      {upload.kind === "sqlite"
+                        ? "استيراد ودمج فوق الحالي (بدون مسح)"
+                        : "استيراد وحفظ داخل SQLite الموحدة وإظهار البيانات"}
+                    </button>
+                    {upload.kind === "sqlite" ? (
+                      <button
+                        type="button"
+                        data-testid="legacy-sqlite-restore-replace"
+                        disabled={busy}
+                        onClick={() => void handleImportUpload(true)}
+                        style={{ background: "#b45309", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                      >
+                        استبدال كامل ومسح الحالي (استعادة)
+                      </button>
+                    ) : null}
+                  </>
                 ) : null}
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void downloadUnifiedSqliteFile(workspaceId)}
+                  onClick={() => void handleDownloadSqlite()}
                   style={{ background: "#059669", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                 >
                   تنزيل قاعدة SQLite الموحدة (.sqlite)
                 </button>
                 <button
                   type="button"
+                  data-testid="legacy-export-json-btn"
                   disabled={busy}
                   onClick={() => void handleDownloadJson()}
                   style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}

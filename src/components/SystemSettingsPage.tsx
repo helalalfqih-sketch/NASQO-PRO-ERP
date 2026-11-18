@@ -13,6 +13,7 @@ interface SystemSettingsPageProps {
   uid: string;
   userEmail: string;
   workspace: WorkspaceSettings | null;
+  currencyOptions?: readonly string[];
   extended: ExtendedAppSettings;
   onChangeExtended: (next: ExtendedAppSettings) => void;
   themeMode: ThemeMode;
@@ -38,6 +39,7 @@ export function SystemSettingsPage({
   uid,
   userEmail,
   workspace,
+  currencyOptions = CURRENCIES,
   extended,
   onChangeExtended,
   themeMode,
@@ -409,7 +411,7 @@ export function SystemSettingsPage({
                 value={defaultCurrency}
                 onChange={(e) => setDefaultCurrency(e.target.value as CurrencyCode)}
               >
-                {CURRENCIES.map((c) => (
+                {currencyOptions.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>

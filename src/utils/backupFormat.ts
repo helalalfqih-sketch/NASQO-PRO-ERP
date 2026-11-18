@@ -10,17 +10,94 @@ export interface NasqoBackupPayload {
   name?: string;
   format?: string;
   version?: number;
+  emptyBackup?: boolean;
   exportedAt?: string;
-  workspace?: { companyName?: string; baseCurrency?: string };
+  workspace?: { companyName?: string; baseCurrency?: string; defaultCurrency?: string };
+  currencies?: Record<string, unknown>[];
+  accountGroups?: Record<string, unknown>[];
+  cashboxes?: Record<string, unknown>[];
   warehouses?: Partial<WarehouseRecord>[];
   accounts?: Partial<AccountRecord>[];
   ledger?: Partial<LedgerEntryRecord>[];
   inventory?: Partial<InventoryItemRecord>[];
+  stockTransfers?: Record<string, unknown>[];
+  priceOffers?: Record<string, unknown>[];
   erpData?: Partial<ErpWorkspaceData>;
+}
+
+const KNOWN_BACKUP_FORMATS = new Set([
+  "nasqo-unified-sqlite-export-v2",
+  "nasqo-unified-sqlite-export-v1",
+  "nasqo-pro-erp-backup",
+]);
+
+export function validateJsonBackupCandidate(parsed: unknown): string | null {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return "ملف JSON يجب أن يمثل نسخة احتياطية كاملة من نظام نسقو برو وليس مصفوفة أو قيمة مفردة.";
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (Object.keys(obj).length === 0) {
+    return "ملف JSON فارغ {} لا يطابق بنية نسخة نسقو برو الاحتياطية — لم يتم تعديل البيانات.";
+  }
+  if (obj.format !== undefined) {
+    if (typeof obj.format !== "string" || !KNOWN_BACKUP_FORMATS.has(obj.format)) {
+      return `صيغة النسخة (${String(obj.format)}) غير مدعومة في نسقو برو.`;
+    }
+  }
+  if (obj.version !== undefined) {
+    if (typeof obj.version !== "number" || !Number.isInteger(obj.version) || obj.version < 1 || obj.version > 2) {
+      return "إصدار ملف النسخة الاحتياطية غير مدعوم.";
+    }
+  }
+  if (obj.emptyBackup !== undefined && typeof obj.emptyBackup !== "boolean") {
+    return "علامة النسخة الفارغة (emptyBackup) غير صالحة.";
+  }
+  const hasKnownFormat = typeof obj.format === "string" && KNOWN_BACKUP_FORMATS.has(obj.format);
+  if (obj.emptyBackup === true && !hasKnownFormat) {
+    return "وسم النسخة الفارغة يتطلب توقيع صيغة نسقو برو المعتمد.";
+  }
+
+  for (const key of [
+    "currencies",
+    "accountGroups",
+    "cashboxes",
+    "warehouses",
+    "accounts",
+    "inventory",
+    "ledger",
+    "stockTransfers",
+    "priceOffers",
+  ]) {
+    if (obj[key] !== undefined && !Array.isArray(obj[key])) {
+      return `الحقل «${key}» في النسخة الاحتياطية غير صالح (يجب أن يكون مصفوفة).`;
+    }
+  }
+  if (obj.workspace !== undefined && (!obj.workspace || typeof obj.workspace !== "object" || Array.isArray(obj.workspace))) {
+    return "بيانات مساحة العمل (workspace) في النسخة غير صالحة.";
+  }
+  if (!hasKnownFormat) {
+    const ws = obj.workspace as Record<string, unknown> | undefined;
+    const hasCompany = Boolean(ws && typeof ws.companyName === "string" && ws.companyName.trim().length > 0);
+    const hasCore = Array.isArray(obj.accounts) && Array.isArray(obj.warehouses) && (Array.isArray(obj.ledger) || Array.isArray(obj.inventory));
+    if (!hasCompany || !hasCore) {
+      return "ملف JSON لا يحمل علامة أو هيكل نسخة نسقو برو الاحتياطية المعتمدة.";
+    }
+  } else if (obj.emptyBackup !== true) {
+    const hasAnyCollection =
+      Array.isArray(obj.accounts) ||
+      Array.isArray(obj.warehouses) ||
+      Array.isArray(obj.inventory) ||
+      Array.isArray(obj.ledger);
+    if (!hasAnyCollection || !obj.workspace) {
+      return "نسخة JSON ناقصة ولا تحتوي على الجداول الأساسية المطلوبة.";
+    }
+  }
+  return null;
 }
 
 export type BackupInspectionResult =
   | { kind: "json"; fileName: string; payload: NasqoBackupPayload }
+  | { kind: "invalid-json"; fileName: string; reason: string }
   | { kind: "sqlite"; fileName: string }
   | { kind: "sql"; fileName: string; sqlText: string }
   | { kind: "encrypted"; fileName: string }
@@ -66,9 +143,9 @@ export function inspectBackupBytes(
     const jsonMatch = text.match(/\{[\s\S]*"(?:accounts|ledger|warehouses|inventory)"[\s\S]*\}/);
     if (jsonMatch) {
       try {
-        const parsed = JSON.parse(jsonMatch[0]) as NasqoBackupPayload;
-        if (parsed && typeof parsed === "object") {
-          return { kind: "json", fileName, payload: parsed };
+        const parsed = JSON.parse(jsonMatch[0]) as unknown;
+        if (!validateJsonBackupCandidate(parsed)) {
+          return { kind: "json", fileName, payload: parsed as NasqoBackupPayload };
         }
       } catch {
         // Fall through to zip notice when compressed
@@ -83,17 +160,21 @@ export function inspectBackupBytes(
       .replace(/^\uFEFF/, "")
       .trim();
     if (decoded.startsWith("{") || decoded.startsWith("[")) {
-      const parsed = JSON.parse(decoded) as unknown;
-      if (Array.isArray(parsed)) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(decoded) as unknown;
+      } catch {
         return {
-          kind: "json",
+          kind: "invalid-json",
           fileName,
-          payload: { accounts: parsed as Partial<AccountRecord>[] },
+          reason: "تعذر تحليل ملف JSON: صياغة النص غير مكتملة أو معطوبة.",
         };
       }
-      if (parsed && typeof parsed === "object") {
-        return { kind: "json", fileName, payload: parsed as NasqoBackupPayload };
+      const validationError = validateJsonBackupCandidate(parsed);
+      if (validationError) {
+        return { kind: "invalid-json", fileName, reason: validationError };
       }
+      return { kind: "json", fileName, payload: parsed as NasqoBackupPayload };
     }
     if (
       fileName.toLowerCase().endsWith(".sql") ||

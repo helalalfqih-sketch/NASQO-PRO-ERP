@@ -133,7 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_warehouses_ws ON warehouses(workspace_id, code_nu
 CREATE TABLE IF NOT EXISTS inventory_items (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  warehouse_id TEXT NOT NULL REFERENCES warehouses(id) ON DELETE RESTRICT,
+  warehouse_id TEXT REFERENCES warehouses(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   unit TEXT NOT NULL DEFAULT 'حبة',
   quantity REAL NOT NULL DEFAULT 0,
@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   receiver TEXT NOT NULL DEFAULT '',
   company_name TEXT NOT NULL DEFAULT '',
   discount REAL NOT NULL DEFAULT 0,
+  tax_amount REAL NOT NULL DEFAULT 0,
   bonus REAL NOT NULL DEFAULT 0,
   doc_type INTEGER,
   bstate INTEGER,

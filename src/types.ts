@@ -1,5 +1,16 @@
-export const CURRENCIES = ["ريال", "دولار", "يورو", "عملة 2"] as const;
-export type CurrencyCode = (typeof CURRENCIES)[number];
+export const CURRENCIES = ["ريال"] as const;
+export type CurrencyCode = string;
+
+export type CurrencyRecord = {
+  id: number;
+  code: string;
+  name: string;
+  symbol: string;
+  ratePrimary: number;
+  rateSecondary: number;
+  nameSecondary: string;
+  legacyId?: number;
+};
 
 export const ACCOUNT_CATEGORIES = [
   "purchases",
@@ -112,6 +123,7 @@ export type CashboxRecord = {
 };
 
 export type InvoiceLineInput = {
+  lineKind?: "item" | "free";
   inventoryItemId?: string;
   warehouseId?: string;
   itemName: string;
@@ -123,6 +135,8 @@ export type InvoiceLineInput = {
   discount?: number;
   bonus?: number;
   details?: string;
+  expiryDate?: string;
+  legacyId?: number;
 };
 
 export type LedgerEntryRecord = {
@@ -192,6 +206,9 @@ export type InventoryItemRecord = {
   count3?: number;
   sprice3?: number;
   defaultUnit?: number;
+  currencyCode?: CurrencyCode;
+  isActive?: boolean;
+  expiryDate?: string;
   legacyId?: number;
   warehouseId: string;
   /** Live quantity computed from invoice_lines/transfers when static count is unverified */

@@ -26,9 +26,12 @@ import {
   SqliteValidationError,
   batchUpdateInventoryItemRows,
   deleteAccountRow,
+  deleteCurrencyRow,
+  deleteInventoryCatalogRow,
   deleteLedgerEntryRow,
   ensureEmptyWorkspace,
   exportCleanSqliteSnapshotBytes,
+  exportWorkspaceJsonBackup,
   fetchInvoiceDetail,
   getCashboxesReport,
   getDbStats,
@@ -48,10 +51,12 @@ import {
   saveErpDataRows,
   saveWorkspaceSettingsRow,
   setLedgerDeletedRow,
+  updateInventoryCatalogRow,
   updateInventoryItemRow,
   updateLedgerEntryRow,
   upsertAccountGroupRow,
   upsertAccountRow,
+  upsertCurrencyRow,
   upsertWarehouseRow,
   withTransaction,
   writeAudit,
@@ -448,6 +453,41 @@ export function mountSqliteApi(app: Express): void {
   );
 
   router.post(
+    "/workspace/:uid/currencies",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const body = (req.body ?? {}) as {
+        currency?: {
+          id?: number;
+          name: string;
+          symbol?: string;
+          ratePrimary?: number;
+          rateSecondary?: number;
+          nameSecondary?: string;
+        };
+      };
+      if (!body.currency?.name) throw new HttpError(400, "اسم العملة مطلوب.");
+      const saved = upsertCurrencyRow(db, uid, body.currency);
+      const currencies = getFullWorkspaceBundle(db, uid).currencies ?? [saved];
+      res.status(body.currency.id ? 200 : 201).json({ currency: saved, currencies });
+    }),
+  );
+
+  router.delete(
+    "/workspace/:uid/currencies/:currencyId",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const currencyId = Number(paramStr(req, "currencyId"));
+      if (!Number.isFinite(currencyId) || currencyId <= 0) {
+        throw new HttpError(400, "معرف العملة غير صالح.");
+      }
+      deleteCurrencyRow(db, uid, currencyId);
+      const currencies = getFullWorkspaceBundle(db, uid).currencies ?? [];
+      res.json({ ok: true, currencies });
+    }),
+  );
+
+  router.post(
     "/workspace/:uid/warehouses",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
@@ -462,10 +502,20 @@ export function mountSqliteApi(app: Express): void {
     "/workspace/:uid/inventory",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      const body = (req.body ?? {}) as { item?: Partial<InventoryItemRecord> & { name: string; warehouseId: string } };
-      if (!body.item?.name || !body.item?.warehouseId) throw new HttpError(400, "بيانات الصنف غير مكتملة.");
+      const body = (req.body ?? {}) as { item?: Partial<InventoryItemRecord> & { name: string; warehouseId?: string } };
+      if (!body.item?.name) throw new HttpError(400, "اسم الصنف مطلوب.");
       const saved = insertInventoryItemRow(db, uid, body.item);
       res.status(201).json({ item: saved });
+    }),
+  );
+
+  router.delete(
+    "/workspace/:uid/inventory/:itemId",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const itemId = paramStr(req, "itemId").trim();
+      deleteInventoryCatalogRow(db, uid, itemId);
+      res.json({ ok: true });
     }),
   );
 
@@ -476,6 +526,18 @@ export function mountSqliteApi(app: Express): void {
       const updates = Array.isArray(req.body?.updates) ? req.body.updates : [];
       batchUpdateInventoryItemRows(db, uid, updates);
       res.json({ ok: true, updated: updates.length });
+    }),
+  );
+
+  router.patch(
+    "/workspace/:uid/inventory/:itemId/catalog",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const itemId = paramStr(req, "itemId").trim();
+      const body = (req.body ?? {}) as { item?: Partial<InventoryItemRecord> & { name: string } };
+      if (!body.item?.name) throw new HttpError(400, "اسم الصنف مطلوب.");
+      const item = updateInventoryCatalogRow(db, uid, itemId, body.item);
+      res.json({ item });
     }),
   );
 
@@ -549,13 +611,9 @@ export function mountSqliteApi(app: Express): void {
     "/workspace/:uid/export/json",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      const bundle = getFullWorkspaceBundle(db, uid);
+      const backupPayload = exportWorkspaceJsonBackup(db, uid);
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.json({
-        format: "nasqo-unified-sqlite-export-v1",
-        exportedAt: new Date().toISOString(),
-        ...bundle,
-      });
+      res.json(backupPayload);
     }),
   );
 
@@ -563,10 +621,11 @@ export function mountSqliteApi(app: Express): void {
     "/workspace/:uid/restore/json",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      const payload = (req.body?.payload && typeof req.body.payload === "object" ? req.body.payload : req.body) as Record<string, unknown> | undefined;
-      if (!payload || typeof payload !== "object") {
-        throw new HttpError(400, "محتوى ملف النسخة الاحتياطية JSON غير صالح.");
-      }
+      const rawBody = req.body;
+      const payload =
+        rawBody && typeof rawBody === "object" && !Array.isArray(rawBody) && "payload" in rawBody
+          ? (rawBody as { payload: unknown }).payload
+          : rawBody;
       const restored = restoreUnifiedJsonBundle(db, uid, payload);
       res.json({ restored, bundle: getFullWorkspaceBundle(db, uid) });
     }),
@@ -614,7 +673,10 @@ export function mountSqliteApi(app: Express): void {
         req.body?.groupCategories && typeof req.body.groupCategories === "object"
           ? (req.body.groupCategories as Record<string, AccountCategory>)
           : undefined;
-      const replaceExisting = req.body?.replaceExisting === true || mode === "restore";
+      const replaceExisting =
+        req.body?.replaceExisting !== undefined
+          ? req.body.replaceExisting === true
+          : mode === "restore";
       const result = importLegacySqliteIntoUnifiedDb(db, bytes, {
         workspaceId: uid,
         fileName,

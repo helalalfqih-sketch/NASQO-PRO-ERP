@@ -195,3 +195,197 @@ test("production refuses ephemeral SQLite without a persistent volume", async ()
     assert.equal(existsSync(file), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honors replaceExisting: false, and enforces stock/invoice integrity", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "nasqo-http-erp-test-"));
+  const file = join(dir, "nasqo.sqlite");
+  const port = await freePort();
+  let srv;
+  try {
+    srv = await startServer(port, file);
+    const prefix = srv.base + "/api/db/workspace/local-erp-workspace";
+    const jsonHeaders = { "Content-Type": "application/json", "X-NASQO-CSRF": "1" };
+
+    const whRes = await fetch(prefix + "/warehouses", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ warehouse: { name: "مخزن HTTP", isDefault: true, codeNumber: 1 } }),
+    });
+    assert.equal(whRes.status, 201);
+    const { warehouse } = await whRes.json();
+
+    const accRes = await fetch(prefix + "/accounts", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ account: { name: "حساب HTTP", category: "clients", currency: "ريال" } }),
+    });
+    assert.equal(accRes.status, 201);
+    const { account } = await accRes.json();
+
+    const itemRes = await fetch(prefix + "/inventory", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ item: { name: "صنف HTTP", unit: "حبة", quantity: 5, avgCost: 10, warehouseId: warehouse.id } }),
+    });
+    assert.equal(itemRes.status, 201);
+    const { item } = await itemRes.json();
+
+    // Oversell 8 units against stock 5 -> true negative stock (-3), NOT clamped to 0; soft/hard delete restores exact +5
+    const oversellRes = await fetch(prefix + "/ledger", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        entry: {
+          accountId: account.id,
+          accountName: account.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 80,
+          currency: "ريال",
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          invoiceContent: "items",
+          entryNumber: 1,
+          entryDate: "2026-11-18",
+          lines: [{ inventoryItemId: item.id, warehouseId: warehouse.id, itemName: item.name, unit: "حبة", quantity: 8, price: 10, total: 80 }],
+        },
+      }),
+    });
+    assert.equal(oversellRes.status, 201);
+    const { entry: savedSale } = await oversellRes.json();
+    let wsAfter = await (await fetch(prefix)).json();
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, -3);
+
+    // Mismatched invoice header vs line total -> HTTP 400
+    const mismatchRes = await fetch(prefix + "/ledger", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        entry: {
+          accountId: account.id,
+          accountName: account.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 100,
+          currency: "ريال",
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          invoiceContent: "items",
+          entryNumber: 2,
+          entryDate: "2026-11-18",
+          lines: [{ inventoryItemId: item.id, warehouseId: warehouse.id, itemName: item.name, unit: "حبة", quantity: 2, price: 10, total: 999 }],
+        },
+      }),
+    });
+    assert.equal(mismatchRes.status, 400);
+
+    // Soft delete oversold bill (-3 -> +5), restore (+5 -> -3), hard delete active (-3 -> +5)
+    await fetch(`${prefix}/ledger/${savedSale.id}/deleted`, {
+      method: "PATCH",
+      headers: jsonHeaders,
+      body: JSON.stringify({ deleted: true }),
+    });
+    wsAfter = await (await fetch(prefix)).json();
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 5);
+
+    await fetch(`${prefix}/ledger/${savedSale.id}/deleted`, {
+      method: "PATCH",
+      headers: jsonHeaders,
+      body: JSON.stringify({ deleted: false }),
+    });
+    wsAfter = await (await fetch(prefix)).json();
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, -3);
+
+    await fetch(`${prefix}/ledger/${savedSale.id}`, {
+      method: "DELETE",
+      headers: { "X-NASQO-CSRF": "1" },
+    });
+    wsAfter = await (await fetch(prefix)).json();
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 5);
+
+    // Re-create a real invoice with 1 line and verify HTTP JSON export/restore + {} rejection + native SQLite replaceExisting: false rejection
+    const liveInvRes = await fetch(prefix + "/ledger", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        entry: {
+          accountId: account.id,
+          accountName: account.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 30,
+          currency: "ريال",
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          invoiceContent: "items",
+          entryNumber: 4,
+          entryDate: "2026-11-18",
+          lines: [{ inventoryItemId: item.id, warehouseId: warehouse.id, itemName: item.name, unit: "حبة", quantity: 3, price: 10, total: 30 }],
+        },
+      }),
+    });
+    assert.equal(liveInvRes.status, 201);
+    const { entry: liveEntry } = await liveInvRes.json();
+
+    const jsonExport = await (await fetch(prefix + "/export/json")).json();
+    assert.equal(jsonExport.format, "nasqo-unified-sqlite-export-v2");
+    assert.equal(jsonExport.ledger[0].lines.length, 1);
+
+    // Export native SQLite bytes via HTTP
+    const sqliteBuf = Buffer.from(await (await fetch(prefix + "/export/sqlite")).arrayBuffer());
+
+    // Reject {} on /restore/json with 400 and keep data intact
+    for (const badBody of [{}, { payload: {} }, { payload: { hello: "world" } }]) {
+      const badRes = await fetch(prefix + "/restore/json", {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify(badBody),
+      });
+      assert.equal(badRes.status, 400);
+      const stillThere = await (await fetch(prefix)).json();
+      assert.equal(stillThere.accounts.length, 1);
+      assert.equal(stillThere.ledger.length, 1);
+    }
+
+    // Reset, restore JSON via HTTP -> confirm invoice line survives!
+    await fetch(prefix + "/reset", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ confirmation: "RESET:local-erp-workspace" }),
+    });
+    const restoreRes = await fetch(prefix + "/restore/json", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ payload: jsonExport }),
+    });
+    assert.equal(restoreRes.status, 200);
+    const detailAfter = await (await fetch(`${prefix}/invoices/${liveEntry.id}`)).json();
+    assert.equal(detailAfter.lines.length, 1);
+    assert.equal(detailAfter.lines[0].itemName, "صنف HTTP");
+
+    // Import native SQLite with replaceExisting: false -> must reject 400 and keep existing account!
+    const nativeMergeRes = await fetch(prefix + "/import/sqlite-legacy", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        base64: sqliteBuf.toString("base64"),
+        fileName: "native.sqlite",
+        mode: "import",
+        replaceExisting: false,
+      }),
+    });
+    assert.equal(nativeMergeRes.status, 400);
+    const preserved = await (await fetch(prefix)).json();
+    assert.equal(preserved.accounts.length, 1);
+    assert.equal(preserved.ledger.length, 1);
+  } finally {
+    if (srv) await stopServer(srv.child);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

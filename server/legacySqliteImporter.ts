@@ -23,7 +23,14 @@ import {
   inferCategoryFromGroupName,
   mapCurrencyCode,
 } from "./smartproSqlImporter.ts";
-import { DEFAULT_WORKSPACE_ID, ensureEmptyWorkspace, saveErpDataRows, withTransaction, writeAudit } from "./sqliteDb.ts";
+import {
+  DEFAULT_WORKSPACE_ID,
+  SqliteValidationError,
+  ensureEmptyWorkspace,
+  saveErpDataRows,
+  withTransaction,
+  writeAudit,
+} from "./sqliteDb.ts";
 
 export function isSqliteSignature(bytes: Uint8Array): boolean {
   if (bytes.length < 15) return false;
@@ -264,9 +271,9 @@ function restoreNativeUnifiedSqlite(
          id, workspace_id, account_id, account_name, counterpart_account_id, counterpart_account_name, cashbox_id,
          kind, type_label, payment, direction, amount, raw_dain, raw_madin, settled_on_receipt, currency, exchange_rate,
          details, document_number, warehouse_id, warehouse_name, invoice_content, entry_number, deleted, entry_date,
-         due_date, expense_category, delivery_days, sender, receiver, company_name, discount, bonus,
+         due_date, expense_category, delivery_days, sender, receiver, company_name, discount, tax_amount, bonus,
          doc_type, bstate, source_origin, posting_status, created_at_ms, legacy_id, legacy_ref
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO NOTHING`,
     );
     let ledgerAdded = 0;
@@ -283,7 +290,7 @@ function restoreNativeUnifiedSqlite(
         asText(e.invoice_content) || "none", asInt(e.entry_number, 1), asInt(e.deleted), asText(e.entry_date),
         e.due_date ? asText(e.due_date) : null, e.expense_category ? asText(e.expense_category) : null,
         e.delivery_days != null ? asInt(e.delivery_days) : null, asText(e.sender), asText(e.receiver),
-        asText(e.company_name), asNum(e.discount, 0), asNum(e.bonus, 0),
+        asText(e.company_name), asNum(e.discount, 0), asNum(e.tax_amount, 0), asNum(e.bonus, 0),
         e.doc_type != null ? asInt(e.doc_type) : null, e.bstate != null ? asInt(e.bstate) : null,
         asText(e.source_origin) || "native", asText(e.posting_status) || "posted",
         asNum(e.created_at_ms, Date.now()), e.legacy_id != null ? asInt(e.legacy_id) : null,
@@ -455,6 +462,11 @@ export function importLegacySqliteIntoUnifiedDb(
   const { sha256, integrity, tables, tableCounts, totalRows, evidence } = extracted;
 
   if (tables.account_groups && tables.accounts && tables.ledger_entries && !tables.input_move && !tables.bounds) {
+    if (!replaceExisting) {
+      throw new SqliteValidationError(
+        "دمج نسخة SQLite موحّدة أصلية فوق بيانات قائمة غير مدعوم حاليًا؛ تم إبقاء كافة البيانات دون حذف. استخدم إجراء «استبدال كامل (استعادة)» كخيار منفصل.",
+      );
+    }
     return restoreNativeUnifiedSqlite(db, tables, sha256, integrity, tableCounts, totalRows, workspaceId, fileName);
   }
 

@@ -15,6 +15,7 @@ import type {
   AccountRecord,
   CashboxRecord,
   CurrencyCode,
+  CurrencyRecord,
   InventoryItemRecord,
   LedgerEntryRecord,
   WarehouseRecord,
@@ -258,6 +259,7 @@ export type UnifiedTableMeta = {
 
 type WorkspaceBundle = {
   workspace: WorkspaceSettings;
+  currencies?: CurrencyRecord[];
   accountGroups?: AccountGroupRecord[];
   accounts: AccountRecord[];
   cashboxes?: CashboxRecord[];
@@ -271,13 +273,34 @@ type WorkspaceBundle = {
 
 type WorkspaceCallbacks = {
   onWorkspace: (ws: WorkspaceSettings | null) => void;
+  onCurrencies?: (currencies: CurrencyRecord[]) => void;
   onAccountGroups?: (groups: AccountGroupRecord[]) => void;
   onAccounts: (accounts: AccountRecord[]) => void;
   onLedger: (entries: LedgerEntryRecord[]) => void;
   onWarehouses: (warehouses: WarehouseRecord[]) => void;
   onInventory: (items: InventoryItemRecord[]) => void;
   onCashboxes?: (cashboxes: CashboxRecord[]) => void;
+  onError?: (error: Error) => void;
 };
+
+export class UncertainWriteError extends Error {
+  readonly uncertain = true;
+  readonly verificationStatus: "synced" | "unreachable";
+  constructor(message: string, verificationStatus: "synced" | "unreachable") {
+    super(message);
+    this.name = "UncertainWriteError";
+    this.verificationStatus = verificationStatus;
+  }
+}
+
+class ServerHttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ServerHttpError";
+    this.status = status;
+  }
+}
 
 // Always map interactive sessions to the single authoritative SQLite workspace
 // so Google Sign-In and Quick Entry share the exact same single SQL database.
@@ -291,7 +314,14 @@ function apiBase(): string {
   return new URL("api/db", baseUrl).pathname.replace(/\/$/, "");
 }
 
-async function dbFetch<T>(subPath: string, init?: RequestInit, timeoutMs = 20_000): Promise<T> {
+async function dbFetch<T>(
+  subPath: string,
+  init?: RequestInit,
+  timeoutMs = 12_000,
+  options?: { mutating?: boolean },
+): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isMutating = options?.mutating ?? (method !== "GET" && method !== "HEAD");
   const controller = new AbortController();
   const externalSignal = init?.signal;
   const onExternalAbort = () => controller.abort();
@@ -310,14 +340,53 @@ async function dbFetch<T>(subPath: string, init?: RequestInit, timeoutMs = 20_00
         ...(init?.headers ?? {}),
       },
     });
-    const payload = await response.json().catch(() => ({ error: "تعذر قراءة استجابة قاعدة SQLite." }));
+    // Keep the AbortController active while reading the entire response stream
+    // so a hung/stalled JSON body also triggers timeout cleanly.
+    const rawText = await response.text();
+    let payload: unknown;
+    try {
+      payload = rawText ? (JSON.parse(rawText) as unknown) : {};
+    } catch {
+      if (!response.ok) {
+        throw new ServerHttpError(response.status, "تعذر قراءة استجابة قاعدة SQLite.");
+      }
+      throw new Error("استجابة الخادم ليست بصيغة JSON صالحة.");
+    }
     if (!response.ok) {
-      throw new Error((payload as { error?: string }).error || "تعذر الاتصال بقاعدة بيانات SQLite الموحدة.");
+      const errMsg =
+        payload && typeof payload === "object" && "error" in payload && typeof (payload as { error?: unknown }).error === "string"
+          ? (payload as { error: string }).error
+          : "تعذر الاتصال بقاعدة بيانات SQLite الموحدة.";
+      throw new ServerHttpError(response.status, errMsg);
     }
     return payload as T;
   } catch (err) {
-    if ((err instanceof Error && err.name === "AbortError") && !externalSignal?.aborted) {
-      throw new Error("انتهت مهلة الاتصال بالخادم. يرجى إعادة المحاولة.");
+    if (err instanceof ServerHttpError) {
+      throw err;
+    }
+    const isAbortOrNetwork =
+      (err instanceof Error && err.name === "AbortError") ||
+      err instanceof TypeError ||
+      (err instanceof Error && /network|abort|failed to fetch|timed?out|load failed/i.test(err.message));
+
+    if (isMutating && isAbortOrNetwork && !externalSignal?.aborted) {
+      let verifiedSynced = false;
+      try {
+        await refreshWorkspaceFromServer(LOCAL_WORKSPACE_UID, undefined, 5_000);
+        verifiedSynced = true;
+      } catch {
+        verifiedSynced = false;
+      }
+      throw new UncertainWriteError(
+        verifiedSynced
+          ? "النتيجة غير مؤكدة: انتهت المهلة أو انقطع الاتصال بعد إرسال العملية. تم تحديث الحالة من الخادم — تحقّق من السجل قبل إعادة المحاولة."
+          : "النتيجة غير مؤكدة: انتهت مهلة الاتصال بالخادم وتعذر التحقق من إتمام العملية. تحقّق من الحالة أولًا قبل إعادة المحاولة.",
+        verifiedSynced ? "synced" : "unreachable",
+      );
+    }
+
+    if (err instanceof Error && err.name === "AbortError" && !externalSignal?.aborted) {
+      throw new Error("انتهت مهلة الاتصال وقراءة البيانات من الخادم. يرجى إعادة المحاولة.");
     }
     throw err;
   } finally {
@@ -327,11 +396,40 @@ async function dbFetch<T>(subPath: string, init?: RequestInit, timeoutMs = 20_00
 }
 
 let activeBundle: WorkspaceBundle | null = null;
+let activeBundleSignature = "";
+let activeRefreshPromise: Promise<WorkspaceBundle> | null = null;
+let syncTimerId: ReturnType<typeof setInterval> | null = null;
+let syncWindowListenersAttached = false;
+let lastBackgroundSyncAt = 0;
 const workspaceListeners = new Set<WorkspaceCallbacks>();
 const statsListeners = new Set<(stats: UnifiedDbStats) => void>();
 
-function applyBundle(bundle: WorkspaceBundle) {
+function computeBundleSignature(bundle: WorkspaceBundle): string {
+  return JSON.stringify({
+    workspace: bundle.workspace,
+    currencies: bundle.currencies ?? [],
+    accountGroups: bundle.accountGroups ?? [],
+    cashboxes: bundle.cashboxes ?? [],
+    accounts: bundle.accounts,
+    warehouses: bundle.warehouses,
+    inventory: bundle.inventory,
+    ledger: bundle.ledger,
+    erpData: bundle.erpData,
+    backups: bundle.backups,
+  });
+}
+
+function applyBundle(bundle: WorkspaceBundle, forceNotify = false) {
+  const nextSig = computeBundleSignature(bundle);
+  const changed = forceNotify || nextSig !== activeBundleSignature || !activeBundle;
   activeBundle = bundle;
+  activeBundleSignature = nextSig;
+  if (!changed) {
+    for (const listener of statsListeners) {
+      listener(bundle.stats);
+    }
+    return;
+  }
   hydrateErpWorkspaceCache(LOCAL_WORKSPACE_UID, bundle.erpData);
   const sortedAccounts = [...bundle.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber);
   const sortedWarehouses = [...bundle.warehouses].sort((a, b) => a.codeNumber - b.codeNumber);
@@ -339,6 +437,7 @@ function applyBundle(bundle: WorkspaceBundle) {
 
   for (const cb of workspaceListeners) {
     cb.onWorkspace(bundle.workspace);
+    cb.onCurrencies?.(bundle.currencies ?? []);
     cb.onAccountGroups?.(bundle.accountGroups ?? []);
     cb.onAccounts(sortedAccounts);
     cb.onLedger(bundle.ledger);
@@ -351,25 +450,90 @@ function applyBundle(bundle: WorkspaceBundle) {
   }
 }
 
-export async function refreshWorkspaceFromServer(uid: string, displayName?: string | null): Promise<WorkspaceBundle> {
+export async function refreshWorkspaceFromServer(
+  uid: string,
+  displayName?: string | null,
+  timeoutMs = 12_000,
+): Promise<WorkspaceBundle> {
+  if (activeRefreshPromise) return activeRefreshPromise;
   const targetUid = effectiveUid(uid);
   const qs = displayName ? `?displayName=${encodeURIComponent(displayName)}` : "";
-  const bundle = await dbFetch<WorkspaceBundle>(`/workspace/${encodeURIComponent(targetUid)}${qs}`);
-  applyBundle(bundle);
-  return bundle;
+  const reqPromise = dbFetch<WorkspaceBundle>(
+    `/workspace/${encodeURIComponent(targetUid)}${qs}`,
+    undefined,
+    timeoutMs,
+    { mutating: false },
+  ).then((bundle) => {
+    lastBackgroundSyncAt = Date.now();
+    applyBundle(bundle);
+    return bundle;
+  });
+  activeRefreshPromise = reqPromise;
+  try {
+    return await reqPromise;
+  } finally {
+    if (activeRefreshPromise === reqPromise) {
+      activeRefreshPromise = null;
+    }
+  }
 }
 
 export async function ensureWorkspaceSeeded(uid: string, displayName?: string | null): Promise<void> {
   await refreshWorkspaceFromServer(uid, displayName);
 }
 
+const triggerCrossSessionSync = (forceCheckHidden = true) => {
+  if (forceCheckHidden && typeof document !== "undefined" && document.hidden) return;
+  if (workspaceListeners.size === 0) return;
+  if (Date.now() - lastBackgroundSyncAt < 800) return;
+  void refreshWorkspaceFromServer(LOCAL_WORKSPACE_UID).catch(() => {
+    // Background refresh leaves already-loaded state intact when temporarily unreachable
+  });
+};
+
+const onWindowFocusSync = () => triggerCrossSessionSync(false);
+const onVisibilitySync = () => triggerCrossSessionSync(true);
+
+function attachCrossSessionSyncListeners() {
+  if (typeof window === "undefined") return;
+  if (!syncWindowListenersAttached) {
+    window.addEventListener("focus", onWindowFocusSync);
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilitySync);
+    }
+    syncWindowListenersAttached = true;
+  }
+  if (syncTimerId === null) {
+    syncTimerId = setInterval(() => {
+      triggerCrossSessionSync(true);
+    }, 8_000);
+  }
+}
+
+function detachCrossSessionSyncListenersIfIdle() {
+  if (workspaceListeners.size > 0) return;
+  if (typeof window !== "undefined" && syncWindowListenersAttached) {
+    window.removeEventListener("focus", onWindowFocusSync);
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisibilitySync);
+    }
+    syncWindowListenersAttached = false;
+  }
+  if (syncTimerId !== null) {
+    clearInterval(syncTimerId);
+    syncTimerId = null;
+  }
+}
+
 export function subscribeWorkspace(uid: string, callbacks: WorkspaceCallbacks): () => void {
   workspaceListeners.add(callbacks);
+  attachCrossSessionSyncListeners();
   if (activeBundle) {
     const snap = activeBundle;
     queueMicrotask(() => {
       if (!workspaceListeners.has(callbacks)) return;
       callbacks.onWorkspace(snap.workspace);
+      callbacks.onCurrencies?.(snap.currencies ?? []);
       callbacks.onAccountGroups?.(snap.accountGroups ?? []);
       callbacks.onAccounts([...snap.accounts].sort((a, b) => a.sortOrder - b.sortOrder || a.codeNumber - b.codeNumber));
       callbacks.onLedger(snap.ledger);
@@ -379,11 +543,15 @@ export function subscribeWorkspace(uid: string, callbacks: WorkspaceCallbacks): 
     });
   } else {
     void refreshWorkspaceFromServer(uid).catch((err) => {
-      console.error("Failed loading unified SQLite workspace:", err);
+      const normalized = err instanceof Error ? err : new Error("تعذر تحميل مساحة العمل من SQLite.");
+      for (const listener of workspaceListeners) {
+        listener.onError?.(normalized);
+      }
     });
   }
   return () => {
     workspaceListeners.delete(callbacks);
+    detachCrossSessionSyncListenersIfIdle();
   };
 }
 
@@ -430,6 +598,46 @@ export async function saveAccountGroup(
     applyBundle({ ...activeBundle, accountGroups: next });
   }
   return saved;
+}
+
+export async function saveCurrencyRecord(
+  uid: string,
+  currency: {
+    id?: number;
+    name: string;
+    symbol?: string;
+    nameSecondary?: string;
+    ratePrimary?: number;
+    rateSecondary?: number;
+  },
+): Promise<CurrencyRecord[]> {
+  const { currencies } = await dbFetch<{ currency: CurrencyRecord; currencies: CurrencyRecord[] }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/currencies`,
+    {
+      method: "POST",
+      body: JSON.stringify({ currency }),
+    },
+  );
+  if (activeBundle) {
+    applyBundle({ ...activeBundle, currencies });
+  }
+  return currencies;
+}
+
+export async function deleteCurrencyRecord(
+  uid: string,
+  currencyId: number,
+): Promise<CurrencyRecord[]> {
+  const { currencies } = await dbFetch<{ ok: boolean; currencies: CurrencyRecord[] }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/currencies/${encodeURIComponent(String(currencyId))}`,
+    {
+      method: "DELETE",
+    },
+  );
+  if (activeBundle) {
+    applyBundle({ ...activeBundle, currencies });
+  }
+  return currencies;
 }
 
 export async function createOrUpdateAccount(
@@ -750,7 +958,7 @@ export async function saveWarehouse(
 
 export async function createInventoryItem(
   uid: string,
-  item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
+  item: Partial<InventoryItemRecord> & { name: string; warehouseId?: string },
 ): Promise<string> {
   const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
     `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory`,
@@ -768,6 +976,47 @@ export async function createInventoryItem(
     });
   }
   return saved.id;
+}
+
+export async function deleteInventoryCatalogItem(
+  uid: string,
+  itemId: string,
+): Promise<void> {
+  await dbFetch<{ ok: boolean }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  if (activeBundle) {
+    const next = activeBundle.inventory.filter((i) => i.id !== itemId);
+    applyBundle({
+      ...activeBundle,
+      inventory: next,
+      stats: { ...activeBundle.stats, inventoryCount: next.length },
+    });
+  }
+}
+
+export async function updateInventoryCatalog(
+  uid: string,
+  itemId: string,
+  item: Partial<InventoryItemRecord> & { name: string },
+): Promise<InventoryItemRecord> {
+  const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}/catalog`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ item }),
+    },
+  );
+  if (activeBundle) {
+    applyBundle({
+      ...activeBundle,
+      inventory: activeBundle.inventory.map((i) => (i.id === itemId ? { ...i, ...saved } : i)),
+    });
+  }
+  return saved;
 }
 
 export async function updateInventoryItem(
@@ -923,10 +1172,11 @@ export async function importSqliteLegacyIntoServer(
         ...(replaceExisting !== undefined ? { replaceExisting } : {}),
       }),
     },
-    120_000,
+    mode === "inspect" ? 12_000 : 45_000,
+    { mutating: mode !== "inspect" },
   );
   if (res.bundle) {
-    applyBundle(res.bundle as WorkspaceBundle);
+    applyBundle(res.bundle as WorkspaceBundle, true);
   }
   return res;
 }
@@ -941,9 +1191,9 @@ export async function restoreJsonBackupIntoServer(
       method: "POST",
       body: JSON.stringify({ payload }),
     },
-    120_000,
+    15_000,
   );
-  applyBundle(res.bundle);
+  applyBundle(res.bundle, true);
   return res;
 }
 
@@ -993,18 +1243,35 @@ export async function rollbackLegacyLivePrefix(
   return out;
 }
 
-export async function downloadUnifiedSqliteFile(uid = LOCAL_WORKSPACE_UID): Promise<void> {
-  const res = await fetch(`${apiBase()}/workspace/${encodeURIComponent(effectiveUid(uid))}/export/sqlite`);
-  if (!res.ok) throw new Error("تعذر تصدير ملف SQLite الموحّد.");
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+export async function downloadUnifiedSqliteFile(
+  uid = LOCAL_WORKSPACE_UID,
+  timeoutMs = 15_000,
+): Promise<void> {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(
+      `${apiBase()}/workspace/${encodeURIComponent(effectiveUid(uid))}/export/sqlite`,
+      { signal: controller.signal, cache: "no-store" },
+    );
+    if (!res.ok) throw new Error("تعذر تصدير ملف SQLite الموحّد.");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("انتهت مهلة تحميل ملف قاعدة SQLite. يرجى إعادة المحاولة.");
+    }
+    throw err;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
 }
 
 export async function fetchUnifiedJsonExport(uid = LOCAL_WORKSPACE_UID): Promise<unknown> {

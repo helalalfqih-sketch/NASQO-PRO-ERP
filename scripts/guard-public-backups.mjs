@@ -18,7 +18,7 @@ export function findPublicDatabaseFiles(publicRoot) {
       if (item.isDirectory()) {
         walk(fullPath);
       } else if (item.isFile() && SENSITIVE_DATABASE_EXTENSION.test(item.name)) {
-        forbidden.push(path.relative(publicRoot, fullPath));
+        forbidden.push(path.relative(publicRoot, fullPath).replace(/\\/g, "/"));
       }
     }
   };

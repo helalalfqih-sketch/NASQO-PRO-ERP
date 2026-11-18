@@ -24,6 +24,7 @@ import {
   ensureEmptyWorkspace,
   ensureStarterWorkspace,
   exportCleanSqliteSnapshotBytes,
+  exportWorkspaceJsonBackup,
   fetchInvoiceDetail,
   getCashboxesReport,
   getDbStats,
@@ -1064,6 +1065,76 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
     });
     assert.equal(zeroItem.quantity, 0);
     assert.equal(zeroItem.avgCost, 0);
+
+    // Catalog-only item ("هيبان", cost=2003, sell=5000) without specifying warehouse saves with quantity=0 and hasMovement=false
+    const hayban = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+      name: "هيبان",
+      sku: "5324290422",
+      unit: "حبة",
+      quantity: 0,
+      avgCost: 2003,
+      sellingPrice: 5000,
+    });
+    assert.equal(hayban.quantity, 0);
+    assert.equal(hayban.avgCost, 2003);
+    assert.equal(hayban.sellingPrice, 5000);
+    const haybanReport = getInventoryMovementsReport(db, DEFAULT_WORKSPACE_ID).itemRows.find((r) => r.id === hayban.id)!;
+    assert.equal(haybanReport.hasMovement, false);
+    assert.equal(haybanReport.buyQty, 0);
+    assert.equal(haybanReport.availableQty, 0);
+    assert.equal(haybanReport.remainingValue, 0);
+
+    // SmartPro movement formula match (#19 ولاعه مع اضاءة in المخزن الجديد: buy=0, sell=1 @ 3500, transferIn=4, catalogCost=2500 -> available=3, remaining=7500, profit=1000)
+    const lighter = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+      name: "ولاعه مع اضاءة",
+      unit: "حبة",
+      quantity: 0,
+      avgCost: 2500,
+      sellingPrice: 3500,
+      quantityUnverified: true,
+    });
+    const txLighter = db
+      .prepare(
+        `INSERT INTO stock_transfers (workspace_id, from_warehouse_id, to_warehouse_id, raw_from_store_id, raw_to_store_id, transfer_date, transfer_type, details)
+         VALUES (?, ?, ?, 1, 2, '2026-06-12', 1, 'تحويل وارد إلى المخزن الجديد')`,
+      )
+      .run(DEFAULT_WORKSPACE_ID, whMain.id, whBranch.id);
+    db.prepare(
+      `INSERT INTO stock_transfer_lines (workspace_id, transfer_id, inventory_item_id, quantity, unit, unit_num)
+       VALUES (?, ?, ?, 4, 'حبة', 1)`,
+    ).run(DEFAULT_WORKSPACE_ID, Number(txLighter.lastInsertRowid), lighter.id);
+    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accClient.id,
+      accountName: accClient.name,
+      kind: "invoice",
+      typeLabel: "فاتورة بيع آجل",
+      payment: "credit",
+      direction: "debit",
+      amount: 3500,
+      currency: "ريال",
+      warehouseId: whBranch.id,
+      invoiceContent: "items",
+      entryNumber: 508,
+      entryDate: "2026-06-15",
+      lines: [
+        { inventoryItemId: lighter.id, warehouseId: whBranch.id, itemName: lighter.name, unit: "حبة", quantity: 1, price: 3500, total: 3500 },
+      ],
+    });
+    const branchReport = getInventoryMovementsReport(db, DEFAULT_WORKSPACE_ID, {
+      warehouseId: whBranch.id,
+      profitBasis: "avg",
+    });
+    const lighterRow = branchReport.itemRows.find((r) => r.id === lighter.id)!;
+    assert.equal(lighterRow.buyQty, 0);
+    assert.equal(lighterRow.sellQty, 1);
+    assert.equal(lighterRow.transferInQty, 4);
+    assert.equal(lighterRow.transferOutQty, 0);
+    assert.equal(lighterRow.buyTotal, 0);
+    assert.equal(lighterRow.sellTotal, 3500);
+    assert.equal(lighterRow.availableQty, 3);
+    assert.equal(lighterRow.remainingValue, 7500);
+    assert.equal(lighterRow.profit, 1000);
+
     assert.throws(
       () =>
         insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
@@ -1140,6 +1211,212 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
       ratePercent: 15,
       basis: "estimated_gross",
     });
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("8. full JSON export/restore roundtrip preserves invoice lines & ERP entities, invalid {} rejects without wiping, rollback works, and SQLite merge respects replaceExisting: false", async () => {
+  const { dir, filePath } = makeTempDbPath();
+  const snapPath = path.join(dir, "native-export.sqlite");
+  try {
+    const db = getSqliteDb(filePath);
+    ensureEmptyWorkspace(db, DEFAULT_WORKSPACE_ID, "شركة النقاء للتجارة");
+    db.prepare(
+      `INSERT INTO currencies (workspace_id, code, name, symbol, rate_primary, rate_secondary, name_secondary)
+       VALUES (?, 'دولار', 'دولار أمريكي', '$', 535, 535, 'USD')`,
+    ).run(DEFAULT_WORKSPACE_ID);
+    const grp = upsertAccountGroupRow(db, DEFAULT_WORKSPACE_ID, { name: "العملاء", category: "clients", currencyCode: "ريال" });
+    const wh1 = upsertWarehouseRow(db, DEFAULT_WORKSPACE_ID, { name: "المخزن الرئيسي", isDefault: true, codeNumber: 1 });
+    const wh2 = upsertWarehouseRow(db, DEFAULT_WORKSPACE_ID, { name: "فرع الحديدة", isDefault: false, codeNumber: 2 });
+    const cbRes = db
+      .prepare("INSERT INTO cashboxes (workspace_id, name, currency_code, state, sort_order) VALUES (?, 'الصندوق العام', 'ريال', 1, 1)")
+      .run(DEFAULT_WORKSPACE_ID);
+    const cbId = Number(cbRes.lastInsertRowid);
+
+    const accSupp = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, {
+      name: "مورد التصدير",
+      category: "purchases",
+      groupId: grp.id,
+      currency: "ريال",
+      openingBalance: 1000,
+      openingDirection: "credit",
+      codeNumber: 10,
+    });
+    const accCust = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, {
+      name: "عميل التجزئة",
+      category: "clients",
+      groupId: grp.id,
+      currency: "ريال",
+      openingBalance: 250,
+      openingDirection: "debit",
+      codeNumber: 11,
+    });
+
+    db.prepare(
+      `INSERT INTO inventory_items (id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, unit2, count2, sprice2, default_unit, quantity_unverified, created_at, updated_at)
+       VALUES ('prod_json_1', ?, ?, 'كابل شحن سريع', 'حبة', 0, 50, 80, 'باكت', 5, 380, 1, 0, ?, ?)`,
+    ).run(DEFAULT_WORKSPACE_ID, wh1.id, new Date().toISOString(), new Date().toISOString());
+
+    const inv1 = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accSupp.id,
+      accountName: accSupp.name,
+      cashboxId: cbId,
+      kind: "invoice",
+      typeLabel: "فاتورة شراء آجلة",
+      payment: "credit",
+      direction: "credit",
+      amount: 1850,
+      discount: 100,
+      taxAmount: 50,
+      currency: "ريال",
+      warehouseId: wh2.id,
+      warehouseName: wh2.name,
+      invoiceContent: "items",
+      entryNumber: 501,
+      entryDate: "2026-10-01",
+      lines: [
+        {
+          inventoryItemId: "prod_json_1",
+          warehouseId: wh2.id,
+          itemName: "كابل شحن سريع",
+          unit: "باكت",
+          unitNum: 2,
+          quantity: 4,
+          price: 500,
+          discount: 100,
+          bonus: 1,
+          total: 1900,
+        },
+      ],
+    });
+    const ret1 = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+      accountId: accCust.id,
+      accountName: accCust.name,
+      kind: "return",
+      typeLabel: "مردود مبيعات",
+      payment: "credit",
+      direction: "credit",
+      amount: 80,
+      currency: "ريال",
+      warehouseId: wh1.id,
+      warehouseName: wh1.name,
+      invoiceContent: "items",
+      entryNumber: 502,
+      entryDate: "2026-10-02",
+      lines: [
+        {
+          inventoryItemId: "prod_json_1",
+          warehouseId: wh1.id,
+          itemName: "كابل شحن سريع",
+          unit: "حبة",
+          unitNum: 1,
+          quantity: 1,
+          price: 80,
+          total: 80,
+        },
+      ],
+    });
+
+    const txRes = db
+      .prepare("INSERT INTO stock_transfers (workspace_id, from_warehouse_id, to_warehouse_id, details, transfer_date, transfer_type) VALUES (?, ?, ?, 'تحويل بين الفروع', '2026-10-03', 1)")
+      .run(DEFAULT_WORKSPACE_ID, wh2.id, wh1.id);
+    db.prepare(
+      "INSERT INTO stock_transfer_lines (workspace_id, transfer_id, inventory_item_id, quantity, unit, unit_num, details) VALUES (?, ?, 'prod_json_1', 3, 'حبة', 1, 'تحويل اختبار')",
+    ).run(DEFAULT_WORKSPACE_ID, Number(txRes.lastInsertRowid));
+
+    const offerRes = db
+      .prepare("INSERT INTO price_offers (workspace_id, account_id, name, offer_type, madin, currency, offer_date, details) VALUES (?, ?, 'عرض أكتوبر', 1, 400, 'ريال', '2026-10-04', 'عرض سعر')")
+      .run(DEFAULT_WORKSPACE_ID, accCust.id);
+    db.prepare(
+      "INSERT INTO price_offer_lines (workspace_id, offer_id, line_kind, inventory_item_id, price, quantity, total, unit, unit_num) VALUES (?, ?, 'item', 'prod_json_1', 80, 5, 400, 'حبة', 1)",
+    ).run(DEFAULT_WORKSPACE_ID, Number(offerRes.lastInsertRowid));
+
+    saveErpDataRows(db, DEFAULT_WORKSPACE_ID, {
+      ...loadErpDataRows(db, DEFAULT_WORKSPACE_ID),
+      vatConfig: { jurisdiction: "sa_15", ratePercent: 15, basis: "estimated_gross" },
+    });
+
+    // A) Export full JSON backup & verify every entity + line is present
+    const exported = exportWorkspaceJsonBackup(db, DEFAULT_WORKSPACE_ID);
+    assert.equal(exported.format, "nasqo-unified-sqlite-export-v2");
+    assert.equal(exported.version, 2);
+    assert.equal(exported.emptyBackup, false);
+    assert.ok(exported.currencies.length >= 2);
+    assert.equal(exported.stockTransfers.length, 1);
+    assert.equal(exported.priceOffers.length, 1);
+    const exportedInv = exported.ledger.find((e) => e.id === inv1.id)!;
+    assert.equal(exportedInv.lines.length, 1);
+    assert.equal(exportedInv.lines[0].unitNum, 2);
+    assert.equal(exportedInv.lines[0].bonus, 1);
+    assert.equal(exportedInv.lines[0].warehouseId, wh2.id);
+    assert.equal(exportedInv.taxAmount, 50);
+
+    // B) Invalid / arbitrary JSON must throw SqliteValidationError BEFORE deleting anything
+    for (const invalid of [{}, { random: "abc" }, [], { format: "unknown-format" }, { format: "nasqo-unified-sqlite-export-v2", ledger: [{ id: "x", accountId: "missing", amount: 10 }] }]) {
+      assert.throws(() => restoreUnifiedJsonBundle(db, DEFAULT_WORKSPACE_ID, invalid), (err) => err instanceof SqliteValidationError);
+      assert.equal(getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID).accounts.length, 2);
+      assert.equal(getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID).ledger.length, 2);
+    }
+
+    // C) Mid-restore failure trigger proves full atomic transaction ROLLBACK (zero data loss)
+    db.exec(`CREATE TRIGGER test_fail_mid_restore BEFORE INSERT ON invoice_lines BEGIN SELECT RAISE(ABORT, 'simulated-mid-restore-failure'); END;`);
+    assert.throws(() => restoreUnifiedJsonBundle(db, DEFAULT_WORKSPACE_ID, JSON.parse(JSON.stringify(exported))), /simulated-mid-restore-failure/);
+    db.exec(`DROP TRIGGER test_fail_mid_restore;`);
+    assert.equal(getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID).accounts.length, 2);
+    assert.equal(fetchInvoiceDetail(db, DEFAULT_WORKSPACE_ID, inv1.id)!.lines.length, 1);
+
+    // D) Reset to empty, export explicit empty backup, then restore full exported JSON & compare before === after
+    resetWorkspaceToEmpty(db, DEFAULT_WORKSPACE_ID);
+    const emptyExport = exportWorkspaceJsonBackup(db, DEFAULT_WORKSPACE_ID);
+    assert.equal(emptyExport.emptyBackup, true);
+    restoreUnifiedJsonBundle(db, DEFAULT_WORKSPACE_ID, JSON.parse(JSON.stringify(emptyExport)));
+    assert.equal(getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID).accounts.length, 0);
+
+    const restoredCounts = restoreUnifiedJsonBundle(db, DEFAULT_WORKSPACE_ID, JSON.parse(JSON.stringify(exported)));
+    assert.equal(restoredCounts.ledger, 2);
+    assert.equal(restoredCounts.invoiceLines, 2);
+    assert.equal(restoredCounts.stockTransfers, 1);
+    assert.equal(restoredCounts.priceOffers, 1);
+
+    const afterExport = exportWorkspaceJsonBackup(db, DEFAULT_WORKSPACE_ID);
+    assert.equal(afterExport.workspace.companyName, exported.workspace.companyName);
+    assert.equal(afterExport.currencies.length, exported.currencies.length);
+    assert.equal(afterExport.warehouses.length, exported.warehouses.length);
+    assert.equal(afterExport.accounts.length, exported.accounts.length);
+    assert.equal(afterExport.inventory[0].quantity, exported.inventory[0].quantity);
+    assert.equal(afterExport.inventory[0].unit2, "باكت");
+    assert.equal(afterExport.ledger.length, exported.ledger.length);
+    assert.deepEqual(afterExport.ledger.find((e) => e.id === inv1.id)!.lines, exportedInv.lines);
+    assert.deepEqual(afterExport.ledger.find((e) => e.id === ret1.id)!.lines, exported.ledger.find((e) => e.id === ret1.id)!.lines);
+    assert.equal(afterExport.ledger.find((e) => e.id === inv1.id)!.taxAmount, 50);
+    assert.deepEqual(afterExport.erpData.vatConfig, { jurisdiction: "sa_15", ratePercent: 15, basis: "estimated_gross" });
+
+    // E) Export native SQLite snapshot -> setup a workspace with an existing account -> import with replaceExisting: false MUST reject without wiping!
+    const nativeBytes = await exportCleanSqliteSnapshotBytes(db, snapPath);
+    resetWorkspaceToEmpty(db, DEFAULT_WORKSPACE_ID);
+    upsertAccountRow(db, DEFAULT_WORKSPACE_ID, { name: "الحساب القائم المحمي", category: "purchases", currency: "ريال" });
+    assert.throws(
+      () =>
+        importLegacySqliteIntoUnifiedDb(db, nativeBytes, {
+          workspaceId: DEFAULT_WORKSPACE_ID,
+          fileName: "native-export.sqlite",
+          replaceExisting: false,
+        }),
+      (err) => err instanceof SqliteValidationError,
+    );
+    const survived = getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID);
+    assert.equal(survived.accounts.length, 1);
+    assert.equal(survived.accounts[0].name, "الحساب القائم المحمي");
+
+    // Explicit replaceExisting: true succeeds cleanly
+    importLegacySqliteIntoUnifiedDb(db, nativeBytes, {
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      fileName: "native-export.sqlite",
+      replaceExisting: true,
+    });
+    assert.equal(getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID).accounts.length, 2);
   } finally {
     closeSqliteDb();
     fs.rmSync(dir, { recursive: true, force: true });

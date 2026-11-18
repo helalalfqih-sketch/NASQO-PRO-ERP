@@ -302,17 +302,14 @@ export function inferCategoryFromGroupName(groupName: string, isEmployeeFlag = 0
 export function mapCurrencyCode(curId: number, currenciesById: Map<number, string>, missingCounts: Record<string, number>): CurrencyCode {
   const found = currenciesById.get(curId);
   if (found) {
-    if (found.includes("ريال")) return "ريال";
-    if (found.includes("دولار")) return "دولار";
-    if (found.includes("يورو")) return "يورو";
-    return "عملة 2";
+    const clean = found.trim();
+    if (clean.includes("ريال") && clean === "ريال") return "ريال";
+    return clean || "ريال";
   }
   if (curId !== 0) {
     const k = String(curId);
     missingCounts[k] = (missingCounts[k] ?? 0) + 1;
   }
-  if (curId === 2) return "عملة 2";
-  if (curId === 3) return "دولار";
   return "ريال";
 }
 

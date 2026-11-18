@@ -59,7 +59,8 @@ export function clampString(value: string, max: number): string {
 }
 
 export function isValidCurrency(val: string): val is CurrencyCode {
-  return (CURRENCIES as readonly string[]).includes(val);
+  const clean = String(val ?? "").trim();
+  return clean.length >= 1 && clean.length <= 32 && !/[\r\n\t<>]/.test(clean);
 }
 
 export function isValidCategory(val: string): val is AccountCategory {

@@ -15,7 +15,7 @@ import type {
 } from "../src/types.ts";
 import type { ErpWorkspaceData } from "../src/erp.ts";
 
-export const CURRENCIES = ["ريال", "دولار", "يورو", "عملة 2"] as const;
+export const CURRENCIES = ["ريال"] as const;
 
 export const ACCOUNT_CATEGORIES = [
   "purchases",
@@ -79,7 +79,8 @@ export function clampString(value: string, max: number): string {
 }
 
 export function isValidCurrency(val: string): val is CurrencyCode {
-  return (CURRENCIES as readonly string[]).includes(val);
+  const clean = String(val ?? "").trim();
+  return clean.length >= 1 && clean.length <= 32 && !/[\r\n\t<>]/.test(clean);
 }
 
 export function isValidCategory(val: string): val is AccountCategory {
@@ -185,7 +186,7 @@ export function sanitizeWarehousePayload(input: Partial<WarehouseRecord> & { own
 }
 
 export function sanitizeInventoryPayload(
-  input: Partial<InventoryItemRecord> & { ownerId: string; name: string; warehouseId: string },
+  input: Partial<InventoryItemRecord> & { ownerId: string; name: string; warehouseId?: string },
 ) {
   const minThreshold =
     input.minThreshold !== undefined ? Math.max(0, parseArabicNumber(input.minThreshold)) : 25;
@@ -201,7 +202,7 @@ export function sanitizeInventoryPayload(
       : {}),
     minThreshold,
     ...(sku ? { sku } : {}),
-    warehouseId: clampString(input.warehouseId, SCHEMA_LIMITS.ownerIdMax),
+    warehouseId: clampString(input.warehouseId ?? "", SCHEMA_LIMITS.ownerIdMax),
     ...(input.quantityUnverified ? { quantityUnverified: true } : {}),
     ...(input.legacyRef ? { legacyRef: clampString(input.legacyRef, 128) } : {}),
   };

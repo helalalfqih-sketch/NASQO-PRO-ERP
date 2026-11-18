@@ -1185,11 +1185,16 @@ export function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): void 
   try {
     const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
     const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
+    const ctrl = new AbortController();
+    const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
     void fetch(`${base}local-erp-workspace/erp`, {
       method: "PUT",
+      signal: ctrl.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
-    }).catch(() => {});
+    })
+      .catch(() => {})
+      .finally(() => globalThis.clearTimeout(timer));
   } catch {
     // Ignore non-browser test environments
   }

@@ -36,14 +36,29 @@ async function api<T>(path:string,method="GET",data?:unknown):Promise<T> {
   const user=auth.currentUser;
   if(!user)throw new Error("يلزم تسجيل الدخول بحساب Google لاستخدام الصلاحيات المركزية.");
   const token=await user.getIdToken();
-  const response=await fetch(BASE+path,{
-    method,
-    headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-    ...(data===undefined?{}:{body:JSON.stringify(data)}),
-  });
-  const json=await response.json().catch(()=>({error:"تعذر قراءة استجابة الخادم."}));
-  if(!response.ok)throw new Error(json.error||"تعذر الاتصال بقاعدة SmartPro.");
-  return json as T;
+  const isMutating=method!=="GET"&&method!=="HEAD";
+  const controller=new AbortController();
+  const timer=globalThis.setTimeout(()=>controller.abort(),15_000);
+  try{
+    const response=await fetch(BASE+path,{
+      method,
+      signal:controller.signal,
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+      ...(data===undefined?{}:{body:JSON.stringify(data)}),
+    });
+    const raw=await response.text();
+    let json:{error?:string};
+    try{json=raw?(JSON.parse(raw) as {error?:string}):{};}catch{json={error:"تعذر قراءة استجابة الخادم."};}
+    if(!response.ok)throw new Error(json.error||"تعذر الاتصال بقاعدة SmartPro.");
+    return json as T;
+  }catch(err){
+    if(err instanceof Error&&err.name==="AbortError"){
+      throw new Error(isMutating?"النتيجة غير مؤكدة: انتهت مهلة الاتصال أثناء الحفظ — تحقّق من السجل قبل إعادة المحاولة.":"انتهت مهلة الاتصال بقاعدة SmartPro.");
+    }
+    throw err;
+  }finally{
+    globalThis.clearTimeout(timer);
+  }
 }
 function short(value:unknown):string {
   if(value==null)return "—";

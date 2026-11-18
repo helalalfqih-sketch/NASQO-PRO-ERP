@@ -28,6 +28,7 @@ interface TransferModalProps {
   uid: string;
   accounts: readonly AccountRecord[];
   cashboxes?: readonly CashboxRecord[];
+  currencyOptions?: readonly string[];
   ledger: readonly LedgerEntryRecord[];
   defaultAccountId?: string;
   onClose: () => void;
@@ -49,6 +50,7 @@ export function TransferModal({
   uid,
   accounts,
   cashboxes: sqliteCashboxes = [],
+  currencyOptions = CURRENCIES,
   ledger,
   defaultAccountId,
   onClose,
@@ -318,7 +320,7 @@ export function TransferModal({
               value={currency}
               onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
             >
-              {CURRENCIES.map((c) => (
+              {currencyOptions.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -338,7 +340,7 @@ export function TransferModal({
               value={commissionCurrency}
               onChange={(e) => setCommissionCurrency(e.target.value as CurrencyCode)}
             >
-              {CURRENCIES.map((c) => (
+              {currencyOptions.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>

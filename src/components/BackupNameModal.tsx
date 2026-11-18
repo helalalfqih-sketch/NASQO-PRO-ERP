@@ -6,7 +6,7 @@ import { triggerHaptic } from "../utils/haptics";
 interface BackupNameModalProps {
   open: boolean;
   onClose: () => void;
-  onSaveLocal: (backupName: string) => void;
+  onSaveLocal: (backupName: string) => Promise<void> | void;
   onSaveToGoogle: (backupName: string) => Promise<void>;
 }
 
@@ -35,11 +35,18 @@ export function BackupNameModal({
     onClose();
   };
 
-  const handleLocalSave = () => {
+  const handleLocalSave = async () => {
     keyboard.hide();
-    triggerHaptic("success");
-    onSaveLocal(trimmed);
-    onClose();
+    setSavingCloud(true);
+    try {
+      await onSaveLocal(trimmed);
+      triggerHaptic("success");
+      onClose();
+    } catch {
+      triggerHaptic("warning");
+    } finally {
+      setSavingCloud(false);
+    }
   };
 
   const handleGoogleSave = async () => {

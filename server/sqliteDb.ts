@@ -5,6 +5,8 @@ import { DatabaseSync, backup as sqliteBackup } from "node:sqlite";
 import {
   createDefaultErpData,
   createEmptyErpData,
+  isValidCategory,
+  isValidLedgerKind,
   sanitizeAccountPayload,
   sanitizeInventoryPayload,
   sanitizeLedgerPayload,
@@ -18,6 +20,7 @@ import type {
   AccountRecord,
   CashboxRecord,
   CurrencyCode,
+  CurrencyRecord,
   InvoiceLineInput,
   InventoryItemRecord,
   LedgerEntryRecord,
@@ -87,6 +90,72 @@ function openAndInit(filePath: string): DatabaseSync {
   const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
   if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
     db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
+  }
+  const ledgerCols = db.prepare("PRAGMA table_info(ledger_entries)").all() as { name: string }[];
+  if (!ledgerCols.some((c) => c.name === "tax_amount")) {
+    db.exec("ALTER TABLE ledger_entries ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0;");
+  }
+  const invCols = db.prepare("PRAGMA table_info(inventory_items)").all() as { name: string; notnull: number }[];
+  const whCol = invCols.find((c) => c.name === "warehouse_id");
+  if (whCol && Number(whCol.notnull) === 1) {
+    db.exec("PRAGMA foreign_keys = OFF;");
+    try {
+      db.exec(`
+        BEGIN IMMEDIATE;
+        CREATE TABLE inventory_items_v2 (
+          id TEXT PRIMARY KEY,
+          workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+          warehouse_id TEXT REFERENCES warehouses(id) ON DELETE SET NULL,
+          name TEXT NOT NULL,
+          unit TEXT NOT NULL DEFAULT 'حبة',
+          quantity REAL NOT NULL DEFAULT 0,
+          avg_cost REAL NOT NULL DEFAULT 0,
+          selling_price REAL,
+          min_threshold REAL DEFAULT 25,
+          sku TEXT NOT NULL DEFAULT '',
+          unit2 TEXT NOT NULL DEFAULT '',
+          count2 REAL,
+          sprice2 REAL,
+          unit3 TEXT NOT NULL DEFAULT '',
+          count3 REAL,
+          sprice3 REAL,
+          default_unit INTEGER NOT NULL DEFAULT 1,
+          expiry_date TEXT,
+          has_expiry INTEGER NOT NULL DEFAULT 0,
+          currency_code TEXT NOT NULL DEFAULT 'ريال',
+          bstate INTEGER NOT NULL DEFAULT 1,
+          quantity_unverified INTEGER NOT NULL DEFAULT 0,
+          legacy_id INTEGER,
+          legacy_ref TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO inventory_items_v2 (
+          id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, min_threshold, sku,
+          unit2, count2, sprice2, unit3, count3, sprice3, default_unit, expiry_date, has_expiry,
+          currency_code, bstate, quantity_unverified, legacy_id, legacy_ref, created_at, updated_at
+        )
+        SELECT
+          id, workspace_id, NULLIF(warehouse_id, ''), name, unit, quantity, avg_cost, selling_price, min_threshold, sku,
+          unit2, count2, sprice2, unit3, count3, sprice3, default_unit, expiry_date, has_expiry,
+          currency_code, bstate, quantity_unverified, legacy_id, legacy_ref, created_at, updated_at
+        FROM inventory_items;
+        DROP TABLE inventory_items;
+        ALTER TABLE inventory_items_v2 RENAME TO inventory_items;
+        CREATE INDEX IF NOT EXISTS idx_inventory_ws ON inventory_items(workspace_id, warehouse_id);
+        CREATE INDEX IF NOT EXISTS idx_inventory_legacy ON inventory_items(workspace_id, legacy_id);
+        COMMIT;
+      `);
+    } catch (err) {
+      try {
+        db.exec("ROLLBACK;");
+      } catch {
+        // ignore rollback error
+      }
+      throw err;
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON;");
+    }
   }
   const verRow = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   if (Number(verRow?.user_version ?? 0) < SQLITE_SCHEMA_V2) {
@@ -721,8 +790,11 @@ function mapInventoryRow(r: Record<string, unknown>): InventoryItemRecord {
     ...(c3 !== undefined && Number.isFinite(c3) && c3 > 0 ? { count3: c3 } : {}),
     ...(sp3 !== undefined && Number.isFinite(sp3) && sp3 > 0 ? { sprice3: sp3 } : {}),
     ...(r.default_unit !== undefined && r.default_unit !== null ? { defaultUnit: Number(r.default_unit) } : {}),
+    currencyCode: String(r.currency_code ?? "ريال"),
+    isActive: r.bstate === undefined || r.bstate === null ? true : Number(r.bstate) !== 0,
+    ...(r.expiry_date ? { expiryDate: String(r.expiry_date) } : {}),
     ...(r.legacy_id !== undefined && r.legacy_id !== null ? { legacyId: Number(r.legacy_id) } : {}),
-    warehouseId: String(r.warehouse_id),
+    warehouseId: String(r.warehouse_id ?? ""),
     ...(r.computed_quantity !== undefined ? { computedQuantity: Number(r.computed_quantity) } : {}),
     ...(r.quantity_unverified ? { quantityUnverified: true } : {}),
     ...(r.legacy_ref ? { legacyRef: String(r.legacy_ref) } : {}),
@@ -748,6 +820,8 @@ export function mapLedgerRow(r: Record<string, unknown>): LedgerEntryRecord {
     ...(r.settled_on_receipt ? { settledOnReceipt: true } : {}),
     currency: String(r.currency ?? "ريال") as LedgerEntryRecord["currency"],
     exchangeRate: Number(r.exchange_rate ?? 1),
+    ...(Number(r.tax_amount ?? 0) !== 0 ? { taxAmount: Number(r.tax_amount) } : {}),
+    ...(Number(r.discount ?? 0) !== 0 ? { discount: Number(r.discount) } : {}),
     details: String(r.details ?? ""),
     documentNumber: String(r.document_number ?? ""),
     warehouseId: String(r.warehouse_id ?? ""),
@@ -861,9 +935,32 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
   const cashboxRows = db
     .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? AND state = 1 ORDER BY sort_order ASC, id ASC")
     .all(workspaceId) as Record<string, unknown>[];
+  let currencyRows = db
+    .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? ORDER BY id ASC")
+    .all(workspaceId) as Record<string, unknown>[];
+  if (currencyRows.length === 0) {
+    db.prepare(
+      `INSERT INTO currencies (workspace_id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id)
+       VALUES (?, 'ريال', 'ريال', '_', 1, 1, '', 1)`,
+    ).run(workspaceId);
+    currencyRows = db
+      .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? ORDER BY id ASC")
+      .all(workspaceId) as Record<string, unknown>[];
+  }
   const backupRows = db
     .prepare("SELECT id, name, exported_at_iso FROM backups WHERE workspace_id = ? ORDER BY created_at DESC")
     .all(workspaceId) as Record<string, unknown>[];
+
+  const currencies: CurrencyRecord[] = currencyRows.map((c) => ({
+    id: Number(c.id),
+    code: String(c.code || c.name || "ريال"),
+    name: String(c.name || c.code || "ريال"),
+    symbol: String(c.symbol ?? "_"),
+    ratePrimary: Number(c.rate_primary ?? 1) || 1,
+    rateSecondary: Number(c.rate_secondary ?? 1) || 1,
+    nameSecondary: String(c.name_secondary ?? ""),
+    ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
+  }));
 
   const accountGroups: AccountGroupRecord[] = groupRows.map((g) => ({
     id: Number(g.id),
@@ -890,6 +987,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
 
   return {
     workspace: mapWorkspaceRow(wsRow),
+    currencies,
     accountGroups,
     accounts: accountRows.map(mapAccountRow),
     cashboxes,
@@ -911,6 +1009,100 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     })),
     stats: getDbStats(db, workspaceId),
   };
+}
+
+export function upsertCurrencyRow(
+  db: DatabaseSync,
+  workspaceId: string,
+  input: {
+    id?: number;
+    name: string;
+    symbol?: string;
+    ratePrimary?: number;
+    rateSecondary?: number;
+    nameSecondary?: string;
+  },
+): CurrencyRecord {
+  ensureEmptyWorkspace(db, workspaceId);
+  const name = String(input.name ?? "").trim().slice(0, 32);
+  if (!name) {
+    throw new SqliteValidationError("اسم العملة مطلوب.");
+  }
+  const symbol = String(input.symbol ?? "_").trim().slice(0, 16) || "_";
+  const nameSecondary = String(input.nameSecondary ?? "").trim().slice(0, 32);
+  const ratePrimary = Number(input.ratePrimary ?? 1);
+  const rateSecondary = Number(input.rateSecondary ?? 1);
+  if (!Number.isFinite(ratePrimary) || ratePrimary <= 0 || !Number.isFinite(rateSecondary) || rateSecondary <= 0) {
+    throw new SqliteValidationError("سعر البيع وسعر الشراء للعملة يجب أن يكونا أكبر من صفر.");
+  }
+
+  let targetId = typeof input.id === "number" && Number.isFinite(input.id) ? input.id : 0;
+  if (targetId > 0) {
+    const existing = db
+      .prepare("SELECT id, name FROM currencies WHERE workspace_id = ? AND id = ?")
+      .get(workspaceId, targetId) as { id: number; name: string } | undefined;
+    if (!existing) {
+      throw new SqliteValidationError("العملة المحددة غير موجودة.");
+    }
+    const dup = db
+      .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ? AND id <> ?")
+      .get(workspaceId, name, targetId) as { id: number } | undefined;
+    if (dup) {
+      throw new SqliteValidationError(`العملة «${name}» مضافة مسبقًا.`);
+    }
+    db.prepare(
+      `UPDATE currencies
+       SET code = ?, name = ?, symbol = ?, rate_primary = ?, rate_secondary = ?, name_secondary = ?
+       WHERE workspace_id = ? AND id = ?`,
+    ).run(name, name, symbol, ratePrimary, rateSecondary, nameSecondary, workspaceId, targetId);
+    writeAudit(db, workspaceId, workspaceId, "currencies", String(targetId), "update", { name, ratePrimary, rateSecondary });
+  } else {
+    const dup = db
+      .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?")
+      .get(workspaceId, name) as { id: number } | undefined;
+    if (dup) {
+      throw new SqliteValidationError(`العملة «${name}» مضافة مسبقًا.`);
+    }
+    const res = db
+      .prepare(
+        `INSERT INTO currencies (workspace_id, code, name, symbol, rate_primary, rate_secondary, name_secondary)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(workspaceId, name, name, symbol, ratePrimary, rateSecondary, nameSecondary);
+    targetId = Number(res.lastInsertRowid);
+    writeAudit(db, workspaceId, workspaceId, "currencies", String(targetId), "insert", { name, ratePrimary, rateSecondary });
+  }
+
+  const row = db
+    .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, targetId) as Record<string, unknown>;
+  return {
+    id: Number(row.id),
+    code: String(row.code || row.name || "ريال"),
+    name: String(row.name || row.code || "ريال"),
+    symbol: String(row.symbol ?? "_"),
+    ratePrimary: Number(row.rate_primary ?? 1) || 1,
+    rateSecondary: Number(row.rate_secondary ?? 1) || 1,
+    nameSecondary: String(row.name_secondary ?? ""),
+    ...(row.legacy_id !== null && row.legacy_id !== undefined ? { legacyId: Number(row.legacy_id) } : {}),
+  };
+}
+
+export function deleteCurrencyRow(db: DatabaseSync, workspaceId: string, currencyId: number): void {
+  const existing = db
+    .prepare("SELECT id, name FROM currencies WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, currencyId) as { id: number; name: string } | undefined;
+  if (!existing) {
+    throw new SqliteValidationError("العملة غير موجودة في قاعدة البيانات.");
+  }
+  const totalCount = Number(
+    (db.prepare("SELECT COUNT(*) AS c FROM currencies WHERE workspace_id = ?").get(workspaceId) as { c: number }).c,
+  );
+  if (totalCount <= 1) {
+    throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية الوحيدة في النظام.");
+  }
+  db.prepare("DELETE FROM currencies WHERE workspace_id = ? AND id = ?").run(workspaceId, currencyId);
+  writeAudit(db, workspaceId, workspaceId, "currencies", String(currencyId), "delete", { name: existing.name });
 }
 
 export function saveWorkspaceSettingsRow(
@@ -1358,6 +1550,8 @@ export function insertLedgerEntryRow(
     discount: input.discount,
   });
   const finalAmount = expectedAmount !== null ? expectedAmount : clean.amount;
+  const cleanDiscount = Number.isFinite(Number(input.discount)) ? Math.max(0, Math.round(Number(input.discount) * 100) / 100) : 0;
+  const cleanTaxAmount = Number.isFinite(Number(input.taxAmount)) ? Math.max(0, Math.round(Number(input.taxAmount) * 100) / 100) : 0;
 
   const settled =
     Boolean(input.settledOnReceipt) ||
@@ -1371,14 +1565,14 @@ export function insertLedgerEntryRow(
       `INSERT INTO ledger_entries (
          id, workspace_id, account_id, account_name, counterpart_account_id, counterpart_account_name,
          cashbox_id, kind, type_label, payment, direction, amount, raw_dain, raw_madin, settled_on_receipt,
-         currency, exchange_rate, details, document_number, warehouse_id, warehouse_name, invoice_content,
+         currency, exchange_rate, discount, tax_amount, details, document_number, warehouse_id, warehouse_name, invoice_content,
          entry_number, deleted, entry_date, due_date, expense_category, delivery_days, doc_type,
          source_origin, posting_status, created_at_ms, legacy_ref
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'native', 'posted', ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'native', 'posted', ?, ?)`,
     ).run(
       id, workspaceId, clean.accountId, clean.accountName, clean.counterpartAccountId, clean.counterpartAccountName,
       cashboxId, clean.kind, clean.typeLabel, clean.payment, clean.direction, finalAmount, rawDain, rawMadin, settled ? 1 : 0,
-      clean.currency, clean.exchangeRate, clean.details, clean.documentNumber, clean.warehouseId, clean.warehouseName,
+      clean.currency, clean.exchangeRate, cleanDiscount, cleanTaxAmount, clean.details, clean.documentNumber, clean.warehouseId, clean.warehouseName,
       clean.invoiceContent, clean.entryNumber, clean.deleted ? 1 : 0, clean.entryDate, clean.dueDate ?? null,
       clean.expenseCategory ?? null, clean.deliveryDays ?? null, docType, createdAtMs, clean.legacyRef ?? null,
     );
@@ -1459,11 +1653,19 @@ export function updateLedgerEntryRow(
   const hasNewLines = Array.isArray(input.lines);
   let cleanLines: NormalizedInvoiceLine[] = [];
   let finalAmount = clean.amount;
+  const cleanDiscount =
+    input.discount !== undefined && Number.isFinite(Number(input.discount))
+      ? Math.max(0, Math.round(Number(input.discount) * 100) / 100)
+      : Math.max(0, Math.round(Number(existing.discount ?? 0) * 100) / 100);
+  const cleanTaxAmount =
+    input.taxAmount !== undefined && Number.isFinite(Number(input.taxAmount))
+      ? Math.max(0, Math.round(Number(input.taxAmount) * 100) / 100)
+      : Math.max(0, Math.round(Number(existing.tax_amount ?? 0) * 100) / 100);
   if (hasNewLines) {
     const normalized = normalizeAndReconcileInvoiceLines(input.lines, {
       amount: input.amount !== undefined ? clean.amount : undefined,
-      taxAmount: input.taxAmount,
-      discount: input.discount,
+      taxAmount: cleanTaxAmount,
+      discount: cleanDiscount,
     });
     cleanLines = normalized.lines;
     if (normalized.expectedAmount !== null) {
@@ -1480,9 +1682,7 @@ export function updateLedgerEntryRow(
       .get(workspaceId, entryId) as { cnt: number; lines_sum: number };
     if (Number(existingLineStats?.cnt ?? 0) > 0) {
       const round2 = (v: number) => Math.round(v * 100) / 100;
-      const taxAmount = Number.isFinite(Number(input.taxAmount)) ? Math.max(0, round2(Number(input.taxAmount))) : 0;
-      const headerDiscount = Number.isFinite(Number(input.discount)) ? Math.max(0, round2(Number(input.discount))) : 0;
-      const expectedExisting = round2(Math.max(0, Number(existingLineStats.lines_sum ?? 0) + taxAmount - headerDiscount));
+      const expectedExisting = round2(Math.max(0, Number(existingLineStats.lines_sum ?? 0) + cleanTaxAmount - cleanDiscount));
       const amountModified =
         input.amount !== undefined &&
         Math.abs(round2(clean.amount) - round2(Number(existing.amount ?? 0))) > 0.02;
@@ -1511,14 +1711,14 @@ export function updateLedgerEntryRow(
        SET account_id = ?, account_name = ?, counterpart_account_id = ?, counterpart_account_name = ?,
            cashbox_id = ?, kind = ?, type_label = ?, payment = ?, direction = ?, amount = ?,
            raw_dain = ?, raw_madin = ?, settled_on_receipt = ?, currency = ?, exchange_rate = ?,
-           details = ?, document_number = ?, warehouse_id = ?, warehouse_name = ?, invoice_content = ?,
+           discount = ?, tax_amount = ?, details = ?, document_number = ?, warehouse_id = ?, warehouse_name = ?, invoice_content = ?,
            entry_number = ?, entry_date = ?, due_date = ?, expense_category = ?, delivery_days = ?, doc_type = ?
        WHERE workspace_id = ? AND id = ?`,
     ).run(
       clean.accountId, clean.accountName, clean.counterpartAccountId, clean.counterpartAccountName,
       cashboxId, clean.kind, clean.typeLabel, clean.payment, clean.direction, finalAmount,
       finalRawDain, finalRawMadin, settled ? 1 : 0, clean.currency, clean.exchangeRate,
-      clean.details, clean.documentNumber, clean.warehouseId, clean.warehouseName, clean.invoiceContent,
+      cleanDiscount, cleanTaxAmount, clean.details, clean.documentNumber, clean.warehouseId, clean.warehouseName, clean.invoiceContent,
       clean.entryNumber, clean.entryDate, clean.dueDate ?? null, clean.expenseCategory ?? null,
       clean.deliveryDays ?? null, newDocType, workspaceId, entryId,
     );
@@ -1943,7 +2143,7 @@ export function getInventoryMovementsReport(
       `SELECT id, legacy_id, name, sku, unit, unit2, count2, avg_cost, selling_price, quantity, quantity_unverified, warehouse_id
        FROM inventory_items
        WHERE workspace_id = ?
-       ORDER BY name ASC`,
+       ORDER BY name DESC, COALESCE(legacy_id, 0) DESC`,
     )
     .all(workspaceId) as Array<{
       id: string;
@@ -2037,26 +2237,34 @@ export function getInventoryMovementsReport(
 
     const gTot = globalPurchaseTotals.get(ci.id);
     const allTot = allTimePurchaseTotals.get(ci.id);
-    const globalAvgCost =
+    const catalogCost = Number(ci.avg_cost ?? 0);
+    const fallbackPurchaseAvg =
       gTot && gTot.qty > 0
         ? gTot.val / gTot.qty
         : allTot && allTot.qty > 0
           ? allTot.val / allTot.qty
-          : Number(ci.avg_cost ?? 0);
-    const localAvgCost = buyQty > 0 ? buyTotal / buyQty : globalAvgCost;
+          : 0;
+    const fallbackCost = catalogCost > 0 ? catalogCost : fallbackPurchaseAvg;
+    const localAvgCost =
+      buyQty !== 0 && buyTotal / buyQty > 0
+        ? buyTotal / buyQty
+        : fallbackCost;
     const lastPrice = lastPurchasePriceByItem.get(ci.id) ?? localAvgCost;
 
     const unitCostBasis =
       profitBasis === "cost"
-        ? Number(ci.avg_cost ?? 0) > 0
-          ? Number(ci.avg_cost)
+        ? catalogCost > 0
+          ? catalogCost
           : localAvgCost
         : profitBasis === "last"
           ? lastPrice
           : localAvgCost;
 
     const remainingValue = round2(availableQty * unitCostBasis);
-    const profit = round2(sellTotal - sellQty * unitCostBasis);
+    const profit =
+      grossSellQty === 0 && srQty > 0
+        ? round2(-sellQty * unitCostBasis)
+        : round2(sellTotal - sellQty * unitCostBasis);
     const hasMovement =
       grossBuyQty !== 0 ||
       prQty !== 0 ||
@@ -2399,10 +2607,57 @@ export function upsertWarehouseRow(
   });
 }
 
+function normalizeCatalogUnits(input: Partial<InventoryItemRecord>, label: string) {
+  const posNum = (v: unknown): number | null => {
+    if (v === undefined || v === null || v === "") return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new SqliteValidationError(`قيمة رقمية غير صالحة في بيانات الصنف «${label}».`);
+    }
+    return n;
+  };
+  const unit2 = String(input.unit2 ?? "").trim().slice(0, 32);
+  const unit3 = String(input.unit3 ?? "").trim().slice(0, 32);
+  const count2 = posNum(input.count2);
+  const count3 = posNum(input.count3);
+  const sprice2 = posNum(input.sprice2);
+  const sprice3 = posNum(input.sprice3);
+  if (unit3 && !unit2) {
+    throw new SqliteValidationError(`الصنف «${label}»: لا يمكن تحديد الوحدة 3 دون الوحدة 2.`);
+  }
+  if (unit2 && !(count2 && count2 > 0)) {
+    throw new SqliteValidationError(`الصنف «${label}»: أدخل معامل التحويل للوحدة 2 (أكبر من صفر).`);
+  }
+  if (unit3 && !(count3 && count3 > 0)) {
+    throw new SqliteValidationError(`الصنف «${label}»: أدخل معامل التحويل للوحدة 3 (أكبر من صفر).`);
+  }
+  const defaultUnitRaw = Number(input.defaultUnit ?? 1);
+  const defaultUnit = defaultUnitRaw === 2 && unit2 ? 2 : defaultUnitRaw === 3 && unit3 ? 3 : 1;
+  return {
+    unit2,
+    count2: unit2 ? count2 : null,
+    sprice2: unit2 ? sprice2 : null,
+    unit3,
+    count3: unit3 ? count3 : null,
+    sprice3: unit3 ? sprice3 : null,
+    defaultUnit,
+  };
+}
+
+function assertSkuAvailable(db: DatabaseSync, workspaceId: string, sku: string, exceptId?: string): void {
+  if (!sku) return;
+  const dup = db
+    .prepare("SELECT id, name FROM inventory_items WHERE workspace_id = ? AND sku = ? AND id <> ? LIMIT 1")
+    .get(workspaceId, sku, exceptId ?? "") as { id: string; name: string } | undefined;
+  if (dup) {
+    throw new SqliteValidationError(`الباركود «${sku}» مستخدم مسبقًا للصنف «${dup.name}».`);
+  }
+}
+
 export function insertInventoryItemRow(
   db: DatabaseSync,
   workspaceId: string,
-  item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
+  item: Partial<InventoryItemRecord> & { name: string; warehouseId?: string },
 ): InventoryItemRecord {
   ensureEmptyWorkspace(db, workspaceId);
   const id = makeId("inv");
@@ -2410,27 +2665,141 @@ export function insertInventoryItemRow(
   if (!clean.name) {
     throw new SqliteValidationError("اسم الصنف مطلوب.");
   }
-  if (!clean.warehouseId) {
-    throw new SqliteValidationError("يجب اختيار مخزن صالح قبل إضافة الصنف.");
+  let resolvedWarehouseId: string | null = null;
+  if (clean.warehouseId) {
+    const whRow = db
+      .prepare("SELECT id FROM warehouses WHERE workspace_id = ? AND id = ?")
+      .get(workspaceId, clean.warehouseId) as { id: string } | undefined;
+    if (!whRow) {
+      throw new SqliteValidationError("المخزن المحدد غير موجود في قاعدة البيانات.");
+    }
+    resolvedWarehouseId = whRow.id;
+  } else {
+    const defaultWh = db
+      .prepare("SELECT id FROM warehouses WHERE workspace_id = ? ORDER BY is_default DESC, code_number ASC LIMIT 1")
+      .get(workspaceId) as { id: string } | undefined;
+    resolvedWarehouseId = defaultWh?.id ?? null;
   }
-  const whRow = db
-    .prepare("SELECT id FROM warehouses WHERE workspace_id = ? AND id = ?")
-    .get(workspaceId, clean.warehouseId) as { id: string } | undefined;
-  if (!whRow) {
-    throw new SqliteValidationError("المخزن المحدد غير موجود في قاعدة البيانات.");
+  if (clean.quantity > 0 && !resolvedWarehouseId) {
+    throw new SqliteValidationError("لا يمكن إدخال كمية مخزنية فعلية بدون تحديد مخزن. تعريف الصنف في سجل الأصناف يتم بكمية 0.");
   }
+  assertSkuAvailable(db, workspaceId, clean.sku ?? "");
+  const units = normalizeCatalogUnits(item, clean.name);
+  const currencyCode = String(item.currencyCode ?? "ريال").trim().slice(0, 32) || "ريال";
+  const bstate = item.isActive === false ? 0 : 1;
+  const expiryDate = item.expiryDate ? String(item.expiryDate).trim().slice(0, 32) : null;
+  const hasExpiry = expiryDate ? 1 : 0;
   const now = nowIso();
-  db.prepare(
-    `INSERT INTO inventory_items (id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, min_threshold, sku, quantity_unverified, legacy_ref, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id, workspaceId, clean.warehouseId, clean.name, clean.unit, clean.quantity, clean.avgCost,
-    clean.sellingPrice ?? null, clean.minThreshold, clean.sku ?? "", clean.quantityUnverified ? 1 : 0,
-    clean.legacyRef ?? null, now, now,
-  );
-  writeAudit(db, workspaceId, workspaceId, "inventory_items", id, "insert", { name: clean.name });
+  withTransaction(db, () => {
+    const maxLegacy = Number(
+      ((db.prepare("SELECT COALESCE(MAX(legacy_id), 0) AS m FROM inventory_items WHERE workspace_id = ?").get(workspaceId) as { m: number })?.m ?? 0),
+    );
+    const legacyId = typeof item.legacyId === "number" && item.legacyId > 0 ? item.legacyId : maxLegacy + 1;
+    db.prepare(
+      `INSERT INTO inventory_items (id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, min_threshold, sku,
+         unit2, count2, sprice2, unit3, count3, sprice3, default_unit, expiry_date, has_expiry, currency_code, bstate,
+         quantity_unverified, legacy_id, legacy_ref, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id, workspaceId, resolvedWarehouseId, clean.name, clean.unit, clean.quantity, clean.avgCost,
+      clean.sellingPrice ?? null, clean.minThreshold, clean.sku ?? "",
+      units.unit2, units.count2, units.sprice2, units.unit3, units.count3, units.sprice3, units.defaultUnit,
+      expiryDate, hasExpiry, currencyCode, bstate,
+      clean.quantityUnverified ? 1 : 0, legacyId, clean.legacyRef ?? null, now, now,
+    );
+    writeAudit(db, workspaceId, workspaceId, "inventory_items", id, "insert", { name: clean.name, quantity: clean.quantity });
+  });
   const row = db.prepare("SELECT * FROM inventory_items WHERE workspace_id = ? AND id = ?").get(workspaceId, id) as Record<string, unknown>;
   return mapInventoryRow(row);
+}
+
+/**
+ * Catalog-only update (الأصناف): name, barcode, units, cost and prices.
+ * Never touches quantity, warehouse or quantity_unverified, which belong to stock movement (حركة المخزون).
+ */
+export function updateInventoryCatalogRow(
+  db: DatabaseSync,
+  workspaceId: string,
+  itemId: string,
+  input: Partial<InventoryItemRecord> & { name: string },
+): InventoryItemRecord {
+  const existing = db
+    .prepare("SELECT id, currency_code, bstate, expiry_date FROM inventory_items WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, itemId) as { id: string; currency_code: string | null; bstate: number | null; expiry_date: string | null } | undefined;
+  if (!existing) {
+    throw new SqliteValidationError("الصنف غير موجود في قاعدة البيانات.");
+  }
+  const name = String(input.name ?? "").trim().slice(0, 120);
+  if (!name) throw new SqliteValidationError("اسم الصنف مطلوب.");
+  const unit = String(input.unit ?? "").trim().slice(0, 32) || "حبة";
+  const sku = String(input.sku ?? "").trim().slice(0, 64);
+  const avgCost = Number(input.avgCost ?? 0);
+  if (!Number.isFinite(avgCost) || avgCost < 0) {
+    throw new SqliteValidationError("سعر التكلفة يجب أن يكون صفرًا أو رقمًا موجبًا.");
+  }
+  let sellingPrice: number | null = null;
+  if (input.sellingPrice !== undefined && input.sellingPrice !== null && String(input.sellingPrice) !== "") {
+    sellingPrice = Number(input.sellingPrice);
+    if (!Number.isFinite(sellingPrice) || sellingPrice < 0) {
+      throw new SqliteValidationError("سعر البيع يجب أن يكون صفرًا أو رقمًا موجبًا.");
+    }
+  }
+  assertSkuAvailable(db, workspaceId, sku, itemId);
+  const units = normalizeCatalogUnits(input, name);
+  const currencyCode =
+    input.currencyCode !== undefined
+      ? (String(input.currencyCode).trim().slice(0, 32) || "ريال")
+      : (existing.currency_code ?? "ريال");
+  const bstate =
+    input.isActive !== undefined
+      ? (input.isActive ? 1 : 0)
+      : (existing.bstate ?? 1);
+  const expiryDate =
+    input.expiryDate !== undefined
+      ? (String(input.expiryDate).trim().slice(0, 32) || null)
+      : (existing.expiry_date ?? null);
+  const hasExpiry = expiryDate ? 1 : 0;
+  withTransaction(db, () => {
+    db.prepare(
+      `UPDATE inventory_items
+       SET name = ?, unit = ?, sku = ?, avg_cost = ?, selling_price = ?,
+           unit2 = ?, count2 = ?, sprice2 = ?, unit3 = ?, count3 = ?, sprice3 = ?, default_unit = ?,
+           currency_code = ?, bstate = ?, expiry_date = ?, has_expiry = ?, updated_at = ?
+       WHERE workspace_id = ? AND id = ?`,
+    ).run(
+      name, unit, sku, avgCost, sellingPrice,
+      units.unit2, units.count2, units.sprice2, units.unit3, units.count3, units.sprice3, units.defaultUnit,
+      currencyCode, bstate, expiryDate, hasExpiry,
+      nowIso(), workspaceId, itemId,
+    );
+    writeAudit(db, workspaceId, workspaceId, "inventory_items", itemId, "catalog-update", { name });
+  });
+  const row = db.prepare("SELECT * FROM inventory_items WHERE workspace_id = ? AND id = ?").get(workspaceId, itemId) as Record<string, unknown>;
+  return mapInventoryRow(row);
+}
+
+export function deleteInventoryCatalogRow(
+  db: DatabaseSync,
+  workspaceId: string,
+  itemId: string,
+): void {
+  const existing = db
+    .prepare("SELECT id, name, quantity FROM inventory_items WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, itemId) as { id: string; name: string; quantity: number } | undefined;
+  if (!existing) {
+    throw new SqliteValidationError("الصنف غير موجود في قاعدة البيانات.");
+  }
+  const usedInLines = db
+    .prepare("SELECT COUNT(*) AS c FROM invoice_lines WHERE workspace_id = ? AND inventory_item_id = ?")
+    .get(workspaceId, itemId) as { c: number } | undefined;
+  const usedInTransfers = db
+    .prepare("SELECT COUNT(*) AS c FROM stock_transfer_lines WHERE workspace_id = ? AND inventory_item_id = ?")
+    .get(workspaceId, itemId) as { c: number } | undefined;
+  if (Number(usedInLines?.c ?? 0) > 0 || Number(usedInTransfers?.c ?? 0) > 0 || Math.abs(Number(existing.quantity ?? 0)) > 0.0001) {
+    throw new SqliteValidationError(`لا يمكن حذف الصنف «${existing.name}» لارتباطه بحركات مخزنية أو رصيد فعلي.`);
+  }
+  db.prepare("DELETE FROM inventory_items WHERE workspace_id = ? AND id = ?").run(workspaceId, itemId);
+  writeAudit(db, workspaceId, workspaceId, "inventory_items", itemId, "delete", { name: existing.name });
 }
 
 export function deleteAccountRow(db: DatabaseSync, workspaceId: string, accountId: string): void {
@@ -2673,30 +3042,478 @@ export async function exportCleanSqliteSnapshotBytes(db: DatabaseSync, destinati
   return new Uint8Array(bytes);
 }
 
+const VALID_JSON_BACKUP_FORMATS = new Set([
+  "nasqo-unified-sqlite-export-v2",
+  "nasqo-unified-sqlite-export-v1",
+  "nasqo-pro-erp-backup",
+]);
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return Boolean(v && typeof v === "object" && !Array.isArray(v));
+}
+
+export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string) {
+  const bundle = getFullWorkspaceBundle(db, workspaceId);
+
+  const currencyRows = db
+    .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? ORDER BY id ASC")
+    .all(workspaceId) as Record<string, unknown>[];
+
+  const allCashboxRows = db
+    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
+    .all(workspaceId) as Record<string, unknown>[];
+
+  const inventoryExtraRows = db
+    .prepare(
+      `SELECT id, expiry_date, has_expiry, currency_code, bstate
+       FROM inventory_items
+       WHERE workspace_id = ?`,
+    )
+    .all(workspaceId) as Array<{ id: string; expiry_date?: string | null; has_expiry?: number; currency_code?: string; bstate?: number }>;
+  const invExtraById = new Map(inventoryExtraRows.map((r) => [String(r.id), r]));
+
+  const linesByEntry = new Map<string, InvoiceLineInput[]>();
+  for (const l of db
+    .prepare(
+      `SELECT entry_id, line_kind, inventory_item_id, warehouse_id, item_name,
+              price, quantity, total, discount, bonus, unit, unit_num, details, expiry_date, legacy_id
+       FROM invoice_lines
+       WHERE workspace_id = ?
+       ORDER BY id ASC`,
+    )
+    .all(workspaceId) as Record<string, unknown>[]) {
+    const entryId = String(l.entry_id);
+    const list = linesByEntry.get(entryId) ?? [];
+    list.push({
+      lineKind: l.line_kind === "free" ? "free" : "item",
+      ...(l.inventory_item_id ? { inventoryItemId: String(l.inventory_item_id) } : {}),
+      ...(l.warehouse_id ? { warehouseId: String(l.warehouse_id) } : {}),
+      itemName: String(l.item_name ?? ""),
+      unit: String(l.unit ?? "حبة"),
+      unitNum: Number(l.unit_num ?? 1),
+      quantity: Number(l.quantity ?? 0),
+      price: Number(l.price ?? 0),
+      total: Number(l.total ?? 0),
+      discount: Number(l.discount ?? 0),
+      bonus: Number(l.bonus ?? 0),
+      details: String(l.details ?? ""),
+      ...(l.expiry_date ? { expiryDate: String(l.expiry_date) } : {}),
+      ...(l.legacy_id !== null && l.legacy_id !== undefined ? { legacyId: Number(l.legacy_id) } : {}),
+    });
+    linesByEntry.set(entryId, list);
+  }
+
+  const rawLedgerRows = db
+    .prepare("SELECT * FROM ledger_entries WHERE workspace_id = ? ORDER BY created_at_ms ASC, entry_number ASC")
+    .all(workspaceId) as Record<string, unknown>[];
+
+  const ledgerWithLines = rawLedgerRows.map((r) => {
+    const eid = String(r.id);
+    const lines = linesByEntry.get(eid) ?? [];
+    return {
+      ...mapLedgerRow({ ...r, line_count: lines.length }),
+      ...(Number(r.bonus ?? 0) !== 0 ? { bonus: Number(r.bonus) } : {}),
+      ...(r.doc_type !== null && r.doc_type !== undefined ? { docType: Number(r.doc_type) } : {}),
+      ...(r.bstate !== null && r.bstate !== undefined ? { bstate: Number(r.bstate) } : {}),
+      ...(r.sender ? { sender: String(r.sender) } : {}),
+      ...(r.receiver ? { receiver: String(r.receiver) } : {}),
+      ...(r.company_name ? { companyName: String(r.company_name) } : {}),
+      ...(r.legacy_id !== null && r.legacy_id !== undefined ? { legacyId: Number(r.legacy_id) } : {}),
+      lines,
+    };
+  });
+
+  const transferLinesByTx = new Map<number, Record<string, unknown>[]>();
+  for (const stl of db
+    .prepare("SELECT * FROM stock_transfer_lines WHERE workspace_id = ? ORDER BY id ASC")
+    .all(workspaceId) as Record<string, unknown>[]) {
+    const tid = Number(stl.transfer_id);
+    const list = transferLinesByTx.get(tid) ?? [];
+    list.push({
+      ...(stl.inventory_item_id ? { inventoryItemId: String(stl.inventory_item_id) } : {}),
+      ...(stl.raw_prod_id !== null && stl.raw_prod_id !== undefined ? { rawProdId: Number(stl.raw_prod_id) } : {}),
+      quantity: Number(stl.quantity ?? 0),
+      unit: String(stl.unit ?? "حبة"),
+      unitNum: Number(stl.unit_num ?? 1),
+      details: String(stl.details ?? ""),
+      expiryDate: String(stl.expiry_date ?? ""),
+      ...(stl.legacy_id !== null && stl.legacy_id !== undefined ? { legacyId: Number(stl.legacy_id) } : {}),
+    });
+    transferLinesByTx.set(tid, list);
+  }
+  const stockTransfers = (
+    db.prepare("SELECT * FROM stock_transfers WHERE workspace_id = ? ORDER BY id ASC").all(workspaceId) as Record<string, unknown>[]
+  ).map((st) => ({
+    id: Number(st.id),
+    ...(st.from_warehouse_id ? { fromWarehouseId: String(st.from_warehouse_id) } : {}),
+    ...(st.to_warehouse_id ? { toWarehouseId: String(st.to_warehouse_id) } : {}),
+    ...(st.raw_from_store_id !== null && st.raw_from_store_id !== undefined ? { rawFromStoreId: Number(st.raw_from_store_id) } : {}),
+    ...(st.raw_to_store_id !== null && st.raw_to_store_id !== undefined ? { rawToStoreId: Number(st.raw_to_store_id) } : {}),
+    details: String(st.details ?? ""),
+    transferDate: String(st.transfer_date ?? ""),
+    transferType: Number(st.transfer_type ?? 1),
+    ...(st.user_legacy_id !== null && st.user_legacy_id !== undefined ? { userLegacyId: Number(st.user_legacy_id) } : {}),
+    ...(st.legacy_id !== null && st.legacy_id !== undefined ? { legacyId: Number(st.legacy_id) } : {}),
+    lines: transferLinesByTx.get(Number(st.id)) ?? [],
+  }));
+
+  const offerLinesByOffer = new Map<number, Record<string, unknown>[]>();
+  for (const pol of db
+    .prepare("SELECT * FROM price_offer_lines WHERE workspace_id = ? ORDER BY id ASC")
+    .all(workspaceId) as Record<string, unknown>[]) {
+    const oid = Number(pol.offer_id);
+    const list = offerLinesByOffer.get(oid) ?? [];
+    list.push({
+      lineKind: pol.line_kind === "free" ? "free" : "item",
+      ...(pol.inventory_item_id ? { inventoryItemId: String(pol.inventory_item_id) } : {}),
+      ...(pol.raw_prod_id !== null && pol.raw_prod_id !== undefined ? { rawProdId: Number(pol.raw_prod_id) } : {}),
+      price: Number(pol.price ?? 0),
+      quantity: Number(pol.quantity ?? 0),
+      total: Number(pol.total ?? 0),
+      unit: String(pol.unit ?? "حبة"),
+      unitNum: Number(pol.unit_num ?? 1),
+      details: String(pol.details ?? ""),
+      ...(pol.legacy_id !== null && pol.legacy_id !== undefined ? { legacyId: Number(pol.legacy_id) } : {}),
+    });
+    offerLinesByOffer.set(oid, list);
+  }
+  const priceOffers = (
+    db.prepare("SELECT * FROM price_offers WHERE workspace_id = ? ORDER BY id ASC").all(workspaceId) as Record<string, unknown>[]
+  ).map((po) => ({
+    id: Number(po.id),
+    ...(po.account_id ? { accountId: String(po.account_id) } : {}),
+    ...(po.raw_acc_id !== null && po.raw_acc_id !== undefined ? { rawAccId: Number(po.raw_acc_id) } : {}),
+    name: String(po.name ?? ""),
+    offerType: Number(po.offer_type ?? 1),
+    dain: Number(po.dain ?? 0),
+    madin: Number(po.madin ?? 0),
+    currency: String(po.currency ?? "ريال"),
+    offerDate: String(po.offer_date ?? ""),
+    details: String(po.details ?? ""),
+    bonus: Number(po.bonus ?? 0),
+    discount: Number(po.discount ?? 0),
+    ...(po.legacy_id !== null && po.legacy_id !== undefined ? { legacyId: Number(po.legacy_id) } : {}),
+    lines: offerLinesByOffer.get(Number(po.id)) ?? [],
+  }));
+
+  const isWorkspaceEmpty =
+    bundle.accountGroups.length === 0 &&
+    bundle.accounts.length === 0 &&
+    bundle.warehouses.length === 0 &&
+    bundle.inventory.length === 0 &&
+    ledgerWithLines.length === 0 &&
+    stockTransfers.length === 0 &&
+    priceOffers.length === 0;
+
+  return {
+    format: "nasqo-unified-sqlite-export-v2",
+    version: 2,
+    exportedAt: nowIso(),
+    emptyBackup: isWorkspaceEmpty,
+    workspace: bundle.workspace,
+    currencies: currencyRows.map((c) => ({
+      id: Number(c.id),
+      code: String(c.code ?? "ريال"),
+      name: String(c.name ?? "ريال"),
+      symbol: String(c.symbol ?? ""),
+      ratePrimary: Number(c.rate_primary ?? 1),
+      rateSecondary: Number(c.rate_secondary ?? 1),
+      nameSecondary: String(c.name_secondary ?? ""),
+      ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
+    })),
+    accountGroups: bundle.accountGroups,
+    cashboxes: allCashboxRows.map((c) => ({
+      id: Number(c.id),
+      name: String(c.name ?? ""),
+      details: String(c.details ?? ""),
+      currencyCode: String(c.currency_code ?? "ريال") as CurrencyCode,
+      state: Number(c.state ?? 1),
+      boxType: Number(c.box_type ?? 1),
+      sortOrder: Number(c.sort_order ?? 0),
+      isActive: Number(c.state ?? 1) === 1,
+      ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
+    })),
+    warehouses: bundle.warehouses,
+    accounts: bundle.accounts,
+    inventory: bundle.inventory.map((item) => {
+      const extra = invExtraById.get(item.id);
+      return {
+        ...item,
+        ...(extra?.expiry_date ? { expiryDate: String(extra.expiry_date) } : {}),
+        ...(extra?.has_expiry ? { hasExpiry: true } : {}),
+        ...(extra?.currency_code ? { currencyCode: String(extra.currency_code) } : {}),
+        ...(extra?.bstate !== undefined ? { bstate: Number(extra.bstate) } : {}),
+      };
+    }),
+    ledger: ledgerWithLines,
+    stockTransfers,
+    priceOffers,
+    erpData: bundle.erpData,
+    backups: bundle.backups,
+    stats: bundle.stats,
+  };
+}
+
+export function validateUnifiedJsonBundle(payload: unknown): asserts payload is Record<string, unknown> {
+  if (!isPlainObject(payload)) {
+    throw new SqliteValidationError("ملف النسخة الاحتياطية غير صالح: يجب أن يكون كائن JSON من نسقو برو.");
+  }
+  const keys = Object.keys(payload);
+  if (keys.length === 0) {
+    throw new SqliteValidationError("تم رفض ملف JSON فارغ {} — لم يتم مسح أو تعديل أي سجل في قاعدة البيانات.");
+  }
+
+  const formatRaw = payload.format;
+  if (formatRaw !== undefined) {
+    if (typeof formatRaw !== "string" || !VALID_JSON_BACKUP_FORMATS.has(formatRaw)) {
+      throw new SqliteValidationError(`صيغة النسخة الاحتياطية غير مدعومة (${String(formatRaw ?? "")}) — لم يتم تعديل البيانات.`);
+    }
+  }
+  const hasKnownFormat = typeof formatRaw === "string" && VALID_JSON_BACKUP_FORMATS.has(formatRaw);
+
+  if (payload.version !== undefined) {
+    if (typeof payload.version !== "number" || !Number.isInteger(payload.version) || payload.version < 1 || payload.version > 2) {
+      throw new SqliteValidationError("إصدار النسخة الاحتياطية غير مدعوم — يُسمح بالإصدار 1 أو 2 فقط.");
+    }
+  }
+
+  if (payload.emptyBackup !== undefined && typeof payload.emptyBackup !== "boolean") {
+    throw new SqliteValidationError("علامة النسخة الفارغة (emptyBackup) غير صالحة.");
+  }
+  const isExplicitEmpty = payload.emptyBackup === true;
+  if (isExplicitEmpty && !hasKnownFormat) {
+    throw new SqliteValidationError("لا يُقبل وسم النسخة الفارغة دون علامة صيغة نسقو برو المعتمدة.");
+  }
+
+  const arrayKeys = [
+    "currencies",
+    "accountGroups",
+    "cashboxes",
+    "warehouses",
+    "accounts",
+    "inventory",
+    "ledger",
+    "stockTransfers",
+    "priceOffers",
+  ] as const;
+  for (const k of arrayKeys) {
+    if (payload[k] !== undefined && !Array.isArray(payload[k])) {
+      throw new SqliteValidationError(`بنية الحقل «${k}» غير صالحة: يجب أن يكون مصفوفة.`);
+    }
+  }
+  if (payload.workspace !== undefined && !isPlainObject(payload.workspace)) {
+    throw new SqliteValidationError("بنية بيانات مساحة العمل (workspace) غير صالحة.");
+  }
+  if (payload.erpData !== undefined && !isPlainObject(payload.erpData)) {
+    throw new SqliteValidationError("بنية بيانات وحدات ERP (erpData) غير صالحة.");
+  }
+
+  if (!hasKnownFormat) {
+    const wsObj = payload.workspace;
+    const hasWsCompany = isPlainObject(wsObj) && typeof wsObj.companyName === "string" && wsObj.companyName.trim().length > 0;
+    const hasCoreArrays =
+      Array.isArray(payload.accounts) &&
+      Array.isArray(payload.warehouses) &&
+      (Array.isArray(payload.ledger) || Array.isArray(payload.inventory));
+    if (!hasWsCompany || !hasCoreArrays) {
+      throw new SqliteValidationError("ملف JSON لا يطابق هيكل نسخة نسقو برو الاحتياطية — لم يتم تعديل أي سجل.");
+    }
+  } else if (!isExplicitEmpty) {
+    const hasAnyCollection =
+      Array.isArray(payload.accounts) ||
+      Array.isArray(payload.warehouses) ||
+      Array.isArray(payload.inventory) ||
+      Array.isArray(payload.ledger);
+    if (!hasAnyCollection || !isPlainObject(payload.workspace)) {
+      throw new SqliteValidationError("نسخة JSON لا تحتوي على الجداول الأساسية المطلوبة — لم يتم تعديل أي سجل.");
+    }
+  }
+
+  const groupsIn = Array.isArray(payload.accountGroups) ? payload.accountGroups : [];
+  const warehousesIn = Array.isArray(payload.warehouses) ? payload.warehouses : [];
+  const accountsIn = Array.isArray(payload.accounts) ? payload.accounts : [];
+  const inventoryIn = Array.isArray(payload.inventory) ? payload.inventory : [];
+  const ledgerIn = Array.isArray(payload.ledger) ? payload.ledger : [];
+  const transfersIn = Array.isArray(payload.stockTransfers) ? payload.stockTransfers : [];
+  const offersIn = Array.isArray(payload.priceOffers) ? payload.priceOffers : [];
+
+  if (
+    isExplicitEmpty &&
+    (groupsIn.length > 0 ||
+      warehousesIn.length > 0 ||
+      accountsIn.length > 0 ||
+      inventoryIn.length > 0 ||
+      ledgerIn.length > 0 ||
+      transfersIn.length > 0 ||
+      offersIn.length > 0)
+  ) {
+    throw new SqliteValidationError("تعارض في ملف النسخة: مصنفة كفارغة مع وجود سجلات فعلية.");
+  }
+
+  for (let i = 0; i < groupsIn.length; i += 1) {
+    const g = groupsIn[i];
+    if (!isPlainObject(g) || typeof g.name !== "string" || !g.name.trim()) {
+      throw new SqliteValidationError(`مجموعة الحسابات رقم ${i + 1} غير صالحة أو بدون اسم.`);
+    }
+    if (g.category !== undefined && (typeof g.category !== "string" || !isValidCategory(g.category))) {
+      throw new SqliteValidationError(`تصنيف مجموعة الحسابات «${g.name}» غير صالح.`);
+    }
+  }
+
+  const whIds = new Set<string>();
+  for (let i = 0; i < warehousesIn.length; i += 1) {
+    const w = warehousesIn[i];
+    if (!isPlainObject(w) || typeof w.name !== "string" || !w.name.trim()) {
+      throw new SqliteValidationError(`المخزن رقم ${i + 1} غير صالح أو بدون اسم.`);
+    }
+    if (typeof w.id === "string" && w.id.trim()) whIds.add(w.id.trim());
+  }
+
+  const accIds = new Set<string>();
+  for (let i = 0; i < accountsIn.length; i += 1) {
+    const a = accountsIn[i];
+    if (!isPlainObject(a) || typeof a.name !== "string" || !a.name.trim()) {
+      throw new SqliteValidationError(`الحساب رقم ${i + 1} غير صالح أو بدون اسم.`);
+    }
+    if (a.category !== undefined && (typeof a.category !== "string" || !isValidCategory(a.category))) {
+      throw new SqliteValidationError(`تصنيف الحساب «${a.name}» غير صالح.`);
+    }
+    if (a.openingBalance !== undefined && (typeof a.openingBalance !== "number" || !Number.isFinite(a.openingBalance) || a.openingBalance < 0)) {
+      throw new SqliteValidationError(`الرصيد الافتتاحي للحساب «${a.name}» غير صالح.`);
+    }
+    if (typeof a.id === "string" && a.id.trim()) accIds.add(a.id.trim());
+  }
+
+  const invIds = new Set<string>();
+  for (let i = 0; i < inventoryIn.length; i += 1) {
+    const item = inventoryIn[i];
+    if (!isPlainObject(item) || typeof item.name !== "string" || !item.name.trim()) {
+      throw new SqliteValidationError(`الصنف رقم ${i + 1} غير صالح أو بدون اسم.`);
+    }
+    if (item.warehouseId !== undefined && typeof item.warehouseId === "string" && item.warehouseId.trim()) {
+      if (warehousesIn.length > 0 && whIds.size > 0 && !whIds.has(item.warehouseId.trim())) {
+        throw new SqliteValidationError(`الصنف «${item.name}» يشير إلى مخزن غير موجود (${item.warehouseId}).`);
+      }
+    }
+    if (typeof item.id === "string" && item.id.trim()) invIds.add(item.id.trim());
+  }
+
+  for (let i = 0; i < ledgerIn.length; i += 1) {
+    const e = ledgerIn[i];
+    if (!isPlainObject(e) || typeof e.amount !== "number" || !Number.isFinite(e.amount) || e.amount < 0) {
+      throw new SqliteValidationError(`القيد رقم ${i + 1} غير صالح: المبلغ مطلوب ويجب أن يكون رقمًا صحيحًا.`);
+    }
+    if (e.kind !== undefined && (typeof e.kind !== "string" || !isValidLedgerKind(e.kind))) {
+      throw new SqliteValidationError(`نوع القيد رقم ${i + 1} غير صالح.`);
+    }
+    if (e.direction !== undefined && e.direction !== "debit" && e.direction !== "credit") {
+      throw new SqliteValidationError(`اتجاه القيد رقم ${i + 1} غير صالح.`);
+    }
+    if (e.accountId !== undefined && typeof e.accountId === "string" && e.accountId.trim()) {
+      if (accountsIn.length > 0 && accIds.size > 0 && !accIds.has(e.accountId.trim())) {
+        throw new SqliteValidationError(`القيد رقم ${e.entryNumber ?? i + 1} يشير إلى حساب غير موجود (${e.accountId}).`);
+      }
+    }
+    if (e.counterpartAccountId !== undefined && typeof e.counterpartAccountId === "string" && e.counterpartAccountId.trim()) {
+      if (accIds.size > 0 && !accIds.has(e.counterpartAccountId.trim())) {
+        throw new SqliteValidationError(`القيد رقم ${e.entryNumber ?? i + 1} يشير إلى حساب مقابل غير موجود (${e.counterpartAccountId}).`);
+      }
+    }
+    if (e.warehouseId !== undefined && typeof e.warehouseId === "string" && e.warehouseId.trim()) {
+      if (whIds.size > 0 && !whIds.has(e.warehouseId.trim())) {
+        throw new SqliteValidationError(`القيد رقم ${e.entryNumber ?? i + 1} يشير إلى مخزن غير موجود (${e.warehouseId}).`);
+      }
+    }
+    if (e.lines !== undefined) {
+      if (!Array.isArray(e.lines)) {
+        throw new SqliteValidationError(`بنود القيد رقم ${e.entryNumber ?? i + 1} يجب أن تكون مصفوفة.`);
+      }
+      for (let li = 0; li < e.lines.length; li += 1) {
+        const line = e.lines[li];
+        if (!isPlainObject(line) || typeof line.itemName !== "string") {
+          throw new SqliteValidationError(`السطر رقم ${li + 1} في القيد ${e.entryNumber ?? i + 1} غير صالح.`);
+        }
+        if (
+          typeof line.quantity !== "number" ||
+          !Number.isFinite(line.quantity) ||
+          line.quantity < 0 ||
+          typeof line.price !== "number" ||
+          !Number.isFinite(line.price) ||
+          line.price < 0
+        ) {
+          throw new SqliteValidationError(`قيم الكمية أو السعر في السطر ${li + 1} من القيد ${e.entryNumber ?? i + 1} غير صالحة.`);
+        }
+        if (typeof line.inventoryItemId === "string" && line.inventoryItemId.trim() && invIds.size > 0) {
+          if (!invIds.has(line.inventoryItemId.trim())) {
+            throw new SqliteValidationError(`السطر «${line.itemName}» يشير إلى صنف غير موجود (${line.inventoryItemId}).`);
+          }
+        }
+        if (typeof line.warehouseId === "string" && line.warehouseId.trim() && whIds.size > 0) {
+          if (!whIds.has(line.warehouseId.trim())) {
+            throw new SqliteValidationError(`السطر «${line.itemName}» يشير إلى مخزن غير موجود (${line.warehouseId}).`);
+          }
+        }
+      }
+    }
+    if (
+      formatRaw === "nasqo-unified-sqlite-export-v2" &&
+      typeof e.lineCount === "number" &&
+      e.lineCount > 0 &&
+      (!Array.isArray(e.lines) || e.lines.length !== e.lineCount)
+    ) {
+      throw new SqliteValidationError(`القيد رقم ${e.entryNumber ?? i + 1} يدّعي وجود ${e.lineCount} سطرًا لكن سطوره ناقصة.`);
+    }
+  }
+
+  for (let i = 0; i < transfersIn.length; i += 1) {
+    const tx = transfersIn[i];
+    if (!isPlainObject(tx)) {
+      throw new SqliteValidationError(`تحويل المخزون رقم ${i + 1} غير صالح.`);
+    }
+    if (tx.lines !== undefined && !Array.isArray(tx.lines)) {
+      throw new SqliteValidationError(`سطور تحويل المخزون رقم ${i + 1} غير صالحة.`);
+    }
+  }
+
+  for (let i = 0; i < offersIn.length; i += 1) {
+    const off = offersIn[i];
+    if (!isPlainObject(off)) {
+      throw new SqliteValidationError(`عرض السعر رقم ${i + 1} غير صالح.`);
+    }
+    if (off.lines !== undefined && !Array.isArray(off.lines)) {
+      throw new SqliteValidationError(`سطور عرض السعر رقم ${i + 1} غير صالحة.`);
+    }
+  }
+}
+
 export function restoreUnifiedJsonBundle(
   db: DatabaseSync,
   workspaceId: string,
-  payload: Record<string, unknown>,
+  payload: unknown,
 ): {
   accountGroups: number;
   accounts: number;
   warehouses: number;
   inventory: number;
   ledger: number;
+  invoiceLines: number;
+  stockTransfers: number;
+  priceOffers: number;
 } {
+  validateUnifiedJsonBundle(payload);
+
   const now = nowIso();
-  const wsIn = (payload.workspace && typeof payload.workspace === "object"
-    ? payload.workspace
-    : {}) as Partial<WorkspaceSettings> & { baseCurrency?: string };
+  const wsIn = (isPlainObject(payload.workspace) ? payload.workspace : {}) as Partial<WorkspaceSettings> & { baseCurrency?: string };
+  const currenciesIn = Array.isArray(payload.currencies) ? (payload.currencies as Record<string, unknown>[]) : [];
   const groupsIn = Array.isArray(payload.accountGroups) ? (payload.accountGroups as Partial<AccountGroupRecord>[]) : [];
   const cashboxesIn = Array.isArray(payload.cashboxes) ? (payload.cashboxes as Partial<CashboxRecord>[]) : [];
   const warehousesIn = Array.isArray(payload.warehouses) ? (payload.warehouses as Partial<WarehouseRecord>[]) : [];
   const accountsIn = Array.isArray(payload.accounts) ? (payload.accounts as Partial<AccountRecord>[]) : [];
-  const inventoryIn = Array.isArray(payload.inventory) ? (payload.inventory as Partial<InventoryItemRecord>[]) : [];
-  const ledgerIn = Array.isArray(payload.ledger) ? (payload.ledger as Partial<LedgerEntryRecord>[]) : [];
-  const erpIn = payload.erpData && typeof payload.erpData === "object"
-    ? (payload.erpData as Partial<ErpWorkspaceData>)
-    : undefined;
+  const inventoryIn = Array.isArray(payload.inventory) ? (payload.inventory as (Partial<InventoryItemRecord> & { expiryDate?: string; hasExpiry?: boolean; currencyCode?: string; bstate?: number })[]) : [];
+  const ledgerIn = Array.isArray(payload.ledger) ? (payload.ledger as (Partial<LedgerEntryRecord> & { bonus?: number; bstate?: number; sender?: string; receiver?: string; companyName?: string; legacyId?: number })[]) : [];
+  const transfersIn = Array.isArray(payload.stockTransfers) ? (payload.stockTransfers as Record<string, unknown>[]) : [];
+  const offersIn = Array.isArray(payload.priceOffers) ? (payload.priceOffers as Record<string, unknown>[]) : [];
+  const erpIn = isPlainObject(payload.erpData) ? (payload.erpData as Partial<ErpWorkspaceData>) : undefined;
 
   return withTransaction(db, () => {
     db.prepare("DELETE FROM workspaces WHERE id = ?").run(workspaceId);
@@ -2717,10 +3534,27 @@ export function restoreUnifiedJsonBundle(
       now,
       now,
     );
-    db.prepare(
-      `INSERT INTO currencies (workspace_id, code, name, symbol, rate_primary, rate_secondary, name_secondary)
-       VALUES (?, ?, ?, 'ر.ي', 1, 1, '')`,
-    ).run(workspaceId, defaultCurrency, defaultCurrency);
+
+    const insCurrency = db.prepare(
+      `INSERT INTO currencies (workspace_id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    if (currenciesIn.length > 0) {
+      for (const cur of currenciesIn) {
+        insCurrency.run(
+          workspaceId,
+          String(cur.code || defaultCurrency),
+          String(cur.name || cur.code || defaultCurrency),
+          String(cur.symbol ?? ""),
+          Number(cur.ratePrimary ?? 1) || 1,
+          Number(cur.rateSecondary ?? 1) || 1,
+          String(cur.nameSecondary ?? ""),
+          cur.legacyId !== undefined && cur.legacyId !== null ? Number(cur.legacyId) : null,
+        );
+      }
+    } else {
+      insCurrency.run(workspaceId, defaultCurrency, defaultCurrency, "ر.ي", 1, 1, "", null);
+    }
 
     const groupIdMap = new Map<number, number>();
     const groupByCat = new Map<AccountCategory, number>();
@@ -2774,12 +3608,22 @@ export function restoreUnifiedJsonBundle(
     const cashboxMap = new Map<number, number>();
     const insCb = db.prepare(
       `INSERT INTO cashboxes (workspace_id, name, details, state, currency_code, box_type, sort_order, legacy_id)
-       VALUES (?, ?, ?, 1, ?, 1, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (let i = 0; i < cashboxesIn.length; i += 1) {
       const cb = cashboxesIn[i];
       if (!cb || !String(cb.name || "").trim()) continue;
-      const res = insCb.run(workspaceId, String(cb.name).trim(), String(cb.details || ""), String(cb.currencyCode || defaultCurrency), i, cb.legacyId ?? cb.id ?? i + 1);
+      const state = cb.state !== undefined ? Number(cb.state) : cb.isActive === false ? 0 : 1;
+      const res = insCb.run(
+        workspaceId,
+        String(cb.name).trim(),
+        String(cb.details || ""),
+        state,
+        String(cb.currencyCode || defaultCurrency),
+        Number(cb.boxType ?? 1),
+        Number(cb.sortOrder ?? i),
+        cb.legacyId ?? cb.id ?? i + 1,
+      );
       if (typeof cb.id === "number") cashboxMap.set(cb.id, Number(res.lastInsertRowid));
     }
 
@@ -2829,8 +3673,11 @@ export function restoreUnifiedJsonBundle(
     const invMap = new Map<string, string>();
     const firstWhId = [...whMap.values()][0] || "";
     const insInv = db.prepare(
-      `INSERT INTO inventory_items (id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, min_threshold, sku, quantity_unverified, legacy_ref, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO inventory_items (
+         id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, min_threshold, sku,
+         unit2, count2, sprice2, unit3, count3, sprice3, default_unit, expiry_date, has_expiry, currency_code,
+         bstate, quantity_unverified, legacy_id, legacy_ref, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     let invCount = 0;
     for (const item of inventoryIn) {
@@ -2841,8 +3688,12 @@ export function restoreUnifiedJsonBundle(
       const iid = item.id && !String(item.id).includes("/") ? String(item.id) : makeId("inv");
       insInv.run(
         iid, workspaceId, mappedWh, clean.name, clean.unit, clean.quantity, clean.avgCost,
-        clean.sellingPrice ?? null, clean.minThreshold, clean.sku ?? "", clean.quantityUnverified ? 1 : 0,
-        clean.legacyRef ?? null, now, now,
+        clean.sellingPrice ?? null, clean.minThreshold, clean.sku ?? "",
+        String(item.unit2 ?? ""), item.count2 ?? null, item.sprice2 ?? null,
+        String(item.unit3 ?? ""), item.count3 ?? null, item.sprice3 ?? null,
+        Number(item.defaultUnit ?? 1), item.expiryDate ? String(item.expiryDate) : null, item.hasExpiry ? 1 : 0,
+        String(item.currencyCode || defaultCurrency), Number(item.bstate ?? 1),
+        clean.quantityUnverified ? 1 : 0, item.legacyId ?? null, clean.legacyRef ?? null, now, now,
       );
       if (item.id) invMap.set(String(item.id), iid);
       invCount += 1;
@@ -2853,24 +3704,29 @@ export function restoreUnifiedJsonBundle(
          id, workspace_id, account_id, account_name, counterpart_account_id, counterpart_account_name, cashbox_id,
          kind, type_label, payment, direction, amount, raw_dain, raw_madin, settled_on_receipt, currency, exchange_rate,
          details, document_number, warehouse_id, warehouse_name, invoice_content, entry_number, deleted, entry_date,
-         due_date, expense_category, delivery_days, source_origin, posting_status, created_at_ms, legacy_ref
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'native', 'posted', ?, ?)`,
+         due_date, expense_category, delivery_days, sender, receiver, company_name, discount, tax_amount, bonus,
+         doc_type, bstate, source_origin, posting_status, created_at_ms, legacy_id, legacy_ref
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?)`,
     );
     const insLine = db.prepare(
       `INSERT INTO invoice_lines (
          workspace_id, entry_id, line_kind, inventory_item_id, warehouse_id, item_name,
-         price, quantity, total, discount, bonus, unit, unit_num, details
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         price, quantity, total, discount, bonus, unit, unit_num, details, expiry_date, legacy_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     let ledgerCount = 0;
+    let invoiceLinesCount = 0;
     for (const e of ledgerIn) {
       if (!e || typeof e.amount !== "number") continue;
       const accRef = (e.accountId && accMap.get(String(e.accountId))) || [...accMap.values()][0];
       if (!accRef) continue;
+      const counterpartRef = e.counterpartAccountId ? accMap.get(String(e.counterpartAccountId)) : undefined;
       const clean = sanitizeLedgerPayload({
         ...e,
         accountId: accRef.id,
         accountName: e.accountName || accRef.name,
+        counterpartAccountId: counterpartRef?.id ?? e.counterpartAccountId ?? "",
+        counterpartAccountName: counterpartRef?.name ?? e.counterpartAccountName ?? "",
         ownerId: workspaceId,
       });
       const eid = e.id && !String(e.id).includes("/") ? String(e.id) : makeId("ent");
@@ -2882,19 +3738,126 @@ export function restoreUnifiedJsonBundle(
         e.settledOnReceipt ? 1 : 0, clean.currency, clean.exchangeRate, clean.details, clean.documentNumber, mappedWh,
         clean.warehouseName, clean.invoiceContent, clean.entryNumber, clean.deleted ? 1 : 0, clean.entryDate,
         clean.dueDate ?? null, clean.expenseCategory ?? null, clean.deliveryDays ?? null,
-        Number(e.createdAtMs || Date.now()), clean.legacyRef ?? null,
+        String(e.sender ?? ""), String(e.receiver ?? ""), String(e.companyName ?? ""),
+        Number(e.discount ?? 0), Number(e.taxAmount ?? 0), Number(e.bonus ?? 0),
+        e.docType ?? null, e.bstate ?? null, String(e.sourceOrigin || "native"),
+        Number(e.createdAtMs || Date.now()), e.legacyId ?? null, clean.legacyRef ?? null,
       );
       if (Array.isArray(e.lines)) {
         for (const l of e.lines) {
-          const mappedItem = l.inventoryItemId ? (invMap.get(String(l.inventoryItemId)) ?? String(l.inventoryItemId)) : null;
+          const mappedItem = l.inventoryItemId ? (invMap.get(String(l.inventoryItemId)) ?? null) : null;
+          const mappedLineWh = (l.warehouseId && whMap.get(String(l.warehouseId))) || mappedWh || null;
+          const lineKind = l.lineKind === "free" ? "free" : mappedItem ? "item" : "free";
+          const unitNum = l.unitNum === 2 || l.unitNum === 3 ? l.unitNum : 1;
           insLine.run(
-            workspaceId, eid, mappedItem ? "item" : "free", mappedItem, mappedWh || null, l.itemName,
+            workspaceId, eid, lineKind, mappedItem, mappedLineWh, l.itemName,
             Number(l.price || 0), Number(l.quantity || 0), Number(l.total || 0), Number(l.discount || 0),
-            Number(l.bonus || 0), l.unit || "حبة", l.details ?? "",
+            Number(l.bonus || 0), l.unit || "حبة", unitNum, l.details ?? "",
+            String(l.expiryDate ?? ""), l.legacyId ?? null,
           );
+          invoiceLinesCount += 1;
         }
       }
       ledgerCount += 1;
+    }
+
+    const insTx = db.prepare(
+      `INSERT INTO stock_transfers (
+         workspace_id, from_warehouse_id, to_warehouse_id, raw_from_store_id, raw_to_store_id,
+         details, transfer_date, transfer_type, user_legacy_id, legacy_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insTxLine = db.prepare(
+      `INSERT INTO stock_transfer_lines (
+         workspace_id, transfer_id, inventory_item_id, raw_prod_id, quantity, unit, unit_num, details, expiry_date, legacy_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    let stockTransfersCount = 0;
+    for (const tx of transfersIn) {
+      const fromWh = tx.fromWarehouseId ? (whMap.get(String(tx.fromWarehouseId)) ?? null) : null;
+      const toWh = tx.toWarehouseId ? (whMap.get(String(tx.toWarehouseId)) ?? null) : null;
+      const txRes = insTx.run(
+        workspaceId,
+        fromWh,
+        toWh,
+        tx.rawFromStoreId !== undefined && tx.rawFromStoreId !== null ? Number(tx.rawFromStoreId) : null,
+        tx.rawToStoreId !== undefined && tx.rawToStoreId !== null ? Number(tx.rawToStoreId) : null,
+        String(tx.details ?? ""),
+        String(tx.transferDate ?? ""),
+        Number(tx.transferType ?? 1),
+        tx.userLegacyId !== undefined && tx.userLegacyId !== null ? Number(tx.userLegacyId) : null,
+        tx.legacyId !== undefined && tx.legacyId !== null ? Number(tx.legacyId) : null,
+      );
+      const txId = Number(txRes.lastInsertRowid);
+      if (Array.isArray(tx.lines)) {
+        for (const l of tx.lines as Record<string, unknown>[]) {
+          const itemId = l.inventoryItemId ? (invMap.get(String(l.inventoryItemId)) ?? null) : null;
+          insTxLine.run(
+            workspaceId,
+            txId,
+            itemId,
+            l.rawProdId !== undefined && l.rawProdId !== null ? Number(l.rawProdId) : null,
+            Number(l.quantity ?? 0),
+            String(l.unit ?? "حبة"),
+            Number(l.unitNum ?? 1),
+            String(l.details ?? ""),
+            String(l.expiryDate ?? ""),
+            l.legacyId !== undefined && l.legacyId !== null ? Number(l.legacyId) : null,
+          );
+        }
+      }
+      stockTransfersCount += 1;
+    }
+
+    const insOffer = db.prepare(
+      `INSERT INTO price_offers (
+         workspace_id, account_id, raw_acc_id, name, offer_type, dain, madin, currency, offer_date, details, bonus, discount, legacy_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insOfferLine = db.prepare(
+      `INSERT INTO price_offer_lines (
+         workspace_id, offer_id, line_kind, inventory_item_id, raw_prod_id, price, quantity, total, unit, unit_num, details, legacy_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    let priceOffersCount = 0;
+    for (const po of offersIn) {
+      const accId = po.accountId ? (accMap.get(String(po.accountId))?.id ?? null) : null;
+      const poRes = insOffer.run(
+        workspaceId,
+        accId,
+        po.rawAccId !== undefined && po.rawAccId !== null ? Number(po.rawAccId) : null,
+        String(po.name ?? ""),
+        Number(po.offerType ?? 1),
+        Number(po.dain ?? 0),
+        Number(po.madin ?? 0),
+        String(po.currency ?? defaultCurrency),
+        String(po.offerDate ?? ""),
+        String(po.details ?? ""),
+        Number(po.bonus ?? 0),
+        Number(po.discount ?? 0),
+        po.legacyId !== undefined && po.legacyId !== null ? Number(po.legacyId) : null,
+      );
+      const poId = Number(poRes.lastInsertRowid);
+      if (Array.isArray(po.lines)) {
+        for (const l of po.lines as Record<string, unknown>[]) {
+          const itemId = l.inventoryItemId ? (invMap.get(String(l.inventoryItemId)) ?? null) : null;
+          insOfferLine.run(
+            workspaceId,
+            poId,
+            l.lineKind === "free" ? "free" : itemId ? "item" : "free",
+            itemId,
+            l.rawProdId !== undefined && l.rawProdId !== null ? Number(l.rawProdId) : null,
+            Number(l.price ?? 0),
+            Number(l.quantity ?? 0),
+            Number(l.total ?? 0),
+            String(l.unit ?? "حبة"),
+            Number(l.unitNum ?? 1),
+            String(l.details ?? ""),
+            l.legacyId !== undefined && l.legacyId !== null ? Number(l.legacyId) : null,
+          );
+        }
+      }
+      priceOffersCount += 1;
     }
 
     const empty = createEmptyErpData();
@@ -2911,7 +3874,14 @@ export function restoreUnifiedJsonBundle(
     });
 
     writeAudit(db, workspaceId, workspaceId, "restore_json", "bundle", "restore", {
-      groupsCount, accCount, whCount, invCount, ledgerCount,
+      groupsCount,
+      accCount,
+      whCount,
+      invCount,
+      ledgerCount,
+      invoiceLinesCount,
+      stockTransfersCount,
+      priceOffersCount,
     });
 
     return {
@@ -2920,6 +3890,9 @@ export function restoreUnifiedJsonBundle(
       warehouses: whCount,
       inventory: invCount,
       ledger: ledgerCount,
+      invoiceLines: invoiceLinesCount,
+      stockTransfers: stockTransfersCount,
+      priceOffers: priceOffersCount,
     };
   });
 }
