@@ -51,7 +51,27 @@ export function resolveSqliteDbPath(overridePath?: string): string {
   return path.resolve(process.cwd(), "data", "nasqo.sqlite");
 }
 
+// A container filesystem is temporary. In production, SQLite must reside
+// on an explicitly mounted volume. Backups are separate files, not live DBs.
+function requireDurableSqlitePath(filePath: string): void {
+  if (process.env.NODE_ENV !== "production" || filePath === ":memory:") return;
+  if (!process.env.NASQO_SQLITE_PATH || !path.isAbsolute(filePath)) {
+    throw new Error("Production SQLite requires an explicit absolute NASQO_SQLITE_PATH.");
+  }
+  if (process.platform !== "linux" || !fs.existsSync("/proc/self/mountinfo")) return;
+  const directory = path.dirname(path.resolve(filePath));
+  const mounts = fs.readFileSync("/proc/self/mountinfo", "utf8")
+    .split("\n")
+    .map(line => line.split(" ")[4]?.replace(/\\040/g, " ") ?? "")
+    .filter(Boolean);
+  if (!mounts.some(mount => mount !== "/" &&
+    (directory === mount || directory.startsWith(mount.replace(/\/$/, "") + "/")))) {
+    throw new Error("SQLite database is not on a persistent mount. Mount a volume at " + directory);
+  }
+}
+
 function openAndInit(filePath: string): DatabaseSync {
+  requireDurableSqlitePath(filePath);
   if (filePath !== ":memory:") {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
   }

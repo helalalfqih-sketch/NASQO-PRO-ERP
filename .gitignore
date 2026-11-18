@@ -13,3 +13,8 @@ data/
 *.sqlite3
 *.db
 *.dump
+
+# Deployment credentials are local only; never commit them
+.env
+.env.*
+!.env.example

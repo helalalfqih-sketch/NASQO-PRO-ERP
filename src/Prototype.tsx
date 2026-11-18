@@ -462,6 +462,10 @@ function NasqoProductionShell() {
   const [authReady, setAuthReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [sqliteAccess, setSqliteAccess] = useState<"checking" | "ready" | "locked" | "unconfigured" | "error">("checking");
+  const [sqlitePassword, setSqlitePassword] = useState("");
+  const [sqliteLoginBusy, setSqliteLoginBusy] = useState(false);
+  const [sqliteLoginError, setSqliteLoginError] = useState("");
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [primaryMode, setPrimaryMode] = useState<"checking" | "off" | "on" | "error">("checking");
   const [startupError, setStartupError] = useState("");
@@ -469,6 +473,44 @@ function NasqoProductionShell() {
   const localStartPending = useRef<Promise<void> | null>(null);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
+
+  const sqliteAuthBase = useMemo(() =>
+    new URL("api/db/auth/", new URL(import.meta.env.BASE_URL, window.location.origin)).pathname, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(sqliteAuthBase + "status", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("SQLite auth unavailable");
+        return response.json() as Promise<{ mode: string; authenticated: boolean }>;
+      })
+      .then((status) => {
+        if (cancelled) return;
+        setSqliteAccess(status.mode === "unconfigured" ? "unconfigured" :
+          status.authenticated ? "ready" : "locked");
+      })
+      .catch(() => { if (!cancelled) setSqliteAccess("error"); });
+    return () => { cancelled = true; };
+  }, [sqliteAuthBase]);
+
+  const loginToSqlite = async () => {
+    setSqliteLoginBusy(true);
+    setSqliteLoginError("");
+    try {
+      const response = await fetch(sqliteAuthBase + "login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-NASQO-CSRF": "1" },
+        body: JSON.stringify({ password: sqlitePassword }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(body.error || "تعذر تسجيل الدخول.");
+      setSqlitePassword("");
+      setSqliteAccess("ready");
+    } catch (error) {
+      setSqliteLoginError(error instanceof Error ? error.message : String(error));
+    } finally { setSqliteLoginBusy(false); }
+  };
 
   // The database switch is server-controlled. A previously active primary
   // database must never silently fall back to browser/Firestore writes when
@@ -504,7 +546,7 @@ function NasqoProductionShell() {
   }, []);
 
   const enterLocalWorkspace = useCallback(async () => {
-    if (primaryMode !== "off") return;
+    if (primaryMode !== "off" || sqliteAccess !== "ready") return;
     setLocalWorkspaceSession(true);
     const localUser = createLocalUserProfile();
     setUser(localUser);
@@ -528,7 +570,7 @@ function NasqoProductionShell() {
       // Do not unlock accounting writes against a stale localStorage fallback.
       setStartupError(error instanceof Error ? error.message : "تعذر فتح قاعدة بيانات الهاتف؛ أغلق علامات التبويب الأخرى وأعد المحاولة.");
     }
-  }, [primaryMode]);
+  }, [primaryMode, sqliteAccess]);
 
   useEffect(() => {
     if (!authReady || !user || workspaceReady || primaryMode !== "off") return;
@@ -547,8 +589,13 @@ function NasqoProductionShell() {
 
     if (primaryMode === "checking" || primaryMode === "error") return;
 
-    if (primaryMode === "off" && (wantsAutostart || isLocalWorkspaceSession())) {
-      void enterLocalWorkspace();
+    // The single SQLite workspace is not Google/Firestore. A stale Firebase
+    // session must never replace the local SQLite user or block its writes.
+    if (primaryMode === "off") {
+      if (sqliteAccess === "ready") {
+        void enterLocalWorkspace();
+      }
+      return;
     }
 
     const fallbackTimer = window.setTimeout(() => {
@@ -558,9 +605,6 @@ function NasqoProductionShell() {
     const unsub = onAuthStateChanged(auth, async (nextUser) => {
       window.clearTimeout(fallbackTimer);
       if (nextUser) {
-        if (primaryMode === "off" && (wantsAutostart || isLocalWorkspaceSession())) {
-          return;
-        }
         setLocalWorkspaceSession(false);
         setUser(nextUser);
         setAuthReady(true);
@@ -569,13 +613,8 @@ function NasqoProductionShell() {
         setWorkspaceReady(true);
         setStartupError("");
         setCloudInitializationError("");
-        if (primaryMode === "on") return; // Never seed or write to the legacy workspace in central mode.
-        void ensureWorkspaceSeeded(nextUser.uid, nextUser.displayName).catch((err) => {
-          console.error("Failed initializing workspace:", err);
-          if (auth.currentUser?.uid === nextUser.uid) {
-            setCloudInitializationError("تعذر إكمال تهيئة البيانات السحابية. ستبقى التعديلات مقفلة حتى تصل بيانات الحساب الحقيقية.");
-          }
-        });
+        // Legacy central SmartPro mode uses its own server; never seed cloud
+        // data from this authentication listener.
       } else if (primaryMode === "on" || (!wantsAutostart && !isLocalWorkspaceSession())) {
         setUser(null);
         setAuthReady(true);
@@ -588,7 +627,7 @@ function NasqoProductionShell() {
       window.clearTimeout(fallbackTimer);
       unsub();
     };
-  }, [enterLocalWorkspace, primaryMode]);
+  }, [enterLocalWorkspace, primaryMode, sqliteAccess]);
 
   const handleSignIn = async () => {
     setAuthBusy(true);
@@ -603,10 +642,47 @@ function NasqoProductionShell() {
     }
   };
 
+  if (sqliteAccess !== "ready") {
+    return (
+      <div className="nasqo-app" dir="rtl">
+        <div className="auth-gate-shell auth-gate-single-panel">
+          <main className="auth-gate-main">
+            <section className="auth-card">
+              <h1>نسقو برو — قاعدة SQLite المحلية</h1>
+              {sqliteAccess === "checking" ? <p role="status">جارٍ فحص الوصول إلى قاعدة البيانات...</p> : null}
+              {sqliteAccess === "locked" ? (
+                <>
+                  <p>أدخل كلمة مرور المدير للوصول إلى قاعدة البيانات المحلية المحمية.</p>
+                  <KeyboardInput type="password" aria-label="كلمة مرور قاعدة SQLite"
+                    placeholder="كلمة مرور المدير" value={sqlitePassword}
+                    onChange={(event) => setSqlitePassword(event.target.value)} />
+                  {sqliteLoginError ? <p role="alert" className="auth-error">{sqliteLoginError}</p> : null}
+                  <button className="auth-google-btn" disabled={sqliteLoginBusy || !sqlitePassword}
+                    onClick={() => void loginToSqlite()} data-testid="sqlite-admin-login">
+                    {sqliteLoginBusy ? "جارٍ التحقق..." : "فتح قاعدة SQLite"}
+                  </button>
+                </>
+              ) : null}
+              {sqliteAccess === "unconfigured" ? <p role="alert" className="auth-error">
+                يجب إعداد كلمة مرور المدير ومفتاح الجلسة في إعدادات الخادم قبل الاستخدام عبر الإنترنت.
+              </p> : null}
+              {sqliteAccess === "error" ? (
+                <>
+                  <p role="alert" className="auth-error">تعذر الاتصال بالخادم المحلي دون تغيير البيانات.</p>
+                  <button className="auth-google-btn" onClick={() => window.location.reload()}>إعادة المحاولة</button>
+                </>
+              ) : null}
+            </section>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   if (primaryMode === "error") {
     return (
       <div className="nasqo-app" dir="rtl">
-        <div className="auth-gate-shell">
+        <div className="auth-gate-shell auth-gate-single-panel">
           <main className="auth-gate-main">
             <section className="auth-card">
               <h1>تعذر الاتصال بقاعدة SmartPro المركزية</h1>
@@ -711,7 +787,7 @@ function NasqoProductionShell() {
               ) : (
                 <p>قاعدة SmartPro المركزية هي مصدر البيانات الأساسي. للدخول بصلاحياتك، سجّل باستخدام حساب Google المخوّل.</p>
               )}
-              <div className="auth-gsi-wrap">
+              {primaryMode === "on" ? <div className="auth-gsi-wrap">
                 <GoogleSignInButton
                   onClick={() => void handleSignIn()}
                   disabled={authBusy}
@@ -719,7 +795,7 @@ function NasqoProductionShell() {
                   testId="google-signin-button"
                   fullWidth
                 />
-              </div>
+              </div> : null}
             </section>
           </main>
         </div>
@@ -1077,12 +1153,16 @@ function AuthenticatedWorkspace({
   const resetWorkspaceToEmptyNow = useCallback(async () => {
     dismissKeyboard();
     setOptionsMenuOpen(false);
-    await resetLocalWorkspaceDatabase(user.uid);
-    triggerHaptic("success");
-    setToast("تم تفريغ قاعدة البيانات — أصبحت جاهزة لاستعادة نسختك");
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
-  }, [dismissKeyboard, user.uid]);
+    const confirmation = window.prompt("سيحذف هذا جميع بيانات الأعمال من SQLite. تأكد من وجود نسخة احتياطية، ثم اكتب كلمة تفريغ للتأكيد:");
+    if (confirmation !== "تفريغ") return;
+    try {
+      await resetLocalWorkspaceDatabase(user.uid);
+      triggerHaptic("success");
+      showToast("تم تفريغ قاعدة SQLite بعد التأكيد.");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "تعذر تفريغ قاعدة البيانات.");
+    }
+  }, [dismissKeyboard, showToast, user.uid]);
 
   const closeOverlay = useCallback(() => {
     dismissKeyboard();
@@ -1841,7 +1921,7 @@ function AuthenticatedWorkspace({
     <WorkspaceContext.Provider value={ctx}>
       <div className="nasqo-app" dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
-        {user.uid !== LOCAL_WORKSPACE_UID && syncing ? (
+        {user.uid !== LOCAL_WORKSPACE_UID && syncing && cloudInitializationError ? (
           <div className="nasqo-cloud-hydration-lock" role="status" data-testid="cloud-hydration-lock">
             <section>
               <h2>واجهة نسق برو جاهزة</h2>

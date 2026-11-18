@@ -34,6 +34,22 @@ When implementing from a selected generated mock, treat that image as the source
 - Keep live device/form times, mock account names, and protected device chrome; these are documented differences from the reference screenshots rather than a claim of pixel-for-pixel identity.
 - Prototype actions must remain demonstrative: no real message, activation request, or export side effect is allowed unless the user explicitly asks for live behavior.
 
+## Explicit local SQLite production direction (2026-11-18)
+
+- The user explicitly wants a NEW empty, working NASQO ERP using one local
+  operational SQLite database. An initial schema/workspace is fine; starter
+  customers, products, invoices, balances or auto-imported backups are not.
+- Native accounting writes, invoices, groups, accounts, inventory and reports
+  are requested as REAL SQLite behavior, not prototype-only simulations.
+- Existing UX/reference states are retained where practical; they do not
+  authorize replacing the database with Firebase, IndexedDB or MariaDB.
+- Manual restore is user-initiated only. Never import a private legacy backup
+  automatically. Test imports on isolated temporary databases.
+- A production server requires a persistent SQLite mount and authenticated
+  remote access. Never commit secrets, the database file or source backups.
+- Preserve the existing published deployment. Review and test the independent
+  SQLite deployment before switching any public traffic to it.
+
 ## Editing Boundary
 
 - Build app-specific UI in `src/Prototype.tsx` and `src/prototype.css`.

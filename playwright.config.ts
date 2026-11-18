@@ -4,6 +4,9 @@ const testPort = Number(process.env.MOBILE_RUNTIME_TEST_PORT ?? 4174);
 
 export default defineConfig({
   testDir: "./tests",
+  // One isolated SQLite test database; browser specs must not reset each
+  // other's workspace concurrently.
+  workers: 1,
   testMatch: "**/*.spec.ts",
   timeout: 20_000,
   use: {
