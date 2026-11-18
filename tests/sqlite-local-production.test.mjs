@@ -51,7 +51,7 @@ async function startServer(port, dbFile, envOverrides = {}) {
   let errors="";
   child.stderr.on("data",chunk=>errors+=String(chunk).slice(0,500));
   const base="http://127.0.0.1:"+port;
-  for(let i=0;i<75;i++) {
+  for(let i=0;i<200;i++) {
     if(child.exitCode!==null)break;
     try {
       const reply=await fetch(base+"/api/health");
@@ -118,6 +118,21 @@ test("one empty SQLite database persists master data across restarts; backup is 
       method:"POST",headers:{Cookie:cookie,Origin:"http://evil.example.test"},
     });
     assert.equal(result.status,403);
+    // Logout must revoke the previous session token server-side so a replayed copy fails
+    const logoutRes = await remoteRequest(port, "/api/db/auth/logout", {
+      method: "POST",
+      headers: { Cookie: cookie, Origin: "http://nasqo.example.test" },
+    });
+    assert.equal(logoutRes.status, 200);
+    assert.match(logoutRes.headers.get("set-cookie") ?? "", /Max-Age=0/);
+    const replayAfterLogout = await remoteRequest(port, "/api/db/workspace/local-erp-workspace", {
+      headers: { Cookie: cookie },
+    });
+    assert.equal(replayAfterLogout.status, 401);
+    const replayStatus = await (await remoteRequest(port, "/api/db/auth/status", {
+      headers: { Cookie: cookie },
+    })).json();
+    assert.equal(replayStatus.authenticated, false);
     const prefix=srv.base+"/api/db/workspace/local-erp-workspace";
     result=await fetch(prefix+"/groups",{
       method:"POST",headers:{"Content-Type":"application/json",Origin:srv.base},
@@ -136,6 +151,10 @@ test("one empty SQLite database persists master data across restarts; backup is 
     srv=await startServer(port,file);
     const after=await(await fetch(srv.base+"/api/db/status")).json();
     assert.equal(after.accountsCount,1);
+    const replayAfterRestart = await remoteRequest(port, "/api/db/workspace/local-erp-workspace", {
+      headers: { Cookie: cookie },
+    });
+    assert.equal(replayAfterRestart.status, 401);
     const bundle=await(await fetch(prefix)).json();
     assert.ok(bundle.accounts.some(a=>a.name==="حساب فعلي"));
     execFileSync(process.execPath,["scripts/backup-sqlite.mjs",copy],{

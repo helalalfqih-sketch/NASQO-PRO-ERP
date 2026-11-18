@@ -140,8 +140,48 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await editInvModal.getByTestId("invoice-save-btn").click();
   await expect(editInvModal).toHaveCount(0);
   await expect(page.locator(".transaction-card")).toHaveCount(preEditCount);
+
+  // Verify statement "التصفية والترتيب" sheet exposes real criteria and filters/resets the statement live
+  await page.getByRole("button", { name: "تصفية", exact: true }).click();
+  const filterSheet = page.getByTestId("statement-filters-sheet");
+  await expect(filterSheet).toBeVisible();
+  await expect(filterSheet.getByLabel("تصفية نوع العملية")).toBeVisible();
+  await expect(filterSheet.getByLabel("تصفية الفترة")).toBeVisible();
+  await expect(filterSheet.getByLabel("ترتيب الحركات")).toBeVisible();
+  await expect(filterSheet.getByText("إظهار الرصيد السابق")).toBeVisible();
+  await filterSheet.getByLabel("تصفية نوع العملية").selectOption("voucher");
+  await filterSheet.getByRole("button", { name: "تطبيق التصفية", exact: true }).click();
+  await expect(filterSheet).toHaveCount(0);
+  await expect(page.locator(".transaction-card")).toHaveCount(0);
+  await page.getByRole("button", { name: "تصفية", exact: true }).click();
+  await expect(filterSheet).toBeVisible();
+  await filterSheet.getByRole("button", { name: "إعادة ضبط", exact: true }).click();
+  await filterSheet.getByRole("button", { name: "تطبيق التصفية", exact: true }).click();
+  await expect(page.locator(".transaction-card")).toHaveCount(preEditCount);
+
+  // Move latest invoice to Trash via visible Trash action on statement, verify removal + restore
+  await page.locator(".transaction-actions button[aria-label^='نقل #']").first().click();
+  await expect(page.locator(".transaction-card")).toHaveCount(preEditCount - 1);
   await page.getByLabel("رجوع", { exact: true }).click();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
+  await page.getByRole("button", { name: "سلة المحذوفات", exact: true }).first().click();
+  const trashModal = page.getByTestId("trash-modal");
+  await expect(trashModal).toBeVisible({ timeout: 5_000 });
+  await expect(trashModal.getByRole("button", { name: "استعادة" })).toHaveCount(1);
+  await trashModal.getByRole("button", { name: "استعادة" }).first().click();
+  await expect(trashModal.getByRole("button", { name: "استعادة" })).toHaveCount(0);
+  await trashModal.getByRole("button", { name: "إغلاق", exact: true }).click();
+  await expect(trashModal).toHaveCount(0);
+
+  // Verify Order modal labels read "طلبية جديدة" and "حفظ الطلبية" (never "طلبية جديدة جديدة" or "عمل فاتورة")
+  await page.getByLabel("إضافة", { exact: true }).click();
+  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "إضافة طلبية" }).click();
+  const orderModal = page.getByTestId("invoice-modal");
+  await expect(orderModal).toBeVisible();
+  await expect(orderModal.locator("#invoice-title")).toHaveText("طلبية جديدة");
+  await expect(orderModal.getByTestId("invoice-save-btn")).toHaveText("حفظ الطلبية");
+  await orderModal.getByRole("button", { name: "إلغاء", exact: true }).click();
+  await expect(orderModal).toHaveCount(0);
 
   // Check inventory item is persisted across reload and verify stocktake saves cleanly to SQLite
   await page.reload();
@@ -177,6 +217,90 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.getByLabel("تأكيد اعتماد سعر البيع").check();
   await page.getByTestId("bulk-apply-btn").click();
   await expect(page.getByText("بحاجة إلى تسوية")).toHaveCount(0);
+
+  // Add item with zero qty & zero avgCost via InventoryItemModal; must close cleanly and show immediately in search
+  await page.getByRole("button", { name: "إضافة صنف", exact: true }).click();
+  const addInvModal = page.getByTestId("inventory-item-modal");
+  await expect(addInvModal).toBeVisible();
+  await addInvModal.getByLabel("اسم الصنف", { exact: true }).fill("صنف صفر اختبار");
+  await addInvModal.getByLabel("الكمية", { exact: true }).fill("0");
+  await addInvModal.getByLabel("متوسط التكلفة", { exact: true }).fill("0");
+  await addInvModal.getByTestId("inventory-item-save-btn").click();
+  await expect(addInvModal).toHaveCount(0, { timeout: 10_000 });
+  await page.getByLabel("البحث في الأصناف").fill("صنف صفر اختبار");
+  await expect(
+    page.getByTestId("inventory-movements-table").getByRole("cell", { name: "صنف صفر اختبار", exact: true }),
+  ).toBeVisible({ timeout: 10_000 });
+
+  await page.getByLabel("رجوع", { exact: true }).click();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
+
+  // Verify TrialBalanceModal keeps its sticky header pinned when scrolled
+  await page.getByTestId("open-trial-balance-btn").click();
+  const tbModal = page.getByTestId("trial-balance-modal");
+  await expect(tbModal).toBeVisible();
+  await expect(tbModal.locator("#trial-balance-title")).toHaveText("ميزان المراجعة");
+  const tbSticky = await tbModal.evaluate((root) => {
+    const scroller = root.querySelector(".trial-balance-modal") as HTMLElement | null;
+    const header = root.querySelector(".smart-modal-header") as HTMLElement | null;
+    if (!scroller || !header) return null;
+    const position = getComputedStyle(header).position;
+    scroller.scrollTop = Math.min(240, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
+    const sRect = scroller.getBoundingClientRect();
+    const hRect = header.getBoundingClientRect();
+    return {
+      position,
+      scrollable: scroller.scrollHeight > scroller.clientHeight,
+      headerTopDelta: Math.abs(hRect.top - sRect.top),
+    };
+  });
+  expect(tbSticky).not.toBeNull();
+  expect(tbSticky!.position).toBe("sticky");
+  expect(tbSticky!.headerTopDelta).toBeLessThanOrEqual(4);
+  await tbModal.getByRole("button", { name: "إغلاق", exact: true }).click();
+  await expect(tbModal).toHaveCount(0);
+
+  // Verify unbroken long text in CashInvoiceDocument wraps inside its cell at 100% zoom
+  const unbrokenText = "X".repeat(60);
+  await page.getByRole("button", { name: "فاتورة جديدة", exact: true }).click();
+  const longTextInvModal = page.getByTestId("invoice-modal");
+  await expect(longTextInvModal).toBeVisible();
+  await longTextInvModal.getByLabel("حساب الفاتورة", { exact: true }).selectOption({ label: "عميل اختبار نسق" });
+  await longTextInvModal.getByLabel("حرة", { exact: true }).check();
+  await longTextInvModal.getByLabel("إجمالي مبلغ الفاتورة").fill("50");
+  await longTextInvModal.getByRole("textbox", { name: "بيان الفاتورة", exact: true }).fill(unbrokenText);
+  await longTextInvModal.getByTestId("invoice-save-btn").click();
+  await expect(longTextInvModal).toHaveCount(0);
+
+  await page.getByRole("button", { name: "كشف حساب", exact: true }).click();
+  await page.getByLabel("البحث عن الحساب").fill("عميل اختبار نسق");
+  await page.getByRole("option", { name: "عميل اختبار نسق" }).first().click();
+  await page.getByRole("button", { name: "موافق", exact: true }).click();
+  await expect(page.getByTestId("supplier-screen")).toBeVisible({ timeout: 10_000 });
+  await page.locator(".transaction-card", { hasText: unbrokenText }).getByRole("button", { name: /ملف PDF للعملية/ }).click();
+  const previewDoc = page.getByTestId("cash-invoice-document");
+  await expect(previewDoc).toBeVisible({ timeout: 10_000 });
+  await expect(previewDoc.getByText(unbrokenText)).toBeVisible();
+  await page.getByTestId("cash-invoice-actual-size").click();
+  const wrapMetrics = await previewDoc.evaluate(() => {
+    const firstTd = document.querySelector(".cash-invoice-table tbody td:first-child") as HTMLElement | null;
+    if (!firstTd) return null;
+    const style = getComputedStyle(firstTd);
+    return {
+      width: firstTd.getBoundingClientRect().width,
+      height: firstTd.getBoundingClientRect().height,
+      scrollWidth: firstTd.scrollWidth,
+      clientWidth: firstTd.clientWidth,
+      overflowWrap: style.overflowWrap,
+    };
+  });
+  expect(wrapMetrics).not.toBeNull();
+  expect(wrapMetrics!.overflowWrap).toBe("anywhere");
+  expect(wrapMetrics!.width).toBeLessThanOrEqual(544);
+  expect(wrapMetrics!.scrollWidth).toBeLessThanOrEqual(wrapMetrics!.clientWidth + 2);
+  await page.getByLabel("رجوع", { exact: true }).click();
+  await page.getByLabel("رجوع", { exact: true }).click();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
 
   await page.reload();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20_000 });

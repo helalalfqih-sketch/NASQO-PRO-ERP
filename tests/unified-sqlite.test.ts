@@ -19,6 +19,7 @@ import {
   SqliteValidationError,
   batchUpdateInventoryItemRows,
   closeSqliteDb,
+  deleteAccountRow,
   deleteLedgerEntryRow,
   ensureEmptyWorkspace,
   ensureStarterWorkspace,
@@ -1037,6 +1038,7 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
     });
     const periodRow = juneReport.itemRows.find((r) => r.id === itemPeriod.id)!;
     assert.equal(periodRow.openingQty, 10);
+    assert.equal(periodRow.periodNetQty, -2);
     assert.equal(periodRow.sellQty, 2);
     assert.equal(periodRow.availableQty, 8); // NOT -2!
     assert.equal(periodRow.remainingValue, 800);
@@ -1044,10 +1046,39 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
 
     const flowRow = juneReport.itemRows.find((r) => r.id === itemFlow.id)!;
     assert.equal(flowRow.openingQty, 7); // 10 bought - 3 transferred out before June
+    assert.equal(flowRow.periodNetQty, -4);
     assert.equal(flowRow.sellQty, 4);
     assert.equal(flowRow.availableQty, 3); // 7 - 4 = 3
     assert.equal(flowRow.unitCost, 50); // Falls back to January purchase cost even when June buyQty=0
     assert.equal(flowRow.profit, 160); // 360 - 4*50 = 160
+
+    // D) Zero-quantity/zero-cost item creation succeeds; missing warehouse rejects cleanly; empty account safe delete
+    const zeroItem = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+      name: "صنف اختبار صفر",
+      unit: "حبة",
+      quantity: 0,
+      avgCost: 0,
+      warehouseId: whMain.id,
+      quantityUnverified: false,
+    });
+    assert.equal(zeroItem.quantity, 0);
+    assert.equal(zeroItem.avgCost, 0);
+    assert.throws(
+      () =>
+        insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
+          name: "صنف بلا مخزن",
+          warehouseId: "nonexistent_wh",
+        }),
+      (err) => err instanceof SqliteValidationError,
+    );
+
+    const tempAcc = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, { name: "حساب اختبار مؤقت", category: "purchases" });
+    assert.throws(
+      () => deleteAccountRow(db, DEFAULT_WORKSPACE_ID, accClient.id),
+      (err) => err instanceof SqliteValidationError,
+    );
+    deleteAccountRow(db, DEFAULT_WORKSPACE_ID, tempAcc.id);
+    assert.equal(db.prepare("SELECT id FROM accounts WHERE id = ?").get(tempAcc.id), undefined);
   } finally {
     closeSqliteDb();
     fs.rmSync(dir, { recursive: true, force: true });

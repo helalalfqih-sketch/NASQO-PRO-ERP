@@ -268,6 +268,42 @@ type LiveWorkspaceState = {
   setCategoryCurrency: (category: AccountCategory, currency: string) => void;
   statementCurrencies: Record<string, string>;
   setStatementCurrency: (accountId: string, currency: string) => void;
+  activeStatementAccountId: string | null;
+  setActiveStatementAccountId: (accountId: string | null) => void;
+  statementFilter: {
+    docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
+    sortOrder: "asc" | "desc";
+    period: string;
+    fromDate: string;
+    toDate: string;
+    showPreviousBalance: boolean | null;
+  };
+  setStatementFilter: (
+    next:
+      | {
+          docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
+          sortOrder: "asc" | "desc";
+          period: string;
+          fromDate: string;
+          toDate: string;
+          showPreviousBalance: boolean | null;
+        }
+      | ((prev: {
+          docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
+          sortOrder: "asc" | "desc";
+          period: string;
+          fromDate: string;
+          toDate: string;
+          showPreviousBalance: boolean | null;
+        }) => {
+          docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
+          sortOrder: "asc" | "desc";
+          period: string;
+          fromDate: string;
+          toDate: string;
+          showPreviousBalance: boolean | null;
+        }),
+  ) => void;
   erpData: ErpWorkspaceData;
   updateErpData: (next: ErpWorkspaceData) => void;
   openErpModule: (moduleId: ErpModuleId) => void;
@@ -478,28 +514,33 @@ function NasqoProductionShell() {
     new URL("api/db/auth/", new URL(import.meta.env.BASE_URL, window.location.origin)).pathname, []);
 
   useEffect(() => {
-    let cancelled = false;
-    void fetch(sqliteAuthBase + "status", { cache: "no-store" })
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => abort.abort(), 10_000);
+    void fetch(sqliteAuthBase + "status", { signal: abort.signal, cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error("SQLite auth unavailable");
         return response.json() as Promise<{ mode: string; authenticated: boolean }>;
       })
       .then((status) => {
-        if (cancelled) return;
+        if (abort.signal.aborted) return;
         setSqliteAccess(status.mode === "unconfigured" ? "unconfigured" :
           status.authenticated ? "ready" : "locked");
       })
-      .catch(() => { if (!cancelled) setSqliteAccess("error"); });
-    return () => { cancelled = true; };
+      .catch(() => { if (!abort.signal.aborted) setSqliteAccess("error"); })
+      .finally(() => window.clearTimeout(timer));
+    return () => { abort.abort(); window.clearTimeout(timer); };
   }, [sqliteAuthBase]);
 
   const loginToSqlite = async () => {
     setSqliteLoginBusy(true);
     setSqliteLoginError("");
+    const abort = new AbortController();
+    const timer = window.setTimeout(() => abort.abort(), 15_000);
     try {
       const response = await fetch(sqliteAuthBase + "login", {
         method: "POST",
         credentials: "same-origin",
+        signal: abort.signal,
         headers: { "Content-Type": "application/json", "X-NASQO-CSRF": "1" },
         body: JSON.stringify({ password: sqlitePassword }),
       });
@@ -508,8 +549,15 @@ function NasqoProductionShell() {
       setSqlitePassword("");
       setSqliteAccess("ready");
     } catch (error) {
-      setSqliteLoginError(error instanceof Error ? error.message : String(error));
-    } finally { setSqliteLoginBusy(false); }
+      if (error instanceof Error && error.name === "AbortError") {
+        setSqliteLoginError("انتهت مهلة التحقق من الدخول؛ تحقق من الاتصال وأعد المحاولة.");
+      } else {
+        setSqliteLoginError(error instanceof Error ? error.message : String(error));
+      }
+    } finally {
+      window.clearTimeout(timer);
+      setSqliteLoginBusy(false);
+    }
   };
 
   // The database switch is server-controlled. A previously active primary
@@ -822,6 +870,20 @@ function NasqoProductionShell() {
         setLocalWorkspaceSession(false);
         setUser(null);
         setWorkspaceReady(false);
+        void fetch(sqliteAuthBase + "logout", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "X-NASQO-CSRF": "1" },
+        })
+          .then(() => fetch(sqliteAuthBase + "status", { cache: "no-store" }))
+          .then((r) => (r.ok ? (r.json() as Promise<{ mode: string; authenticated: boolean }>) : null))
+          .then((status) => {
+            if (!status) return;
+            setSqliteAccess(
+              status.mode === "unconfigured" ? "unconfigured" : status.authenticated ? "ready" : "locked",
+            );
+          })
+          .catch(() => {});
       }}
       themeMode={themeMode}
       setThemeMode={setThemeMode}
@@ -860,6 +922,22 @@ function AuthenticatedWorkspace({
   const [inventory, setInventory] = useState<InventoryItemRecord[]>([]);
   const [categoryCurrencies, setCategoryCurrencies] = useState<Partial<Record<AccountCategory, string>>>({});
   const [statementCurrencies, setStatementCurrencies] = useState<Record<string, string>>({});
+  const [activeStatementAccountId, setActiveStatementAccountId] = useState<string | null>(null);
+  const [statementFilter, setStatementFilter] = useState<{
+    docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
+    sortOrder: "asc" | "desc";
+    period: string;
+    fromDate: string;
+    toDate: string;
+    showPreviousBalance: boolean | null;
+  }>({
+    docKind: "all",
+    sortOrder: "desc",
+    period: "الكل",
+    fromDate: "",
+    toDate: "",
+    showPreviousBalance: null,
+  });
   const [erpData, setErpData] = useState<ErpWorkspaceData>(() => loadErpWorkspaceData(user.uid));
   const [syncFlags, setSyncFlags] = useState({ accounts: false, ledger: false, inventory: false });
 
@@ -1590,6 +1668,10 @@ function AuthenticatedWorkspace({
       setCategoryCurrency,
       statementCurrencies,
       setStatementCurrency,
+      activeStatementAccountId,
+      setActiveStatementAccountId,
+      statementFilter,
+      setStatementFilter,
       erpData,
       updateErpData,
       openErpModule,
@@ -1666,9 +1748,11 @@ function AuthenticatedWorkspace({
     [
       accountGroups,
       accounts,
+      activeStatementAccountId,
       brandColor,
       cashboxes,
       categoryCurrencies,
+      statementFilter,
       dismissKeyboard,
       erpData,
       extendedSettings,
@@ -1712,6 +1796,7 @@ function AuthenticatedWorkspace({
       setHapticsEnabled,
       setHomeMetricOrder,
       setStatementCurrency,
+      statementFilter,
       setThemeMode,
       setWidgetOrder,
       showToast,
@@ -2867,7 +2952,38 @@ function InventoryReportPage({
   const inventoryById = useMemo(() => new Map(ctx.inventory.map((i) => [i.id, i])), [ctx.inventory]);
 
   const reportRows = useMemo(() => {
-    const baseRows = movementReport?.itemRows ?? [];
+    const rawReportRows = movementReport?.itemRows ?? [];
+    const seenIds = new Set(rawReportRows.map((r) => r.id));
+    const missingFromReport: typeof rawReportRows = ctx.inventory
+      .filter((i) => !seenIds.has(i.id) && (!selectedWarehouseId || i.warehouseId === selectedWarehouseId))
+      .map((i) => ({
+        id: i.id,
+        code: i.legacyId ?? null,
+        name: i.name,
+        sku: i.sku ?? "",
+        unit: i.unit || "حبة",
+        unit2: i.unit2 ?? "",
+        count2: i.count2 ?? null,
+        warehouseId: i.warehouseId,
+        openingQty: i.quantityUnverified ? 0 : i.quantity,
+        periodNetQty: 0,
+        buyQty: 0,
+        sellQty: 0,
+        transferInQty: 0,
+        transferOutQty: 0,
+        buyTotal: 0,
+        sellTotal: 0,
+        availableQty: i.quantityUnverified ? 0 : i.quantity,
+        unitCost: i.avgCost,
+        remainingValue: Math.round((i.quantityUnverified ? 0 : i.quantity) * i.avgCost * 100) / 100,
+        profit: 0,
+        avgCost: i.avgCost,
+        sellingPrice: i.sellingPrice,
+        catalogQuantity: i.quantity,
+        quantityUnverified: Boolean(i.quantityUnverified),
+        hasMovement: false,
+      }));
+    const baseRows = [...rawReportRows, ...missingFromReport];
     const q = normalizeArabicSearch(searchQuery);
     if (q) {
       return baseRows.filter((row) =>
@@ -2878,7 +2994,7 @@ function InventoryReportPage({
       return baseRows.filter((r) => r.hasMovement);
     }
     return baseRows;
-  }, [movementReport, onlyMoved, searchQuery]);
+  }, [ctx.inventory, movementReport, onlyMoved, searchQuery, selectedWarehouseId]);
   const showOpeningCol = useMemo(
     () => Boolean(fromDate) || reportRows.some((r) => (r.openingQty ?? 0) !== 0),
     [fromDate, reportRows],
@@ -3069,6 +3185,7 @@ function InventoryReportPage({
                   "كمية البيع",
                   "وارد",
                   "منصرف",
+                  ...(showOpeningCol ? ["صافي الحركة"] : []),
                   "إجمالي الشراء",
                   "إجمالي البيع",
                   "الكمية المتوفرة",
@@ -3088,6 +3205,7 @@ function InventoryReportPage({
                       r.sellQty,
                       r.transferInQty,
                       r.transferOutQty,
+                      ...(showOpeningCol ? [r.periodNetQty ?? 0] : []),
                       r.buyTotal,
                       r.sellTotal,
                       r.availableQty,
@@ -3206,6 +3324,7 @@ function InventoryReportPage({
                 <th scope="col">كمية البيع</th>
                 <th scope="col">وارد</th>
                 <th scope="col">منصرف</th>
+                {showOpeningCol ? <th scope="col">صافي الحركة</th> : null}
                 <th scope="col">إجمالي الشراء</th>
                 <th scope="col">إجمالي البيع</th>
                 <th scope="col">الكمية المتوفرة</th>
@@ -3243,6 +3362,13 @@ function InventoryReportPage({
                     <td>{formatAmount(row.sellQty)}</td>
                     <td style={{ color: row.transferInQty > 0 ? "#047857" : undefined }}>{formatAmount(row.transferInQty)}</td>
                     <td style={{ color: row.transferOutQty > 0 ? "#dc2626" : undefined }}>{formatAmount(row.transferOutQty)}</td>
+                    {showOpeningCol ? (
+                      <td style={{ fontWeight: 700, color: (row.periodNetQty ?? 0) < 0 ? "#dc2626" : (row.periodNetQty ?? 0) > 0 ? "#047857" : undefined }}>
+                        {(row.periodNetQty ?? 0) < 0
+                          ? `${formatAmount(Math.abs(row.periodNetQty ?? 0))}-`
+                          : formatAmount(row.periodNetQty ?? 0)}
+                      </td>
+                    ) : null}
                     <td>{formatAmount(row.buyTotal)}</td>
                     <td>{formatAmount(row.sellTotal)}</td>
                     <td>
@@ -3286,7 +3412,7 @@ function InventoryReportPage({
               })}
               {reportRows.length === 0 ? (
                 <tr>
-                  <td colSpan={showOpeningCol ? 15 : 14} style={{ textAlign: "center", padding: 16, color: "#64748b" }}>
+                  <td colSpan={showOpeningCol ? 16 : 14} style={{ textAlign: "center", padding: 16, color: "#64748b" }}>
                     {movementReport ? "لا توجد حركات أصناف في النطاق المحدد." : "جاري تحميل تقرير حركة المخازن من SQLite..."}
                   </td>
                 </tr>
@@ -3633,6 +3759,19 @@ function DailyJournalPage({ flow }: { flow: FlowControls }) {
                   >
                     <FileTextIcon />
                   </button>
+                  <button
+                    type="button"
+                    aria-label={`نقل #${item.entryNumber} إلى السلة`}
+                    title="نقل إلى سلة المحذوفات"
+                    style={{ color: "#c91b08" }}
+                    onClick={async () => {
+                      await setLedgerDeleted(ctx.uid, item.id, true);
+                      triggerHaptic("warning");
+                      ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                    }}
+                  >
+                    <TrashIcon />
+                  </button>
                 </div>
               </article>
             ))}
@@ -3862,7 +4001,7 @@ function InvoiceModal({
         quantity: qty,
         price,
         discount,
-        total: Math.max(0, qty * price - discount),
+        total: Math.round(Math.max(0, qty * price - discount) * 100) / 100,
       };
     });
 
@@ -4080,15 +4219,23 @@ function InvoiceModal({
         <h2 id="invoice-title">
           {editingEntry ? "تعديل " : ""}
           {intent === "quote"
-            ? "عرض سعر"
+            ? editingEntry
+              ? "عرض سعر"
+              : "عرض سعر جديد"
             : intent === "order"
               ? "طلبية جديدة"
               : isReturn
-                ? "مردود"
+                ? editingEntry
+                  ? "مردود"
+                  : "مردود جديد"
                 : kind === "purchase"
-                  ? "فاتورة شراء"
-                  : "فاتورة بيع"}
-          {editingEntry ? ` #${editingEntry.entryNumber}` : " جديدة"}
+                  ? editingEntry
+                    ? "فاتورة شراء"
+                    : "فاتورة شراء جديدة"
+                  : editingEntry
+                    ? "فاتورة بيع"
+                    : "فاتورة بيع جديدة"}
+          {editingEntry ? ` #${editingEntry.entryNumber}` : ""}
         </h2>
         <div className="invoice-top-row">
           <time>
@@ -4519,9 +4666,43 @@ function InvoiceModal({
             حفظ وطباعة
           </button>
           <button className="save" data-testid="invoice-save-btn" disabled={saving} onClick={() => void handleSave(false)}>
-            {saving ? "جاري الحفظ..." : editingEntry ? "حفظ التعديل" : "عمل فاتورة"}
+            {saving
+              ? "جاري الحفظ..."
+              : editingEntry
+                ? "حفظ التعديل"
+                : intent === "quote"
+                  ? "حفظ عرض السعر"
+                  : intent === "order"
+                    ? "حفظ الطلبية"
+                    : isReturn
+                      ? "حفظ المردود"
+                      : "عمل فاتورة"}
           </button>
         </div>
+        {editingEntry && !editingEntry.deleted ? (
+          <button
+            type="button"
+            className="cancel"
+            data-testid="invoice-trash-btn"
+            style={{ width: "100%", marginTop: 6, borderColor: "#c91b08", color: "#c91b08" }}
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await setLedgerDeleted(ctx.uid, editingEntry.id, true);
+                triggerHaptic("warning");
+                onClose();
+                ctx.showToast(`تم نقل العملية #${editingEntry.entryNumber} إلى سلة المحذوفات`);
+              } catch (err) {
+                ctx.showToast(err instanceof Error ? err.message : "تعذر نقل العملية إلى السلة");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            نقل الفاتورة إلى سلة المحذوفات
+          </button>
+        ) : null}
       </section>
     </div>
   );
@@ -5333,21 +5514,26 @@ function SupplierPage({
 }) {
   const ctx = useWorkspace();
   const keyboard = useKeyboard();
-  const [period, setPeriod] = useState("الكل");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [docKind, setDocKind] = useState<"all" | "invoice" | "voucher" | "return">("all");
+  const { period, fromDate, toDate, docKind, sortOrder } = ctx.statementFilter;
+  const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? true;
   const currency = ctx.statementCurrencies[account.id] ?? account.currency ?? "ريال";
-  const [showPreviousBalance, setShowPreviousBalance] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const periods = ["يومي", "شهري", "سنوي", "الكل"];
 
+  useEffect(() => {
+    ctx.setActiveStatementAccountId(account.id);
+    return () => ctx.setActiveStatementAccountId(null);
+  }, [account.id, ctx.setActiveStatementAccountId]);
+
   const selectPeriod = (nextPeriod: string) => {
-    setPeriod(nextPeriod);
     const bounds = computePeriodDateRange(nextPeriod);
-    setFromDate(bounds.fromDate);
-    setToDate(bounds.toDate);
+    ctx.setStatementFilter((prev) => ({
+      ...prev,
+      period: nextPeriod,
+      fromDate: bounds.fromDate,
+      toDate: bounds.toDate,
+    }));
   };
 
   searchControl.current = () => {
@@ -5365,8 +5551,9 @@ function SupplierPage({
         fromDate,
         toDate,
         docKind,
+        sortOrder,
       }),
-    [account, ctx.ledger, currency, docKind, fromDate, query, showPreviousBalance, toDate],
+    [account, ctx.ledger, currency, docKind, fromDate, query, showPreviousBalance, sortOrder, toDate],
   );
 
   return (
@@ -5438,12 +5625,19 @@ function SupplierPage({
                 className="select-box"
                 aria-label="نوع المستند"
                 value={docKind}
-                onChange={(e) => setDocKind(e.target.value as "all" | "invoice" | "voucher" | "return")}
+                onChange={(e) =>
+                  ctx.setStatementFilter((prev) => ({
+                    ...prev,
+                    docKind: e.target.value as "all" | "invoice" | "voucher" | "return" | "quote" | "order",
+                  }))
+                }
               >
                 <option value="all">جميع الحركات والفواتير</option>
                 <option value="invoice">الفواتير فقط</option>
                 <option value="voucher">السندات فقط</option>
                 <option value="return">المردودات فقط</option>
+                <option value="quote">عروض الأسعار</option>
+                <option value="order">الطلبيات</option>
               </select>
             </div>
             <div className="statement-options">
@@ -5463,7 +5657,9 @@ function SupplierPage({
                 <input
                   type="checkbox"
                   checked={showPreviousBalance}
-                  onChange={(event) => setShowPreviousBalance(event.target.checked)}
+                  onChange={(event) =>
+                    ctx.setStatementFilter((prev) => ({ ...prev, showPreviousBalance: event.target.checked }))
+                  }
                 />{" "}
                 رصيد سابق
               </label>
@@ -5476,8 +5672,7 @@ function SupplierPage({
                   aria-label="من تاريخ"
                   value={fromDate}
                   onChange={(e) => {
-                    setPeriod("مخصص");
-                    setFromDate(e.target.value);
+                    ctx.setStatementFilter((prev) => ({ ...prev, period: "مخصص", fromDate: e.target.value }));
                   }}
                   style={{ flex: 1, minWidth: 0, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--nasqo-line)" }}
                 />
@@ -5489,8 +5684,7 @@ function SupplierPage({
                   aria-label="إلى تاريخ"
                   value={toDate}
                   onChange={(e) => {
-                    setPeriod("مخصص");
-                    setToDate(e.target.value);
+                    ctx.setStatementFilter((prev) => ({ ...prev, period: "مخصص", toDate: e.target.value }));
                   }}
                   style={{ flex: 1, minWidth: 0, padding: "4px 6px", borderRadius: 6, border: "1px solid var(--nasqo-line)" }}
                 />
@@ -5606,6 +5800,19 @@ function SupplierPage({
                     >
                       <WhatsAppIcon variant="glyph" />
                     </button>
+                    <button
+                      type="button"
+                      aria-label={`نقل #${item.entryNumber} إلى السلة`}
+                      title="نقل إلى سلة المحذوفات"
+                      style={{ color: "#c91b08" }}
+                      onClick={async () => {
+                        await setLedgerDeleted(ctx.uid, item.id, true);
+                        triggerHaptic("warning");
+                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                      }}
+                    >
+                      <TrashIcon />
+                    </button>
                   </div>
                 </article>
               ))}
@@ -5680,11 +5887,9 @@ function CashSupplierPage({
   searchControl: MutableRefObject<(() => void) | null>;
 }) {
   const ctx = useWorkspace();
-  const [period, setPeriod] = useState("الكل");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const { period, fromDate, toDate, docKind, sortOrder } = ctx.statementFilter;
+  const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? false;
   const [currency, setCurrency] = useState("ريال");
-  const [showPreviousBalance, setShowPreviousBalance] = useState(false);
   const [operationsOpen, setOperationsOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
@@ -5695,11 +5900,19 @@ function CashSupplierPage({
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
 
+  useEffect(() => {
+    ctx.setActiveStatementAccountId(account.id);
+    return () => ctx.setActiveStatementAccountId(null);
+  }, [account.id, ctx.setActiveStatementAccountId]);
+
   const selectPeriod = (nextPeriod: string) => {
-    setPeriod(nextPeriod);
     const bounds = computePeriodDateRange(nextPeriod);
-    setFromDate(bounds.fromDate);
-    setToDate(bounds.toDate);
+    ctx.setStatementFilter((prev) => ({
+      ...prev,
+      period: nextPeriod,
+      fromDate: bounds.fromDate,
+      toDate: bounds.toDate,
+    }));
   };
 
   menuControl.current = () => {
@@ -5727,8 +5940,10 @@ function CashSupplierPage({
         showPreviousBalance,
         fromDate,
         toDate,
+        docKind,
+        sortOrder,
       }),
-    [account, ctx.ledger, currency, fromDate, query, searchMode, showPreviousBalance, toDate],
+    [account, ctx.ledger, currency, docKind, fromDate, query, searchMode, showPreviousBalance, sortOrder, toDate],
   );
 
   const searchPortal = screenRef.current?.querySelector(".nasqo-app");
@@ -5777,7 +5992,9 @@ function CashSupplierPage({
             <input
               type="checkbox"
               checked={showPreviousBalance}
-              onChange={(event) => setShowPreviousBalance(event.target.checked)}
+              onChange={(event) =>
+                ctx.setStatementFilter((prev) => ({ ...prev, showPreviousBalance: event.target.checked }))
+              }
             />
             رصيد سابق
           </label>
@@ -5936,6 +6153,19 @@ function CashSupplierPage({
                     }
                   >
                     <WhatsAppIcon variant="glyph" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`نقل #${item.entryNumber} إلى السلة`}
+                    title="نقل إلى سلة المحذوفات"
+                    style={{ color: "#c91b08" }}
+                    onClick={async () => {
+                      await setLedgerDeleted(ctx.uid, item.id, true);
+                      triggerHaptic("warning");
+                      ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                    }}
+                  >
+                    <TrashIcon />
                   </button>
                 </div>
               </div>
@@ -8983,33 +9213,79 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
   const [unit, setUnit] = useState("حبة");
   const [quantity, setQuantity] = useState("1");
   const [avgCost, setAvgCost] = useState("");
-  const [warehouseId, setWarehouseId] = useState(
-    ctx.warehouses.find((w) => w.isDefault)?.id ?? ctx.warehouses[0]?.id ?? "",
-  );
+  const [warehouseId, setWarehouseId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setFormError("");
+    if (!warehouseId || !ctx.warehouses.some((w) => w.id === warehouseId)) {
+      const fallback = ctx.warehouses.find((w) => w.isDefault)?.id ?? ctx.warehouses[0]?.id ?? "";
+      setWarehouseId(fallback);
+    }
+  }, [ctx.warehouses, open, warehouseId]);
 
   if (!open) return null;
 
+  const effectiveWarehouseId =
+    warehouseId || ctx.warehouses.find((w) => w.isDefault)?.id || ctx.warehouses[0]?.id || "";
+
   const save = async () => {
-    if (!name.trim() || !warehouseId) {
+    setFormError("");
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       triggerHaptic("warning");
-      ctx.showToast("أدخل اسم الصنف والمخزن أولًا");
+      const msg = "أدخل اسم الصنف في حقل «اسم الصنف» أولًا.";
+      setFormError(msg);
+      ctx.showToast(msg);
+      return;
+    }
+    if (!effectiveWarehouseId) {
+      triggerHaptic("warning");
+      const msg = "لا يوجد مخزن محدد؛ أضف مخزنًا أو اختر المخزن المستهدف أولًا.";
+      setFormError(msg);
+      ctx.showToast(msg);
+      return;
+    }
+    const parsedQty = quantity.trim() === "" ? 0 : parseArabicNumber(quantity);
+    const parsedCost = avgCost.trim() === "" ? 0 : parseArabicNumber(avgCost);
+    if (!Number.isFinite(parsedQty) || parsedQty < 0) {
+      triggerHaptic("warning");
+      const msg = "قيمة «الكمية» يجب أن تكون رقمًا صحيحًا أو صفرًا.";
+      setFormError(msg);
+      ctx.showToast(msg);
+      return;
+    }
+    if (!Number.isFinite(parsedCost) || parsedCost < 0) {
+      triggerHaptic("warning");
+      const msg = "قيمة «متوسط التكلفة» يجب أن تكون رقمًا موجبًا أو صفرًا.";
+      setFormError(msg);
+      ctx.showToast(msg);
       return;
     }
     setSaving(true);
     try {
       await createInventoryItem(ctx.uid, {
-        name: name.trim(),
+        name: trimmedName,
         unit: unit.trim() || "حبة",
-        quantity: parseArabicNumber(quantity),
-        avgCost: parseArabicNumber(avgCost),
-        warehouseId,
+        quantity: parsedQty,
+        avgCost: parsedCost,
+        warehouseId: effectiveWarehouseId,
+        quantityUnverified: false,
       });
       triggerHaptic("success");
-      ctx.showToast("تمت إضافة الصنف إلى المخزن");
+      ctx.showToast(`تم حفظ الصنف «${trimmedName}» في المخزن`);
       setName("");
+      setQuantity("1");
       setAvgCost("");
+      setFormError("");
       onClose();
+    } catch (err) {
+      triggerHaptic("warning");
+      const msg = err instanceof Error ? err.message : "تعذر حفظ الصنف في قاعدة البيانات.";
+      setFormError(msg);
+      ctx.showToast(msg);
     } finally {
       setSaving(false);
     }
@@ -9020,6 +9296,11 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
       <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق" />
       <section className="warehouse-modal" role="dialog" aria-modal="true" aria-labelledby="inv-add-title">
         <h2 id="inv-add-title">إضافة صنف مخزني</h2>
+        {formError ? (
+          <p role="alert" className="auth-error" data-testid="inventory-item-error" style={{ margin: 0 }}>
+            {formError}
+          </p>
+        ) : null}
         <KeyboardInput
           aria-label="اسم الصنف"
           placeholder="اسم الصنف"
@@ -9050,10 +9331,11 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
         />
         <select
           aria-label="المخزن المستهدف"
-          value={warehouseId}
+          value={effectiveWarehouseId}
           onChange={(e) => setWarehouseId(e.target.value)}
           style={{ height: 36, border: "1px solid var(--nasqo-line)", borderRadius: 6, padding: "0 10px" }}
         >
+          {ctx.warehouses.length === 0 ? <option value="">لا توجد مخازن مسجلة</option> : null}
           {ctx.warehouses.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
@@ -9064,7 +9346,7 @@ function InventoryItemModal({ open, onClose }: { open: boolean; onClose: () => v
           <button className="cancel" onClick={onClose}>
             إلغاء
           </button>
-          <button className="save" disabled={saving} onClick={save}>
+          <button className="save" data-testid="inventory-item-save-btn" disabled={saving} onClick={save}>
             {saving ? "جاري الحفظ..." : "حفظ"}
           </button>
         </div>
@@ -9147,18 +9429,122 @@ function SheetContent({
     );
   }
   if (kind === "filters") {
+    const activeEntries = ctx.ledger.filter((e) => !e.deleted);
+    const scopedEntries = ctx.activeStatementAccountId
+      ? activeEntries.filter(
+          (e) =>
+            e.accountId === ctx.activeStatementAccountId ||
+            e.counterpartAccountId === ctx.activeStatementAccountId,
+        )
+      : activeEntries;
+    const f = ctx.statementFilter;
     return (
-      <div className="filter-sheet">
-        <span className="sheet-label">العمليات النشطة: {ctx.ledger.filter((e) => !e.deleted).length}</span>
-        <button
-          className="primary full"
-          onClick={() => {
-            setKind(null);
-            ctx.showToast("تم تحديث العرض حسب عوامل التصفية");
-          }}
-        >
-          تطبيق التصفية
-        </button>
+      <div className="filter-sheet" data-testid="statement-filters-sheet">
+        <span className="sheet-label">
+          {ctx.activeStatementAccountId
+            ? `عمليات الحساب النشطة: ${scopedEntries.length} (إجمالي الدفتر: ${activeEntries.length})`
+            : `العمليات النشطة بالدفتر: ${activeEntries.length}`}
+        </span>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+          <span>نوع العملية</span>
+          <select
+            aria-label="تصفية نوع العملية"
+            value={f.docKind}
+            onChange={(e) =>
+              ctx.setStatementFilter((prev) => ({
+                ...prev,
+                docKind: e.target.value as "all" | "invoice" | "voucher" | "return" | "quote" | "order",
+              }))
+            }
+            style={{ height: 36, border: "1px solid var(--nasqo-line)", borderRadius: 6, padding: "0 8px" }}
+          >
+            <option value="all">جميع الحركات والفواتير</option>
+            <option value="invoice">الفواتير فقط</option>
+            <option value="voucher">السندات فقط</option>
+            <option value="return">المردودات فقط</option>
+            <option value="quote">عروض الأسعار</option>
+            <option value="order">الطلبيات</option>
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+          <span>الفترة الزمنية</span>
+          <select
+            aria-label="تصفية الفترة"
+            value={f.period}
+            onChange={(e) => {
+              const p = e.target.value;
+              const bounds = computePeriodDateRange(p);
+              ctx.setStatementFilter((prev) => ({
+                ...prev,
+                period: p,
+                fromDate: bounds.fromDate,
+                toDate: bounds.toDate,
+              }));
+            }}
+            style={{ height: 36, border: "1px solid var(--nasqo-line)", borderRadius: 6, padding: "0 8px" }}
+          >
+            <option value="الكل">الكل (جميع الفترات)</option>
+            <option value="يومي">اليوم</option>
+            <option value="شهري">الشهر الحالي</option>
+            <option value="سنوي">السنة الحالية</option>
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 4, fontSize: 12 }}>
+          <span>ترتيب العرض</span>
+          <select
+            aria-label="ترتيب الحركات"
+            value={f.sortOrder}
+            onChange={(e) =>
+              ctx.setStatementFilter((prev) => ({
+                ...prev,
+                sortOrder: e.target.value === "asc" ? "asc" : "desc",
+              }))
+            }
+            style={{ height: 36, border: "1px solid var(--nasqo-line)", borderRadius: 6, padding: "0 8px" }}
+          >
+            <option value="desc">الأحدث أولًا (تنازلي)</option>
+            <option value="asc">الأقدم أولًا (تصاعدي)</option>
+          </select>
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+          <input
+            type="checkbox"
+            checked={f.showPreviousBalance ?? false}
+            onChange={(e) =>
+              ctx.setStatementFilter((prev) => ({ ...prev, showPreviousBalance: e.target.checked }))
+            }
+          />
+          <span>إظهار الرصيد السابق</span>
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button
+            type="button"
+            className="cancel"
+            onClick={() => {
+              ctx.setStatementFilter({
+                docKind: "all",
+                sortOrder: "desc",
+                period: "الكل",
+                fromDate: "",
+                toDate: "",
+                showPreviousBalance: null,
+              });
+              ctx.showToast("تمت إعادة ضبط التصفية");
+            }}
+          >
+            إعادة ضبط
+          </button>
+          <button
+            type="button"
+            className="primary full"
+            onClick={() => {
+              setKind(null);
+              ctx.showToast("تم تحديث العرض حسب عوامل التصفية");
+            }}
+          >
+            تطبيق التصفية
+          </button>
+        </div>
       </div>
     );
   }

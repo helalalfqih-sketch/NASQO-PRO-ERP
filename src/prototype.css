@@ -1247,10 +1247,11 @@ button[aria-pressed="true"] > .period-radio-mark { border-color: var(--nasqo-ora
 .cash-invoice-description { position: absolute; top: 369px; right: 63px; font-size: 29px; font-weight: 700; }
 .cash-invoice-date, .cash-invoice-recipient, .cash-invoice-salutation, .cash-invoice-description { color: #090909; }
 .cash-invoice-table { position: absolute; top: 410px; left: 48px; width: 1184px; height: 172px; border-collapse: collapse; table-layout: fixed; font-size: 29px; font-weight: 700; }
-.cash-invoice-table th, .cash-invoice-table td { border: 1px solid #222; padding: 1px 7px; text-align: center; vertical-align: middle; line-height: 1.2; }
+.cash-invoice-table th, .cash-invoice-table td { border: 1px solid #222; padding: 4px 7px; text-align: center; vertical-align: middle; line-height: 1.25; overflow-wrap: anywhere; word-break: break-word; overflow: hidden; }
 .cash-invoice-table thead { height: 69px; }
 .cash-invoice-table th { height: 69px; font-size: 35px; }
 .cash-invoice-table tbody tr { height: 51px; }
+.cash-invoice-table.cash-invoice-table-flow tbody tr { height: auto; min-height: 51px; }
 .cash-invoice-table td:not(:first-child) { white-space: nowrap; }
 .cash-invoice-table td:nth-child(n+3) { direction: ltr; }
 .cash-invoice-document .red { color: #f00000; }

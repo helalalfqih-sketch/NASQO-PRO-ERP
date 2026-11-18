@@ -1,10 +1,53 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
+import { getSqliteDb, isAuthSessionHashRevoked, revokeAuthSessionHash } from "./sqliteDb.ts";
 
 type Mode = "local" | "password" | "unconfigured";
 const COOKIE = "nasqo_sqlite_session";
 const SESSION_SECONDS = 12 * 3600;
 const attempts = new Map<string, { count: number; until: number }>();
+const revokedTokens = new Map<string, number>();
+
+function tokenHash(body: string): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
+function pruneRevokedMemory(now: number): void {
+  for (const [hash, exp] of revokedTokens.entries()) {
+    if (exp < now) revokedTokens.delete(hash);
+  }
+}
+
+function markTokenRevoked(body: string, expiryMs: number): void {
+  const hash = tokenHash(body);
+  const now = Date.now();
+  pruneRevokedMemory(now);
+  revokedTokens.set(hash, expiryMs);
+  try {
+    revokeAuthSessionHash(getSqliteDb(), hash, expiryMs);
+  } catch {
+    // In-memory revocation stays active even if DB is unavailable
+  }
+}
+
+function isTokenRevoked(body: string): boolean {
+  const hash = tokenHash(body);
+  const now = Date.now();
+  const memExp = revokedTokens.get(hash);
+  if (memExp !== undefined) {
+    if (memExp >= now) return true;
+    revokedTokens.delete(hash);
+  }
+  try {
+    if (isAuthSessionHashRevoked(getSqliteDb(), hash)) {
+      revokedTokens.set(hash, now + SESSION_SECONDS * 1000);
+      return true;
+    }
+  } catch {
+    // Fall through to in-memory check only
+  }
+  return false;
+}
 
 function isLocal(req: Request): boolean {
   const addr = req.socket.remoteAddress ?? "";
@@ -42,16 +85,23 @@ function sign(value: string): string {
   return createHmac("sha256", process.env.NASQO_SQLITE_SESSION_SECRET ?? "")
     .update(value + ":" + passwordHash()).digest("hex");
 }
-function sessionValid(req: Request): boolean {
+function extractSessionToken(req: Request): { body: string; expiry: number } | null {
   const cookie = (req.get("cookie") ?? "").split(";")
     .map(c => c.trim()).find(c => c.startsWith(COOKIE + "="))?.slice(COOKIE.length + 1);
-  if (!cookie) return false;
+  if (!cookie) return null;
   const parts = cookie.split(".");
   if (parts.length !== 3 || !/^\d{10,13}$/.test(parts[0]) ||
-    !/^[a-f0-9]{32}$/.test(parts[1]) || !/^[a-f0-9]{64}$/.test(parts[2])) return false;
+    !/^[a-f0-9]{32}$/.test(parts[1]) || !/^[a-f0-9]{64}$/.test(parts[2])) return null;
   const expiry = Number(parts[0]);
-  if (!Number.isSafeInteger(expiry) || expiry < Date.now() || expiry > Date.now() + SESSION_SECONDS * 1000) return false;
-  return safeMatch(parts[2], sign(parts[0] + "." + parts[1]));
+  if (!Number.isSafeInteger(expiry) || expiry < Date.now() || expiry > Date.now() + SESSION_SECONDS * 1000) return null;
+  const body = parts[0] + "." + parts[1];
+  if (!safeMatch(parts[2], sign(body))) return null;
+  return { body, expiry };
+}
+function sessionValid(req: Request): boolean {
+  const parsed = extractSessionToken(req);
+  if (!parsed) return false;
+  return !isTokenRevoked(parsed.body);
 }
 function cookieOptions(): string {
   const secure = process.env.NASQO_SQLITE_SECURE_COOKIE === "1" ? "; Secure" : "";
@@ -103,7 +153,12 @@ export function sqliteLogin(req: Request, res: Response): void {
 }
 export function sqliteLogout(req: Request, res: Response): void {
   if (!originAllowed(req)) { res.status(403).json({ error: "مصدر الطلب غير موثوق." }); return; }
-  res.setHeader("Set-Cookie", COOKIE + "=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
+  const parsed = extractSessionToken(req);
+  if (parsed) {
+    markTokenRevoked(parsed.body, parsed.expiry);
+  }
+  const secure = process.env.NASQO_SQLITE_SECURE_COOKIE === "1" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", COOKIE + "=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" + secure);
   res.json({ ok: true });
 }
 export function requireSqliteAccess(req: Request, res: Response, next: NextFunction): void {

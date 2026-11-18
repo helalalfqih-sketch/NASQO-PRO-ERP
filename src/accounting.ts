@@ -364,6 +364,7 @@ export function computeStatementRows(
     fromDate?: string;
     toDate?: string;
     docKind?: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
+    sortOrder?: "asc" | "desc";
   } = {},
 ): {
   rows: StatementRowWithBalance[];
@@ -461,7 +462,7 @@ export function computeStatementRows(
   });
 
   // Newest entries appear at the top of statements cleanly
-  const rows = [...chronological].reverse();
+  const rows = options.sortOrder === "asc" ? chronological : [...chronological].reverse();
   const netSigned =
     creditTotal - debitTotal + (options.showPreviousBalance ? previousBalanceSigned : 0);
 

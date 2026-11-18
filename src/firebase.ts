@@ -557,6 +557,7 @@ export type InventoryMovementItemRow = {
   count2: number | null;
   warehouseId: string;
   openingQty?: number;
+  periodNetQty?: number;
   buyQty: number;
   sellQty: number;
   transferInQty: number;
@@ -663,8 +664,23 @@ export async function fetchCashboxesReport(uid: string): Promise<{
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/cashboxes/report`);
 }
 
-export async function permanentlyDeleteLedger(uid: string, entryId: string): Promise<void> {
+export async function deleteAccount(uid: string, accountId: string): Promise<void> {
   await dbFetch<{ ok: boolean }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts/${encodeURIComponent(accountId)}`,
+    { method: "DELETE" },
+  );
+  if (activeBundle) {
+    const next = activeBundle.accounts.filter((a) => a.id !== accountId);
+    applyBundle({
+      ...activeBundle,
+      accounts: next,
+      stats: { ...activeBundle.stats, accountsCount: next.length },
+    });
+  }
+}
+
+export async function permanentlyDeleteLedger(uid: string, entryId: string): Promise<void> {
+  const { inventory: nextInventory } = await dbFetch<{ ok: boolean; inventory?: InventoryItemRecord[] }>(
     `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
     { method: "DELETE" },
   );
@@ -673,6 +689,7 @@ export async function permanentlyDeleteLedger(uid: string, entryId: string): Pro
     applyBundle({
       ...activeBundle,
       ledger: next,
+      inventory: nextInventory ?? activeBundle.inventory,
       stats: { ...activeBundle.stats, ledgerCount: next.length },
     });
   }

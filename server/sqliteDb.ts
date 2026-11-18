@@ -1992,7 +1992,8 @@ export function getInventoryMovementsReport(
       }
     }
     const openingQty = round2(baselineForScope + priorMovementNet);
-    const availableQty = round2(openingQty + buyQty + transferInQty - sellQty - transferOutQty);
+    const periodNetQty = round2(buyQty + transferInQty - sellQty - transferOutQty);
+    const availableQty = round2(openingQty + periodNetQty);
 
     const gTot = globalPurchaseTotals.get(ci.id);
     const allTot = allTimePurchaseTotals.get(ci.id);
@@ -2042,6 +2043,7 @@ export function getInventoryMovementsReport(
       count2: ci.count2 ?? null,
       warehouseId: ci.warehouse_id,
       openingQty,
+      periodNetQty,
       buyQty,
       sellQty,
       transferInQty,
@@ -2305,6 +2307,18 @@ export function insertInventoryItemRow(
   ensureEmptyWorkspace(db, workspaceId);
   const id = makeId("inv");
   const clean = sanitizeInventoryPayload({ ...item, ownerId: workspaceId });
+  if (!clean.name) {
+    throw new SqliteValidationError("اسم الصنف مطلوب.");
+  }
+  if (!clean.warehouseId) {
+    throw new SqliteValidationError("يجب اختيار مخزن صالح قبل إضافة الصنف.");
+  }
+  const whRow = db
+    .prepare("SELECT id FROM warehouses WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, clean.warehouseId) as { id: string } | undefined;
+  if (!whRow) {
+    throw new SqliteValidationError("المخزن المحدد غير موجود في قاعدة البيانات.");
+  }
   const now = nowIso();
   db.prepare(
     `INSERT INTO inventory_items (id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, min_threshold, sku, quantity_unverified, legacy_ref, created_at, updated_at)
@@ -2317,6 +2331,51 @@ export function insertInventoryItemRow(
   writeAudit(db, workspaceId, workspaceId, "inventory_items", id, "insert", { name: clean.name });
   const row = db.prepare("SELECT * FROM inventory_items WHERE workspace_id = ? AND id = ?").get(workspaceId, id) as Record<string, unknown>;
   return mapInventoryRow(row);
+}
+
+export function deleteAccountRow(db: DatabaseSync, workspaceId: string, accountId: string): void {
+  const existing = db
+    .prepare("SELECT id, name FROM accounts WHERE workspace_id = ? AND id = ?")
+    .get(workspaceId, accountId) as { id: string; name: string } | undefined;
+  if (!existing) {
+    throw new SqliteValidationError("الحساب غير موجود في قاعدة البيانات.");
+  }
+  const refs = db
+    .prepare(
+      "SELECT COUNT(*) AS cnt FROM ledger_entries WHERE workspace_id = ? AND (account_id = ? OR counterpart_account_id = ?)",
+    )
+    .get(workspaceId, accountId, accountId) as { cnt: number } | undefined;
+  if (Number(refs?.cnt ?? 0) > 0) {
+    throw new SqliteValidationError("لا يمكن حذف حساب مرتبط بقيود أو فواتير؛ احذف أو انقل عملياته أولًا.");
+  }
+  db.prepare("DELETE FROM accounts WHERE workspace_id = ? AND id = ?").run(workspaceId, accountId);
+  writeAudit(db, workspaceId, workspaceId, "accounts", accountId, "delete", { name: existing.name });
+}
+
+export function revokeAuthSessionHash(db: DatabaseSync, tokenHash: string, expiresAtMs: number): void {
+  const now = Date.now();
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS auth_revoked_tokens (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)",
+  );
+  db.prepare("DELETE FROM auth_revoked_tokens WHERE expires_at < ?").run(now);
+  db.prepare(
+    "INSERT INTO auth_revoked_tokens (token_hash, expires_at) VALUES (?, ?) ON CONFLICT(token_hash) DO UPDATE SET expires_at = excluded.expires_at",
+  ).run(tokenHash, expiresAtMs);
+}
+
+export function isAuthSessionHashRevoked(db: DatabaseSync, tokenHash: string): boolean {
+  try {
+    const table = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'auth_revoked_tokens'")
+      .get();
+    if (!table) return false;
+    const row = db
+      .prepare("SELECT expires_at FROM auth_revoked_tokens WHERE token_hash = ? AND expires_at >= ?")
+      .get(tokenHash, Date.now()) as { expires_at: number } | undefined;
+    return Boolean(row);
+  } catch {
+    return false;
+  }
 }
 
 export function updateInventoryItemRow(

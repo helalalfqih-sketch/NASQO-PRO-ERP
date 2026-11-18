@@ -25,6 +25,7 @@ import {
   DEFAULT_WORKSPACE_ID,
   SqliteValidationError,
   batchUpdateInventoryItemRows,
+  deleteAccountRow,
   deleteLedgerEntryRow,
   ensureEmptyWorkspace,
   exportCleanSqliteSnapshotBytes,
@@ -297,6 +298,17 @@ export function mountSqliteApi(app: Express): void {
       const uid = validWsId(paramStr(req, "uid"));
       const entryId = paramStr(req, "entryId").trim();
       deleteLedgerEntryRow(db, uid, entryId);
+      const inventory = listWorkspaceInventoryRows(db, uid);
+      res.json({ ok: true, inventory });
+    }),
+  );
+
+  router.delete(
+    "/workspace/:uid/accounts/:accountId",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const accountId = paramStr(req, "accountId").trim();
+      deleteAccountRow(db, uid, accountId);
       res.json({ ok: true });
     }),
   );
