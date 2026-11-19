@@ -166,7 +166,7 @@ export function ErpCrmPosScreen({
         accountId: targetAccount.id,
         accountName: targetAccount.name,
         kind: "invoice",
-        typeLabel: payment === "cash" ? "ف.مبيعات نقدية (POS)" : "ف.مبيعات آجلة (POS)",
+        typeLabel: payment === "cash" ? "ف.مبيعات نقدية" : "ف.مبيعات آجلة",
         payment,
         direction: "debit",
         amount: grandTotal,
@@ -256,7 +256,7 @@ export function ErpCrmPosScreen({
         accountId: acc.id,
         accountName: acc.name,
         kind: "invoice",
-        typeLabel: "فاتورة مبيعات (CRM)",
+        typeLabel: "فاتورة مبيعات",
         payment: "credit",
         direction: "debit",
         amount: deal.value,
@@ -305,7 +305,7 @@ export function ErpCrmPosScreen({
               setTab("pos");
             }}
           >
-            نقطة البيع (POS)
+            نقطة البيع
           </button>
           <button
             type="button"
@@ -317,7 +317,7 @@ export function ErpCrmPosScreen({
               setTab("crm");
             }}
           >
-            فرص المبيعات (CRM)
+            فرص المبيعات
           </button>
         </div>
 
@@ -504,7 +504,7 @@ export function ErpCrmPosScreen({
 
             <section className="erp-card">
               <div className="erp-card-head">
-                <h3>خط أنابيب المبيعات (CRM)</h3>
+                <h3>متابعة صفقات المبيعات</h3>
                 <button
                   type="button"
                   className="erp-chip-btn"

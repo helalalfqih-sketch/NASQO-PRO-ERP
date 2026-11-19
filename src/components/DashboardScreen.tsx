@@ -1,7 +1,6 @@
 import { useMemo, useState, type DragEvent } from "react";
 import {
   ActivityLogIcon,
-  ArchiveIcon,
   ArrowDownIcon,
   ArrowLeftIcon,
   ArrowUpIcon,
@@ -81,7 +80,6 @@ export interface DashboardProps {
   onUnpinFavorite: (id: string) => void;
   onLaunchFavorite: (item: PinnedFavoriteItem) => void;
   lastBackupIso: string | null;
-  onTriggerBackupNow: () => void;
   unreadNotificationsCount: number;
   onOpenNotifications: () => void;
   onOpenSales: () => void;
@@ -139,7 +137,6 @@ export function Dashboard({
   onUnpinFavorite,
   onLaunchFavorite,
   lastBackupIso,
-  onTriggerBackupNow,
   unreadNotificationsCount,
   onOpenNotifications,
   onOpenSales,
@@ -443,18 +440,6 @@ export function Dashboard({
               <p>عرض آخر {summary.recentInvoices.length} مستندات فواتير ومردودات</p>
             </div>
             <div className="exec-panel-actions">
-              <button
-                type="button"
-                className="exec-action-primary"
-                onClick={() => {
-                  triggerHaptic("light");
-                  onCreateInvoice();
-                }}
-                data-testid="dashboard-create-invoice-btn"
-              >
-                <FilePlusIcon />
-                <span>فاتورة جديدة</span>
-              </button>
               <button type="button" className="exec-action-link" onClick={onOpenDailyJournal}>
                 <span>الكل</span>
                 <ArrowLeftIcon />
@@ -467,10 +452,6 @@ export function Dashboard({
           ) : summary.recentInvoices.length === 0 ? (
             <div className="exec-empty">
               <p>لا توجد فواتير مسجلة ضمن الفترة المحددة.</p>
-              <button type="button" className="exec-action-primary" onClick={onCreateInvoice}>
-                <PlusIcon />
-                <span>إصدار أول فاتورة</span>
-              </button>
             </div>
           ) : (
             <ul className="exec-list" data-testid="recent-invoices-list">
@@ -756,21 +737,9 @@ export function Dashboard({
                     ? "لم يتم إنشاء نسخة احتياطية كاملة بعد"
                     : `النسخة الاحتياطية قديمة (منذ ${backupStatus.daysSince} يومًا)`}
                 </strong>
-                <span>يُنصح بتصدير نسخة JSON كل 7 أيام لضمان أمان بياناتك وسهولة الاستعادة.</span>
+                <span>يُنصح بتصدير نسخة كل 7 أيام من «الإعدادات ← النسخ الاحتياطي» لضمان أمان بياناتك.</span>
               </div>
             </div>
-            <button
-              type="button"
-              className="exec-action-primary"
-              onClick={() => {
-                triggerHaptic("success");
-                onTriggerBackupNow();
-              }}
-              data-testid="backup-now-banner-btn"
-            >
-              <ArchiveIcon />
-              <span>تنزيل نسخة احتياطية</span>
-            </button>
           </aside>
         ) : null}
 
@@ -863,19 +832,8 @@ export function Dashboard({
                   <span>
                     {backupStatus.lastBackupIso
                       ? `آخر تصدير: ${backupStatus.lastBackupIso.slice(0, 10)} (منذ ${backupStatus.daysSince ?? 0} يوم)`
-                      : "لم يتم تصدير نسخة بعد"}
+                      : "لم يتم تصدير نسخة بعد (متاح من الإعدادات)"}
                   </span>
-                  <button
-                    type="button"
-                    className="exec-action-secondary"
-                    onClick={() => {
-                      triggerHaptic("success");
-                      onTriggerBackupNow();
-                    }}
-                  >
-                    <ArchiveIcon />
-                    <span>تصدير JSON الآن</span>
-                  </button>
                 </div>
               </div>
             </div>

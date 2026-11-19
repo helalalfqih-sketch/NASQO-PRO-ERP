@@ -13,7 +13,7 @@ function amount(value: number | null | undefined): string {
 function buildInvoiceText(invoice: LegacyInvoice): string {
   const totals = historicalInvoiceDisplayTotals(invoice);
   const headings = [
-    "نسق برو – نسخة قراءة لمستند تاريخي من SQLite",
+    "نسقو برو – نسخة قراءة لمستند محفوظ",
     `رقم الحركة الأصلي: ${invoice.id}`,
     `رقم المستند في المصدر: ${invoice.documentNumber || "غير مسجل"}`,
     `التاريخ: ${invoice.date ?? "غير مسجل"}`,

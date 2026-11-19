@@ -89,6 +89,7 @@ export function SmartProControlScreen(){
   const [roles,setRoles]=useState<RoleRecord[]>([]);
   const [roleEmail,setRoleEmail]=useState("");
   const [roleKind,setRoleKind]=useState("editor");
+  const [confirmRevokeEmail,setConfirmRevokeEmail]=useState<string|null>(null);
   const [audit,setAudit]=useState<AuditRecord[]>([]);
 
   const table=useMemo(()=>meta?.tables.find(t=>t.name===selected)??null,[meta,selected]);
@@ -188,8 +189,11 @@ export function SmartProControlScreen(){
     finally{setSaving(false)}
   };
   const revokeRole=async(email:string)=>{
-    if(!window.confirm("هل تريد إلغاء وصول "+email+" إلى قاعدة SmartPro؟"))return;
-    setSaving(true);setError("");
+    if(confirmRevokeEmail!==email){
+      setConfirmRevokeEmail(email);
+      return;
+    }
+    setSaving(true);setError("");setConfirmRevokeEmail(null);
     try{await api("/roles/"+encodeURIComponent(email),"DELETE");await reloadExtra("roles")}
     catch(e){setError(e instanceof Error?e.message:String(e))}
     finally{setSaving(false)}
@@ -292,7 +296,7 @@ export function SmartProControlScreen(){
                 <button type="button" className="smartpro-primary" onClick={()=>void assignRole()} disabled={saving}>حفظ الصلاحية</button>
                 {roles.map(r=>(
                   <div className="smartpro-role-item" key={r.email}>
-                    <b>{r.email}</b><span>{r.role}</span><button type="button" onClick={()=>void revokeRole(r.email)} disabled={saving}>إلغاء الصلاحية</button>
+                    <b>{r.email}</b><span>{r.role}</span><button type="button" onClick={()=>void revokeRole(r.email)} disabled={saving}>{confirmRevokeEmail===r.email?"تأكيد الإلغاء":"إلغاء الصلاحية"}</button>
                   </div>
                 ))}
               </section>

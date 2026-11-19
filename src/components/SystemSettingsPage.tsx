@@ -1,11 +1,33 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import { Cross2Icon, ReloadIcon, TrashIcon, UpdateIcon } from "@radix-ui/react-icons";
+import {
+  FilePlusIcon,
+  FileTextIcon,
+  GearIcon,
+  MagnifyingGlassIcon,
+  Cross2Icon,
+} from "@radix-ui/react-icons";
 import { KeyboardInput, MobileScroll, useKeyboard } from "../mobile";
 import { isBackupOverdue } from "../accounting";
 import { saveWorkspaceSettings } from "../firebase";
 import { CURRENCIES, type CurrencyCode, type WorkspaceSettings } from "../types";
-import type { ExtendedAppSettings } from "../utils/appSettings";
+import {
+  APP_FONT_FAMILY_PRESETS,
+  CARD_BORDER_PRESETS,
+  CARD_COLOR_PRESETS,
+  CARD_SHAPE_PRESETS,
+  CARD_SHADOW_PRESETS,
+  CARD_SIZE_PRESETS,
+  DEFAULT_EXTENDED_SETTINGS,
+  HOME_BANNER_STYLE_PRESETS,
+  HOME_BUTTON_STYLE_PRESETS,
+  HOME_COLOR_PRESETS,
+  HOME_COLUMNS_PRESETS,
+  HOME_FONT_SIZE_PRESETS,
+  resolveHomeAppearanceTokens,
+  type ExtendedAppSettings,
+} from "../utils/appSettings";
 import { BRAND_COLOR_PRESETS } from "../utils/brandColor";
+import { APP_ICON_URL } from "../utils/appBrand";
 import { triggerHaptic } from "../utils/haptics";
 import type { ThemeMode } from "../utils/theme";
 
@@ -28,7 +50,7 @@ interface SystemSettingsPageProps {
   onOpenGoogleDrive?: () => void;
   onOpenFullSqliteImport?: () => void;
   onRestoreJson: () => void;
-  onOpenTrash: () => void;
+  onOpenTrash?: () => void;
   onSignOut: () => void;
   onNotify: (msg: string) => void;
   onBack: () => void;
@@ -54,7 +76,6 @@ export function SystemSettingsPage({
   onOpenGoogleDrive,
   onOpenFullSqliteImport,
   onRestoreJson,
-  onOpenTrash,
   onSignOut,
   onNotify,
   onBack,
@@ -82,6 +103,57 @@ export function SystemSettingsPage({
     setDraft(next);
     onChangeExtended(next);
   };
+
+  const updateFields = (patch: Partial<ExtendedAppSettings>) => {
+    const next = { ...draft, ...patch };
+    setDraft(next);
+    onChangeExtended(next);
+  };
+
+  const resetCardAppearance = () => {
+    triggerHaptic("light");
+    updateFields({
+      cardSize: DEFAULT_EXTENDED_SETTINGS.cardSize,
+      cardPadding: DEFAULT_EXTENDED_SETTINGS.cardPadding,
+      cardGap: DEFAULT_EXTENDED_SETTINGS.cardGap,
+      cardScale: DEFAULT_EXTENDED_SETTINGS.cardScale,
+      cardShape: DEFAULT_EXTENDED_SETTINGS.cardShape,
+      cardRadius: DEFAULT_EXTENDED_SETTINGS.cardRadius,
+      cardShadow: DEFAULT_EXTENDED_SETTINGS.cardShadow,
+      cardBorderStyle: DEFAULT_EXTENDED_SETTINGS.cardBorderStyle,
+      cardBorderWidth: DEFAULT_EXTENDED_SETTINGS.cardBorderWidth,
+      cardColorPreset: DEFAULT_EXTENDED_SETTINGS.cardColorPreset,
+      cardBgColor: DEFAULT_EXTENDED_SETTINGS.cardBgColor,
+      cardBorderColor: DEFAULT_EXTENDED_SETTINGS.cardBorderColor,
+      cardTextColor: DEFAULT_EXTENDED_SETTINGS.cardTextColor,
+      cardAccentColor: DEFAULT_EXTENDED_SETTINGS.cardAccentColor,
+    });
+    onNotify("تمت استعادة الإعدادات الافتراضية للبطائق");
+  };
+
+  const resetHomeAppearance = () => {
+    triggerHaptic("light");
+    updateFields({
+      homeButtonStyle: DEFAULT_EXTENDED_SETTINGS.homeButtonStyle,
+      homeColumns: DEFAULT_EXTENDED_SETTINGS.homeColumns,
+      homeBannerStyle: DEFAULT_EXTENDED_SETTINGS.homeBannerStyle,
+      homeButtonRadius: DEFAULT_EXTENDED_SETTINGS.homeButtonRadius,
+      homeButtonHeight: DEFAULT_EXTENDED_SETTINGS.homeButtonHeight,
+      homeGridGap: DEFAULT_EXTENDED_SETTINGS.homeGridGap,
+      homeColorPreset: DEFAULT_EXTENDED_SETTINGS.homeColorPreset,
+      homePrimaryBtnColor: DEFAULT_EXTENDED_SETTINGS.homePrimaryBtnColor,
+      homeSecondaryBtnColor: DEFAULT_EXTENDED_SETTINGS.homeSecondaryBtnColor,
+      homeHeaderColor: DEFAULT_EXTENDED_SETTINGS.homeHeaderColor,
+      homeBannerBgColor: DEFAULT_EXTENDED_SETTINGS.homeBannerBgColor,
+      homeCanvasBgColor: DEFAULT_EXTENDED_SETTINGS.homeCanvasBgColor,
+      homeBtnTextColor: DEFAULT_EXTENDED_SETTINGS.homeBtnTextColor,
+      homeFontFamily: DEFAULT_EXTENDED_SETTINGS.homeFontFamily,
+      homeFontSize: DEFAULT_EXTENDED_SETTINGS.homeFontSize,
+    });
+    onNotify("تمت استعادة الإعدادات الافتراضية للواجهة الرئيسية");
+  };
+
+  const homeTokens = resolveHomeAppearanceTokens(draft);
 
   const handleLogoUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -136,18 +208,6 @@ export function SystemSettingsPage({
           <span>التطبيق مفعل — سنوي</span>
           <bdi>610870500</bdi>
         </div>
-
-        <button
-          type="button"
-          className="sys-update-btn"
-          onClick={() => {
-            triggerHaptic("light");
-            onNotify("أنت تستخدم أحدث إصدار من نسقو برو (v1.7.21)");
-          }}
-        >
-          <UpdateIcon />
-          <span>تحديث التطبيق VS.1721</span>
-        </button>
 
         <div className="sys-email-bar">
           <bdi>{userEmail || "مستخدم سحابي"}</bdi>
@@ -210,64 +270,13 @@ export function SystemSettingsPage({
                     updateField("syncMode", "manual");
                   }}
                 />
-                <span>يدوية</span>
+              <span>يدوية</span>
               </label>
-            </div>
-            <div className="sys-inline-tools">
-              <button
-                type="button"
-                className="sys-mini-icon blue"
-                aria-label="مزامنة الآن"
-                onClick={() => {
-                  triggerHaptic("success");
-                  onNotify("تمت المزامنة السحابية الفورية بنجاح");
-                }}
-              >
-                <ReloadIcon />
-              </button>
-              <button
-                type="button"
-                className="sys-mini-icon blue"
-                aria-label="سلة المحذوفات"
-                onClick={() => {
-                  triggerHaptic("light");
-                  onOpenTrash();
-                }}
-              >
-                <TrashIcon />
-              </button>
             </div>
           </div>
         </div>
 
-        <div className="sys-btn-grid">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("light");
-              onNotify("تم التحقق: جلسة المدير مفعلة بالحساب الحالي");
-            }}
-          >
-            دخول المدير
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("light");
-              onNotify("لا توجد حسابات فروع إضافية مرتبطة حاليًا");
-            }}
-          >
-            دخول مستخدم/فرع
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("light");
-              onNotify("ملف المستخدم: " + (userEmail || "المدير الرئيسي"));
-            }}
-          >
-            ملف المستخدمين/الفروع
-          </button>
+        <div className="sys-btn-grid" style={{ gridTemplateColumns: "1fr" }}>
           <button
             type="button"
             className="danger"
@@ -292,7 +301,7 @@ export function SystemSettingsPage({
         {faqOpen ? (
           <div className="sys-faq-card">
             <strong>أبرز الإرشادات:</strong>
-            <p>• يتم حفظ البيانات تلقائيًا في السحابة ويمكنك تنزيل أو تسمية نسخة JSON من زر النسخ الاحتياطي.</p>
+            <p>• يمكنك حفظ نسخة احتياطية كاملة في أي وقت من قسم النسخ الاحتياطي.</p>
             <p>• يمكنك تخصيص مسمى (الرصيد لكم / عليكم) وملاحظات الفواتير أسفل هذه الصفحة.</p>
           </div>
         ) : null}
@@ -308,9 +317,14 @@ export function SystemSettingsPage({
               aria-label="تغيير شعار المنشأة"
             >
               {draft.logoDataUrl ? (
-                <img src={draft.logoDataUrl} alt="شعار المنشأة" />
+                <img src={draft.logoDataUrl} alt="شعار المنشأة" draggable={false} />
               ) : (
-                <span>نسقو</span>
+                <img
+                  src={APP_ICON_URL}
+                  alt="أيقونة التطبيق"
+                  className="app-brand-icon-img"
+                  draggable={false}
+                />
               )}
             </button>
             {draft.logoDataUrl ? (
@@ -421,6 +435,814 @@ export function SystemSettingsPage({
           </div>
         </section>
 
+        {/* Main Home Interface Colors, Shapes, Banner & Layout Controls */}
+        <section
+          className="settings-appearance-box card-ctrl-section"
+          data-testid="home-appearance-settings"
+        >
+          <div className="card-ctrl-header">
+            <div>
+              <div className="settings-subhead">تخصيص الواجهة الرئيسية (الألوان والأشكال والتخطيط)</div>
+              <p className="card-ctrl-subtitle">
+                تحكّم فوري بأزرار الرئيسية، الشعار، الشريط العلوي، وعدد الأعمدة مع معاينة مباشرة.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="settings-reset-color-btn"
+              onClick={resetHomeAppearance}
+              data-testid="home-reset-defaults-btn"
+            >
+              الافتراضي
+            </button>
+          </div>
+
+          {/* Live Home Miniature Preview */}
+          <div className="home-ctrl-preview-frame" aria-label="معاينة مباشرة للواجهة الرئيسية">
+            <div
+              className="home-ctrl-preview-stage"
+              data-testid="home-appearance-preview"
+              data-home-preview-style={draft.homeButtonStyle}
+              data-home-preview-columns={draft.homeColumns}
+              data-home-preview-banner={draft.homeBannerStyle}
+              style={{
+                background: homeTokens.canvasBg || undefined,
+                fontFamily: homeTokens.fontFamilyCss,
+              }}
+            >
+              <div
+                className="home-ctrl-preview-header"
+                style={{
+                  background: homeTokens.headerBg || undefined,
+                }}
+              >
+                <span className="home-ctrl-preview-brand">
+                  <span className="home-ctrl-preview-header-icon" aria-hidden="true">
+                    <img
+                      src={draft.logoDataUrl || APP_ICON_URL}
+                      alt=""
+                      className={draft.logoDataUrl ? "" : "app-brand-icon-img"}
+                      draggable={false}
+                    />
+                  </span>
+                  <span>{companyName === "نسقو برو ERP" ? "نسقو برو" : companyName || "نسقو برو"}</span>
+                </span>
+                <span className="home-ctrl-preview-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              </div>
+
+              <div className="home-ctrl-preview-body">
+                {draft.homeBannerStyle !== "hidden" ? (
+                  <div
+                    className={`home-ctrl-preview-banner style-${draft.homeBannerStyle}`}
+                    style={{
+                      background: homeTokens.bannerBg || undefined,
+                      color: homeTokens.bannerInk || undefined,
+                    }}
+                  >
+                    <span className="home-ctrl-preview-emblem" aria-hidden="true">
+                      <img
+                        src={draft.logoDataUrl || APP_ICON_URL}
+                        alt=""
+                        className={draft.logoDataUrl ? "" : "app-brand-icon-img"}
+                        draggable={false}
+                      />
+                    </span>
+                    <div className="home-ctrl-preview-banner-text">
+                      <strong style={{ color: homeTokens.bannerInk || undefined }}>
+                        {companyName === "نسقو برو ERP" ? "نسقو برو" : companyName || "نسقو برو"}
+                      </strong>
+                      {draft.homeBannerStyle !== "compact" ? (
+                        <small style={{ color: homeTokens.bannerSubInk || undefined }}>
+                          إدارة الحسابات والمبيعات والمخزون
+                        </small>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div
+                  className="home-ctrl-preview-grid"
+                  style={{
+                    gap: `${Math.max(4, Math.round(draft.homeGridGap * 0.7))}px`,
+                  }}
+                >
+                  {[
+                    { label: "سند جديد", kind: "primary", Icon: FilePlusIcon },
+                    { label: "فاتورة جديدة", kind: "primary", Icon: FileTextIcon },
+                    { label: "البحث السريع", kind: "secondary", Icon: MagnifyingGlassIcon },
+                    { label: "الإعدادات", kind: "secondary", Icon: GearIcon },
+                  ].map(({ label, kind, Icon }) => (
+                    <span
+                      key={label}
+                      className={`home-ctrl-preview-btn ${kind}`}
+                      style={{
+                        borderRadius: `${Math.min(draft.homeButtonRadius, 24)}px`,
+                        minHeight:
+                          draft.homeButtonStyle === "tile" || draft.homeButtonStyle === "icon-grid"
+                            ? `${Math.max(48, Math.round(draft.homeButtonHeight * 0.92))}px`
+                            : `${Math.max(30, Math.round(draft.homeButtonHeight * 0.72))}px`,
+                        background:
+                          kind === "primary"
+                            ? homeTokens.primaryBg || "#0b5ca8"
+                            : homeTokens.secondaryBg || "#ea8c0d",
+                        color: homeTokens.btnText || "#ffffff",
+                        fontSize: `${Math.max(9.5, Math.min(15, Math.round(draft.homeFontSize * 0.78 * 10) / 10))}px`,
+                      }}
+                    >
+                      <span className="home-ctrl-preview-btn-ico" aria-hidden="true">
+                        <Icon />
+                      </span>
+                      <span className="home-ctrl-preview-btn-lbl">{label}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 1. Home Button Shape Style */}
+          <div className="card-ctrl-group">
+            <span className="card-ctrl-label">شكل أزرار الواجهة الرئيسية</span>
+            <div className="card-ctrl-segmented" role="group" aria-label="شكل أزرار الرئيسية">
+              {HOME_BUTTON_STYLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`home-style-${preset.id}`}
+                  className={draft.homeButtonStyle === preset.id ? "active" : ""}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    updateFields({
+                      homeButtonStyle: preset.id,
+                      homeButtonRadius: preset.radius,
+                      homeButtonHeight: preset.height,
+                    });
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. Columns & Banner Style */}
+          <div className="card-ctrl-group">
+            <div className="card-ctrl-subrow">
+              <span className="card-ctrl-label">عدد أعمدة الأزرار</span>
+              <div className="card-ctrl-segmented" role="group" aria-label="عدد أعمدة أزرار الرئيسية">
+                {HOME_COLUMNS_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`home-cols-${preset.id}`}
+                    className={draft.homeColumns === preset.id ? "active" : ""}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      updateField("homeColumns", preset.id);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-ctrl-subrow">
+              <span className="card-ctrl-label">بطاقة الشعار في الرئيسية</span>
+              <div className="card-ctrl-segmented" role="group" aria-label="نمط بطاقة الشعار">
+                {HOME_BANNER_STYLE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`home-banner-${preset.id}`}
+                    className={draft.homeBannerStyle === preset.id ? "active" : ""}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      updateField("homeBannerStyle", preset.id);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-ctrl-sliders">
+              <label className="card-ctrl-slider-row">
+                <span>استدارة الزوايا</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={32}
+                  step={1}
+                  aria-label="استدارة زوايا أزرار الرئيسية"
+                  value={draft.homeButtonRadius}
+                  onChange={(e) => updateField("homeButtonRadius", Number(e.target.value))}
+                />
+                <b><bdi>{draft.homeButtonRadius}px</bdi></b>
+              </label>
+              <label className="card-ctrl-slider-row">
+                <span>ارتفاع الأزرار</span>
+                <input
+                  type="range"
+                  min={44}
+                  max={76}
+                  step={2}
+                  aria-label="ارتفاع أزرار الرئيسية"
+                  value={draft.homeButtonHeight}
+                  onChange={(e) => updateField("homeButtonHeight", Number(e.target.value))}
+                />
+                <b><bdi>{draft.homeButtonHeight}px</bdi></b>
+              </label>
+              <label className="card-ctrl-slider-row">
+                <span>تباعد الأزرار</span>
+                <input
+                  type="range"
+                  min={4}
+                  max={20}
+                  step={1}
+                  aria-label="المسافة بين أزرار الرئيسية"
+                  value={draft.homeGridGap}
+                  onChange={(e) => updateField("homeGridGap", Number(e.target.value))}
+                />
+                <b><bdi>{draft.homeGridGap}px</bdi></b>
+              </label>
+            </div>
+          </div>
+
+          {/* 3. Font Family & Main Screen Font Size */}
+          <div className="card-ctrl-group" data-testid="home-font-settings">
+            <span className="card-ctrl-label">نوع الخط وحجمه للشاشات الرئيسية</span>
+            <div className="home-font-grid" role="group" aria-label="نوع الخط">
+              {APP_FONT_FAMILY_PRESETS.map((font) => (
+                <button
+                  key={font.id}
+                  type="button"
+                  data-testid={`home-font-${font.id}`}
+                  className={`home-font-chip ${draft.homeFontFamily === font.id ? "active" : ""}`}
+                  style={{ fontFamily: font.cssFamily }}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    updateField("homeFontFamily", font.id);
+                  }}
+                >
+                  <strong>{font.label}</strong>
+                  <small>{font.sample}</small>
+                </button>
+              ))}
+            </div>
+
+            <div className="card-ctrl-subrow">
+              <span className="card-ctrl-sublabel">حجم الخط في الشاشات الرئيسية</span>
+              <div className="card-ctrl-segmented" role="group" aria-label="حجم الخط السريع">
+                {HOME_FONT_SIZE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`home-font-size-${preset.id}`}
+                    className={draft.homeFontSize === preset.size ? "active" : ""}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      updateField("homeFontSize", preset.size);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-ctrl-sliders">
+              <label className="card-ctrl-slider-row">
+                <span>حجم الخط</span>
+                <input
+                  type="range"
+                  min={11}
+                  max={20}
+                  step={1}
+                  aria-label="حجم خط الشاشات الرئيسية"
+                  data-testid="home-font-size-slider"
+                  value={draft.homeFontSize}
+                  onChange={(e) => updateField("homeFontSize", Number(e.target.value))}
+                />
+                <b><bdi>{draft.homeFontSize}px</bdi></b>
+              </label>
+            </div>
+          </div>
+
+          {/* 4. Home Color Presets & Custom Color Pickers */}
+          <div className="card-ctrl-group">
+            <span className="card-ctrl-label">ألوان الواجهة الرئيسية</span>
+            <div className="card-ctrl-palette" role="group" aria-label="قوالب ألوان الواجهة الرئيسية">
+              {HOME_COLOR_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`home-color-preset-${preset.id}`}
+                  className={`card-ctrl-preset-chip ${draft.homeColorPreset === preset.id ? "active" : ""}`}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    updateFields({
+                      homeColorPreset: preset.id,
+                      homePrimaryBtnColor: preset.primary,
+                      homeSecondaryBtnColor: preset.secondary,
+                      homeHeaderColor: preset.header,
+                      homeBannerBgColor: preset.bannerBg,
+                      homeCanvasBgColor: preset.canvasBg,
+                      homeBtnTextColor: preset.btnText,
+                    });
+                  }}
+                >
+                  <span
+                    className="card-ctrl-swatch-dot"
+                    style={{ background: preset.swatch }}
+                    aria-hidden="true"
+                  />
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="card-ctrl-color-grid">
+              <label className="card-ctrl-color-cell">
+                <span>الأزرار الأساسية</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون الأزرار الأساسية في الرئيسية"
+                    value={draft.homePrimaryBtnColor || homeTokens.primaryBg || "#0b5ca8"}
+                    onChange={(e) =>
+                      updateFields({
+                        homeColorPreset: "custom",
+                        homePrimaryBtnColor: e.target.value,
+                      })
+                    }
+                  />
+                  {draft.homePrimaryBtnColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون الأزرار الأساسية"
+                      onClick={() =>
+                        updateFields({ homePrimaryBtnColor: "", homeColorPreset: "custom" })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>الأزرار الثانوية</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون الأزرار الثانوية في الرئيسية"
+                    value={draft.homeSecondaryBtnColor || homeTokens.secondaryBg || "#ea8c0d"}
+                    onChange={(e) =>
+                      updateFields({
+                        homeColorPreset: "custom",
+                        homeSecondaryBtnColor: e.target.value,
+                      })
+                    }
+                  />
+                  {draft.homeSecondaryBtnColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون الأزرار الثانوية"
+                      onClick={() =>
+                        updateFields({ homeSecondaryBtnColor: "", homeColorPreset: "custom" })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>الشريط العلوي</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون الشريط العلوي للرئيسية"
+                    value={draft.homeHeaderColor || homeTokens.headerBg || "#0b5ca8"}
+                    onChange={(e) =>
+                      updateFields({
+                        homeColorPreset: "custom",
+                        homeHeaderColor: e.target.value,
+                      })
+                    }
+                  />
+                  {draft.homeHeaderColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون الشريط العلوي"
+                      onClick={() =>
+                        updateFields({ homeHeaderColor: "", homeColorPreset: "custom" })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>بطاقة الشعار</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون بطاقة الشعار في الرئيسية"
+                    value={draft.homeBannerBgColor || homeTokens.bannerBg || "#ffffff"}
+                    onChange={(e) =>
+                      updateFields({
+                        homeColorPreset: "custom",
+                        homeBannerBgColor: e.target.value,
+                      })
+                    }
+                  />
+                  {draft.homeBannerBgColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون بطاقة الشعار"
+                      onClick={() =>
+                        updateFields({ homeBannerBgColor: "", homeColorPreset: "custom" })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>خلفية الرئيسية</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون خلفية الواجهة الرئيسية"
+                    value={draft.homeCanvasBgColor || homeTokens.canvasBg || "#f8fafc"}
+                    onChange={(e) =>
+                      updateFields({
+                        homeColorPreset: "custom",
+                        homeCanvasBgColor: e.target.value,
+                      })
+                    }
+                  />
+                  {draft.homeCanvasBgColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون خلفية الرئيسية"
+                      onClick={() =>
+                        updateFields({ homeCanvasBgColor: "", homeColorPreset: "custom" })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>نص الأزرار</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون نص وأيقونات أزرار الرئيسية"
+                    value={draft.homeBtnTextColor || homeTokens.btnText || "#ffffff"}
+                    onChange={(e) =>
+                      updateFields({
+                        homeColorPreset: "custom",
+                        homeBtnTextColor: e.target.value,
+                      })
+                    }
+                  />
+                  {draft.homeBtnTextColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون نص الأزرار"
+                      onClick={() =>
+                        updateFields({ homeBtnTextColor: "", homeColorPreset: "custom" })
+                      }
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {/* Full Card Size, Shape, Border, Shadow & Color Controls Across All Screens */}
+        <section className="settings-appearance-box card-ctrl-section" data-testid="card-appearance-settings">
+          <div className="card-ctrl-header">
+            <div>
+              <div className="settings-subhead">التحكم الكامل في البطائق (الأحجام والألوان والأشكال)</div>
+              <p className="card-ctrl-subtitle">ينطبق فورياً على البطائق في الرئيسية، الحسابات، الكشوفات، المخازن، والفواتير.</p>
+            </div>
+            <button
+              type="button"
+              className="settings-reset-color-btn"
+              onClick={resetCardAppearance}
+              data-testid="card-reset-defaults-btn"
+            >
+              الافتراضي
+            </button>
+          </div>
+
+          {/* Live Card Preview */}
+          <div className="card-ctrl-preview-wrap" aria-label="معاينة مباشرة لشكل البطاقة">
+            <article className="card-ctrl-preview-card" data-testid="card-appearance-preview">
+              <div className="card-ctrl-preview-badge">ن</div>
+              <div className="card-ctrl-preview-body">
+                <strong>شركة النور للتوريدات</strong>
+                <small>حساب تجاري • حركات: 12</small>
+              </div>
+              <div className="card-ctrl-preview-amt">
+                <b>22,250</b>
+                <small>ريال</small>
+              </div>
+            </article>
+          </div>
+
+          {/* 1. Card Size & Spacing */}
+          <div className="card-ctrl-group">
+            <span className="card-ctrl-label">حجم البطائق والكثافة</span>
+            <div className="card-ctrl-segmented" role="group" aria-label="حجم البطائق">
+              {CARD_SIZE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`card-size-${preset.id}`}
+                  className={draft.cardSize === preset.id ? "active" : ""}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    updateFields({
+                      cardSize: preset.id,
+                      cardPadding: preset.padding,
+                      cardGap: preset.gap,
+                      cardScale: preset.scale,
+                    });
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="card-ctrl-sliders">
+              <label className="card-ctrl-slider-row">
+                <span>الحشو الداخلي</span>
+                <input
+                  type="range"
+                  min={6}
+                  max={22}
+                  step={1}
+                  aria-label="الحشو الداخلي للبطاقة"
+                  value={draft.cardPadding}
+                  onChange={(e) => updateField("cardPadding", Number(e.target.value))}
+                />
+                <b><bdi>{draft.cardPadding}px</bdi></b>
+              </label>
+              <label className="card-ctrl-slider-row">
+                <span>تباعد البطائق</span>
+                <input
+                  type="range"
+                  min={4}
+                  max={22}
+                  step={1}
+                  aria-label="المسافة بين البطائق"
+                  value={draft.cardGap}
+                  onChange={(e) => updateField("cardGap", Number(e.target.value))}
+                />
+                <b><bdi>{draft.cardGap}px</bdi></b>
+              </label>
+              <label className="card-ctrl-slider-row">
+                <span>مقياس الحجم</span>
+                <input
+                  type="range"
+                  min={85}
+                  max={125}
+                  step={5}
+                  aria-label="مقياس حجم البطاقة"
+                  value={draft.cardScale}
+                  onChange={(e) => updateField("cardScale", Number(e.target.value))}
+                />
+                <b><bdi>{draft.cardScale}%</bdi></b>
+              </label>
+            </div>
+          </div>
+
+          {/* 2. Card Shape, Radius, Border & Shadow */}
+          <div className="card-ctrl-group">
+            <span className="card-ctrl-label">الشكل والزوايا والإطار والظل</span>
+            <div className="card-ctrl-segmented" role="group" aria-label="شكل البطاقة">
+              {CARD_SHAPE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`card-shape-${preset.id}`}
+                  className={draft.cardShape === preset.id ? "active" : ""}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    updateFields({
+                      cardShape: preset.id,
+                      cardRadius: preset.radius,
+                    });
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="card-ctrl-sliders">
+              <label className="card-ctrl-slider-row">
+                <span>استدارة الزوايا</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={28}
+                  step={1}
+                  aria-label="استدارة زوايا البطاقة"
+                  value={draft.cardRadius}
+                  onChange={(e) => updateField("cardRadius", Number(e.target.value))}
+                />
+                <b><bdi>{draft.cardRadius}px</bdi></b>
+              </label>
+            </div>
+
+            <div className="card-ctrl-subrow">
+              <span className="card-ctrl-sublabel">نمط الإطار</span>
+              <div className="card-ctrl-segmented compact" role="group" aria-label="نمط إطار البطاقة">
+                {CARD_BORDER_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`card-border-${preset.id}`}
+                    className={draft.cardBorderStyle === preset.id ? "active" : ""}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      updateFields({
+                        cardBorderStyle: preset.id,
+                        cardBorderWidth: preset.width,
+                      });
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-ctrl-subrow">
+              <span className="card-ctrl-sublabel">شدة الظل</span>
+              <div className="card-ctrl-segmented compact" role="group" aria-label="شدة ظل البطاقة">
+                {CARD_SHADOW_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    data-testid={`card-shadow-${preset.id}`}
+                    className={draft.cardShadow === preset.id ? "active" : ""}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      updateField("cardShadow", preset.id);
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Card Color Presets & Custom Pickers */}
+          <div className="card-ctrl-group">
+            <span className="card-ctrl-label">ألوان البطائق</span>
+            <div className="card-ctrl-palette" role="group" aria-label="قوالب ألوان البطائق">
+              {CARD_COLOR_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  data-testid={`card-color-preset-${preset.id}`}
+                  className={`card-ctrl-preset-chip ${draft.cardColorPreset === preset.id ? "active" : ""}`}
+                  onClick={() => {
+                    triggerHaptic("light");
+                    updateFields({
+                      cardColorPreset: preset.id,
+                      cardBgColor: preset.bg,
+                      cardBorderColor: preset.border,
+                      cardTextColor: preset.text,
+                      cardAccentColor: preset.accent,
+                    });
+                  }}
+                >
+                  <span className="card-ctrl-swatch-dot" style={{ background: preset.swatch }} aria-hidden="true" />
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="card-ctrl-color-grid">
+              <label className="card-ctrl-color-cell">
+                <span>خلفية البطاقة</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون خلفية البطاقة"
+                    value={draft.cardBgColor || "#ffffff"}
+                    onChange={(e) =>
+                      updateFields({ cardColorPreset: "custom", cardBgColor: e.target.value })
+                    }
+                  />
+                  {draft.cardBgColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون الخلفية المخصص"
+                      onClick={() => updateFields({ cardBgColor: "", cardColorPreset: "custom" })}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>لون الإطار</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون إطار البطاقة"
+                    value={draft.cardBorderColor || "#cbd5e1"}
+                    onChange={(e) =>
+                      updateFields({ cardColorPreset: "custom", cardBorderColor: e.target.value })
+                    }
+                  />
+                  {draft.cardBorderColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون الإطار المخصص"
+                      onClick={() => updateFields({ cardBorderColor: "", cardColorPreset: "custom" })}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>لون النص</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون نص البطاقة"
+                    value={draft.cardTextColor || "#0f172a"}
+                    onChange={(e) =>
+                      updateFields({ cardColorPreset: "custom", cardTextColor: e.target.value })
+                    }
+                  />
+                  {draft.cardTextColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون النص المخصص"
+                      onClick={() => updateFields({ cardTextColor: "", cardColorPreset: "custom" })}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
+              <label className="card-ctrl-color-cell">
+                <span>لون التمييز</span>
+                <div className="card-ctrl-color-input-wrap">
+                  <input
+                    type="color"
+                    aria-label="لون تمييز البطاقة"
+                    value={draft.cardAccentColor || brandColor}
+                    onChange={(e) =>
+                      updateFields({ cardColorPreset: "custom", cardAccentColor: e.target.value })
+                    }
+                  />
+                  {draft.cardAccentColor ? (
+                    <button
+                      type="button"
+                      aria-label="إلغاء لون التمييز المخصص"
+                      onClick={() => updateFields({ cardAccentColor: "", cardColorPreset: "custom" })}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+            </div>
+          </div>
+        </section>
+
         {/* Theme, Brand Color, Haptics & Backup Freshness (Preserved Dashboard Controls) */}
         <section className="settings-appearance-box" data-testid="settings-appearance-box">
           <div className="settings-subhead">المظهر ولون العلامة والاهتزاز والنسخ الاحتياطي</div>
@@ -492,7 +1314,7 @@ export function SystemSettingsPage({
             <strong>
               {backupStatus.overdue
                 ? backupStatus.daysSince === null
-                  ? "تنبيه: لم يتم أخذ نسخة احتياطية JSON بعد"
+                  ? "تنبيه: لم يتم أخذ نسخة احتياطية بعد"
                   : `تنبيه: آخر نسخة احتياطية منذ ${backupStatus.daysSince} يومًا`
                 : `النسخة الاحتياطية محدثة (منذ ${backupStatus.daysSince ?? 0} يوم)`}
             </strong>
@@ -512,7 +1334,7 @@ export function SystemSettingsPage({
               }}
               data-testid="settings-backup-modal-btn"
             >
-              حفظ / تسمية نسخة احتياطية
+              حفظ نسخة احتياطية
             </button>
             <button
               type="button"
@@ -522,37 +1344,36 @@ export function SystemSettingsPage({
                 onRestoreJson();
               }}
             >
-              استعادة من ملف
+              استعادة نسخة من ملف
             </button>
+            {onOpenFullSqliteImport ? (
+              <button
+                type="button"
+                className="ref-btn orange"
+                style={{ background: "#ea580c", color: "#ffffff" }}
+                onClick={() => {
+                  triggerHaptic("light");
+                  onOpenFullSqliteImport();
+                }}
+                data-testid="settings-full-sqlite-import-btn"
+              >
+                إدارة السجلات والنسخ
+              </button>
+            ) : null}
+            {onOpenGoogleDrive ? (
+              <button
+                type="button"
+                className="ref-btn purple"
+                onClick={() => {
+                  triggerHaptic("light");
+                  onOpenGoogleDrive();
+                }}
+                data-testid="settings-open-drive-btn"
+              >
+                Google Drive السحابي
+              </button>
+            ) : null}
           </div>
-          {onOpenFullSqliteImport ? (
-            <button
-              type="button"
-              className="ref-btn orange"
-              style={{ width: "100%", marginTop: 8, background: "#ea580c", color: "#ffffff" }}
-              onClick={() => {
-                triggerHaptic("light");
-                onOpenFullSqliteImport();
-              }}
-              data-testid="settings-full-sqlite-import-btn"
-            >
-              إدارة واستيراد قاعدة البيانات (.sqlite / .sql / .back)
-            </button>
-          ) : null}
-          {onOpenGoogleDrive ? (
-            <button
-              type="button"
-              className="ref-btn purple"
-              style={{ width: "100%", marginTop: 8 }}
-              onClick={() => {
-                triggerHaptic("light");
-                onOpenGoogleDrive();
-              }}
-              data-testid="settings-open-drive-btn"
-            >
-              فتح Google Drive (النسخ والملفات السحابية)
-            </button>
-          ) : null}
         </section>
 
         {/* General & Printing & WhatsApp Toggles */}

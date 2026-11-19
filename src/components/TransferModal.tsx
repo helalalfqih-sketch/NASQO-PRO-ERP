@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  CameraIcon,
-  ChevronDownIcon,
-  PlusIcon,
-  SpeakerLoudIcon,
-  TableIcon,
-} from "@radix-ui/react-icons";
+import { ChevronDownIcon, Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import { KeyboardInput, useKeyboard } from "../mobile";
 import {
-  accountMatchesQuery,
   computeAccountSummary,
   formatAmount,
   parseArabicNumber,
+  rankAccountSearchMatches,
 } from "../accounting";
 import { createLedgerEntry } from "../firebase";
 import {
@@ -99,7 +93,7 @@ export function TransferModal({
   }, [accounts, cashboxId, cashboxes, defaultAccountId, open, selectedAccountId, sqliteCashboxId, sqliteCashboxes]);
 
   const filteredAccounts = useMemo(
-    () => (search.trim() ? accounts.filter((a) => accountMatchesQuery(a, search)) : accounts),
+    () => rankAccountSearchMatches(accounts, search),
     [accounts, search],
   );
 
@@ -253,14 +247,6 @@ export function TransferModal({
           <span className="transfer-stamp-badge">
             <bdi>{stampLabel}</bdi>
           </span>
-          <button
-            type="button"
-            className="transfer-icon-btn"
-            aria-label="إدخال صوتي"
-            onClick={() => onNotify("استخدم لوحة المفاتيح الصوتية لإملاء بيانات الحوالة")}
-          >
-            <SpeakerLoudIcon />
-          </button>
         </div>
 
         <div className="transfer-account-box">
@@ -277,10 +263,29 @@ export function TransferModal({
           </button>
           <KeyboardInput
             aria-label="بحث عن حساب للحوالة"
+            data-testid="transfer-account-search"
             placeholder="ابحث عن حساب"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && filteredAccounts.length > 0) {
+                e.preventDefault();
+                setSelectedAccountId(filteredAccounts[0].id);
+                setSearch("");
+                keyboard.hide();
+              }
+            }}
           />
+          {search ? (
+            <button
+              type="button"
+              className="transfer-search-clear"
+              aria-label="مسح بحث الحوالة"
+              onClick={() => setSearch("")}
+            >
+              <Cross2Icon />
+            </button>
+          ) : null}
           <select
             aria-label="اختر حساب الحوالة"
             value={activeAccount?.id ?? ""}
@@ -289,14 +294,20 @@ export function TransferModal({
               setSearch("");
             }}
           >
-            {filteredAccounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name}
-              </option>
-            ))}
+            {filteredAccounts.length === 0 ? (
+              <option value="">لا توجد حسابات مطابقة</option>
+            ) : (
+              filteredAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))
+            )}
           </select>
           <ChevronDownIcon className="transfer-select-chevron" />
         </div>
+
+
 
         <div className="transfer-balance-strip">
           <span>الرصيد</span>
@@ -377,28 +388,12 @@ export function TransferModal({
         </div>
 
         <div className="transfer-details-row">
-          <button
-            type="button"
-            className="transfer-square-icon"
-            aria-label="حاسبة"
-            onClick={() => onNotify("أدخل صافي مبلغ الحوالة والعمولة بالأرقام")}
-          >
-            <TableIcon />
-          </button>
           <KeyboardInput
             aria-label="تفاصيل الحوالة"
             placeholder="التفاصيل"
             value={details}
             onChange={(e) => setDetails(e.target.value)}
           />
-          <button
-            type="button"
-            className="transfer-square-icon"
-            aria-label="صورة الإيصال"
-            onClick={() => void submitTransfer("image")}
-          >
-            <CameraIcon />
-          </button>
         </div>
 
         <label className="transfer-cashbox-row">

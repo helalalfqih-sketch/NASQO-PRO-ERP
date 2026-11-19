@@ -44,13 +44,27 @@ export function formatAmount(value: number): string {
 }
 
 export function normalizeArabicSearch(text: string): string {
-  return text
-    .replace(/[أإآ]/g, "ا")
+  return String(text ?? "")
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
     .replace(/[ـ,٬]/g, "")
     .replace(/[٠-٩]/g, (d) => String(ARABIC_INDIC.indexOf(d)))
     .replace(/[۰-۹]/g, (d) => String(PERSIAN_INDIC.indexOf(d)))
+    .replace(/\s+/g, " ")
     .toLocaleLowerCase()
     .trim();
+}
+
+export function matchesArabicSearch(haystack: string, query: string): boolean {
+  const normQuery = normalizeArabicSearch(query);
+  if (!normQuery) return true;
+  const normHaystack = normalizeArabicSearch(haystack);
+  const tokens = normQuery.split(" ").filter(Boolean);
+  return tokens.every((token) => normHaystack.includes(token));
 }
 
 export function clampString(value: string, max: number): string {
@@ -485,10 +499,11 @@ export function computeStatementRows(
 
 export function ledgerEntryMatchesQuery(entry: LedgerEntryRecord, normalizedQuery: string, mode: string): boolean {
   if (!normalizedQuery) return true;
-  const amountText = String(entry.amount);
+  const amountText = `${entry.amount} ${formatAmount(entry.amount)}`;
+  const linesText = (entry.lines ?? []).map((l) => `${l.itemName}`).join(" ");
   const fields: Record<string, string> = {
     "الرقم": String(entry.entryNumber),
-    "البيان": entry.details,
+    "البيان": `${entry.details} ${linesText}`,
     "رقم المستند": entry.documentNumber,
     "اسم المرسل": entry.counterpartAccountName,
     "اسم المستلم": entry.accountName,
@@ -497,17 +512,85 @@ export function ledgerEntryMatchesQuery(entry: LedgerEntryRecord, normalizedQuer
     "المبلغ له": entry.direction === "credit" ? amountText : "",
   };
   if (mode === "الكل") {
-    return normalizeArabicSearch([...Object.values(fields), entry.typeLabel, entry.entryDate].join(" ")).includes(
+    return matchesArabicSearch(
+      [...Object.values(fields), entry.typeLabel, entry.entryDate, entry.currency].join(" "),
       normalizedQuery,
     );
   }
-  return normalizeArabicSearch(fields[mode] ?? "").includes(normalizedQuery);
+  return matchesArabicSearch(fields[mode] ?? "", normalizedQuery);
 }
 
 export function accountMatchesQuery(account: AccountRecord, query: string): boolean {
-  const needle = normalizeArabicSearch(query);
-  if (!needle) return true;
-  return normalizeArabicSearch(`${account.name} ${account.phone} ${account.codeNumber} ${account.note ?? ""} ${account.legacyRef ?? ""}`).includes(needle);
+  return matchesArabicSearch(
+    `${account.name} ${account.phone} ${account.codeNumber} ${account.id} ${account.note ?? ""} ${account.legacyRef ?? ""} ${account.currency}`,
+    query,
+  );
+}
+
+export function getCategoryTitle(category: AccountCategory): string {
+  const map: Record<AccountCategory, string> = {
+    purchases: "مشتريات",
+    sales: "مبيعات",
+    clients: "عملاء",
+    employees: "موظفين",
+    transfers: "حوالات",
+    shop: "محل",
+  };
+  return map[category] ?? category;
+}
+
+export function rankAccountSearchMatches(
+  accounts: readonly AccountRecord[],
+  query: string,
+  preferredCategories?: AccountCategory | AccountCategory[],
+  limit?: number,
+): AccountRecord[] {
+  const normQuery = normalizeArabicSearch(query);
+  const prefs = Array.isArray(preferredCategories)
+    ? preferredCategories
+    : preferredCategories
+      ? [preferredCategories]
+      : [];
+
+  const matched = normQuery
+    ? accounts.filter((a) => accountMatchesQuery(a, normQuery))
+    : [...accounts];
+
+  matched.sort((a, b) => {
+    const aPref = prefs.includes(a.category) ? 0 : 1;
+    const bPref = prefs.includes(b.category) ? 0 : 1;
+    if (aPref !== bPref) return aPref - bPref;
+
+    if (!normQuery) {
+      return a.codeNumber - b.codeNumber || a.name.localeCompare(b.name, "ar");
+    }
+
+    const aName = normalizeArabicSearch(a.name);
+    const bName = normalizeArabicSearch(b.name);
+    const aScore =
+      aName === normQuery
+        ? 0
+        : aName.startsWith(normQuery)
+          ? 1
+          : String(a.codeNumber) === normQuery || normalizeArabicSearch(a.phone) === normQuery
+            ? 2
+            : aName.includes(normQuery)
+              ? 3
+              : 4;
+    const bScore =
+      bName === normQuery
+        ? 0
+        : bName.startsWith(normQuery)
+          ? 1
+          : String(b.codeNumber) === normQuery || normalizeArabicSearch(b.phone) === normQuery
+            ? 2
+            : bName.includes(normQuery)
+              ? 3
+              : 4;
+    if (aScore !== bScore) return aScore - bScore;
+    return a.name.localeCompare(b.name, "ar");
+  });
+  return typeof limit === "number" ? matched.slice(0, limit) : matched;
 }
 
 function escapeCsvCell(cell: string | number | boolean): string {

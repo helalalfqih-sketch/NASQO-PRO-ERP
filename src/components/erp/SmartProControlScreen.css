@@ -61,3 +61,21 @@
 .smartpro-report-grid strong {font-size:17px;color:#153b62;overflow-wrap:anywhere;}
 .smartpro-report-filter {display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;}
 @media (max-width:430px) {.smartpro-report-filter {grid-template-columns:1fr;}}
+
+.smartpro-records-head { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.smartpro-detail-box { display:grid; gap:8px; margin-top:4px; }
+.smartpro-table-wrap { width:100%; overflow-x:auto; border:1px solid #d5e2ee; border-radius:10px; background:#fff; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; }
+.smartpro-inv-table { width:100%; border-collapse:collapse; font-size:12px; min-width:300px; }
+.smartpro-inv-table th { background:#eef5fc; color:#1e3a5f; font-weight:800; padding:8px 6px; text-align:center; border-bottom:1px solid #d5e2ee; white-space:nowrap; }
+.smartpro-inv-table td { padding:7px 6px; text-align:center; border-bottom:1px solid #e7eff6; vertical-align:middle; }
+.smartpro-inv-table td.name-cell { text-align:right; font-weight:600; min-width:110px; }
+.smartpro-inv-table td.num-cell { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.smartpro-inv-table tfoot td { background:#f1f7fd; border-top:1.5px solid #bfd7ee; border-bottom:0; padding:9px 8px; font-size:13px; color:#0f4c81; }
+.smartpro-cell-input { width:64px; min-width:52px; height:30px; padding:2px 4px; border:1px solid #cbd5e1; border-radius:6px; background:#f8fafc; text-align:center; font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; }
+.smartpro-center button.smartpro-del-btn { min-height:28px; padding:4px 8px; border:1px solid #fecaca; background:#fef2f2; color:#b91c1c; font-size:11px; border-radius:6px; }
+:root.dark .smartpro-table-wrap { background:var(--nasqo-surface, #162231); border-color:var(--nasqo-line, #2a3c50); }
+:root.dark .smartpro-inv-table th { background:var(--nasqo-surface-alt, #1d2d40); color:#e2e8f0; border-color:var(--nasqo-line, #2a3c50); }
+:root.dark .smartpro-inv-table td { color:#e2e8f0; border-color:var(--nasqo-line, #2a3c50); }
+:root.dark .smartpro-inv-table tfoot td { background:rgba(30, 58, 95, 0.55); color:#7dd3fc; border-color:var(--nasqo-line, #2a3c50); }
+:root.dark .smartpro-cell-input { background:var(--nasqo-surface-alt, #1d2d40); border-color:var(--nasqo-line, #2a3c50); color:#f1f5f9; }
+

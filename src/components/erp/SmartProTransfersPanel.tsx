@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { auth } from "../../firebase";
 import { KeyboardInput, KeyboardTextarea } from "../../mobile";
+import { matchesArabicSearch } from "../../accounting";
 
 type Product = {id:number;name:string;unit:string};
 type Store = {id:number;name:string};
@@ -57,8 +58,7 @@ export function SmartProTransfersPanel({canWrite}:{canWrite:boolean}){
  };
  useEffect(()=>{void refresh()},[]);
  const products=useMemo(()=>{
-  const q=search.trim().toLocaleLowerCase("ar");
-  return (lookup?.products??[]).filter(p=>!q||p.name.toLocaleLowerCase("ar").includes(q)||String(p.id).includes(q)).slice(0,75);
+  return (lookup?.products??[]).filter(p=>matchesArabicSearch(`${p.name} ${p.id}`,search)).slice(0,75);
  },[lookup,search]);
  const addLine=()=>{
   if(!productId||!(Number(quantity)>0)||!Number.isFinite(Number(quantity))){
@@ -110,12 +110,39 @@ export function SmartProTransfersPanel({canWrite}:{canWrite:boolean}){
     </label>
    </div>
    <label className="smartpro-label">التاريخ
-    <KeyboardInput type="date" value={date} onChange={e=>setDate(e.target.value)}/>
+    <KeyboardInput type="date" dir="ltr" value={date} onChange={e=>setDate(e.target.value)}/>
    </label>
    <div className="smartpro-invoice-line-entry">
     <label className="smartpro-label">البحث عن الصنف
-     <KeyboardInput value={search} onChange={e=>{setSearch(e.target.value);setProductId("")}} placeholder="الاسم أو رقم الصنف"/>
+     <KeyboardInput
+      value={search}
+      onChange={e=>{setSearch(e.target.value);setProductId("")}}
+      onKeyDown={e=>{
+       if(e.key==="Enter"&&products.length>0){
+        e.preventDefault();
+        setProductId(String(products[0].id));
+        setSearch("");
+       }
+      }}
+      placeholder="الاسم أو رقم الصنف"
+     />
     </label>
+    {search.trim()?(
+     <div className="instant-search-results" role={products.length?"listbox":"status"}>
+      {products.length===0?(
+       <p className="instant-search-empty">لا توجد أصناف مطابقة لـ «{search.trim()}»</p>
+      ):(
+       products.slice(0,8).map(p=>(
+        <button key={p.id} type="button" role="option" onClick={()=>{setProductId(String(p.id));setSearch("")}}>
+         <span className="instant-search-main">
+          <strong>{p.name}</strong>
+          <small>#{p.id}</small>
+         </span>
+        </button>
+       ))
+      )}
+     </div>
+    ):null}
     <label className="smartpro-label">الصنف
      <select value={productId} onChange={e=>setProductId(e.target.value)}>
       <option value="">اختر صنفًا</option>

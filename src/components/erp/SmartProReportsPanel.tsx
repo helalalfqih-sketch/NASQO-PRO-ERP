@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { auth } from "../../firebase";
 import { KeyboardInput } from "../../mobile";
+import { matchesArabicSearch } from "../../accounting";
 
 type Document = {
   documentType:number;documents:number;dainTotal:string;madinTotal:string;cashboxLinked:number;
@@ -107,7 +108,7 @@ export function SmartProReportsPanel(){
     finally{setLoading(false)}
   },[accountId,start,end,accountPage]);
   useEffect(()=>{if(tab==="account")void refreshAccount()},[tab,refreshAccount]);
-  const filterAccounts=accounts.filter(a=>!accountSearch||a.name.includes(accountSearch)||String(a.id).includes(accountSearch));
+  const filterAccounts=accounts.filter(a=>matchesArabicSearch(`${a.name} ${a.id}`,accountSearch));
 
   return <section className="smartpro-panel" data-testid="smartpro-reports-panel">
     <h3>تقارير SmartPro المركزية</h3>
@@ -192,19 +193,53 @@ export function SmartProReportsPanel(){
     {tab==="account"?<div className="smartpro-report-stack">
       <p className="smartpro-caption">كشف حساب يعرض حقول SmartPro الأصلية حسب العملة. لا يُصدر رصيدًا معتمدًا قبل مراجعة دلالة القيد الافتتاحي.</p>
       <label className="smartpro-label">ابحث عن حساب
-        <KeyboardInput value={accountSearch} onChange={e=>setAccountSearch(e.target.value)} placeholder="اسم الحساب أو الرقم"/>
+        <KeyboardInput
+          value={accountSearch}
+          onChange={e=>setAccountSearch(e.target.value)}
+          onKeyDown={e=>{
+            if(e.key==="Enter"&&filterAccounts.length>0){
+              e.preventDefault();
+              setAccountId(String(filterAccounts[0].id));
+              setAccountSearch("");
+              setAccountPage(0);
+            }
+          }}
+          placeholder="اسم الحساب أو الرقم"
+        />
       </label>
+      {accountSearch.trim()?(
+        <div className="instant-search-results" role={filterAccounts.length?"listbox":"status"}>
+          {filterAccounts.length===0?(
+            <p className="instant-search-empty">لا توجد حسابات مطابقة لـ «{accountSearch.trim()}»</p>
+          ):(
+            filterAccounts.slice(0,8).map(a=>(
+              <button
+                key={a.id}
+                type="button"
+                role="option"
+                onClick={()=>{setAccountId(String(a.id));setAccountSearch("");setAccountPage(0)}}
+              >
+                <span className="instant-search-main">
+                  <strong>{a.name}</strong>
+                  <small>#{a.id}</small>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      ):null}
       <label className="smartpro-label">الحساب
         <select value={accountId} onChange={e=>{setAccountId(e.target.value);setAccountPage(0)}}>
+          {filterAccounts.length===0?<option value="">لا توجد حسابات مطابقة</option>:null}
           {filterAccounts.map(a=><option value={a.id} key={a.id}>{a.name} #{a.id}</option>)}
         </select>
       </label>
       <div className="smartpro-invoice-grid">
         <label className="smartpro-label">من
-          <KeyboardInput type="date" value={start} onChange={v=>{setStart(v.target.value);setAccountPage(0)}}/>
+          <KeyboardInput type="date" dir="ltr" value={start} onChange={v=>{setStart(v.target.value);setAccountPage(0)}}/>
         </label>
         <label className="smartpro-label">إلى
-          <KeyboardInput type="date" value={end} onChange={v=>{setEnd(v.target.value);setAccountPage(0)}}/>
+          <KeyboardInput type="date" dir="ltr" value={end} onChange={v=>{setEnd(v.target.value);setAccountPage(0)}}/>
         </label>
       </div>
       {statement?<div>

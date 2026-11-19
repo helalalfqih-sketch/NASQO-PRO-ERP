@@ -36,6 +36,7 @@ export type FlowControls = {
   push: (screen: FlowScreen) => void;
   pop: () => void;
   replace: (screen: FlowScreen) => void;
+  reset: (screen: FlowScreen) => void;
 };
 
 const FlowContext = createContext<FlowControls | null>(null);
@@ -54,6 +55,24 @@ function FlowProvider({ value, children }: PropsWithChildren<{ value: FlowContro
   return <FlowContext.Provider value={value}>{children}</FlowContext.Provider>;
 }
 
+function shouldIgnoreEdgeSwipe(target: EventTarget | null, boundary: HTMLElement | null) {
+  if (!(target instanceof Element)) return false;
+  if (target.closest('input, textarea, select, [data-scroll-drag="ignore"], [role="slider"]')) {
+    return true;
+  }
+  let node: HTMLElement | null = target instanceof HTMLElement ? target : target.parentElement;
+  while (node && node !== boundary) {
+    if (node.scrollWidth > node.clientWidth + 4) {
+      const overflowX = window.getComputedStyle(node).overflowX;
+      if (overflowX === "auto" || overflowX === "scroll") {
+        return true;
+      }
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
 export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSystemBack?: () => boolean }) {
   const keyboard = useKeyboard();
   const { bottomInset, keyboardDragging } = useKeyboardInsets();
@@ -63,7 +82,7 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
     typeof window !== "undefined" ? window.innerWidth : 393,
   );
   const sequence = useRef(1);
-  const gestureStartedAtEdge = useRef(false);
+  const edgeSwipeSide = useRef<"left" | "right" | null>(null);
   const initialEntry = useRef<FlowEntry>({ ...initial, key: `${initial.id}-0` });
   const [stack, setStack] = useState<FlowEntry[]>(() => [initialEntry.current]);
   const [direction, setDirection] = useState(1);
@@ -115,6 +134,7 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
   const pop = useCallback(() => {
     keyboard.hide();
     setDirection(-1);
+    setSwipeX(0);
     setStack((currentStack) => {
       if (currentStack.length <= 1) return currentStack;
       return currentStack.slice(0, -1);
@@ -134,7 +154,11 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
         keyboard.hide();
         setDirection(1);
         setSwipeX(0);
-        setStack((currentStack) => [...currentStack, toEntry(screen)]);
+        setStack((currentStack) => {
+          const top = currentStack[currentStack.length - 1];
+          if (top && top.id === screen.id) return currentStack;
+          return [...currentStack, toEntry(screen)];
+        });
       },
       pop,
       replace: (screen) => {
@@ -145,6 +169,12 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
           const next = currentStack.slice(0, -1);
           return [...next, toEntry(screen)];
         });
+      },
+      reset: (screen) => {
+        keyboard.hide();
+        setDirection(-1);
+        setSwipeX(0);
+        setStack([toEntry(screen)]);
       },
     };
   }, [keyboard, pop, stack, toEntry]);
@@ -162,36 +192,62 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
             : state.event?.currentTarget instanceof Element
               ? state.event.currentTarget
               : stackRef.current;
-        if (!candidate || typeof candidate.getBoundingClientRect !== "function") {
-          gestureStartedAtEdge.current = false;
+        if (
+          !candidate ||
+          typeof candidate.getBoundingClientRect !== "function" ||
+          shouldIgnoreEdgeSwipe(state.event?.target ?? null, stackRef.current)
+        ) {
+          edgeSwipeSide.current = null;
           return;
         }
         const bounds = candidate.getBoundingClientRect();
-        gestureStartedAtEdge.current = state.initial[0] - bounds.left < 28;
+        const isRtl = window.getComputedStyle(candidate).direction === "rtl";
+        const fromLeftEdge = state.initial[0] - bounds.left < 24;
+        const fromRightEdge = bounds.right - state.initial[0] < 24;
+        if (fromLeftEdge) {
+          edgeSwipeSide.current = "left";
+        } else if (isRtl && fromRightEdge) {
+          edgeSwipeSide.current = "right";
+        } else {
+          edgeSwipeSide.current = null;
+        }
       }
 
-      if (!gestureStartedAtEdge.current) return;
+      const side = edgeSwipeSide.current;
+      if (!side) return;
 
-      const [movementX] = state.movement;
-      const [velocityX] = state.velocity;
-      const [directionX] = state.direction;
-      const nextX = Math.max(0, Math.min(movementX, screenWidth));
-
-      if (!state.last) {
-        setSwipeX(nextX);
+      const [movementX, movementY] = state.movement;
+      if (Math.abs(movementY) > Math.abs(movementX) * 0.85 && Math.abs(movementX) < 20) {
+        if (state.last) {
+          setSwipeX(0);
+          edgeSwipeSide.current = null;
+        }
         return;
       }
 
-      const shouldPop = nextX > 92 || (velocityX > 0.45 && directionX > 0);
+      const [velocityX] = state.velocity;
+      const [directionX] = state.direction;
+      const progress =
+        side === "left"
+          ? Math.max(0, Math.min(movementX, screenWidth))
+          : Math.max(0, Math.min(-movementX, screenWidth));
+
+      if (!state.last) {
+        setSwipeX(progress);
+        return;
+      }
+
+      const movingTowardBack = side === "left" ? directionX > 0 : directionX < 0;
+      const shouldPop = progress > 88 || (velocityX > 0.42 && movingTowardBack && progress > 28);
       setSwipeX(0);
-      gestureStartedAtEdge.current = false;
+      edgeSwipeSide.current = null;
 
       if (shouldPop) {
         controls.pop();
       }
     },
     {
-      axis: "x",
+      axis: "lock",
       filterTaps: true,
       pointer: { touch: true },
     },

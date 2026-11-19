@@ -4,13 +4,12 @@ import {
   fetchArchiveSummary,
   fetchUnifiedJsonExport,
   importSmartProSqlIntoServer,
-  importSqliteLegacyIntoServer,
+  importSqliteBytesIntoServer,
   listUnifiedSqliteTables,
   queryUnifiedSqliteTable,
   type ArchiveSummaryPayload,
   type UnifiedTableMeta,
 } from "../firebase";
-import { bytesToBase64 } from "../legacy/backup";
 import type {
   AccountRecord,
   InventoryItemRecord,
@@ -35,7 +34,7 @@ type InspectedUpload =
   | {
       kind: "sqlite";
       fileName: string;
-      base64: string;
+      bytes: Uint8Array;
       sha256: string;
       integrity: string;
       tablesCount: number;
@@ -84,7 +83,7 @@ export function FullSqliteImportModal({
       setTablesMeta(meta.tables);
       setSummary(sum);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر قراءة بيانات قاعدة SQLite الموحدة.");
+      setError(err instanceof Error ? err.message : "تعذر قراءة بيانات النظام.");
     }
   }, [workspaceId]);
 
@@ -129,25 +128,24 @@ export function FullSqliteImportModal({
       if (lower.endsWith(".sql")) {
         const sqlText = await file.text();
         setUpload({ kind: "sql", fileName: file.name, sqlText, byteLength: file.size });
-        setNotice(`تم تحميل ملف SQL (${file.name} • ${(file.size / (1024 * 1024)).toFixed(2)} MiB) — جاهز للاستيراد في قاعدة SQLite الموحدة.`);
+        setNotice(`تم تحميل الملف (${file.name}) — جاهز للاستيراد.`);
       } else {
         const buf = new Uint8Array(await file.arrayBuffer());
-        const base64 = bytesToBase64(buf);
-        const inspected = await importSqliteLegacyIntoServer(workspaceId, base64, file.name, "inspect");
+        const inspected = await importSqliteBytesIntoServer(workspaceId, buf, file.name, "inspect");
         const tables = Array.isArray(inspected.tables) ? inspected.tables.length : Object.keys(inspected.tableCounts ?? {}).length;
         const totalRows = Number(inspected.totalRows ?? 0);
         const integrity = String(inspected.integrity ?? "ok");
         setUpload({
           kind: "sqlite",
           fileName: file.name,
-          base64,
+          bytes: buf,
           sha256: String(inspected.sha256 ?? ""),
           integrity,
           tablesCount: tables,
           totalRows,
           tableCounts: (inspected.tableCounts as Record<string, number>) ?? {},
         });
-        setNotice(`تم فتح قاعدة البيانات بنجاح: ${tables} جدولًا و ${totalRows.toLocaleString("en-US")} سجل (السلامة: ${integrity})`);
+        setNotice(`تم فحص النسخة الاحتياطية بنجاح: ${tables} قسم و ${totalRows.toLocaleString("en-US")} سجل`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر فحص الملف المختار.");
@@ -170,14 +168,14 @@ export function FullSqliteImportModal({
           replaceAll || replaceExistingSql,
         );
         const imported = (report.imported as Record<string, number>) ?? {};
-        const msg = `تم استيراد ${Number(report.totalSourceRows ?? 0).toLocaleString("en-US")} سجلًا من ${upload.fileName} إلى قاعدة SQLite الموحدة (الحسابات: ${imported.accounts ?? 0} • القيود: ${imported.ledgerEntries ?? 0} • البنود: ${imported.invoiceLines ?? 0} • الأصناف: ${imported.inventoryItems ?? 0}).`;
+        const msg = `تم استيراد ${Number(report.totalSourceRows ?? 0).toLocaleString("en-US")} سجلًا من ${upload.fileName} بنجاح (الحسابات: ${imported.accounts ?? 0} • القيود: ${imported.ledgerEntries ?? 0} • البنود: ${imported.invoiceLines ?? 0} • الأصناف: ${imported.inventoryItems ?? 0}).`;
         setNotice(msg);
         onNotify(msg);
       } else {
         const mode = replaceAll ? "restore" : "import";
-        const res = await importSqliteLegacyIntoServer(
+        const res = await importSqliteBytesIntoServer(
           workspaceId,
-          upload.base64,
+          upload.bytes,
           upload.fileName,
           mode,
           undefined,
@@ -186,8 +184,8 @@ export function FullSqliteImportModal({
         const inner = (res.result as { added?: Record<string, number> } | undefined) ?? (res as { added?: Record<string, number> });
         const added = inner.added ?? {};
         const msg = replaceAll
-          ? `تم استبدال مساحة العمل باستعادة ${upload.fileName} (الحسابات: ${added.accounts ?? 0} • القيود: ${added.ledger ?? 0} • البنود: ${added.invoiceLines ?? 0}).`
-          : `تم استيراد ودمج البيانات داخل SQLite الموحدة (حسابات مضافة: ${added.accounts ?? 0} • قيود: ${added.ledger ?? 0} • بنود: ${added.invoiceLines ?? 0}).`;
+          ? `تم استبدال البيانات باستعادة ${upload.fileName} (الحسابات: ${added.accounts ?? 0} • القيود: ${added.ledger ?? 0} • البنود: ${added.invoiceLines ?? 0}).`
+          : `تم استيراد ودمج البيانات بنجاح (حسابات مضافة: ${added.accounts ?? 0} • قيود: ${added.ledger ?? 0} • بنود: ${added.invoiceLines ?? 0}).`;
         setNotice(msg);
         onNotify(msg);
       }
@@ -212,10 +210,10 @@ export function FullSqliteImportModal({
       a.download = `nasqo-unified-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setNotice("تم تصدير النسخة الشاملة من SQLite (JSON)");
-      onNotify("تم تصدير النسخة الشاملة من SQLite (JSON)");
+      setNotice("تم تصدير النسخة الشاملة بنجاح");
+      onNotify("تم تصدير النسخة الشاملة بنجاح");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تصدير نسخة JSON.");
+      setError(err instanceof Error ? err.message : "تعذر تصدير النسخة الشاملة.");
     } finally {
       setBusy(false);
     }
@@ -227,10 +225,10 @@ export function FullSqliteImportModal({
     setBusy(true);
     try {
       await downloadUnifiedSqliteFile(workspaceId);
-      setNotice("تم تنزيل قاعدة SQLite الموحدة (.sqlite)");
-      onNotify("تم تنزيل قاعدة SQLite الموحدة (.sqlite)");
+      setNotice("تم حفظ النسخة الاحتياطية الكاملة بنجاح");
+      onNotify("تم حفظ النسخة الاحتياطية الكاملة بنجاح");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تنزيل قاعدة SQLite.");
+      setError(err instanceof Error ? err.message : "تعذر حفظ النسخة الاحتياطية.");
     } finally {
       setBusy(false);
     }
@@ -258,10 +256,10 @@ export function FullSqliteImportModal({
         <header style={{ padding: "14px 20px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#0f172a" }}>
-              مركز قاعدة SQLite الموحدة والاستيراد (.sqlite / .sql / .back)
+              إدارة النسخ الاحتياطية والاستيراد
             </h2>
             <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>
-              ملف قاعدة واحدة على الخادم: <bdi>{summary?.stats.dbName ?? "data/nasqo.sqlite"}</bdi> • {summary?.stats.tablesCount ?? 29} جدولًا
+              بيانات النظام الموحدة • {summary?.stats.tablesCount ?? 29} قسم بيانات
             </div>
           </div>
           <button type="button" onClick={onClose} style={{ background: "#e2e8f0", border: "none", borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontWeight: 700 }}>
@@ -272,8 +270,8 @@ export function FullSqliteImportModal({
         <div style={{ display: "flex", gap: 6, padding: "8px 16px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap" }}>
           {[
             { id: "overview" as const, label: "الاستيراد والتصدير" },
-            { id: "tables" as const, label: `مستعرض جداول SQLite (${tablesMeta.length})` },
-            { id: "audit" as const, label: "سجل المصادر والمطابقة" },
+            { id: "tables" as const, label: `عرض السجلات والجداول (${tablesMeta.length})` },
+            { id: "audit" as const, label: "سجل المطابقة" },
           ].map((item) => (
             <button
               key={item.id}
@@ -311,7 +309,7 @@ export function FullSqliteImportModal({
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 12 }}>
                 <div style={{ padding: 10, borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>الحسابات في SQLite</div>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>إجمالي الحسابات</div>
                   <strong style={{ fontSize: 16 }}>{(summary?.stats.accountsCount ?? liveAccounts.length).toLocaleString("en-US")}</strong>
                 </div>
                 <div style={{ padding: 10, borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0" }}>
@@ -342,19 +340,19 @@ export function FullSqliteImportModal({
                   htmlFor="legacy-center-sqlite-input"
                   style={{ display: "inline-block", background: "#0284c7", color: "#fff", padding: "8px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                 >
-                  اختر ملف SQL (.sql / .sqlite / .back)
+                  اختر ملف النسخة الاحتياطية
                 </label>
                 <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>
                   {upload
                     ? upload.kind === "sql"
-                      ? `${upload.fileName} • ${(upload.byteLength / (1024 * 1024)).toFixed(2)} MiB • MariaDB/SmartPro SQL`
-                      : `${upload.fileName} • ${upload.tablesCount} جدولًا • ${upload.totalRows.toLocaleString("en-US")} سجل • السلامة: ${upload.integrity}`
-                    : "يتم فحص الملف واستيراده مباشرةً إلى قاعدة SQLite الموحدة على الخادم (بدون Firestore أو IndexedDB)."}
+                      ? `${upload.fileName} • ${(upload.byteLength / (1024 * 1024)).toFixed(2)} MiB`
+                      : `${upload.fileName} • ${upload.tablesCount} قسم • ${upload.totalRows.toLocaleString("en-US")} سجل`
+                    : "يتم فحص ملف النسخة الاحتياطية واستيراده مباشرة إلى النظام."}
                 </div>
                 {upload?.kind === "sql" ? (
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, fontSize: 12 }}>
                     <input type="checkbox" checked={replaceExistingSql} onChange={(e) => setReplaceExistingSql(e.target.checked)} />
-                    <span>استبدال بيانات مساحة العمل الحالية بالكامل ببيانات ملف SQL</span>
+                    <span>استبدال البيانات الحالية بالكامل ببيانات الملف</span>
                   </label>
                 ) : null}
               </div>
@@ -371,7 +369,7 @@ export function FullSqliteImportModal({
                     >
                       {upload.kind === "sqlite"
                         ? "استيراد ودمج فوق الحالي (بدون مسح)"
-                        : "استيراد وحفظ داخل SQLite الموحدة وإظهار البيانات"}
+                        : "استيراد وحفظ البيانات"}
                     </button>
                     {upload.kind === "sqlite" ? (
                       <button
@@ -392,7 +390,7 @@ export function FullSqliteImportModal({
                   onClick={() => void handleDownloadSqlite()}
                   style={{ background: "#059669", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                 >
-                  تنزيل قاعدة SQLite الموحدة (.sqlite)
+                  حفظ نسخة احتياطية كاملة
                 </button>
                 <button
                   type="button"
@@ -401,7 +399,7 @@ export function FullSqliteImportModal({
                   onClick={() => void handleDownloadJson()}
                   style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
                 >
-                  تصدير JSON كامل
+                  تصدير نسخة شاملة
                 </button>
               </div>
             </>

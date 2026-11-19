@@ -156,7 +156,7 @@ export function ErpHubScreen({
     try {
       await syncLocalWorkspaceToIndexedDb(uid);
       await refreshDbStats();
-      onToast?.("تمت مزامنة قاعدة SQLite الموحدة بنجاح");
+      onToast?.("تم تحديث البيانات بنجاح");
     } finally {
       setDbBusy(false);
     }
@@ -168,7 +168,7 @@ export function ErpHubScreen({
     try {
       const dump = await fetchUnifiedJsonExport(uid);
       triggerJsonDownload("nasqo_unified_sqlite_backup.json", dump);
-      onToast?.("تم تصدير نسخة قاعدة SQLite الموحدة (JSON)");
+      onToast?.("تم تصدير النسخة الاحتياطية الكاملة بنجاح");
     } finally {
       setDbBusy(false);
     }
@@ -179,7 +179,7 @@ export function ErpHubScreen({
     setDbBusy(true);
     try {
       await downloadUnifiedSqliteFile(uid);
-      onToast?.("تم تنزيل ملف قاعدة SQLite الموحد (.sqlite)");
+      onToast?.("تم حفظ ملف النسخة الاحتياطية بنجاح");
     } finally {
       setDbBusy(false);
     }
@@ -194,7 +194,7 @@ export function ErpHubScreen({
       onUpdateErpData?.(freshErp);
       setConfirmReset(false);
       await refreshDbStats();
-      onToast?.("تمت إعادة تهيئة قاعدة SQLite بالبيانات الأساسية");
+      onToast?.("تمت إعادة تهيئة البيانات الأساسية");
     } finally {
       setDbBusy(false);
     }
@@ -242,7 +242,7 @@ export function ErpHubScreen({
     },
     {
       id: "erp-crm",
-      title: "المبيعات ونقطة البيع (POS / CRM)",
+      title: "المبيعات ونقطة البيع",
       subtitle: "نقطة بيع فورية · صفقات · تحويل لفاتورة",
       stat: formatArCount(openDeals.length, "صفقة نشطة", "صفقات نشطة"),
       icon: RocketIcon,
@@ -266,7 +266,7 @@ export function ErpHubScreen({
     },
     {
       id: "erp-manufacturing",
-      title: "التصنيع (BOM) ومراكز التكلفة",
+      title: "التصنيع ومراكز التكلفة",
       subtitle: "قوائم المواد · أوامر الإنتاج · الموازنات",
       stat: `${formatArCount(activeProduction.length, "أمر إنتاج", "أوامر إنتاج")} · ${formatArCount(erpData.costCenters.length, "مركز", "مراكز")}`,
       icon: LayersIcon,
@@ -289,16 +289,16 @@ export function ErpHubScreen({
           <section className="erp-hero-card">
             <div className="erp-hero-top">
               <div>
-                <small>مركز قيادة المنشأة المتكامل</small>
-                <h2>{companyName || "نسقو برو ERP"}</h2>
+                <small>مركز الإدارة المتكامل</small>
+                <h2>{companyName || "نسقو برو"}</h2>
               </div>
-              <span className="erp-hero-badge">ERP مترابط</span>
+              <span className="erp-hero-badge">نظام مترابط</span>
             </div>
             <p className="erp-hero-sub">
-              كل عملية في نقاط البيع أو المشتريات أو الرواتب أو التصنيع تُحدّث المخزون والأستاذ العام لحظيًا.
+              كل عملية في المبيعات أو المشتريات أو الرواتب أو التصنيع تُحدّث المخزون والحسابات لحظيًا.
             </p>
             <button type="button" className="erp-smartpro-launch" data-testid="open-smartpro-control" onClick={onOpenSmartPro}>
-              قاعدة SmartPro المركزية — إدارة السجلات والصلاحيات
+              الإدارة المركزية — إدارة السجلات والصلاحيات
             </button>
           </section>
 
@@ -347,7 +347,7 @@ export function ErpHubScreen({
 
           <section className="erp-section">
             <div className="erp-section-head">
-              <h3>أنظمة ووحدات الـ ERP</h3>
+              <h3>أقسام النظام</h3>
               <span>{modules.length} أنظمة</span>
             </div>
             <div className="erp-module-grid">
@@ -464,8 +464,8 @@ export function ErpHubScreen({
 
           <section className="erp-section" data-testid="local-db-section">
             <div className="erp-section-head">
-              <h3>قاعدة البيانات الموحدة ({dbStats.engine})</h3>
-              <span dir="ltr">{dbStats.dbName}</span>
+              <h3>سجلات النظام الموحدة</h3>
+              <span>{dbStats.tablesCount} قسم</span>
             </div>
             <div
               style={{
@@ -553,9 +553,9 @@ export function ErpHubScreen({
                 }}
               >
                 <span>
-                  وحدات ERP: {dbStats.erpModulesSaved ? "محفوظة في SQLite" : "قيد الحفظ"} • البنود: {dbStats.invoiceLinesCount.toLocaleString("en-US")}
+                  الأقسام: {dbStats.erpModulesSaved ? "محفوظة" : "قيد الحفظ"} • البنود: {dbStats.invoiceLinesCount.toLocaleString("en-US")}
                 </span>
-                <span>{dbStats.tablesCount} جدولًا في ملف واحد</span>
+                <span>{dbStats.tablesCount} قسم في سجل واحد</span>
               </div>
 
               <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
@@ -577,7 +577,7 @@ export function ErpHubScreen({
                   }}
                 >
                   <ReloadIcon />
-                  <span>مزامنة</span>
+                  <span>تحديث</span>
                 </button>
                 <button
                   type="button"
@@ -597,7 +597,7 @@ export function ErpHubScreen({
                   }}
                 >
                   <DownloadIcon />
-                  <span>تنزيل .sqlite</span>
+                  <span>حفظ نسخة كاملة</span>
                 </button>
                 <button
                   type="button"
@@ -617,7 +617,7 @@ export function ErpHubScreen({
                   }}
                 >
                   <DownloadIcon />
-                  <span>تصدير JSON</span>
+                  <span>تصدير نسخة</span>
                 </button>
                 {uid === LOCAL_WORKSPACE_UID ? (
                   confirmReset ? (
@@ -668,7 +668,7 @@ export function ErpHubScreen({
 
           <section className="erp-section">
             <div className="erp-section-head">
-              <h3>تصدير الكود (Flutter / Dart)</h3>
+              <h3>حزمة تطبيق الجوال</h3>
               <span>17 ملفًا جاهزًا</span>
             </div>
             <div className="erp-action-list">
@@ -684,8 +684,8 @@ export function ErpHubScreen({
               >
                 <span className="erp-action-dot" style={{ background: "var(--nasqo-blue)" }} />
                 <div className="erp-action-copy">
-                  <strong>مشروع Flutter (Dart 3 + SQLite)</strong>
-                  <small>استعراض ونسخ وتنزيل كافة شاشات ERP وقاعدة SQLite وInvoiceForm بصيغة Flutter</small>
+                  <strong>تصدير حزمة تطبيق الجوال</strong>
+                  <small>استعراض ونسخ وتنزيل ملفات شاشات التطبيق</small>
                 </div>
                 <CodeIcon />
               </button>

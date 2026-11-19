@@ -22,14 +22,37 @@ const scrollPhysics = {
   overdragScale: 0.5,
   maxOverdrag: 96,
   velocitySampleWindow: 100,
-  tapSlop: 8,
+  tapSlop: 10,
 } as const;
 
 function shouldIgnoreScrollDrag(target: EventTarget | null) {
-  return (
-    target instanceof Element &&
-    Boolean(target.closest('[data-scroll-drag="ignore"]'))
-  );
+  if (!(target instanceof Element)) return false;
+  if (target.closest('[data-scroll-drag="ignore"]')) return true;
+  if (
+    target.closest(
+      'input, textarea, select, option, [contenteditable="true"], [role="slider"]',
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function hasHorizontalScrollableAncestor(
+  target: EventTarget | null,
+  boundary: HTMLElement | null,
+) {
+  let node = target instanceof HTMLElement ? target : null;
+  while (node && node !== boundary) {
+    if (node.scrollWidth > node.clientWidth + 4) {
+      const style = window.getComputedStyle(node);
+      if (style.overflowX === "auto" || style.overflowX === "scroll") {
+        return true;
+      }
+    }
+    node = node.parentElement;
+  }
+  return false;
 }
 
 type DragSample = {
@@ -41,14 +64,17 @@ type DragSession = {
   active: boolean;
   captured: boolean;
   pointerId: number | null;
+  startX: number;
   startY: number;
   startScrollTop: number;
   hasDragged: boolean;
+  inHorizontalScroller: boolean;
 };
 
 export function MobileScroll({ className, children }: MobileScrollProps) {
   const { isKeyboardVisible, keyboardHeight, keyboardDragging } = useKeyboardInsets();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollbarRef = useRef<HTMLDivElement | null>(null);
   const hideTimerRef = useRef<number | null>(null);
   const inertiaFrameRef = useRef<number | null>(null);
   const lastInertiaTimeRef = useRef<number | null>(null);
@@ -61,9 +87,11 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
     active: false,
     captured: false,
     pointerId: null,
+    startX: 0,
     startY: 0,
     startScrollTop: 0,
     hasDragged: false,
+    inHorizontalScroller: false,
   });
   const [isDragging, setIsDragging] = useState(false);
   const [overscrollY, setOverscrollY] = useState(0);
@@ -164,10 +192,13 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
 
     const { clientHeight, scrollHeight, scrollTop } = scroll;
     const enabled = scrollHeight > clientHeight + 2;
-    const height = enabled ? Math.max(36, (clientHeight / scrollHeight) * clientHeight) : 0;
-    const maxThumbTop = Math.max(0, clientHeight - height - 8);
-    const maxScrollTop = Math.max(1, scrollHeight - clientHeight);
-    const top = enabled ? 4 + (scrollTop / maxScrollTop) * maxThumbTop : 0;
+    const measuredTrack = scrollbarRef.current?.clientHeight ?? 0;
+    const trackHeight = measuredTrack > 0 ? measuredTrack : Math.max(0, clientHeight - 12);
+    const height = enabled ? Math.min(trackHeight, Math.max(34, (clientHeight / scrollHeight) * trackHeight)) : 0;
+    const maxThumbTop = Math.max(0, trackHeight - height);
+    const maxTop = Math.max(1, scrollHeight - clientHeight);
+    const progress = Math.max(0, Math.min(1, scrollTop / maxTop));
+    const top = enabled ? progress * maxThumbTop : 0;
 
     setThumb({ visible: visible && enabled, top, height, enabled });
 
@@ -178,7 +209,7 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
     if (visible && enabled && !isDraggingRef.current) {
       hideTimerRef.current = window.setTimeout(() => {
         setThumb((current) => ({ ...current, visible: false }));
-      }, 650);
+      }, 720);
     }
   }, []);
 
@@ -297,19 +328,17 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
 
     if (!scroll || !session.active || session.pointerId !== event.pointerId) return;
 
-    // A nested horizontal scroller can let pointer-down bubble, then claim
-    // pointer-move. Its pointer-up may still reach this parent. Without a
-    // completed parent drag there is no valid release velocity or click to
-    // suppress, so discard the pending session without starting motion.
     if (!session.hasDragged) {
       dragSamplesRef.current = [];
       dragSessionRef.current = {
         active: false,
         captured: false,
         pointerId: null,
+        startX: 0,
         startY: 0,
         startScrollTop: 0,
         hasDragged: false,
+        inHorizontalScroller: false,
       };
       setIsDragging(false);
       isDraggingRef.current = false;
@@ -335,9 +364,11 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
       active: false,
       captured: false,
       pointerId: null,
+      startX: 0,
       startY: 0,
       startScrollTop: 0,
       hasDragged: false,
+      inHorizontalScroller: false,
     };
     setIsDragging(false);
     isDraggingRef.current = false;
@@ -351,6 +382,10 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
   }, [pushDragSample, releaseVelocity, springBack, startMomentum, suppressUpcomingClick]);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    // Let real touch devices use native GPU-accelerated browser scrolling,
+    // horizontal table panning, and crisp zero-lag tap handling.
+    if (event.pointerType === "touch") return;
+
     const scroll = scrollRef.current;
     if (!scroll || scroll.scrollHeight <= scroll.clientHeight) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -365,15 +400,16 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
     dragSamplesRef.current = [];
     pushDragSample(event.clientY);
     setRubberBand(0);
-    setThumb((current) => ({ ...current, visible: current.enabled }));
 
     dragSessionRef.current = {
       active: true,
       captured: false,
       pointerId: event.pointerId,
+      startX: event.clientX,
       startY: event.clientY,
       startScrollTop: scroll.scrollTop,
       hasDragged: false,
+      inHorizontalScroller: hasHorizontalScrollableAncestor(event.target, scroll),
     };
   }, [pushDragSample, setRubberBand, stopInertia]);
 
@@ -383,8 +419,16 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
 
     if (!scroll || !session.active || session.pointerId !== event.pointerId) return;
 
+    const movementX = event.clientX - session.startX;
     const movementY = event.clientY - session.startY;
-    if (!session.hasDragged && Math.abs(movementY) < scrollPhysics.tapSlop) return;
+
+    if (!session.hasDragged) {
+      if (session.inHorizontalScroller && Math.abs(movementX) > Math.abs(movementY) && Math.abs(movementX) >= 6) {
+        session.active = false;
+        return;
+      }
+      if (Math.abs(movementY) < scrollPhysics.tapSlop) return;
+    }
 
     if (!session.captured) {
       try {
@@ -448,6 +492,7 @@ export function MobileScroll({ className, children }: MobileScrollProps) {
         </div>
       </div>
       <div
+        ref={scrollbarRef}
         className="mobile-scrollbar"
         data-testid="mobile-scrollbar"
         data-visible={thumb.visible ? "true" : "false"}

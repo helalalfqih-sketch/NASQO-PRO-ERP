@@ -10,7 +10,8 @@ test("local SQLite ERP starts empty, reaches dashboard and opens options without
   await page.goto("/?autostart=1");
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("startup-storage-error")).toHaveCount(0);
-  await expect(page.getByTestId("empty-workspace-banner")).toBeVisible();
+  await expect(page.getByTestId("empty-workspace-banner")).toHaveCount(0);
+  await expect(page.getByTestId("account-groups-table")).toHaveCount(0);
   const status = await (await page.request.get("/api/db/status")).json();
   expect(status.accountsCount).toBe(0);
   expect(status.inventoryCount).toBe(0);

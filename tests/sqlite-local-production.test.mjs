@@ -384,8 +384,120 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     const preserved = await (await fetch(prefix)).json();
     assert.equal(preserved.accounts.length, 1);
     assert.equal(preserved.ledger.length, 1);
+
+    // Malformed JSON request must return JSON error (never Express HTML)
+    const malformedRes = await fetch(prefix + "/restore/json", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: "{broken-json",
+    });
+    assert.equal(malformedRes.status, 400);
+    assert.match(malformedRes.headers.get("content-type") ?? "", /application\/json/i);
+    const malformedBody = await malformedRes.json();
+    assert.ok(typeof malformedBody.error === "string" && malformedBody.error.length > 0);
+
+    // Chunked binary restore for SQLite snapshot (works across multi-chunk payloads)
+    await fetch(prefix + "/reset", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ confirmation: "RESET:local-erp-workspace" }),
+    });
+    const initRes = await fetch(prefix + "/restore/upload/init", {
+      method: "POST",
+      headers: { "X-NASQO-CSRF": "1" },
+    });
+    assert.equal(initRes.status, 201);
+    const { uploadId } = await initRes.json();
+    const mid = Math.floor(sqliteBuf.length / 2);
+    for (const part of [sqliteBuf.subarray(0, mid), sqliteBuf.subarray(mid)]) {
+      const chunkRes = await fetch(`${prefix}/restore/upload/${uploadId}/chunk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "X-NASQO-CSRF": "1" },
+        body: part,
+      });
+      assert.equal(chunkRes.status, 200);
+    }
+    const commitRes = await fetch(`${prefix}/restore/upload/${uploadId}/commit`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ kind: "sqlite", fileName: "chunked.sqlite", mode: "restore", replaceExisting: true }),
+    });
+    assert.equal(commitRes.status, 200);
+    const afterChunked = await commitRes.json();
+    assert.equal(afterChunked.bundle.accounts.length, 1);
+    assert.equal(afterChunked.bundle.ledger.length, 1);
   } finally {
     if (srv) await stopServer(srv.child);
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Cloud Run managed production boots without NASQO_SQLITE_* env vars and enforces Origin checks", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "nasqo-cloudrun-test-"));
+  const port = await freePort();
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.NASQO_SQLITE_PATH;
+  delete cleanEnv.NASQO_SQLITE_ADMIN_PASSWORD;
+  delete cleanEnv.NASQO_SQLITE_SESSION_SECRET;
+  delete cleanEnv.NASQO_SQLITE_PUBLIC_ORIGIN;
+  delete cleanEnv.NASQO_SQLITE_SECURE_COOKIE;
+  delete cleanEnv.NASQO_SQLITE_STRICT_PRODUCTION;
+
+  let child;
+  try {
+    child = spawn(process.execPath, [resolve(process.cwd(), "server.ts"), "--port", String(port)], {
+      cwd: dir,
+      env: {
+        ...cleanEnv,
+        NODE_ENV: "production",
+        K_SERVICE: "nasqo-pro-test",
+        NASQO_SKIP_AUTO_SQL_IMPORT: "1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    const base = `http://127.0.0.1:${port}`;
+    let healthy = false;
+    for (let i = 0; i < 100; i += 1) {
+      if (child.exitCode !== null) break;
+      try {
+        const res = await fetch(`${base}/api/health`);
+        if (res.ok) {
+          healthy = true;
+          break;
+        }
+      } catch {
+        // retry until listening
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(healthy, true, `Cloud Run server failed to start: ${stderr}`);
+
+    const status = await (await remoteRequest(port, "/api/db/auth/status")).json();
+    assert.equal(status.mode, "local");
+    assert.equal(status.authenticated, true);
+
+    const wsRes = await remoteRequest(port, "/api/db/workspace/local-erp-workspace");
+    assert.equal(wsRes.status, 200);
+
+    const csrfBlocked = await remoteRequest(port, "/api/db/workspace/local-erp-workspace/accounts", {
+      method: "POST",
+      headers: { Origin: "http://evil.example.test" },
+      body: { account: { name: "حساب مرفوض", category: "clients", currency: "ريال" } },
+    });
+    assert.equal(csrfBlocked.status, 403);
+
+    const sameOriginCreate = await remoteRequest(port, "/api/db/workspace/local-erp-workspace/accounts", {
+      method: "POST",
+      headers: { Origin: "http://nasqo.example.test" },
+      body: { account: { name: "حساب سحابي", category: "clients", currency: "ريال" } },
+    });
+    assert.equal(sameOriginCreate.status, 201);
+    assert.ok(existsSync(join(dir, "data", "nasqo.sqlite")));
+  } finally {
+    if (child) await stopServer(child);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+

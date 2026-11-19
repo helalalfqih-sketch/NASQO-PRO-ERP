@@ -1,7 +1,9 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import express, { Router, type Express, type Request, type Response } from "express";
+import zlib from "node:zlib";
+import express, { Router, type Express, type NextFunction, type Request, type Response } from "express";
 import { requireSqliteAccess, sqliteLogin, sqliteLogout, sqliteStatus, validateSqliteProductionConfig } from "./sqliteAccess.ts";
 import type { DatabaseSync } from "node:sqlite";
 import type { ErpWorkspaceData } from "../src/erp.ts";
@@ -152,7 +154,7 @@ export function mountSqliteApi(app: Express): void {
   router.post("/auth/login", express.json({ limit: "2kb" }), sqliteLogin);
   router.post("/auth/logout", sqliteLogout);
   router.use(requireSqliteAccess);
-  router.use(express.json({ limit: "32mb" }));
+  router.use(express.json({ limit: "128mb" }));
 
   router.get(
     "/status",
@@ -196,6 +198,15 @@ export function mountSqliteApi(app: Express): void {
       }
       resetWorkspaceToEmpty(db, uid);
       res.json(getFullWorkspaceBundle(db, uid));
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/seed-demo",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      ensureEmptyWorkspace(db, uid, "نسقو برو - تجريبي");
+      res.json({ bundle: getFullWorkspaceBundle(db, uid) });
     }),
   );
 
@@ -832,6 +843,179 @@ export function mountSqliteApi(app: Express): void {
       }
     }),
   );
+
+  type PendingUpload = {
+    uid: string;
+    dir: string;
+    filePath: string;
+    size: number;
+    createdAt: number;
+  };
+  const MAX_CHUNKED_UPLOAD_BYTES = 256 * 1024 * 1024;
+  const UPLOAD_TTL_MS = 15 * 60_000;
+  const pendingUploads = new Map<string, PendingUpload>();
+
+  const prunePendingUploads = () => {
+    const cutoff = Date.now() - UPLOAD_TTL_MS;
+    for (const [id, item] of pendingUploads.entries()) {
+      if (item.createdAt < cutoff) {
+        pendingUploads.delete(id);
+        fs.rmSync(item.dir, { recursive: true, force: true });
+      }
+    }
+  };
+
+  router.post(
+    "/workspace/:uid/restore/upload/init",
+    route((req, res) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      prunePendingUploads();
+      const uploadId = crypto.randomBytes(16).toString("hex");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nasqo-chunked-"));
+      const filePath = path.join(dir, "payload.bin");
+      fs.writeFileSync(filePath, Buffer.alloc(0));
+      pendingUploads.set(uploadId, { uid, dir, filePath, size: 0, createdAt: Date.now() });
+      res.status(201).json({ uploadId });
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/restore/upload/:uploadId/chunk",
+    express.raw({ type: "application/octet-stream", limit: "16mb" }),
+    route((req, res) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const uploadId = paramStr(req, "uploadId").trim();
+      const entry = pendingUploads.get(uploadId);
+      if (!entry || entry.uid !== uid) {
+        throw new HttpError(404, "جلسة الرفع غير موجودة أو منتهية الصلاحية.");
+      }
+      const chunk = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (chunk.length === 0) {
+        throw new HttpError(400, "الدفعة المرسلة فارغة.");
+      }
+      if (entry.size + chunk.length > MAX_CHUNKED_UPLOAD_BYTES) {
+        pendingUploads.delete(uploadId);
+        fs.rmSync(entry.dir, { recursive: true, force: true });
+        throw new HttpError(413, "حجم ملف النسخة الاحتياطية يتجاوز الحد الأقصى المسموح (256 ميجابايت).");
+      }
+      fs.appendFileSync(entry.filePath, chunk);
+      entry.size += chunk.length;
+      res.json({ ok: true, bytesReceived: entry.size });
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/restore/upload/:uploadId/commit",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const uploadId = paramStr(req, "uploadId").trim();
+      const entry = pendingUploads.get(uploadId);
+      if (!entry || entry.uid !== uid) {
+        throw new HttpError(404, "جلسة الرفع غير موجودة أو منتهية الصلاحية.");
+      }
+      pendingUploads.delete(uploadId);
+      try {
+        let rawBuffer: Buffer = fs.readFileSync(entry.filePath);
+        if (rawBuffer.length >= 2 && rawBuffer[0] === 0x1f && rawBuffer[1] === 0x8b) {
+          try {
+            rawBuffer = zlib.gunzipSync(rawBuffer);
+          } catch {
+            throw new HttpError(400, "تعذر فك ضغط ملف النسخة المضغوط (gzip).");
+          }
+        }
+        const kind = req.body?.kind === "sql" ? "sql" : req.body?.kind === "json" ? "json" : "sqlite";
+        const fileName =
+          typeof req.body?.fileName === "string" && req.body.fileName.trim()
+            ? req.body.fileName.slice(0, 120)
+            : "backup";
+
+        if (kind === "sql") {
+          const sqlText = rawBuffer.toString("utf8").replace(/^\uFEFF/, "");
+          if (!sqlText || sqlText.length < 50) {
+            throw new HttpError(400, "محتوى ملف SQL فارغ أو غير صالح.");
+          }
+          const report = importSmartProSqlDump(db, sqlText, {
+            workspaceId: uid,
+            sourceName: fileName,
+            replaceExisting: Boolean(req.body?.replaceExisting ?? true),
+          });
+          res.json({ report, bundle: getFullWorkspaceBundle(db, uid) });
+          return;
+        }
+
+        if (kind === "json") {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(rawBuffer.toString("utf8").replace(/^\uFEFF/, ""));
+          } catch {
+            throw new HttpError(400, "تعذر تحليل ملف JSON الخاص بالنسخة الاحتياطية.");
+          }
+          const payload =
+            parsed && typeof parsed === "object" && !Array.isArray(parsed) && "payload" in parsed
+              ? (parsed as { payload: unknown }).payload
+              : parsed;
+          const restored = restoreUnifiedJsonBundle(db, uid, payload);
+          res.json({ restored, bundle: getFullWorkspaceBundle(db, uid) });
+          return;
+        }
+
+        const bytes = new Uint8Array(rawBuffer);
+        const mode = req.body?.mode === "inspect" ? "inspect" : req.body?.mode === "restore" ? "restore" : "import";
+        if (mode === "inspect") {
+          const extracted = inspectAndExtractLegacySqlite(bytes);
+          res.json({
+            sha256: extracted.sha256,
+            integrity: extracted.integrity,
+            tables: Object.keys(extracted.tableCounts),
+            tableCounts: extracted.tableCounts,
+            totalRows: extracted.totalRows,
+            evidence: extracted.evidence,
+            reviewSummary: extracted.reviewSummary,
+          });
+          return;
+        }
+        const groupCategories =
+          req.body?.groupCategories && typeof req.body.groupCategories === "object"
+            ? (req.body.groupCategories as Record<string, AccountCategory>)
+            : undefined;
+        const replaceExisting =
+          req.body?.replaceExisting !== undefined
+            ? req.body.replaceExisting === true
+            : mode === "restore";
+        const result = importLegacySqliteIntoUnifiedDb(db, bytes, {
+          workspaceId: uid,
+          fileName,
+          groupCategories,
+          replaceExisting,
+        });
+        res.json({ result, bundle: getFullWorkspaceBundle(db, uid) });
+      } finally {
+        fs.rmSync(entry.dir, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  // Always return structured JSON on Express middleware errors (e.g. PayloadTooLargeError 413, SyntaxError 400)
+  // so the client never receives an Express HTML error page.
+  router.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const errObj = err && typeof err === "object" ? (err as { status?: unknown; statusCode?: unknown; type?: unknown }) : {};
+    const status =
+      typeof errObj.status === "number"
+        ? errObj.status
+        : typeof errObj.statusCode === "number"
+          ? errObj.statusCode
+          : 500;
+    if (status === 413 || errObj.type === "entity.too.large") {
+      res.status(413).json({ error: "حجم الطلب يتجاوز الحد المسموح على الخادم." });
+      return;
+    }
+    if (status === 400 && err instanceof SyntaxError) {
+      res.status(400).json({ error: "تعذر قراءة بيانات الطلب: صيغة JSON غير صالحة." });
+      return;
+    }
+    const msg = err instanceof Error && err.message ? err.message : "خطأ غير متوقع في خادم قاعدة SQLite.";
+    res.status(status >= 400 && status < 600 ? status : 500).json({ error: msg });
+  });
 
   app.use("/api/db", router);
 }

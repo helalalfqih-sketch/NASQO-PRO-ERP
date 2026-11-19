@@ -978,3 +978,14 @@ export function buildMasterData(
     },
   };
 }
+
+export function isManagedCloudRunPreview(): boolean {
+  return (
+    Boolean(process.env.K_SERVICE) &&
+    !process.env.NASQO_SQLITE_ADMIN_PASSWORD &&
+    !process.env.NASQO_SQLITE_SESSION_SECRET &&
+    !process.env.NASQO_SQLITE_PATH &&
+    process.env.NASQO_SQLITE_STRICT_PRODUCTION !== "1"
+  );
+}
+

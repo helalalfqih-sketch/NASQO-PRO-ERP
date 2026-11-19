@@ -53,7 +53,8 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.goto("/?autostart=1");
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20_000 });
   // Empty initial workspace: no hardcoded accounts/groups until user restores backup
-  await expect(page.getByTestId("empty-workspace-banner")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("empty-workspace-banner")).toHaveCount(0);
+  await expect(page.getByTestId("account-groups-table")).toHaveCount(0);
 
   // Open Options ("خيارات") dropdown menu and verify alternating backup / restore actions
   await page.getByTestId("header-options-btn").click();
@@ -84,7 +85,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
     mimeType: "application/octet-stream",
     buffer: await sampleSqlite(),
   });
-  await expect(page.getByTestId("empty-workspace-banner")).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByTestId("account-groups-table")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("account-groups-table").getByText("العملاء")).toBeVisible({ timeout: 10_000 });
 
   // Also check Settings -> SQLite table browser works over the restored DB
@@ -92,7 +93,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(page.getByTestId("settings-full-sqlite-import-btn")).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("settings-full-sqlite-import-btn").click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: /مستعرض جداول SQLite/ }).click();
+  await dialog.getByRole("button", { name: /عرض السجلات والجداول/ }).click();
   await expect(dialog.locator("table tbody tr").first()).toBeVisible({ timeout: 10_000 });
   await dialog.getByRole("button", { name: "✕" }).click();
   await page.getByLabel("رجوع", { exact: true }).click();
@@ -189,7 +190,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
 
   await page.getByTestId("open-erp-hub-btn").click();
   await expect(page.getByTestId("erp-hub-screen")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("local-db-section")).toContainText("SQLite");
+  await expect(page.getByTestId("local-db-section")).toContainText("سجلات النظام الموحدة");
 
   const [sqliteDownload] = await Promise.all([
     page.waitForEvent("download"),
@@ -338,14 +339,14 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(financeScreen.getByTestId("erp-finance-scope-bar")).toBeVisible();
   await expect(financeScreen.getByTestId("erp-finance-period-select")).toBeVisible();
   await expect(financeScreen.getByTestId("erp-finance-currency-select")).toBeVisible();
-  await expect(financeScreen.getByTestId("erp-finance-scope-summary")).toContainText("قاعدة SQLite الموحدة");
+  await expect(financeScreen.getByTestId("erp-finance-scope-summary")).toContainText("سجلات النظام");
 
   await financeScreen.getByRole("tab", { name: "الميزانية" }).click();
   await expect(financeScreen.getByTestId("erp-balance-reconciliation")).toBeVisible({ timeout: 10_000 });
   await expect(financeScreen.getByTestId("erp-balance-reconciliation")).toContainText("تسوية النقدية");
   await expect(financeScreen.getByTestId("erp-balance-reconciliation")).toContainText("تسوية المخزون");
 
-  await financeScreen.getByRole("tab", { name: "الضرائب VAT" }).click();
+  await financeScreen.getByRole("tab", { name: "الضرائب" }).click();
   await expect(financeScreen.getByTestId("erp-vat-jurisdiction-select")).toHaveValue("none");
   await expect(financeScreen.getByTestId("erp-vat-warning")).toBeVisible();
   await financeScreen.getByTestId("erp-vat-jurisdiction-select").selectOption("sa_15");
@@ -409,7 +410,7 @@ test("UI handles invalid {} JSON safely, inline invoice validation focuses field
     await page1.goto("/?autostart=1");
     await expect(page1.getByTestId("startup-storage-error")).toBeVisible({ timeout: 15_000 });
     await page1.getByTestId("startup-retry-button").click({ timeout: 10_000 });
-    await expect(page1.getByTestId("empty-workspace-banner")).toBeVisible({ timeout: 15_000 });
+    await expect(page1.getByTestId("startup-storage-error")).toHaveCount(0, { timeout: 15_000 });
 
     const grpClientsRes = await page1.request.post(`/api/db/workspace/${uid}/groups`, {
       headers,
@@ -469,7 +470,7 @@ test("UI handles invalid {} JSON safely, inline invoice validation focuses field
       buffer: Buffer.from("{}"),
     });
     await expect(page1.locator(".app-toast")).toContainText(/تم رفض|فارغ/i, { timeout: 10_000 });
-    await expect(page1.getByTestId("empty-workspace-banner")).toHaveCount(0);
+    await expect(page1.getByTestId("account-groups-table")).toContainText("العملاء");
 
     // 3) Inline validation & field focus in InvoiceModal when amount is cleared on existing invoice #9178
     await page1.getByRole("button", { name: "كشف حساب", exact: true }).click({ timeout: 10_000 });

@@ -186,7 +186,7 @@ export function InventoryBulkEditBar({
             {sellingPriceValue.trim() ? (
               <label style={{ display: "block", fontSize: 12, color: "#854d0e" }}>
                 <input type="checkbox" aria-label="تأكيد اعتماد سعر البيع" checked={confirmSellingPrice} onChange={(e) => setConfirmSellingPrice(e.target.checked)} />
-                أقر بأن سعر البيع أُدخل وراجعته يدويًا، وليس مستنتجًا من تكلفة SQLite.
+                أقر بأن سعر البيع أُدخل وراجعته يدويًا.
               </label>
             ) : null}
           </div>

@@ -70,10 +70,10 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <div>
           <strong style={{ color: "var(--nasqo-blue)" }}>
-            الأرشيف وبنود الفواتير ({account.legacyRef || `SQL #${account.codeNumber}`})
+            الأرشيف وبنود الفواتير ({account.legacyRef || `#${account.codeNumber}`})
           </strong>
           <div style={{ color: "var(--nasqo-muted)", marginTop: 2, fontSize: 11 }}>
-            فواتير وبنود: <b>{invoicesCount}</b> • سندات/قيود: <b>{vouchersCount}</b> (SQLite الموحدة)
+            فواتير وبنود: <b>{invoicesCount}</b> • سندات/قيود: <b>{vouchersCount}</b>
           </div>
         </div>
         <button
@@ -96,7 +96,7 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
 
       {loadingInvoice ? (
         <div style={{ marginTop: 8, color: "var(--nasqo-blue)", fontWeight: 600 }}>
-          جاري تحميل بنود الفاتورة من SQLite...
+          جاري تحميل بنود الفاتورة...
         </div>
       ) : null}
 

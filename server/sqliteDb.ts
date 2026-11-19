@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { DatabaseSync, backup as sqliteBackup } from "node:sqlite";
 import {
   createDefaultErpData,
   createEmptyErpData,
+  isManagedCloudRunPreview,
   isValidCategory,
   isValidLedgerKind,
   sanitizeAccountPayload,
@@ -46,11 +48,13 @@ export class SqliteValidationError extends Error {
 
 let cachedDb: DatabaseSync | null = null;
 let cachedDbPath = "";
+let fallbackCloudRunDbPath = "";
 
 export function resolveSqliteDbPath(overridePath?: string): string {
   if (overridePath) return overridePath;
   const envPath = process.env.NASQO_SQLITE_PATH?.trim();
   if (envPath) return envPath;
+  if (fallbackCloudRunDbPath && isManagedCloudRunPreview()) return fallbackCloudRunDbPath;
   return path.resolve(process.cwd(), "data", "nasqo.sqlite");
 }
 
@@ -58,6 +62,10 @@ export function resolveSqliteDbPath(overridePath?: string): string {
 // on an explicitly mounted volume. Backups are separate files, not live DBs.
 function requireDurableSqlitePath(filePath: string): void {
   if (process.env.NODE_ENV !== "production" || filePath === ":memory:") return;
+  if (isManagedCloudRunPreview()) {
+    console.warn("Managed Cloud Run preview detected; SQLite is using container storage at " + filePath);
+    return;
+  }
   if (!process.env.NASQO_SQLITE_PATH || !path.isAbsolute(filePath)) {
     throw new Error("Production SQLite requires an explicit absolute NASQO_SQLITE_PATH.");
   }
@@ -165,7 +173,7 @@ function openAndInit(filePath: string): DatabaseSync {
 }
 
 export function getSqliteDb(overridePath?: string): DatabaseSync {
-  const target = resolveSqliteDbPath(overridePath);
+  let target = resolveSqliteDbPath(overridePath);
   if (cachedDb && cachedDbPath === target) {
     return cachedDb;
   }
@@ -177,7 +185,23 @@ export function getSqliteDb(overridePath?: string): DatabaseSync {
     }
     cachedDb = null;
   }
-  cachedDb = openAndInit(target);
+  try {
+    cachedDb = openAndInit(target);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (
+      !overridePath &&
+      !process.env.NASQO_SQLITE_PATH?.trim() &&
+      isManagedCloudRunPreview() &&
+      (code === "EACCES" || code === "EROFS" || code === "EPERM")
+    ) {
+      target = path.join(os.tmpdir(), "nasqo-data", "nasqo.sqlite");
+      fallbackCloudRunDbPath = target;
+      cachedDb = openAndInit(target);
+    } else {
+      throw err;
+    }
+  }
   cachedDbPath = target;
   return cachedDb;
 }
@@ -561,8 +585,13 @@ export function ensureEmptyWorkspace(
   workspaceId: string = DEFAULT_WORKSPACE_ID,
   displayName?: string | null,
 ): void {
-  const existing = db.prepare("SELECT id FROM workspaces WHERE id = ?").get(workspaceId);
+  const existing = db.prepare("SELECT id, company_name FROM workspaces WHERE id = ?").get(workspaceId) as
+    | { id: string; company_name?: string }
+    | undefined;
   if (existing) {
+    if (existing.company_name === "نسقو برو ERP") {
+      db.prepare("UPDATE workspaces SET company_name = ? WHERE id = ?").run("نسقو برو", workspaceId);
+    }
     const erpMeta = db.prepare("SELECT workspace_id FROM erp_meta WHERE workspace_id = ?").get(workspaceId);
     if (!erpMeta) {
       db.prepare(
@@ -574,7 +603,7 @@ export function ensureEmptyWorkspace(
   }
   withTransaction(db, () => {
     const now = nowIso();
-    const companyName = displayName ? `نشاط ${displayName}` : "نسقو برو ERP";
+    const companyName = displayName ? `نشاط ${displayName}` : "نسقو برو";
     db.prepare(
       `INSERT INTO workspaces (id, owner_id, company_name, default_currency, whatsapp_provider, whatsapp_instant_enabled, whatsapp_phone, created_at, updated_at)
        VALUES (?, ?, ?, 'ريال', 'nasqo', 0, '', ?, ?)`,
@@ -615,7 +644,7 @@ export function ensureStarterWorkspace(
   withTransaction(db, () => {
     const now = nowIso();
     const daysAgoIso = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
-    const companyName = displayName ? `نشاط ${displayName}` : "نسقو برو ERP";
+    const companyName = displayName ? `نشاط ${displayName}` : "نسقو برو";
 
     db.prepare(
       `INSERT INTO workspaces (id, owner_id, company_name, default_currency, whatsapp_provider, whatsapp_instant_enabled, whatsapp_phone, created_at, updated_at)
@@ -3518,7 +3547,8 @@ export function restoreUnifiedJsonBundle(
   return withTransaction(db, () => {
     db.prepare("DELETE FROM workspaces WHERE id = ?").run(workspaceId);
 
-    const companyName = String(wsIn.companyName || "نسقو برو ERP").trim() || "نسقو برو ERP";
+    const rawCompanyName = String(wsIn.companyName || "نسقو برو").trim() || "نسقو برو";
+    const companyName = rawCompanyName === "نسقو برو ERP" ? "نسقو برو" : rawCompanyName;
     const defaultCurrency = String(wsIn.defaultCurrency || wsIn.baseCurrency || "ريال").trim() || "ريال";
     db.prepare(
       `INSERT INTO workspaces (id, owner_id, company_name, default_currency, whatsapp_provider, whatsapp_instant_enabled, whatsapp_phone, created_at, updated_at)

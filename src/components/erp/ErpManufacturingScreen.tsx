@@ -64,7 +64,7 @@ export function ErpManufacturingScreen({
     keyboard.hide();
     const bom = erpData.boms.find((b) => b.id === selectedBomId) ?? erpData.boms[0];
     if (!bom) {
-      onToast("لا توجد قائمة مواد (BOM) متاحة");
+      onToast("لا توجد قائمة مواد متاحة");
       return;
     }
     const qty = Math.max(1, Math.round(parsePositiveNumber(newOrderQty)));
@@ -192,7 +192,7 @@ export function ErpManufacturingScreen({
               setTab("bom");
             }}
           >
-            التصنيع و BOM
+            التصنيع والمكونات
           </button>
           <button
             type="button"
@@ -220,7 +220,7 @@ export function ErpManufacturingScreen({
               <div className="erp-inline-form">
                 <div className="erp-form-row-2">
                   <select
-                    aria-label="وصفة التصنيع BOM"
+                    aria-label="وصفة التصنيع"
                     value={selectedBomId}
                     onChange={(e) => setSelectedBomId(e.target.value)}
                   >

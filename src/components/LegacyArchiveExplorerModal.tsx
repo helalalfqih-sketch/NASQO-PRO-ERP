@@ -62,7 +62,7 @@ export function LegacyArchiveExplorerModal({
       setInvoices(page.invoices);
       if (!summary) setSummary(sum);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر قراءة السجلات من قاعدة SQLite.");
+      setError(err instanceof Error ? err.message : "تعذر قراءة السجلات المحفوظة.");
     } finally {
       setLoading(false);
     }
@@ -105,7 +105,7 @@ export function LegacyArchiveExplorerModal({
         <header style={{ padding: "14px 20px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc" }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#0f172a" }}>
-              الفواتير والقيود في قاعدة SQLite الموحدة
+              سجل الفواتير والقيود الموحد
             </h2>
             {summary ? (
               <div style={{ fontSize: 11, color: "#475569", marginTop: 2 }}>
@@ -186,7 +186,7 @@ export function LegacyArchiveExplorerModal({
                 </select>
               </div>
 
-              {loading ? <p style={{ textAlign: "center", color: "#0284c7" }}>جاري الاستعلام من قاعدة SQLite...</p> : null}
+              {loading ? <p style={{ textAlign: "center", color: "#0284c7" }}>جاري تحميل السجلات...</p> : null}
 
               <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "right" }}>

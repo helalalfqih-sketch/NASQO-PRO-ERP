@@ -269,7 +269,7 @@ export function ErpFinanceScreen({
     };
     onUpdateErpData({ ...erpData, vatConfig: nextConfig });
     triggerHaptic("success");
-    onToast("تم حفظ إعدادات الولاية الضريبية ومعدل VAT في SQLite");
+    onToast("تم حفظ إعدادات الضريبة بنجاح");
   };
 
   const exportCsv = () => {
@@ -296,7 +296,7 @@ export function ErpFinanceScreen({
     link.click();
     document.body.removeChild(link);
     window.setTimeout(() => URL.revokeObjectURL(url), 800);
-    onToast("تم تصدير ميزان المراجعة بصيغة CSV");
+    onToast("تم تصدير ميزان المراجعة بصيغة Excel");
   };
 
   const vatIsConfigured = vatJurisdiction !== "none" && Boolean(erpData?.vatConfig && erpData.vatConfig.jurisdiction !== "none");
@@ -310,7 +310,7 @@ export function ErpFinanceScreen({
               ["trial", "ميزان المراجعة"],
               ["income", "قائمة الدخل"],
               ["balance", "الميزانية"],
-              ["vat", "الضرائب VAT"],
+              ["vat", "الضرائب"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -405,7 +405,7 @@ export function ErpFinanceScreen({
               <b>النطاق:</b> <bdi>{periodLabel}</bdi> · <b>العملة:</b> <bdi>{currencyDisplayLabel}</bdi>
             </div>
             <div>
-              <b>المصدر:</b> قاعدة SQLite الموحدة ({accounts.length} حساب · {cashboxes.length} صندوق ·{" "}
+              <b>المصدر:</b> سجلات النظام ({accounts.length} حساب · {cashboxes.length} صندوق ·{" "}
               {inventory.length} صنف) — حركات مطابقة: <b>{activeScopeMeta?.matchedEntriesCount ?? 0}</b>
               {(activeScopeMeta?.excludedByCurrencyCount ?? 0) > 0
                 ? ` · مستبعد لاختلاف العملة: ${activeScopeMeta?.excludedByCurrencyCount}`
@@ -429,7 +429,7 @@ export function ErpFinanceScreen({
               </div>
               <button type="button" className="erp-chip-btn" onClick={exportCsv}>
                 <DownloadIcon />
-                <span>تصدير CSV</span>
+                <span>تصدير Excel</span>
               </button>
             </div>
 
@@ -706,7 +706,7 @@ export function ErpFinanceScreen({
           <section className="erp-card" data-testid="erp-vat-card">
             <div className="erp-card-head">
               <div>
-                <h3>تقرير ضريبة القيمة المضافة (VAT)</h3>
+                <h3>تقرير ضريبة القيمة المضافة</h3>
                 <small>
                   الولاية: {VAT_JURISDICTION_LABELS[vatJurisdiction]} · النسبة: {numericVatRatePercent}%
                 </small>
@@ -768,7 +768,7 @@ export function ErpFinanceScreen({
 
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button type="button" className="erp-chip-btn" data-testid="erp-vat-save-btn" onClick={saveVatSettings}>
-                  <span>حفظ إعداد الضريبة في SQLite</span>
+                  <span>حفظ إعداد الضريبة</span>
                 </button>
               </div>
             </div>

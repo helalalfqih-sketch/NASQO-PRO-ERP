@@ -147,7 +147,7 @@ function restoreNativeUnifiedSqlite(
     ).run(
       workspaceId,
       workspaceId,
-      asText(wsSrc.company_name) || "نسقو برو ERP",
+      asText(wsSrc.company_name) || "نسقو برو",
       asText(wsSrc.default_currency) || "ريال",
       asText(wsSrc.whatsapp_provider) || "nasqo",
       asInt(wsSrc.whatsapp_instant_enabled, 0),

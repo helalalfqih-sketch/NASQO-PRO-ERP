@@ -140,7 +140,7 @@ export function ErpHrScreen({
         accountId,
         accountName,
         kind: "voucher",
-        typeLabel: "صرف رواتب (ERP)",
+        typeLabel: "صرف رواتب",
         payment: "cash",
         direction: "debit",
         amount: payrollTotals.totalNetPayroll,

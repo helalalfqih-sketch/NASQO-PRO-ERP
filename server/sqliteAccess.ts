@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { getSqliteDb, isAuthSessionHashRevoked, revokeAuthSessionHash } from "./sqliteDb.ts";
+import { isManagedCloudRunPreview } from "./sqliteRuntimeSupport.ts";
 
 type Mode = "local" | "password" | "unconfigured";
 const COOKIE = "nasqo_sqlite_session";
@@ -57,6 +58,12 @@ function isLocal(req: Request): boolean {
 }
 export function validateSqliteProductionConfig(): void {
   if (process.env.NODE_ENV !== "production") return;
+  if (isManagedCloudRunPreview()) {
+    console.warn(
+      "Managed Cloud Run deployment detected without NASQO_SQLITE_ADMIN_PASSWORD/NASQO_SQLITE_SESSION_SECRET; starting in managed preview mode.",
+    );
+    return;
+  }
   if ((process.env.NASQO_SQLITE_ADMIN_PASSWORD ?? "").length < 12 ||
       (process.env.NASQO_SQLITE_SESSION_SECRET ?? "").length < 32) {
     throw new Error("Production SQLite requires a 12+ character admin password and a 32+ character session secret.");
@@ -71,7 +78,8 @@ export function accessMode(req: Request): Mode {
   if (isLocal(req)) return "local";
   const password = process.env.NASQO_SQLITE_ADMIN_PASSWORD ?? "";
   const secret = process.env.NASQO_SQLITE_SESSION_SECRET ?? "";
-  return password.length >= 12 && secret.length >= 32 ? "password" : "unconfigured";
+  if (password.length >= 12 && secret.length >= 32) return "password";
+  return isManagedCloudRunPreview() ? "local" : "unconfigured";
 }
 function safeMatch(a: string, b: string): boolean {
   const left = Buffer.from(a);

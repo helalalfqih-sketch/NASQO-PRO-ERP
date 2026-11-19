@@ -336,7 +336,7 @@ async function dbFetch<T>(
       signal: controller.signal,
       cache: "no-store",
       headers: {
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(typeof init?.body === "string" ? { "Content-Type": "application/json" } : {}),
         ...(init?.headers ?? {}),
       },
     });
@@ -348,15 +348,23 @@ async function dbFetch<T>(
       payload = rawText ? (JSON.parse(rawText) as unknown) : {};
     } catch {
       if (!response.ok) {
-        throw new ServerHttpError(response.status, "تعذر قراءة استجابة قاعدة SQLite.");
+        const msg =
+          response.status === 413
+            ? "حجم ملف النسخة الاحتياطية يتجاوز الحد المسموح للطلب المباشر."
+            : response.status === 404
+              ? "خدمة حفظ السجلات غير متاحة حاليًا."
+              : response.status === 502 || response.status === 503 || response.status === 504
+                ? "الخادم مشغول حاليًا، يرجى المحاولة بعد لحظات."
+                : "تعذر قراءة استجابة الخادم، يرجى إعادة المحاولة.";
+        throw new ServerHttpError(response.status, msg);
       }
-      throw new Error("استجابة الخادم ليست بصيغة JSON صالحة.");
+      throw new Error("استجابة الخادم غير صالحة.");
     }
     if (!response.ok) {
       const errMsg =
         payload && typeof payload === "object" && "error" in payload && typeof (payload as { error?: unknown }).error === "string"
           ? (payload as { error: string }).error
-          : "تعذر الاتصال بقاعدة بيانات SQLite الموحدة.";
+          : "تعذر الاتصال بخدمة حفظ السجلات.";
       throw new ServerHttpError(response.status, errMsg);
     }
     return payload as T;
@@ -543,7 +551,7 @@ export function subscribeWorkspace(uid: string, callbacks: WorkspaceCallbacks): 
     });
   } else {
     void refreshWorkspaceFromServer(uid).catch((err) => {
-      const normalized = err instanceof Error ? err : new Error("تعذر تحميل مساحة العمل من SQLite.");
+      const normalized = err instanceof Error ? err : new Error("تعذر تحميل مساحة العمل.");
       for (const listener of workspaceListeners) {
         listener.onError?.(normalized);
       }
@@ -1093,6 +1101,13 @@ export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Pr
   applyBundle(bundle);
 }
 
+export async function seedDemoWorkspace(uid = LOCAL_WORKSPACE_UID): Promise<void> {
+  const { bundle } = await dbFetch<{ bundle: WorkspaceBundle }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/seed-demo`, {
+    method: "POST",
+  });
+  applyBundle(bundle);
+}
+
 export async function fetchInvoiceFromDatabase(uid: string, entryId: string): Promise<LedgerEntryRecord | null> {
   try {
     const detail = await fetchInvoiceDetailWithLines(uid, entryId);
@@ -1134,22 +1149,116 @@ export async function fetchArchiveSummary(uid: string): Promise<ArchiveSummaryPa
   return dbFetch<ArchiveSummaryPayload>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/archive-summary`);
 }
 
+const CHUNKED_UPLOAD_THRESHOLD_BYTES = 6 * 1024 * 1024;
+const RESTORE_CHUNK_BYTES = 4 * 1024 * 1024;
+
+function decodeBase64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function uploadRestoreBytesChunked<T>(
+  uid: string,
+  bytes: Uint8Array,
+  commitBody: Record<string, unknown>,
+  mutating = true,
+): Promise<T> {
+  const ws = encodeURIComponent(effectiveUid(uid));
+  const { uploadId } = await dbFetch<{ uploadId: string }>(
+    `/workspace/${ws}/restore/upload/init`,
+    { method: "POST" },
+    15_000,
+    { mutating: false },
+  );
+  for (let offset = 0; offset < bytes.byteLength; offset += RESTORE_CHUNK_BYTES) {
+    const slice = bytes.subarray(offset, Math.min(bytes.byteLength, offset + RESTORE_CHUNK_BYTES));
+    const chunkBody = slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength) as ArrayBuffer;
+    await dbFetch<{ ok: boolean }>(
+      `/workspace/${ws}/restore/upload/${encodeURIComponent(uploadId)}/chunk`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "X-NASQO-CSRF": "1" },
+        body: chunkBody,
+      },
+      30_000,
+      { mutating: false },
+    );
+  }
+  return dbFetch<T>(
+    `/workspace/${ws}/restore/upload/${encodeURIComponent(uploadId)}/commit`,
+    {
+      method: "POST",
+      body: JSON.stringify(commitBody),
+    },
+    120_000,
+    { mutating },
+  );
+}
+
 export async function importSmartProSqlIntoServer(
   uid: string,
   sqlText: string,
   fileName: string,
   replaceExisting = true,
 ) {
-  const res = await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
-    {
-      method: "POST",
-      body: JSON.stringify({ sqlText, fileName, replaceExisting }),
-    },
-    120_000,
-  );
+  const utf8Bytes = new TextEncoder().encode(sqlText);
+  const res =
+    utf8Bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES
+      ? await uploadRestoreBytesChunked<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
+          uid,
+          utf8Bytes,
+          { kind: "sql", fileName, replaceExisting },
+          true,
+        )
+      : await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
+          `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
+          {
+            method: "POST",
+            body: JSON.stringify({ sqlText, fileName, replaceExisting }),
+          },
+          120_000,
+        );
   applyBundle(res.bundle);
   return res.report;
+}
+
+export async function importSqliteBytesIntoServer(
+  uid: string,
+  bytes: Uint8Array,
+  fileName: string,
+  mode: "inspect" | "import" | "restore",
+  groupCategories?: Record<string, AccountCategory>,
+  replaceExisting?: boolean,
+) {
+  if (bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
+    const res = await uploadRestoreBytesChunked<Record<string, unknown>>(
+      uid,
+      bytes,
+      {
+        kind: "sqlite",
+        fileName,
+        mode,
+        groupCategories,
+        ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+      },
+      mode !== "inspect",
+    );
+    if (res.bundle) {
+      applyBundle(res.bundle as WorkspaceBundle, true);
+    }
+    return res;
+  }
+
+  let binary = "";
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + step));
+  }
+  return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting);
 }
 
 export async function importSqliteLegacyIntoServer(
@@ -1160,21 +1269,35 @@ export async function importSqliteLegacyIntoServer(
   groupCategories?: Record<string, AccountCategory>,
   replaceExisting?: boolean,
 ) {
-  const res = await dbFetch<Record<string, unknown>>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/sqlite-legacy`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        base64,
-        fileName,
-        mode,
-        groupCategories,
-        ...(replaceExisting !== undefined ? { replaceExisting } : {}),
-      }),
-    },
-    mode === "inspect" ? 12_000 : 45_000,
-    { mutating: mode !== "inspect" },
-  );
+  const res =
+    base64.length > Math.ceil((CHUNKED_UPLOAD_THRESHOLD_BYTES * 4) / 3)
+      ? await uploadRestoreBytesChunked<Record<string, unknown>>(
+          uid,
+          decodeBase64ToBytes(base64),
+          {
+            kind: "sqlite",
+            fileName,
+            mode,
+            groupCategories,
+            ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+          },
+          mode !== "inspect",
+        )
+      : await dbFetch<Record<string, unknown>>(
+          `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/sqlite-legacy`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              base64,
+              fileName,
+              mode,
+              groupCategories,
+              ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+            }),
+          },
+          mode === "inspect" ? 20_000 : 120_000,
+          { mutating: mode !== "inspect" },
+        );
   if (res.bundle) {
     applyBundle(res.bundle as WorkspaceBundle, true);
   }
@@ -1185,14 +1308,23 @@ export async function restoreJsonBackupIntoServer(
   uid: string,
   payload: Record<string, unknown>,
 ) {
-  const res = await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/json`,
-    {
-      method: "POST",
-      body: JSON.stringify({ payload }),
-    },
-    15_000,
-  );
+  const bodyStr = JSON.stringify({ payload });
+  const res =
+    bodyStr.length > CHUNKED_UPLOAD_THRESHOLD_BYTES
+      ? await uploadRestoreBytesChunked<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
+          uid,
+          new TextEncoder().encode(JSON.stringify(payload)),
+          { kind: "json", fileName: "backup.json" },
+          true,
+        )
+      : await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
+          `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/json`,
+          {
+            method: "POST",
+            body: bodyStr,
+          },
+          120_000,
+        );
   applyBundle(res.bundle, true);
   return res;
 }
@@ -1254,7 +1386,7 @@ export async function downloadUnifiedSqliteFile(
       `${apiBase()}/workspace/${encodeURIComponent(effectiveUid(uid))}/export/sqlite`,
       { signal: controller.signal, cache: "no-store" },
     );
-    if (!res.ok) throw new Error("تعذر تصدير ملف SQLite الموحّد.");
+    if (!res.ok) throw new Error("تعذر تصدير النسخة الاحتياطية الكاملة.");
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1266,7 +1398,7 @@ export async function downloadUnifiedSqliteFile(
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("انتهت مهلة تحميل ملف قاعدة SQLite. يرجى إعادة المحاولة.");
+      throw new Error("انتهت مهلة تحميل النسخة الاحتياطية. يرجى إعادة المحاولة.");
     }
     throw err;
   } finally {
