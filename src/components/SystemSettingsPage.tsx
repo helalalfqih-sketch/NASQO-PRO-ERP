@@ -365,7 +365,7 @@ export function SystemSettingsPage({
               />
             </label>
             <label className="sys-field-box">
-              <span>Name_en</span>
+              <span>الاسم بالإنجليزية</span>
               <KeyboardInput
                 aria-label="Business Name EN"
                 value={draft.companyNameEn}
@@ -381,7 +381,7 @@ export function SystemSettingsPage({
               />
             </label>
             <label className="sys-field-box">
-              <span>Address_en</span>
+              <span>العنوان بالإنجليزية</span>
               <KeyboardInput
                 aria-label="Address EN"
                 value={draft.addressEn}
@@ -398,7 +398,7 @@ export function SystemSettingsPage({
               />
             </label>
             <label className="sys-field-box">
-              <span>Mobile_en</span>
+              <span>رقم الجوال بالإنجليزية</span>
               <KeyboardInput
                 aria-label="Mobile EN"
                 inputMode="tel"

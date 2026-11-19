@@ -85,6 +85,7 @@ import { PrintOptionsModal } from "./components/PrintOptionsModal";
 
 import { SystemSettingsPage } from "./components/SystemSettingsPage";
 import { TransferModal } from "./components/TransferModal";
+import { ReportsHubModal } from "./components/ReportsHubModal";
 import { WhatsAppIcon } from "./components/WhatsAppIcon";
 
 
@@ -239,6 +240,7 @@ type OverlayKind =
   | "account-groups"
   | "chart-of-accounts"
   | "cashboxes-report"
+  | "reports-hub"
   | "currencies-manager"
   | "confirm-reset"
   | null;
@@ -347,6 +349,7 @@ type LiveWorkspaceState = {
   openAccountGroups: () => void;
   openChartOfAccounts: () => void;
   openCashboxesReport: () => void;
+  openReportsHub: () => void;
   openCurrenciesManager: () => void;
   openInventoryAdd: () => void;
   openInventoryEdit: (item: InventoryItemRecord) => void;
@@ -1180,7 +1183,7 @@ function AuthenticatedWorkspace({
       dismissKeyboard();
       if (account) {
         setEditingAccount(account);
-        setOverlay("account-create-compact");
+        setOverlay("account-create-extended");
         return;
       }
       setPickerMode("edit");
@@ -1390,6 +1393,11 @@ function AuthenticatedWorkspace({
   const openCashboxesReport = useCallback(() => {
     dismissKeyboard();
     setOverlay("cashboxes-report");
+  }, [dismissKeyboard]);
+
+  const openReportsHub = useCallback(() => {
+    dismissKeyboard();
+    setOverlay("reports-hub");
   }, [dismissKeyboard]);
 
   const openCurrenciesManager = useCallback(() => {
@@ -1833,6 +1841,7 @@ function AuthenticatedWorkspace({
       openAccountGroups,
       openChartOfAccounts,
       openCashboxesReport,
+      openReportsHub,
       openCurrenciesManager,
       openInventoryAdd: () => {
         setInventoryEditing(undefined);
@@ -1916,6 +1925,7 @@ function AuthenticatedWorkspace({
       openQuickSearch,
       openBackupModal,
       openCashboxesReport,
+      openReportsHub,
       openChartOfAccounts,
       openCurrenciesManager,
       openGoogleDriveModal,
@@ -2247,7 +2257,8 @@ function AuthenticatedWorkspace({
           onClose={() => setOverlay(null)}
         />
         <AccountCreateModal
-          key={`ext-${accountCreateCategory}-${overlay}`}
+          key={editingAccount?.id ?? `ext-${accountCreateCategory}-${overlay}`}
+          initialAccount={editingAccount}
           defaultCategory={accountCreateCategory}
           mode="extended"
           open={overlay === "account-create-extended"}
@@ -2258,6 +2269,21 @@ function AuthenticatedWorkspace({
         <AccountGroupsModal open={overlay === "account-groups"} onClose={() => setOverlay(null)} />
         <ChartOfAccountsModal open={overlay === "chart-of-accounts"} onClose={() => setOverlay(null)} />
         <CashboxesReportModal open={overlay === "cashboxes-report"} onClose={() => setOverlay(null)} />
+        <ReportsHubModal
+          open={overlay === "reports-hub"}
+          onClose={() => setOverlay(null)}
+          uid={user.uid}
+          accounts={accounts}
+          ledger={ledger}
+          inventory={inventory}
+          warehouses={warehouses}
+          cashboxes={cashboxes}
+          currencyCodes={currencyCodes}
+          defaultCurrency={workspace?.defaultCurrency ?? "ريال"}
+          onOpenCashboxes={openCashboxesReport}
+          onOpenTrialBalance={openTrialBalance}
+          onOpenInventoryMovements={() => flowRef.current?.push(inventoryReportScreen())}
+        />
         <CurrenciesModal open={overlay === "currencies-manager"} onClose={() => setOverlay(null)} />
         <ResetDatabaseConfirmModal
           open={overlay === "confirm-reset"}
@@ -2647,7 +2673,7 @@ function SupplierFooter({
       balance={formatAmount(statement.netBalance)}
       compact
       onPrimary={() => ctx.flowRef.current?.push(simpleEntryScreen(account.id))}
-      onMenu={() => ctx.openExportMenu("statement", account)}
+      onMenu={onCashMenu}
     />
   );
 }
@@ -2676,7 +2702,7 @@ function SupplierScreenRouter({
   return account.isCashAccount ? (
     <CashSupplierPage account={account} menuControl={menuControl} searchControl={searchControl} />
   ) : (
-    <SupplierPage account={account} searchControl={searchControl} />
+    <SupplierPage account={account} menuControl={menuControl} searchControl={searchControl} />
   );
 }
 
@@ -2926,6 +2952,13 @@ function WarehousesPage({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
+          ) : null}
+          {ctx.warehouses.filter((warehouse) => matchesArabicSearch(warehouse.name, search)).length === 0 ? (
+            <p className="cash-empty" style={{ textAlign: "center", padding: "32px 16px" }}>
+              {search.trim()
+                ? "لا توجد مخازن مطابقة للبحث."
+                : "لا توجد مخازن مضافة بعد — اضغط زر (+) لإضافة مخزن جديد."}
+            </p>
           ) : null}
           {ctx.warehouses
             .filter((warehouse) => matchesArabicSearch(warehouse.name, search))
@@ -5197,7 +5230,7 @@ function InvoiceModal({
                 checked={kind === "purchase"}
                 onChange={() => setKind("purchase")}
               />
-              <span>فاتورة شراء</span>
+              <span>{isReturn ? "مردود شراء" : "فاتورة شراء"}</span>
             </label>
             <label className={`red ${kind === "sale" ? "active" : ""}`}>
               <input
@@ -5206,7 +5239,7 @@ function InvoiceModal({
                 checked={kind === "sale"}
                 onChange={() => setKind("sale")}
               />
-              <span>فاتورة بيع</span>
+              <span>{isReturn ? "مردود بيع" : "فاتورة بيع"}</span>
             </label>
             <button
               type="button"
@@ -6054,6 +6087,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     { label: "الحركة اليومية", icon: ActivityLogIcon, action: () => { triggerHaptic("light"); flow.push(dailyJournalScreen()); } },
     { label: "صناديق النقدية", icon: CardStackIcon, action: () => { triggerHaptic("light"); ctx.openCashboxesReport(); } },
     { label: "كشف حساب", icon: ReaderIcon, action: () => { triggerHaptic("light"); ctx.openAccountPicker(); } },
+    { label: "التقارير", icon: BarChartIcon, action: () => { triggerHaptic("light"); ctx.openReportsHub(); } },
   ];
 
   const leftBlueActions: { label: string; icon: IconComponent; action: () => void }[] = [
@@ -6609,9 +6643,11 @@ function computePeriodDateRange(period: string): { fromDate: string; toDate: str
 
 function SupplierPage({
   account,
+  menuControl,
   searchControl,
 }: {
   account: AccountRecord;
+  menuControl: MutableRefObject<(() => void) | null>;
   searchControl: MutableRefObject<(() => void) | null>;
 }) {
   const ctx = useWorkspace();
@@ -6620,6 +6656,7 @@ function SupplierPage({
   const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? true;
   const currency = ctx.statementCurrencies[account.id] ?? account.currency ?? "ريال";
   const [searchOpen, setSearchOpen] = useState(false);
+  const [operationsOpen, setOperationsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const periods = ["يومي", "شهري", "سنوي", "الكل"];
 
@@ -6638,8 +6675,13 @@ function SupplierPage({
     }));
   };
 
+  menuControl.current = () => {
+    keyboard.hide();
+    setOperationsOpen((open) => !open);
+  };
   searchControl.current = () => {
     keyboard.hide();
+    setOperationsOpen(false);
     setSearchOpen((v) => !v);
     setQuery("");
   };
@@ -6680,6 +6722,17 @@ function SupplierPage({
               <small>سقف المديونية: {formatAmount(account.creditLimit)} {account.currency}</small>
             </div>
             <div className="supplier-summary-actions">
+              <button
+                type="button"
+                className="supplier-whatsapp-btn"
+                style={{ background: "var(--nasqo-orange, #f39a16)", color: "#fff" }}
+                data-testid="supplier-new-invoice-btn"
+                aria-label={`فاتورة جديدة لـ ${account.name}`}
+                onClick={() => ctx.openVendorInvoice(account)}
+              >
+                <FilePlusIcon />
+                <span>فاتورة</span>
+              </button>
               <button
                 type="button"
                 className="supplier-whatsapp-btn"
@@ -6915,6 +6968,7 @@ function SupplierPage({
       <button className="fab fixed-fab supplier-fab" onClick={() => ctx.openTransaction(account)} aria-label="إضافة سند">
         <PlusIcon />
       </button>
+      {operationsOpen ? <CashOperationsMenu account={account} onClose={() => setOperationsOpen(false)} /> : null}
     </>
   );
 }
@@ -7680,13 +7734,19 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
 
   const selectedAccount = ctx.accounts.find((a) => a.id === selectedAccountId) ?? ctx.accounts[0];
   const parsedAmount = parseArabicNumber(amount);
-  const parsedRate = Math.max(0.0001, parseArabicNumber(rate) || 1);
+  const isSameCurrency = fromCurrency === toCurrency;
+  const parsedRate = isSameCurrency ? 1 : Math.max(0.0001, parseArabicNumber(rate) || 1);
   const converted = parsedAmount * parsedRate;
 
   const saveExchange = async () => {
     if (!selectedAccount || parsedAmount <= 0) {
       triggerHaptic("warning");
       ctx.showToast("أدخل المبلغ واختر الحساب أولًا");
+      return;
+    }
+    if (isSameCurrency) {
+      triggerHaptic("warning");
+      ctx.showToast("اختر عملتين مختلفتين لإتمام عملية صرف العملات (أو أضف عملة من نافذة العملات)");
       return;
     }
     setSaving(true);
@@ -11494,6 +11554,9 @@ function CashInvoiceDocument({
       </div>
       <p className="cash-invoice-description-flow">
         البيان /{entry.warehouseName ? ` (${entry.warehouseName})` : ""}
+        {entry.details && entry.details !== entry.typeLabel
+          ? ` ${entry.details.replace(/\s*—\s*\[.*\]$/, "")}`
+          : ""}
       </p>
       <table className="cash-invoice-table cash-invoice-table-flow" aria-label="بنود المستند">
         <colgroup>

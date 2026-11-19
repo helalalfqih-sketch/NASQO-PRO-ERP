@@ -7634,8 +7634,8 @@ select.select-box.currency-select {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: min(700px, calc(100vw - 24px));
-  max-height: min(90vh, 780px);
+  width: min(700px, calc(100% - 16px));
+  max-height: min(90dvh, 780px);
   overflow-y: auto;
   background: #ffffff;
   border: 2px solid #0b4c8c;
@@ -7647,10 +7647,10 @@ select.select-box.currency-select {
 }
 
 .account-groups-modal {
-  width: min(780px, calc(100vw - 24px));
+  width: min(780px, calc(100% - 16px));
 }
 .account-groups-modal.chart-of-accounts-modal {
-  width: min(960px, calc(100vw - 24px));
+  width: min(960px, calc(100% - 16px));
 }
 
 .smart-modal-header {
@@ -10780,9 +10780,19 @@ button.currencies-footer-hint:hover {
 
 /* 5. Account Groups Modal (دليل الحسابات): fix mobile form overflow & CSS order */
 .account-groups-fieldset {
+  flex-shrink: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 8px;
+}
+
+.account-groups-table-wrap {
+  flex: 1 1 auto;
+  min-height: 150px;
+}
+
+.account-groups-footer {
+  flex-shrink: 0;
 }
 
 .account-groups-form-grid {
@@ -11271,3 +11281,81 @@ button.currencies-footer-hint:hover {
 
 
 
+
+/* Reports hub (التقارير) — mirrors the reference reports window */
+.reports-hub-modal {
+  width: min(460px, calc(100% - 16px));
+}
+.reports-hub-menu {
+  padding: 0 0 6px;
+}
+.reports-hub-section {
+  padding: 6px 10px 2px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.reports-hub-btn {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 5px 10px;
+  min-height: 46px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 3px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 15.5px;
+  font-weight: 800;
+  text-align: center;
+  cursor: pointer;
+}
+.reports-hub-btn.orange {
+  background: #f39a16;
+}
+.reports-hub-btn.blue {
+  background: #0b4c8c;
+}
+.reports-hub-btn:active {
+  filter: brightness(0.92);
+}
+.reports-hub-detail {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 4px;
+}
+.reports-hub-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+.reports-hub-filters label {
+  display: grid;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0b4c8c;
+}
+.reports-hub-filters select,
+.reports-hub-filters input {
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  padding: 0 6px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+}
+:root.dark .reports-hub-section {
+  color: #e2e8f0;
+}
+:root.dark .reports-hub-filters select,
+:root.dark .reports-hub-filters input {
+  background: #132036;
+  color: #e2e8f0;
+  border-color: #294162;
+}

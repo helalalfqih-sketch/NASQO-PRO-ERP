@@ -2290,10 +2290,7 @@ export function getInventoryMovementsReport(
           : localAvgCost;
 
     const remainingValue = round2(availableQty * unitCostBasis);
-    const profit =
-      grossSellQty === 0 && srQty > 0
-        ? round2(-sellQty * unitCostBasis)
-        : round2(sellTotal - sellQty * unitCostBasis);
+    const profit = round2(sellTotal - sellQty * unitCostBasis);
     const hasMovement =
       grossBuyQty !== 0 ||
       prQty !== 0 ||

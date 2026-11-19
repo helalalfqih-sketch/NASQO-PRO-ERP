@@ -1568,13 +1568,17 @@ export function computeTrialBalanceReport(
 
     accNets.set(e.accountId, (accNets.get(e.accountId) ?? 0) + (dVal - cVal));
 
-    // Cashbox cash inflows/outflows (vouchers linked to cashboxes + cash-settled invoices)
-    if (e.payment === "cash") {
-      if (e.kind === "voucher") {
+    // Cashbox cash inflows/outflows (vouchers, transfers, simple-entries + cash-settled invoices/returns)
+    if (e.payment === "cash" || e.settledOnReceipt) {
+      if (e.kind === "voucher" || e.kind === "transfer" || e.kind === "simple-entry") {
         if (e.direction === "credit") cashIn += e.amount;
         else cashOut += e.amount;
-      } else if (e.settledOnReceipt) {
-        if (e.direction === "debit") cashIn += e.amount;
+      } else {
+        const isInflow =
+          e.docType !== undefined && e.docType !== null
+            ? [2, 7, 5].includes(Number(e.docType))
+            : e.direction === "debit";
+        if (isInflow) cashIn += e.amount;
         else cashOut += e.amount;
       }
     }

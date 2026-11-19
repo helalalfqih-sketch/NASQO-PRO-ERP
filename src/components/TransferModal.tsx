@@ -149,16 +149,21 @@ export function TransferModal({
       onNotify("أدخل مبلغ الحوالة واختر الحساب أولًا");
       return;
     }
+    const cashboxAcc = accounts.find((a) => a.id === cashboxId);
+    if (cashboxAcc && cashboxAcc.id === activeAccount.id && accounts.length > 1) {
+      triggerHaptic("warning");
+      onNotify("لا يمكن أن يكون حساب الحوالة وحساب الصندوق المقابل هما نفس الحساب");
+      return;
+    }
     setSaving(true);
     try {
       const nextNum = Math.max(1000, ...ledger.map((e) => e.entryNumber)) + 1;
-      const cashboxAcc = accounts.find((a) => a.id === cashboxId);
       const composedDetails = composeDetailsText();
       const payload: Omit<LedgerEntryRecord, "id" | "ownerId" | "createdAtMs"> = {
         accountId: activeAccount.id,
         accountName: activeAccount.name,
-        counterpartAccountId: cashboxAcc?.id ?? "",
-        counterpartAccountName: cashboxAcc?.name ?? "الصندوق",
+        counterpartAccountId: cashboxAcc && cashboxAcc.id !== activeAccount.id ? cashboxAcc.id : "",
+        counterpartAccountName: cashboxAcc && cashboxAcc.id !== activeAccount.id ? cashboxAcc.name : "الصندوق",
         ...(sqliteCashboxId ? { cashboxId: sqliteCashboxId } : {}),
         kind: "transfer",
         typeLabel: direction === "outgoing" ? "حوالة صادرة" : "حوالة واردة",
