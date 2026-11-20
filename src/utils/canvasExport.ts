@@ -29,7 +29,7 @@ export function exportSummaryAsPngImage(options: {
   const ctx = canvas.getContext("2d");
   if (!ctx) return false;
 
-  const accent = options.accentColor || "#0b5ca8";
+  const accent = options.accentColor || "#4338ca";
 
   // Clean light receipt surface
   ctx.fillStyle = "#ffffff";

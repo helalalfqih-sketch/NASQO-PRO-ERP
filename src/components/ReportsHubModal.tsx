@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRightIcon, Cross2Icon } from "@radix-ui/react-icons";
+import { NasqoBrandLoader } from "./NasqoBrandLoader";
 import {
   computeCategoryTotals,
   computeTrialBalanceReport,
@@ -87,9 +88,16 @@ export function ReportsHubModal({
   const [profitData, setProfitData] = useState<MovementReport | null>(null);
   const [profitError, setProfitError] = useState("");
 
+  const [visibleLimit, setVisibleLimit] = useState(80);
+
   useEffect(() => {
     if (!open) setReport(null);
+    setVisibleLimit(80);
   }, [open]);
+
+  useEffect(() => {
+    setVisibleLimit(80);
+  }, [report, currency, warehouseId, fromDate, toDate]);
 
   useEffect(() => {
     if (!open || report !== "invoice-profit") return;
@@ -113,26 +121,34 @@ export function ReportsHubModal({
     };
   }, [open, report, uid, fromDate, toDate, currency, warehouseId]);
 
-  const activeLedger = useMemo(() => ledger.filter((e) => !e.deleted), [ledger]);
+  const activeLedger = useMemo(
+    () => (open && (report === "services" || report === "tax") ? ledger.filter((e) => !e.deleted) : []),
+    [ledger, open, report],
+  );
 
   const closing = useMemo(
-    () => computeTrialBalanceReport(accounts, ledger, inventory, cashboxes, { currency }),
-    [accounts, ledger, inventory, cashboxes, currency],
+    () =>
+      open && report === "closing"
+        ? computeTrialBalanceReport(accounts, ledger, inventory, cashboxes, { currency })
+        : null,
+    [accounts, ledger, inventory, cashboxes, currency, open, report],
   );
 
   const categoryTotals = useMemo(
-    () => computeCategoryTotals(accounts, ledger, currency),
-    [accounts, ledger, currency],
+    () => (open && report === "by-category" ? computeCategoryTotals(accounts, ledger, currency) : null),
+    [accounts, ledger, currency, open, report],
   );
 
   const stockRows = useMemo(
     () =>
-      inventory
-        .filter((i) => !warehouseId || i.warehouseId === warehouseId)
-        .map((i) => ({ item: i, qty: stockQty(i) }))
-        .filter((r) => Math.abs(r.qty) > 0.0001)
-        .sort((a, b) => a.item.name.localeCompare(b.item.name, "ar")),
-    [inventory, warehouseId],
+      open && (report === "stock-remaining" || report === "stock-expiry")
+        ? inventory
+            .filter((i) => !warehouseId || i.warehouseId === warehouseId)
+            .map((i) => ({ item: i, qty: stockQty(i) }))
+            .filter((r) => Math.abs(r.qty) > 0.0001)
+            .sort((a, b) => a.item.name.localeCompare(b.item.name, "ar"))
+        : [],
+    [inventory, open, report, warehouseId],
   );
   const stockTotals = useMemo(
     () => ({
@@ -148,34 +164,40 @@ export function ReportsHubModal({
   }, []);
   const expiryRows = useMemo(
     () =>
-      stockRows
-        .filter((r) => Boolean(r.item.expiryDate))
-        .map((r) => {
-          const ms = Date.parse(`${r.item.expiryDate}T00:00:00Z`);
-          const days = Number.isFinite(ms) ? Math.round((ms - todayMs) / 86_400_000) : null;
-          return { ...r, days };
-        })
-        .sort((a, b) => (a.days ?? 1e9) - (b.days ?? 1e9)),
-    [stockRows, todayMs],
+      open && report === "stock-expiry"
+        ? stockRows
+            .filter((r) => Boolean(r.item.expiryDate))
+            .map((r) => {
+              const ms = Date.parse(`${r.item.expiryDate}T00:00:00Z`);
+              const days = Number.isFinite(ms) ? Math.round((ms - todayMs) / 86_400_000) : null;
+              return { ...r, days };
+            })
+            .sort((a, b) => (a.days ?? 1e9) - (b.days ?? 1e9))
+        : [],
+    [open, report, stockRows, todayMs],
   );
 
   const profitRows = useMemo(
     () =>
-      (profitData?.itemRows ?? [])
-        .filter((r) => Math.abs(r.sellQty) > 0.0001 || Math.abs(r.sellTotal) > 0.0001)
-        .sort((a, b) => b.profit - a.profit),
-    [profitData],
+      open && report === "invoice-profit"
+        ? (profitData?.itemRows ?? [])
+            .filter((r) => Math.abs(r.sellQty) > 0.0001 || Math.abs(r.sellTotal) > 0.0001)
+            .sort((a, b) => b.profit - a.profit)
+        : [],
+    [open, profitData, report],
   );
 
   const serviceRows = useMemo(
     () =>
-      activeLedger
-        .filter(
-          (e) =>
-            e.kind === "invoice" && e.invoiceContent === "free" && matchesCurrency(e.currency, currency),
-        )
-        .sort((a, b) => b.entryDate.localeCompare(a.entryDate) || b.entryNumber - a.entryNumber),
-    [activeLedger, currency],
+      open && report === "services"
+        ? activeLedger
+            .filter(
+              (e) =>
+                e.kind === "invoice" && e.invoiceContent === "free" && matchesCurrency(e.currency, currency),
+            )
+            .sort((a, b) => b.entryDate.localeCompare(a.entryDate) || b.entryNumber - a.entryNumber)
+        : [],
+    [activeLedger, currency, open, report],
   );
   const serviceTotals = useMemo(() => {
     let sales = 0;
@@ -188,6 +210,9 @@ export function ReportsHubModal({
   }, [serviceRows]);
 
   const tax = useMemo(() => {
+    if (!open || report !== "tax") {
+      return { output: 0, input: 0, net: 0, taxedDocs: 0 };
+    }
     let output = 0;
     let input = 0;
     let taxedDocs = 0;
@@ -202,7 +227,7 @@ export function ReportsHubModal({
       else input += sign * t;
     }
     return { output: round2(output), input: round2(input), net: round2(output - input), taxedDocs };
-  }, [activeLedger, currency]);
+  }, [activeLedger, currency, open, report]);
 
   if (!open) return null;
 
@@ -334,7 +359,7 @@ export function ReportsHubModal({
               </div>
             ) : null}
 
-            {report === "closing" ? (
+            {report === "closing" && closing ? (
               <div data-testid="report-closing">
                 <div className="smart-section-band">الأرصدة</div>
                 <div className="trial-balance-rows">
@@ -353,7 +378,7 @@ export function ReportsHubModal({
               </div>
             ) : null}
 
-            {report === "by-category" ? (
+            {report === "by-category" && categoryTotals ? (
               <div className="account-groups-table-wrap" data-testid="report-by-category">
                 <table className="account-groups-table">
                   <thead>
@@ -398,7 +423,7 @@ export function ReportsHubModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {stockRows.map(({ item, qty }, idx) => (
+                    {stockRows.slice(0, visibleLimit).map(({ item, qty }, idx) => (
                       <tr key={item.id}>
                         <td>{item.legacyId ?? idx + 1}</td>
                         <td className="ag-name-cell">{item.name}</td>
@@ -407,6 +432,15 @@ export function ReportsHubModal({
                         <td>{formatAmount(qty * item.avgCost)}</td>
                       </tr>
                     ))}
+                    {stockRows.length > visibleLimit ? (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: "center", padding: 8 }}>
+                          <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
+                            عرض المزيد (المعروض {visibleLimit} من {stockRows.length})
+                          </button>
+                        </td>
+                      </tr>
+                    ) : null}
                     {stockRows.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="coa-empty-cell">
@@ -431,7 +465,7 @@ export function ReportsHubModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {expiryRows.map(({ item, qty, days }) => (
+                    {expiryRows.slice(0, visibleLimit).map(({ item, qty, days }) => (
                       <tr key={item.id}>
                         <td className="ag-name-cell">{item.name}</td>
                         <td>
@@ -445,6 +479,15 @@ export function ReportsHubModal({
                         </td>
                       </tr>
                     ))}
+                    {expiryRows.length > visibleLimit ? (
+                      <tr>
+                        <td colSpan={4} style={{ textAlign: "center", padding: 8 }}>
+                          <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
+                            عرض المزيد (المعروض {visibleLimit} من {expiryRows.length})
+                          </button>
+                        </td>
+                      </tr>
+                    ) : null}
                     {expiryRows.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="coa-empty-cell">
@@ -460,7 +503,7 @@ export function ReportsHubModal({
             {report === "invoice-profit" ? (
               <div data-testid="report-invoice-profit">
                 {profitError ? <p className="cash-empty">{profitError}</p> : null}
-                {!profitData && !profitError ? <p className="cash-empty">جاري حساب الأرباح...</p> : null}
+                {!profitData && !profitError ? <NasqoBrandLoader size="sm" label="جاري حساب الأرباح..." /> : null}
                 {profitData ? (
                   <>
                     <div className="account-groups-table-wrap">
@@ -474,7 +517,7 @@ export function ReportsHubModal({
                           </tr>
                         </thead>
                         <tbody>
-                          {profitRows.map((r) => (
+                          {profitRows.slice(0, visibleLimit).map((r) => (
                             <tr key={r.id}>
                               <td className="ag-name-cell">{r.name}</td>
                               <td>{formatAmount(r.sellQty)}</td>
@@ -484,6 +527,15 @@ export function ReportsHubModal({
                               </td>
                             </tr>
                           ))}
+                          {profitRows.length > visibleLimit ? (
+                            <tr>
+                              <td colSpan={4} style={{ textAlign: "center", padding: 8 }}>
+                                <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
+                                  عرض المزيد (المعروض {visibleLimit} من {profitRows.length})
+                                </button>
+                              </td>
+                            </tr>
+                          ) : null}
                           {profitRows.length === 0 ? (
                             <tr>
                               <td colSpan={4} className="coa-empty-cell">
@@ -521,7 +573,7 @@ export function ReportsHubModal({
                       </tr>
                     </thead>
                     <tbody>
-                      {serviceRows.map((e) => (
+                      {serviceRows.slice(0, visibleLimit).map((e) => (
                         <tr key={e.id}>
                           <td>{e.entryNumber}</td>
                           <td>
@@ -534,6 +586,15 @@ export function ReportsHubModal({
                           </td>
                         </tr>
                       ))}
+                      {serviceRows.length > visibleLimit ? (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: "center", padding: 8 }}>
+                            <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
+                              عرض المزيد (المعروض {visibleLimit} من {serviceRows.length})
+                            </button>
+                          </td>
+                        </tr>
+                      ) : null}
                       {serviceRows.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="coa-empty-cell">

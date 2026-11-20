@@ -76,17 +76,35 @@ export function InvoiceForm({
   const [saving, setSaving] = useState(false);
 
   const salesAndClientAccounts = useMemo(() => {
+    if (!open) return [];
     const preferred = accounts.filter((a) => a.category === "sales" || a.category === "clients");
     return preferred.length > 0 ? preferred : accounts;
-  }, [accounts]);
+  }, [accounts, open]);
 
   // Source-backed SKU is the barcode imported from the original SQLite.
   const matchingProducts = useMemo(() => {
+    if (!open) return [];
     const q = normalizeArabicSearch(productSearch);
     return inventory.filter((item) => !q || normalizeArabicSearch(
       `${item.name} ${item.sku ?? ""} ${item.unit} ${item.legacyRef ?? ""}`,
     ).includes(q));
-  }, [inventory, productSearch]);
+  }, [inventory, open, productSearch]);
+
+  const rowProductOptions = useMemo(() => {
+    if (!open) return [];
+    const capped = matchingProducts.slice(0, 120);
+    const seen = new Set(capped.map((i) => i.id));
+    const selectedIds = new Set(rows.map((r) => r.itemId).filter(Boolean) as string[]);
+    const extras: InventoryItemRecord[] = [];
+    for (let i = 0; i < inventory.length; i += 1) {
+      const item = inventory[i];
+      if (selectedIds.has(item.id) && !seen.has(item.id)) {
+        seen.add(item.id);
+        extras.push(item);
+      }
+    }
+    return extras.length > 0 ? [...extras, ...capped] : capped;
+  }, [inventory, matchingProducts, open, rows]);
 
   const activeAccount = useMemo(
     () => salesAndClientAccounts.find((a) => a.id === selectedAccountId) ?? accounts[0],
@@ -420,7 +438,7 @@ export function InvoiceForm({
                     style={{ width: "100%", fontSize: "11px", padding: "3px" }}
                   >
                     <option value="">(صنف حر)</option>
-                    {inventory.filter((item) => matchingProducts.includes(item) || rows.some((r) => r.itemId === item.id)).map((item) => (
+                    {rowProductOptions.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} {item.sku ? `• ${item.sku}` : ""} ({item.quantityUnverified ? "بحاجة إلى تسوية" : item.quantity})
                       </option>

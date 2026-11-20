@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 
-const BRAND_COLOR_STORAGE_KEY = "nasqo-brand-color";
+const BRAND_COLOR_STORAGE_KEY = "nasqo-brand-color-v2";
+const LEGACY_BRAND_COLOR_STORAGE_KEY = "nasqo-brand-color";
+const LEGACY_DEFAULT_BRAND_COLOR = "#0b5ca8";
 
-export const DEFAULT_BRAND_COLOR = "#0b5ca8";
+export const DEFAULT_BRAND_COLOR = "#4338ca";
 
 export const BRAND_COLOR_PRESETS = [
+  { id: "indigo", label: "نيلي حديث", hex: "#4338ca" },
   { id: "nasqo-blue", label: "الأزرق الكلاسيكي", hex: "#0b5ca8" },
   { id: "emerald", label: "الزمردي", hex: "#047857" },
-  { id: "indigo", label: "النيلي", hex: "#4338ca" },
   { id: "teal", label: "الفيروزي", hex: "#0f766e" },
   { id: "crimson", label: "العنابي", hex: "#b91c1c" },
   { id: "slate", label: "الرمادي الداكن", hex: "#1e293b" },
@@ -24,6 +26,7 @@ function normalizeHex(hex: string): string {
 
 export function deriveNavyShade(hex: string): string {
   const safe = normalizeHex(hex);
+  if (safe === "#4338ca") return "#312e81";
   const r = Math.max(0, Math.round(parseInt(safe.slice(1, 3), 16) * 0.62));
   const g = Math.max(0, Math.round(parseInt(safe.slice(3, 5), 16) * 0.62));
   const b = Math.max(0, Math.round(parseInt(safe.slice(5, 7), 16) * 0.62));
@@ -36,6 +39,10 @@ export function readStoredBrandColor(): string {
     const saved = window.localStorage.getItem(BRAND_COLOR_STORAGE_KEY);
     if (saved && isValidHexColor(saved)) {
       return saved.toLowerCase();
+    }
+    const legacy = window.localStorage.getItem(LEGACY_BRAND_COLOR_STORAGE_KEY);
+    if (legacy && isValidHexColor(legacy) && legacy.toLowerCase() !== LEGACY_DEFAULT_BRAND_COLOR) {
+      return legacy.toLowerCase();
     }
   } catch {
     // Ignore storage access errors
@@ -53,7 +60,7 @@ export function applyBrandColor(hex: string): string {
     root.style.setProperty("--nasqo-brand-tint", `${primary}1a`);
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute("content", primary);
+      metaTheme.setAttribute("content", dark);
     }
   }
   return primary;

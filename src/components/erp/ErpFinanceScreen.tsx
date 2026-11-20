@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DownloadIcon } from "@radix-ui/react-icons";
 import { buildCsvContent, formatAmount } from "../../accounting";
+import { runWithBrandLoader } from "../../utils/brandLoaderBus";
 import {
   computeBalanceSheet,
   computeIncomeStatement,
@@ -86,6 +87,7 @@ export function ErpFinanceScreen({
   const [selectedCurrency, setSelectedCurrency] = useState<string>(currency || "ريال");
   const [useUnifiedCash, setUseUnifiedCash] = useState<boolean>(true);
   const [includeUnverifiedInventory, setIncludeUnverifiedInventory] = useState<boolean>(false);
+  const [visibleTrialRows, setVisibleTrialRows] = useState<number>(80);
 
   const savedVatConfig: ErpVatConfig = erpData?.vatConfig ?? {
     jurisdiction: "none",
@@ -273,30 +275,36 @@ export function ErpFinanceScreen({
   };
 
   const exportCsv = () => {
-    triggerHaptic("light");
-    const csv = buildCsvContent(
-      ["الرقم", "الحساب", "التصنيف", "العملة", "حركة مدين", "حركة دائن", "رصيد مدين", "رصيد دائن"],
-      trial.rows.map((r) => [
-        r.codeNumber,
-        r.accountName,
-        CATEGORY_LABELS[r.category],
-        selectedCurrency,
-        r.debitTurnover,
-        r.creditTurnover,
-        r.closingDebit,
-        r.closingCredit,
-      ]),
+    void runWithBrandLoader(
+      "جاري تصدير ميزان المراجعة بصيغة Excel...",
+      () => {
+        triggerHaptic("light");
+        const csv = buildCsvContent(
+          ["الرقم", "الحساب", "التصنيف", "العملة", "حركة مدين", "حركة دائن", "رصيد مدين", "رصيد دائن"],
+          trial.rows.map((r) => [
+            r.codeNumber,
+            r.accountName,
+            CATEGORY_LABELS[r.category],
+            selectedCurrency,
+            r.debitTurnover,
+            r.creditTurnover,
+            r.closingDebit,
+            r.closingCredit,
+          ]),
+        );
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `erp-trial-balance-${selectedCurrency}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.setTimeout(() => URL.revokeObjectURL(url), 800);
+        onToast("تم تصدير ميزان المراجعة بصيغة Excel");
+      },
+      { minDurationMs: 420 },
     );
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `erp-trial-balance-${selectedCurrency}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.setTimeout(() => URL.revokeObjectURL(url), 800);
-    onToast("تم تصدير ميزان المراجعة بصيغة Excel");
   };
 
   const vatIsConfigured = vatJurisdiction !== "none" && Boolean(erpData?.vatConfig && erpData.vatConfig.jurisdiction !== "none");
@@ -455,7 +463,7 @@ export function ErpFinanceScreen({
                   </tr>
                 </thead>
                 <tbody>
-                  {trial.rows.map((row) => (
+                  {trial.rows.slice(0, visibleTrialRows).map((row) => (
                     <tr key={row.accountId}>
                       <td>
                         <div className="erp-cell-title">{row.accountName}</div>
@@ -474,6 +482,19 @@ export function ErpFinanceScreen({
                       </td>
                     </tr>
                   ))}
+                  {trial.rows.length > visibleTrialRows ? (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: "center", padding: 8 }}>
+                        <button
+                          type="button"
+                          className="load-more-list-btn"
+                          onClick={() => setVisibleTrialRows((v) => v + 100)}
+                        >
+                          عرض المزيد (المعروض {visibleTrialRows} من {trial.rows.length} حساب)
+                        </button>
+                      </td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>

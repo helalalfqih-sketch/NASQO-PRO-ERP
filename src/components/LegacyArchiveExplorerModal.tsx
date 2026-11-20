@@ -9,6 +9,7 @@ import type { LegacyInvoice } from "../legacy/analysis";
 import { unifiedDetailToLegacyInvoice } from "../legacy/unifiedView";
 import type { LedgerEntryRecord } from "../types";
 import { LegacyInvoicePreview } from "./LegacyInvoicePreview";
+import { NasqoBrandLoader } from "./NasqoBrandLoader";
 
 type Props = {
   open: boolean;
@@ -186,7 +187,7 @@ export function LegacyArchiveExplorerModal({
                 </select>
               </div>
 
-              {loading ? <p style={{ textAlign: "center", color: "#0284c7" }}>جاري تحميل السجلات...</p> : null}
+              {loading ? <NasqoBrandLoader size="sm" label="جاري تحميل السجلات..." /> : null}
 
               <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, textAlign: "right" }}>

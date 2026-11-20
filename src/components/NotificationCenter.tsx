@@ -39,18 +39,21 @@ export function NotificationCenter({
   onSelectNotification,
 }: NotificationCenterProps) {
   const [activeCategory, setActiveCategory] = useState<"all" | NotificationCategory>("all");
+  const [visibleLimit, setVisibleLimit] = useState(50);
 
   const filtered = useMemo(
     () =>
-      activeCategory === "all"
-        ? notifications
-        : notifications.filter((n) => n.category === activeCategory),
-    [activeCategory, notifications],
+      !open
+        ? []
+        : activeCategory === "all"
+          ? notifications
+          : notifications.filter((n) => n.category === activeCategory),
+    [activeCategory, notifications, open],
   );
 
   const unreadCount = useMemo(
-    () => notifications.filter((n) => !readIds.has(n.id)).length,
-    [notifications, readIds],
+    () => (open ? notifications.filter((n) => !readIds.has(n.id)).length : 0),
+    [notifications, open, readIds],
   );
 
   if (!open) return null;
@@ -111,7 +114,10 @@ export function NotificationCenter({
                 role="tab"
                 aria-selected={activeCategory === tab.id}
                 className={activeCategory === tab.id ? "active" : ""}
-                onClick={() => setActiveCategory(tab.id)}
+                onClick={() => {
+                  setActiveCategory(tab.id);
+                  setVisibleLimit(50);
+                }}
               >
                 {tab.label} ({count})
               </button>
@@ -126,7 +132,7 @@ export function NotificationCenter({
             </div>
           ) : (
             <ul className="exec-list" data-testid="notification-center-list">
-              {filtered.map((item) => {
+              {filtered.slice(0, visibleLimit).map((item) => {
                 const Icon = CategoryIcon(item.category);
                 const isUnread = !readIds.has(item.id);
                 return (
@@ -165,6 +171,17 @@ export function NotificationCenter({
                   </li>
                 );
               })}
+              {filtered.length > visibleLimit ? (
+                <li style={{ listStyle: "none", textAlign: "center", padding: "8px 0" }}>
+                  <button
+                    type="button"
+                    className="load-more-list-btn"
+                    onClick={() => setVisibleLimit((v) => v + 60)}
+                  >
+                    عرض المزيد (المعروض {visibleLimit} من {filtered.length})
+                  </button>
+                </li>
+              ) : null}
             </ul>
           )}
         </div>

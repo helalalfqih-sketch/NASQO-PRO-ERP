@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
             background: "#f7f9fc",
             color: "#152536",
             textAlign: "center",
-            fontFamily: '"Noto Sans Arabic", Tahoma, Arial, sans-serif',
+            fontFamily: '"IBM Plex Sans Arabic", "Noto Sans Arabic", Tahoma, Arial, sans-serif',
           }}
         >
           <div
@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
               boxShadow: "0 10px 30px rgba(7, 54, 93, 0.1)",
             }}
           >
-            <h1 style={{ fontSize: "20px", color: "#075da8", marginBottom: "10px" }}>
+            <h1 style={{ fontSize: "20px", color: "#4338ca", marginBottom: "10px" }}>
               تعذر عرض هذه الشاشة مؤقتًا
             </h1>
             <p style={{ fontSize: "13px", color: "#566a7b", marginBottom: "18px" }}>
@@ -64,7 +64,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 padding: "10px 22px",
                 border: 0,
                 borderRadius: "9px",
-                background: "#075da8",
+                background: "#4338ca",
                 color: "#ffffff",
                 fontWeight: 700,
                 fontSize: "14px",

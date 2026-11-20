@@ -231,7 +231,16 @@ export function SmartProReportsPanel(){
       <label className="smartpro-label">الحساب
         <select value={accountId} onChange={e=>{setAccountId(e.target.value);setAccountPage(0)}}>
           {filterAccounts.length===0?<option value="">لا توجد حسابات مطابقة</option>:null}
-          {filterAccounts.map(a=><option value={a.id} key={a.id}>{a.name} #{a.id}</option>)}
+          {(()=>{
+            const capped = filterAccounts.slice(0, 150);
+            const hasSel = !accountId || capped.some(a => String(a.id) === accountId);
+            const selObj = !hasSel ? filterAccounts.find(a => String(a.id) === accountId) : undefined;
+            const list = selObj ? [selObj, ...capped] : capped;
+            return <>
+              {list.map(a=><option value={a.id} key={a.id}>{a.name} #{a.id}</option>)}
+              {filterAccounts.length > 150 ? <option value="" disabled>— ابحث أعلاه لعرض باقي الحسابات (+{filterAccounts.length - 150}) —</option> : null}
+            </>;
+          })()}
         </select>
       </label>
       <div className="smartpro-invoice-grid">

@@ -10,6 +10,7 @@ export async function getSqlJs(): Promise<SqlJsStatic> {
         const wasmModule = await import("sql.js/dist/sql-wasm.wasm?url");
         sqlPromise = initSqlJs({
           locateFile: () => wasmModule.default,
+          useOldExtensionFunctions: false,
         });
       } catch {
         sqlPromise = initSqlJs();

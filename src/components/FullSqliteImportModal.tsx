@@ -17,6 +17,7 @@ import type {
   WarehouseRecord,
   WorkspaceSettings,
 } from "../types";
+import { runWithBrandLoader } from "../utils/brandLoaderBus";
 
 type Props = {
   open: boolean;
@@ -124,29 +125,31 @@ export function FullSqliteImportModal({
     setNotice("");
     setBusy(true);
     try {
-      const lower = file.name.toLowerCase();
-      if (lower.endsWith(".sql")) {
-        const sqlText = await file.text();
-        setUpload({ kind: "sql", fileName: file.name, sqlText, byteLength: file.size });
-        setNotice(`تم تحميل الملف (${file.name}) — جاهز للاستيراد.`);
-      } else {
-        const buf = new Uint8Array(await file.arrayBuffer());
-        const inspected = await importSqliteBytesIntoServer(workspaceId, buf, file.name, "inspect");
-        const tables = Array.isArray(inspected.tables) ? inspected.tables.length : Object.keys(inspected.tableCounts ?? {}).length;
-        const totalRows = Number(inspected.totalRows ?? 0);
-        const integrity = String(inspected.integrity ?? "ok");
-        setUpload({
-          kind: "sqlite",
-          fileName: file.name,
-          bytes: buf,
-          sha256: String(inspected.sha256 ?? ""),
-          integrity,
-          tablesCount: tables,
-          totalRows,
-          tableCounts: (inspected.tableCounts as Record<string, number>) ?? {},
-        });
-        setNotice(`تم فحص النسخة الاحتياطية بنجاح: ${tables} قسم و ${totalRows.toLocaleString("en-US")} سجل`);
-      }
+      await runWithBrandLoader(`جاري فحص الملف ${file.name}...`, async () => {
+        const lower = file.name.toLowerCase();
+        if (lower.endsWith(".sql")) {
+          const sqlText = await file.text();
+          setUpload({ kind: "sql", fileName: file.name, sqlText, byteLength: file.size });
+          setNotice(`تم تحميل الملف (${file.name}) — جاهز للاستيراد.`);
+        } else {
+          const buf = new Uint8Array(await file.arrayBuffer());
+          const inspected = await importSqliteBytesIntoServer(workspaceId, buf, file.name, "inspect");
+          const tables = Array.isArray(inspected.tables) ? inspected.tables.length : Object.keys(inspected.tableCounts ?? {}).length;
+          const totalRows = Number(inspected.totalRows ?? 0);
+          const integrity = String(inspected.integrity ?? "ok");
+          setUpload({
+            kind: "sqlite",
+            fileName: file.name,
+            bytes: buf,
+            sha256: String(inspected.sha256 ?? ""),
+            integrity,
+            tablesCount: tables,
+            totalRows,
+            tableCounts: (inspected.tableCounts as Record<string, number>) ?? {},
+          });
+          setNotice(`تم فحص النسخة الاحتياطية بنجاح: ${tables} قسم و ${totalRows.toLocaleString("en-US")} سجل`);
+        }
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر فحص الملف المختار.");
     } finally {
@@ -235,14 +238,14 @@ export function FullSqliteImportModal({
   };
 
   return (
-    <div className="center-modal-layer" dir="rtl" style={{ zIndex: 99999 }}>
+    <div className="center-modal-layer" dir="rtl" style={{ zIndex: 70 }}>
       <button type="button" className="center-modal-backdrop" aria-label="إغلاق مركز قاعدة البيانات" onClick={onClose} />
       <section
         role="dialog"
         aria-modal="true"
         style={{
           position: "relative",
-          zIndex: 100000,
+          zIndex: 71,
           width: "min(96vw, 960px)",
           maxHeight: "92vh",
           display: "flex",

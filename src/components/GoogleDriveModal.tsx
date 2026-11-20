@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { NasqoBrandLoader } from "./NasqoBrandLoader";
+import { runWithBrandLoader } from "../utils/brandLoaderBus";
 import {
   ArchiveIcon,
   ArrowRightIcon,
@@ -181,11 +183,13 @@ export function GoogleDriveModal({
     setBusyAction("auth");
     setErrorMsg(null);
     try {
-      const { accessToken: freshToken } = await connectGoogleDrive();
-      setAccessToken(freshToken);
-      triggerHaptic("success");
-      onNotify("تم ربط حساب Google Drive بنجاح");
-      await loadDriveContents(freshToken, currentFolder.id);
+      await runWithBrandLoader("جاري ربط حساب Google Drive...", async () => {
+        const { accessToken: freshToken } = await connectGoogleDrive();
+        setAccessToken(freshToken);
+        triggerHaptic("success");
+        onNotify("تم ربط حساب Google Drive بنجاح");
+        await loadDriveContents(freshToken, currentFolder.id);
+      });
     } catch (err) {
       triggerHaptic("warning");
       setErrorMsg(describeGoogleDriveConnectError(err));
@@ -201,16 +205,18 @@ export function GoogleDriveModal({
     setBusyAction("upload");
     setErrorMsg(null);
     try {
-      const buffer = await file.arrayBuffer();
-      await uploadFileToDrive(accessToken, {
-        name: file.name,
-        content: new Uint8Array(buffer),
-        mimeType: file.type || "application/octet-stream",
-        parentId: currentFolder.id ?? undefined,
+      await runWithBrandLoader(`جاري رفع «${file.name}» إلى Google Drive...`, async () => {
+        const buffer = await file.arrayBuffer();
+        await uploadFileToDrive(accessToken, {
+          name: file.name,
+          content: new Uint8Array(buffer),
+          mimeType: file.type || "application/octet-stream",
+          parentId: currentFolder.id ?? undefined,
+        });
+        triggerHaptic("success");
+        onNotify(`تم رفع «${file.name}» إلى Google Drive`);
+        await loadDriveContents(accessToken, currentFolder.id);
       });
-      triggerHaptic("success");
-      onNotify(`تم رفع «${file.name}» إلى Google Drive`);
-      await loadDriveContents(accessToken, currentFolder.id);
     } catch (err) {
       triggerHaptic("warning");
       setErrorMsg(err instanceof Error ? err.message : "فشل رفع الملف إلى Drive.");
@@ -228,21 +234,23 @@ export function GoogleDriveModal({
     setBusyAction("backup");
     setErrorMsg(null);
     try {
-      const filename = formatNasqoBackupFilename();
-      const targetParentId =
-        currentFolder.id ?? (await findOrCreateDriveFolder(accessToken, "NASQO Pro Backups")).id;
-      const jsonContent = buildBackupPayloadJson(filename);
-      await uploadFileToDrive(accessToken, {
-        name: filename,
-        content: jsonContent,
-        mimeType: "application/json",
-        parentId: targetParentId,
-        description: "نسخة احتياطية كاملة لبيانات نسقو برو ERP",
+      await runWithBrandLoader("جاري رفع النسخة الاحتياطية إلى Google Drive...", async () => {
+        const filename = formatNasqoBackupFilename();
+        const targetParentId =
+          currentFolder.id ?? (await findOrCreateDriveFolder(accessToken, "NASQO Pro Backups")).id;
+        const jsonContent = buildBackupPayloadJson(filename);
+        await uploadFileToDrive(accessToken, {
+          name: filename,
+          content: jsonContent,
+          mimeType: "application/json",
+          parentId: targetParentId,
+          description: "نسخة احتياطية كاملة لبيانات نسقو برو ERP",
+        });
+        onBackupUploaded?.(filename);
+        triggerHaptic("success");
+        onNotify(`تم حفظ النسخة الاحتياطية في Google Drive: ${filename}`);
+        await loadDriveContents(accessToken, currentFolder.id);
       });
-      onBackupUploaded?.(filename);
-      triggerHaptic("success");
-      onNotify(`تم حفظ النسخة الاحتياطية في Google Drive: ${filename}`);
-      await loadDriveContents(accessToken, currentFolder.id);
     } catch (err) {
       triggerHaptic("warning");
       if (err instanceof DriveAuthExpiredError) {
@@ -261,12 +269,14 @@ export function GoogleDriveModal({
     setBusyAction("mkdir");
     setErrorMsg(null);
     try {
-      await createDriveFolder(accessToken, trimmed, currentFolder.id ?? undefined);
-      setNewFolderName("");
-      setNewFolderOpen(false);
-      triggerHaptic("success");
-      onNotify(`تم إنشاء المجلد «${trimmed}» على Google Drive`);
-      await loadDriveContents(accessToken, currentFolder.id);
+      await runWithBrandLoader(`جاري إنشاء المجلد «${trimmed}»...`, async () => {
+        await createDriveFolder(accessToken, trimmed, currentFolder.id ?? undefined);
+        setNewFolderName("");
+        setNewFolderOpen(false);
+        triggerHaptic("success");
+        onNotify(`تم إنشاء المجلد «${trimmed}» على Google Drive`);
+        await loadDriveContents(accessToken, currentFolder.id);
+      });
     } catch (err) {
       triggerHaptic("warning");
       setErrorMsg(err instanceof Error ? err.message : "تعذر إنشاء المجلد.");
@@ -281,10 +291,12 @@ export function GoogleDriveModal({
     setBusyAction(`dl:${file.id}`);
     setErrorMsg(null);
     try {
-      const { bytes, downloadName, mimeType } = await downloadDriveFileBytes(accessToken, file);
-      triggerBrowserBytesDownload(downloadName, bytes, mimeType);
-      triggerHaptic("success");
-      onNotify(`تم تنزيل «${downloadName}» من Google Drive`);
+      await runWithBrandLoader(`جاري تنزيل «${file.name}» من Google Drive...`, async () => {
+        const { bytes, downloadName, mimeType } = await downloadDriveFileBytes(accessToken, file);
+        triggerBrowserBytesDownload(downloadName, bytes, mimeType);
+        triggerHaptic("success");
+        onNotify(`تم تنزيل «${downloadName}» من Google Drive`);
+      });
     } catch (err) {
       triggerHaptic("warning");
       if (err instanceof DriveAuthExpiredError) {
@@ -302,37 +314,47 @@ export function GoogleDriveModal({
     keyboard.hide();
     setBusyAction(`confirm:${action.file.id}`);
     setErrorMsg(null);
+    const actionLabel =
+      action.kind === "restore"
+        ? `جاري استعادة «${action.file.name}» من Google Drive...`
+        : action.kind === "overwrite"
+          ? `جاري تحديث «${action.file.name}» على Google Drive...`
+          : action.kind === "trash"
+            ? `جاري نقل «${action.file.name}» إلى سلة المهملات...`
+            : `جاري حذف «${action.file.name}» نهائيًا...`;
     try {
-      if (action.kind === "restore") {
-        const { bytes } = await downloadDriveFileBytes(accessToken, action.file);
-        await onRestoreBackupBytes(bytes, action.file.name);
-        setPendingConfirm(null);
-      } else if (action.kind === "overwrite") {
-        const updatedJson = buildBackupPayloadJson(action.file.name);
-        await updateDriveFileContent(accessToken, action.file.id, {
-          name: action.file.name,
-          content: updatedJson,
-          mimeType: "application/json",
-          description: "تحديث نسخة احتياطية كاملة لبيانات نسقو برو ERP",
-        });
-        onBackupUploaded?.(action.file.name);
-        triggerHaptic("success");
-        onNotify(`تم تحديث واستبدال «${action.file.name}» على Google Drive`);
-        setPendingConfirm(null);
-        await loadDriveContents(accessToken, currentFolder.id);
-      } else if (action.kind === "trash") {
-        await trashDriveFile(accessToken, action.file.id);
-        triggerHaptic("warning");
-        onNotify(`تم نقل «${action.file.name}» إلى سلة مهملات Drive`);
-        setPendingConfirm(null);
-        await loadDriveContents(accessToken, currentFolder.id);
-      } else if (action.kind === "delete") {
-        await deleteDriveFilePermanently(accessToken, action.file.id);
-        triggerHaptic("warning");
-        onNotify(`تم حذف «${action.file.name}» نهائيًا من Google Drive`);
-        setPendingConfirm(null);
-        await loadDriveContents(accessToken, currentFolder.id);
-      }
+      await runWithBrandLoader(actionLabel, async () => {
+        if (action.kind === "restore") {
+          const { bytes } = await downloadDriveFileBytes(accessToken, action.file);
+          await onRestoreBackupBytes(bytes, action.file.name);
+          setPendingConfirm(null);
+        } else if (action.kind === "overwrite") {
+          const updatedJson = buildBackupPayloadJson(action.file.name);
+          await updateDriveFileContent(accessToken, action.file.id, {
+            name: action.file.name,
+            content: updatedJson,
+            mimeType: "application/json",
+            description: "تحديث نسخة احتياطية كاملة لبيانات نسقو برو ERP",
+          });
+          onBackupUploaded?.(action.file.name);
+          triggerHaptic("success");
+          onNotify(`تم تحديث واستبدال «${action.file.name}» على Google Drive`);
+          setPendingConfirm(null);
+          await loadDriveContents(accessToken, currentFolder.id);
+        } else if (action.kind === "trash") {
+          await trashDriveFile(accessToken, action.file.id);
+          triggerHaptic("warning");
+          onNotify(`تم نقل «${action.file.name}» إلى سلة مهملات Drive`);
+          setPendingConfirm(null);
+          await loadDriveContents(accessToken, currentFolder.id);
+        } else if (action.kind === "delete") {
+          await deleteDriveFilePermanently(accessToken, action.file.id);
+          triggerHaptic("warning");
+          onNotify(`تم حذف «${action.file.name}» نهائيًا من Google Drive`);
+          setPendingConfirm(null);
+          await loadDriveContents(accessToken, currentFolder.id);
+        }
+      });
     } catch (err) {
       triggerHaptic("warning");
       if (err instanceof DriveAuthExpiredError) {
@@ -603,7 +625,7 @@ export function GoogleDriveModal({
 
             <MobileScroll className="gdrive-files-scroll">
               {loading ? (
-                <div className="gdrive-empty">جاري تحميل ملفات Google Drive...</div>
+                <NasqoBrandLoader size="sm" label="جاري تحميل ملفات Google Drive..." />
               ) : visibleFiles.length === 0 ? (
                 <div className="gdrive-empty">
                   <p>لا توجد ملفات مطابقة في هذا العرض.</p>

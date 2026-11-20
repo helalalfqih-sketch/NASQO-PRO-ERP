@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import * as d3 from "d3";
 import { formatAmount, type SalesTrendPoint } from "../accounting";
 import type { CurrencyCode } from "../types";
+import { NasqoBrandLoader } from "./NasqoBrandLoader";
 
 interface SalesTrendChartProps {
   points: readonly SalesTrendPoint[];
@@ -97,7 +98,7 @@ export function SalesTrendChart({ points, currency, loading = false }: SalesTren
 
       <div className="exec-chart-wrap" dir="ltr">
         {loading ? (
-          <div className="exec-empty">جاري تحميل بيانات الرسم البياني...</div>
+          <NasqoBrandLoader size="sm" label="جاري تحميل بيانات الرسم البياني..." />
         ) : (
           <svg
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}

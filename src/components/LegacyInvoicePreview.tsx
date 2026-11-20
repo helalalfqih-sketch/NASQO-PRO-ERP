@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { normalizeArabicSearch } from "../accounting";
 import { ROLE_LABELS, type LegacyInvoice, type InvoiceLine } from "../legacy/analysis";
 import { historicalInvoiceDisplayTotals } from "../legacy/invoiceView";
+import { runWithBrandLoader } from "../utils/brandLoaderBus";
 import "./LegacyInvoicePreview.css";
 
 function amount(value: number | null | undefined): string {
@@ -58,16 +59,22 @@ export function LegacyInvoicePreview({ invoice, onClose, testId = "legacy-invoic
   const selectedLine: InvoiceLine | undefined = invoice.lines.find((line) => line.ref === selectedRef);
 
   const saveReadonlyCopy = () => {
-    const blob = new Blob(["\uFEFF", buildInvoiceText(invoice)], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `nasqo-historical-${invoice.table}-${invoice.id}.txt`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice("تم تجهيز نسخة قراءة من المستند على جهازك، دون إنشاء قيد مالي.");
+    void runWithBrandLoader(
+      "جاري تصدير نسخة المستند...",
+      () => {
+        const blob = new Blob(["\uFEFF", buildInvoiceText(invoice)], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `nasqo-historical-${invoice.table}-${invoice.id}.txt`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setNotice("تم تجهيز نسخة قراءة من المستند على جهازك، دون إنشاء قيد مالي.");
+      },
+      { minDurationMs: 420 },
+    );
   };
 
   return (

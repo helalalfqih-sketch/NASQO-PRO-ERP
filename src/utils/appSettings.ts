@@ -116,16 +116,10 @@ export const APP_FONT_FAMILY_PRESETS: ReadonlyArray<{
   cssFamily: string;
 }> = [
   {
-    id: "system",
-    label: "الافتراضي",
+    id: "ibm-plex",
+    label: "رسمي (Plex)",
     sample: "نسقو برو 123",
-    cssFamily: '"Segoe UI", Tahoma, Arial, sans-serif',
-  },
-  {
-    id: "cairo",
-    label: "القاهرة",
-    sample: "نسقو برو 123",
-    cssFamily: '"Cairo", "Segoe UI", Tahoma, Arial, sans-serif',
+    cssFamily: '"IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif',
   },
   {
     id: "tajawal",
@@ -134,10 +128,16 @@ export const APP_FONT_FAMILY_PRESETS: ReadonlyArray<{
     cssFamily: '"Tajawal", "Segoe UI", Tahoma, Arial, sans-serif',
   },
   {
-    id: "ibm-plex",
-    label: "رسمي (Plex)",
+    id: "system",
+    label: "خط النظام",
     sample: "نسقو برو 123",
-    cssFamily: '"IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif',
+    cssFamily: '"Segoe UI", Tahoma, Arial, sans-serif',
+  },
+  {
+    id: "cairo",
+    label: "القاهرة",
+    sample: "نسقو برو 123",
+    cssFamily: '"Cairo", "Segoe UI", Tahoma, Arial, sans-serif',
   },
   {
     id: "almarai",
@@ -208,14 +208,25 @@ export const HOME_COLOR_PRESETS: ReadonlyArray<{
   swatch: string;
 }> = [
   {
+    id: "indigo",
+    label: "نيلي حديث",
+    primary: "#4338ca",
+    secondary: "#0891b2",
+    header: "#312e81",
+    bannerBg: "#eef2ff",
+    canvasBg: "#f5f7ff",
+    btnText: "#ffffff",
+    swatch: "linear-gradient(135deg, #4338ca 50%, #0891b2 50%)",
+  },
+  {
     id: "classic",
     label: "الكلاسيكي",
-    primary: "",
-    secondary: "",
-    header: "",
-    bannerBg: "",
-    canvasBg: "",
-    btnText: "",
+    primary: "#0b5ca8",
+    secondary: "#ea8c0d",
+    header: "#06356b",
+    bannerBg: "#ffffff",
+    canvasBg: "#f4f7fb",
+    btnText: "#ffffff",
     swatch: "linear-gradient(135deg, #0b5ca8 50%, #ea8c0d 50%)",
   },
   {
@@ -228,17 +239,6 @@ export const HOME_COLOR_PRESETS: ReadonlyArray<{
     canvasBg: "#f2fbf7",
     btnText: "#ffffff",
     swatch: "linear-gradient(135deg, #047857 50%, #d97706 50%)",
-  },
-  {
-    id: "indigo",
-    label: "نيلي حديث",
-    primary: "#4338ca",
-    secondary: "#0891b2",
-    header: "#312e81",
-    bannerBg: "#eef2ff",
-    canvasBg: "#f5f7ff",
-    btnText: "#ffffff",
-    swatch: "linear-gradient(135deg, #4338ca 50%, #0891b2 50%)",
   },
   {
     id: "burgundy",
@@ -351,7 +351,7 @@ export const DEFAULT_EXTENDED_SETTINGS: ExtendedAppSettings = {
   taxNumber: "",
   drawSignature: true,
   autoWhatsapp: false,
-  reportColor: "#2563eb",
+  reportColor: "#4338ca",
   fontSize: 4,
   yellowPaper: false,
   printTarget: "pdf",
@@ -408,18 +408,19 @@ export const DEFAULT_EXTENDED_SETTINGS: ExtendedAppSettings = {
   homeButtonRadius: 26,
   homeButtonHeight: 48,
   homeGridGap: 9,
-  homeColorPreset: "classic",
-  homePrimaryBtnColor: "",
-  homeSecondaryBtnColor: "",
-  homeHeaderColor: "",
-  homeBannerBgColor: "",
-  homeCanvasBgColor: "",
-  homeBtnTextColor: "",
-  homeFontFamily: "system",
+  homeColorPreset: "indigo",
+  homePrimaryBtnColor: "#4338ca",
+  homeSecondaryBtnColor: "#0891b2",
+  homeHeaderColor: "#312e81",
+  homeBannerBgColor: "#eef2ff",
+  homeCanvasBgColor: "#f5f7ff",
+  homeBtnTextColor: "#ffffff",
+  homeFontFamily: "ibm-plex",
   homeFontSize: 14,
 };
 
 const EXTENDED_SETTINGS_KEY = "nasqo-extended-settings-v1";
+const IBM_PLEX_DEFAULT_MIGRATED_KEY = "nasqo-default-font-ibm-plex-v1";
 
 function clampNum(val: unknown, min: number, max: number, fallback: number): number {
   if (typeof val !== "number" || Number.isNaN(val)) return fallback;
@@ -484,7 +485,41 @@ export function readExtendedSettings(): ExtendedAppSettings {
     const raw = window.localStorage.getItem(EXTENDED_SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_EXTENDED_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<ExtendedAppSettings>;
-    return normalizeExtendedSettings(parsed);
+    const isLegacyUntouchedClassic =
+      parsed &&
+      parsed.homeColorPreset === "classic" &&
+      !parsed.homePrimaryBtnColor &&
+      !parsed.homeSecondaryBtnColor &&
+      !parsed.homeHeaderColor &&
+      !parsed.homeBannerBgColor &&
+      !parsed.homeCanvasBgColor &&
+      !parsed.homeBtnTextColor;
+    const patch: Partial<ExtendedAppSettings> = {};
+    if (isLegacyUntouchedClassic) {
+      patch.homeColorPreset = DEFAULT_EXTENDED_SETTINGS.homeColorPreset;
+      patch.homePrimaryBtnColor = DEFAULT_EXTENDED_SETTINGS.homePrimaryBtnColor;
+      patch.homeSecondaryBtnColor = DEFAULT_EXTENDED_SETTINGS.homeSecondaryBtnColor;
+      patch.homeHeaderColor = DEFAULT_EXTENDED_SETTINGS.homeHeaderColor;
+      patch.homeBannerBgColor = DEFAULT_EXTENDED_SETTINGS.homeBannerBgColor;
+      patch.homeCanvasBgColor = DEFAULT_EXTENDED_SETTINGS.homeCanvasBgColor;
+      patch.homeBtnTextColor = DEFAULT_EXTENDED_SETTINGS.homeBtnTextColor;
+    }
+    const fontMigrated = window.localStorage.getItem(IBM_PLEX_DEFAULT_MIGRATED_KEY) === "1";
+    if (!fontMigrated) {
+      if (
+        !parsed.homeFontFamily ||
+        parsed.homeFontFamily === "system" ||
+        parsed.homeFontFamily === "tajawal"
+      ) {
+        patch.homeFontFamily = DEFAULT_EXTENDED_SETTINGS.homeFontFamily;
+      }
+      window.localStorage.setItem(IBM_PLEX_DEFAULT_MIGRATED_KEY, "1");
+    }
+    const merged = normalizeExtendedSettings({ ...parsed, ...patch });
+    if (Object.keys(patch).length > 0) {
+      window.localStorage.setItem(EXTENDED_SETTINGS_KEY, JSON.stringify(merged));
+    }
+    return merged;
   } catch {
     return { ...DEFAULT_EXTENDED_SETTINGS };
   }
@@ -543,7 +578,7 @@ export function resolveHomeAppearanceTokens(settings: ExtendedAppSettings): Reso
   const btnText = pick(normalized.homeBtnTextColor, preset?.btnText);
 
   const customized = Boolean(
-    primaryBg || secondaryBg || headerBg || bannerBg || canvasBg || btnText || normalized.homeColorPreset !== "classic",
+    primaryBg || secondaryBg || headerBg || bannerBg || canvasBg || btnText,
   );
 
   let bannerInk = "";
@@ -553,8 +588,8 @@ export function resolveHomeAppearanceTokens(settings: ExtendedAppSettings): Reso
       bannerInk = "#f8fafc";
       bannerSubInk = "#cbd5e1";
     } else {
-      bannerInk = primaryBg || "#0b4c8c";
-      bannerSubInk = secondaryBg || "#b7791f";
+      bannerInk = primaryBg || "#4338ca";
+      bannerSubInk = secondaryBg || "#0891b2";
     }
   }
 

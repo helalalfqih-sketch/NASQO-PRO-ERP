@@ -157,6 +157,7 @@ export function Dashboard({
   const [editingThresholdItemId, setEditingThresholdItemId] = useState<string | null>(null);
   const [thresholdDraft, setThresholdDraft] = useState("");
   const [savingThreshold, setSavingThreshold] = useState(false);
+  const [visibleLowStockLimit, setVisibleLowStockLimit] = useState(40);
 
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [pinPickerOpen, setPinPickerOpen] = useState(false);
@@ -551,7 +552,7 @@ export function Dashboard({
           </div>
         ) : (
           <ul className="exec-list" data-testid="low-stock-list">
-            {summary.lowStockItems.map((item) => {
+            {summary.lowStockItems.slice(0, visibleLowStockLimit).map((item) => {
               const isEditing = editingThresholdItemId === item.id;
               return (
                 <li key={item.id} className="exec-stock-li">
@@ -624,6 +625,17 @@ export function Dashboard({
                 </li>
               );
             })}
+            {summary.lowStockItems.length > visibleLowStockLimit ? (
+              <li style={{ listStyle: "none", textAlign: "center", padding: "8px 0" }}>
+                <button
+                  type="button"
+                  className="load-more-list-btn"
+                  onClick={() => setVisibleLowStockLimit((v) => v + 60)}
+                >
+                  عرض المزيد (المعروض {visibleLowStockLimit} من {summary.lowStockItems.length} صنف)
+                </button>
+              </li>
+            ) : null}
           </ul>
         )}
 

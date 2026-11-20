@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type ThemeMode = "light" | "dark" | "system";
 
-const THEME_STORAGE_KEY = "nasqo-theme-mode";
+export const DEFAULT_THEME_MODE: ThemeMode = "light";
+
+const THEME_STORAGE_KEY = "nasqo-theme-mode-v2";
 
 export function readStoredThemeMode(): ThemeMode {
-  if (typeof window === "undefined") return "system";
+  if (typeof window === "undefined") return DEFAULT_THEME_MODE;
   try {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === "light" || saved === "dark" || saved === "system") {
@@ -14,7 +16,7 @@ export function readStoredThemeMode(): ThemeMode {
   } catch {
     // Ignore storage access restriction
   }
-  return "system";
+  return DEFAULT_THEME_MODE;
 }
 
 export function resolveEffectiveTheme(mode: ThemeMode): "light" | "dark" {
@@ -38,18 +40,22 @@ export function applyThemeMode(mode: ThemeMode): "light" | "dark" {
 }
 
 export function useThemeMode() {
-  const [mode, setMode] = useState<ThemeMode>(() => readStoredThemeMode());
+  const [mode, setModeState] = useState<ThemeMode>(() => readStoredThemeMode());
   const [effectiveTheme, setEffectiveTheme] = useState<"light" | "dark">(() =>
     applyThemeMode(readStoredThemeMode()),
   );
 
-  useEffect(() => {
-    setEffectiveTheme(applyThemeMode(mode));
+  const setMode = useCallback((next: ThemeMode) => {
+    setModeState(next);
     try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
       // Ignore storage access restriction
     }
+  }, []);
+
+  useEffect(() => {
+    setEffectiveTheme(applyThemeMode(mode));
 
     if (mode !== "system" || typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;

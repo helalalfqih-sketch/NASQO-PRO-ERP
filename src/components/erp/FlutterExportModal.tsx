@@ -7,6 +7,7 @@ import {
   type FlutterProjectFile,
 } from "../../utils/flutterExport";
 import { triggerHaptic } from "../../utils/haptics";
+import { runWithBrandLoader } from "../../utils/brandLoaderBus";
 
 import pubspecYaml from "../../../flutter_app/pubspec.yaml?raw";
 import readmeMd from "../../../flutter_app/README.md?raw";
@@ -47,15 +48,21 @@ const FLUTTER_FILES: readonly FlutterProjectFile[] = [
 ];
 
 function triggerDownload(filename: string, text: string, mime: string) {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  void runWithBrandLoader(
+    `جاري تصدير ${filename}...`,
+    () => {
+      const blob = new Blob([text], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+    { minDurationMs: 420 },
+  );
 }
 
 export function FlutterExportModal({

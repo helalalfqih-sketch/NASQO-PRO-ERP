@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import firebaseConfig from "../firebase-applet-config.json";
 import { hydrateErpWorkspaceCache, type ErpWorkspaceData } from "./erp";
+import { runWithBrandLoader } from "./utils/brandLoaderBus";
 import type {
   AccountCategory,
   AccountGroupRecord,
@@ -118,45 +119,51 @@ onAuthStateChanged(auth, (user) => {
 });
 
 export async function signInWithGoogle(): Promise<User> {
-  // Ordinary login only needs Google identity. Do NOT request Drive scopes here:
-  // sensitive/restricted Drive permissions belong to the separate Drive flow.
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const result = await Promise.race([
-      signInWithPopup(auth, provider),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("انتهت مهلة نافذة تسجيل الدخول. أغلق أي نافذة معلقة وأعد المحاولة.")),
-          45_000,
-        );
-      }),
-    ]);
-    // A previously cached Drive token must never carry over to a new sign-in.
-    clearGoogleAccessToken();
-    return result.user;
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
+  return runWithBrandLoader("جاري تسجيل الدخول...", async () => {
+    // Ordinary login only needs Google identity. Do NOT request Drive scopes here:
+    // sensitive/restricted Drive permissions belong to the separate Drive flow.
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        signInWithPopup(auth, provider),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("انتهت مهلة نافذة تسجيل الدخول. أغلق أي نافذة معلقة وأعد المحاولة.")),
+            45_000,
+          );
+        }),
+      ]);
+      // A previously cached Drive token must never carry over to a new sign-in.
+      clearGoogleAccessToken();
+      return result.user;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  });
 }
 
 export async function connectGoogleDrive(): Promise<{ user: User; accessToken: string }> {
-  const provider = buildGoogleDriveProvider();
-  const result = await signInWithPopup(auth, provider);
-  const credential = GoogleAuthProvider.credentialFromResult(result);
-  const token = credential?.accessToken ?? null;
-  if (!token) {
-    throw new Error("لم يتم استلام رمز وصول Google Drive من نافذة المصادقة.");
-  }
-  cachedGoogleAccessToken = token;
-  notifyGoogleTokenListeners();
-  return { user: result.user, accessToken: token };
+  return runWithBrandLoader("جاري الاتصال بـ Google Drive...", async () => {
+    const provider = buildGoogleDriveProvider();
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken ?? null;
+    if (!token) {
+      throw new Error("لم يتم استلام رمز وصول Google Drive من نافذة المصادقة.");
+    }
+    cachedGoogleAccessToken = token;
+    notifyGoogleTokenListeners();
+    return { user: result.user, accessToken: token };
+  });
 }
 
 export async function signOutUser(): Promise<void> {
-  clearGoogleAccessToken();
-  await signOut(auth);
+  return runWithBrandLoader("جاري تسجيل الخروج...", async () => {
+    clearGoogleAccessToken();
+    await signOut(auth);
+  });
 }
 
 export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
@@ -579,33 +586,37 @@ export async function saveWorkspaceSettings(
   uid: string,
   updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">> & WorkspaceSettings,
 ): Promise<void> {
-  const { workspace } = await dbFetch<{ workspace: WorkspaceSettings }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}`, {
-    method: "PUT",
-    body: JSON.stringify(updates),
+  return runWithBrandLoader("جاري حفظ إعدادات النظام...", async () => {
+    const { workspace } = await dbFetch<{ workspace: WorkspaceSettings }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}`, {
+      method: "PUT",
+      body: JSON.stringify(updates),
+    });
+    if (activeBundle) {
+      applyBundle({ ...activeBundle, workspace });
+    }
   });
-  if (activeBundle) {
-    applyBundle({ ...activeBundle, workspace });
-  }
 }
 
 export async function saveAccountGroup(
   uid: string,
   group: { id?: number; name: string; category?: AccountCategory; currencyCode?: CurrencyCode; sortOrder?: number },
 ): Promise<AccountGroupRecord> {
-  const { group: saved } = await dbFetch<{ group: AccountGroupRecord }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/groups`,
-    {
-      method: "POST",
-      body: JSON.stringify({ group }),
-    },
-  );
-  if (activeBundle) {
-    const existing = activeBundle.accountGroups ?? [];
-    const idx = existing.findIndex((g) => g.id === saved.id);
-    const next = idx >= 0 ? existing.map((g) => (g.id === saved.id ? saved : g)) : [...existing, saved];
-    applyBundle({ ...activeBundle, accountGroups: next });
-  }
-  return saved;
+  return runWithBrandLoader("جاري حفظ مجموعة الحسابات...", async () => {
+    const { group: saved } = await dbFetch<{ group: AccountGroupRecord }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/groups`,
+      {
+        method: "POST",
+        body: JSON.stringify({ group }),
+      },
+    );
+    if (activeBundle) {
+      const existing = activeBundle.accountGroups ?? [];
+      const idx = existing.findIndex((g) => g.id === saved.id);
+      const next = idx >= 0 ? existing.map((g) => (g.id === saved.id ? saved : g)) : [...existing, saved];
+      applyBundle({ ...activeBundle, accountGroups: next });
+    }
+    return saved;
+  });
 }
 
 export async function saveCurrencyRecord(
@@ -619,33 +630,37 @@ export async function saveCurrencyRecord(
     rateSecondary?: number;
   },
 ): Promise<CurrencyRecord[]> {
-  const { currencies } = await dbFetch<{ currency: CurrencyRecord; currencies: CurrencyRecord[] }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/currencies`,
-    {
-      method: "POST",
-      body: JSON.stringify({ currency }),
-    },
-  );
-  if (activeBundle) {
-    applyBundle({ ...activeBundle, currencies });
-  }
-  return currencies;
+  return runWithBrandLoader("جاري حفظ بيانات العملة...", async () => {
+    const { currencies } = await dbFetch<{ currency: CurrencyRecord; currencies: CurrencyRecord[] }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/currencies`,
+      {
+        method: "POST",
+        body: JSON.stringify({ currency }),
+      },
+    );
+    if (activeBundle) {
+      applyBundle({ ...activeBundle, currencies });
+    }
+    return currencies;
+  });
 }
 
 export async function deleteCurrencyRecord(
   uid: string,
   currencyId: number,
 ): Promise<CurrencyRecord[]> {
-  const { currencies } = await dbFetch<{ ok: boolean; currencies: CurrencyRecord[] }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/currencies/${encodeURIComponent(String(currencyId))}`,
-    {
-      method: "DELETE",
-    },
-  );
-  if (activeBundle) {
-    applyBundle({ ...activeBundle, currencies });
-  }
-  return currencies;
+  return runWithBrandLoader("جاري حذف العملة...", async () => {
+    const { currencies } = await dbFetch<{ ok: boolean; currencies: CurrencyRecord[] }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/currencies/${encodeURIComponent(String(currencyId))}`,
+      {
+        method: "DELETE",
+      },
+    );
+    if (activeBundle) {
+      applyBundle({ ...activeBundle, currencies });
+    }
+    return currencies;
+  });
 }
 
 export async function createOrUpdateAccount(
@@ -653,25 +668,27 @@ export async function createOrUpdateAccount(
   account: Partial<AccountRecord> & { name: string },
   existingId?: string,
 ): Promise<string> {
-  const { account: saved } = await dbFetch<{ account: AccountRecord }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts`,
-    {
-      method: "POST",
-      body: JSON.stringify({ account, existingId }),
-    },
-  );
-  if (activeBundle) {
-    const next = [...activeBundle.accounts];
-    const idx = next.findIndex((a) => a.id === saved.id);
-    if (idx >= 0) next[idx] = saved;
-    else next.push(saved);
-    applyBundle({
-      ...activeBundle,
-      accounts: next,
-      stats: { ...activeBundle.stats, accountsCount: next.length },
-    });
-  }
-  return saved.id;
+  return runWithBrandLoader("جاري حفظ بيانات الحساب...", async () => {
+    const { account: saved } = await dbFetch<{ account: AccountRecord }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts`,
+      {
+        method: "POST",
+        body: JSON.stringify({ account, existingId }),
+      },
+    );
+    if (activeBundle) {
+      const next = [...activeBundle.accounts];
+      const idx = next.findIndex((a) => a.id === saved.id);
+      if (idx >= 0) next[idx] = saved;
+      else next.push(saved);
+      applyBundle({
+        ...activeBundle,
+        accounts: next,
+        stats: { ...activeBundle.stats, accountsCount: next.length },
+      });
+    }
+    return saved.id;
+  });
 }
 
 export async function fetchProductPriceStats(
@@ -687,31 +704,33 @@ export async function createLedgerEntry(
   uid: string,
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<string> {
-  const { entry: saved, inventory: nextInventory } = await dbFetch<{
-    entry: LedgerEntryRecord;
-    inventory?: InventoryItemRecord[];
-  }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger`,
-    {
-      method: "POST",
-      body: JSON.stringify({ entry }),
-    },
-  );
-  if (activeBundle) {
-    const next = [...activeBundle.ledger, saved];
-    applyBundle({
-      ...activeBundle,
-      ledger: next,
-      inventory: nextInventory ?? activeBundle.inventory,
-      stats: {
-        ...activeBundle.stats,
-        ledgerCount: next.length,
-        invoiceLinesCount:
-          activeBundle.stats.invoiceLinesCount + (entry.lines?.length ?? 0),
+  return runWithBrandLoader("جاري حفظ العملية المالية...", async () => {
+    const { entry: saved, inventory: nextInventory } = await dbFetch<{
+      entry: LedgerEntryRecord;
+      inventory?: InventoryItemRecord[];
+    }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger`,
+      {
+        method: "POST",
+        body: JSON.stringify({ entry }),
       },
-    });
-  }
-  return saved.id;
+    );
+    if (activeBundle) {
+      const next = [...activeBundle.ledger, saved];
+      applyBundle({
+        ...activeBundle,
+        ledger: next,
+        inventory: nextInventory ?? activeBundle.inventory,
+        stats: {
+          ...activeBundle.stats,
+          ledgerCount: next.length,
+          invoiceLinesCount:
+            activeBundle.stats.invoiceLinesCount + (entry.lines?.length ?? 0),
+        },
+      });
+    }
+    return saved.id;
+  });
 }
 
 export async function updateLedgerEntry(
@@ -719,48 +738,52 @@ export async function updateLedgerEntry(
   entryId: string,
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<LedgerEntryRecord> {
-  const { entry: saved, inventory: nextInventory, invoiceLinesCount } = await dbFetch<{
-    entry: LedgerEntryRecord;
-    inventory?: InventoryItemRecord[];
-    invoiceLinesCount?: number;
-  }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ entry }),
-    },
-  );
-  if (activeBundle) {
-    const next = activeBundle.ledger.map((e) => (e.id === entryId ? saved : e));
-    applyBundle({
-      ...activeBundle,
-      ledger: next,
-      inventory: nextInventory ?? activeBundle.inventory,
-      stats: {
-        ...activeBundle.stats,
-        ...(typeof invoiceLinesCount === "number" ? { invoiceLinesCount } : {}),
+  return runWithBrandLoader("جاري تحديث العملية المالية...", async () => {
+    const { entry: saved, inventory: nextInventory, invoiceLinesCount } = await dbFetch<{
+      entry: LedgerEntryRecord;
+      inventory?: InventoryItemRecord[];
+      invoiceLinesCount?: number;
+    }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ entry }),
       },
-    });
-  }
-  return saved;
+    );
+    if (activeBundle) {
+      const next = activeBundle.ledger.map((e) => (e.id === entryId ? saved : e));
+      applyBundle({
+        ...activeBundle,
+        ledger: next,
+        inventory: nextInventory ?? activeBundle.inventory,
+        stats: {
+          ...activeBundle.stats,
+          ...(typeof invoiceLinesCount === "number" ? { invoiceLinesCount } : {}),
+        },
+      });
+    }
+    return saved;
+  });
 }
 
 export async function setLedgerDeleted(uid: string, entryId: string, deleted: boolean): Promise<void> {
-  const { inventory: nextInventory } = await dbFetch<{ ok: boolean; inventory?: InventoryItemRecord[] }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}/deleted`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ deleted }),
-    },
-  );
-  if (activeBundle) {
-    const next = activeBundle.ledger.map((e) => (e.id === entryId ? { ...e, deleted } : e));
-    applyBundle({
-      ...activeBundle,
-      ledger: next,
-      inventory: nextInventory ?? activeBundle.inventory,
-    });
-  }
+  return runWithBrandLoader(deleted ? "جاري نقل السجل إلى المهملات..." : "جاري استعادة السجل...", async () => {
+    const { inventory: nextInventory } = await dbFetch<{ ok: boolean; inventory?: InventoryItemRecord[] }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}/deleted`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ deleted }),
+      },
+    );
+    if (activeBundle) {
+      const next = activeBundle.ledger.map((e) => (e.id === entryId ? { ...e, deleted } : e));
+      applyBundle({
+        ...activeBundle,
+        ledger: next,
+        inventory: nextInventory ?? activeBundle.inventory,
+      });
+    }
+  });
 }
 
 export type InventoryMovementItemRow = {
@@ -907,34 +930,38 @@ export async function fetchCashboxesReport(
 }
 
 export async function deleteAccount(uid: string, accountId: string): Promise<void> {
-  await dbFetch<{ ok: boolean }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts/${encodeURIComponent(accountId)}`,
-    { method: "DELETE" },
-  );
-  if (activeBundle) {
-    const next = activeBundle.accounts.filter((a) => a.id !== accountId);
-    applyBundle({
-      ...activeBundle,
-      accounts: next,
-      stats: { ...activeBundle.stats, accountsCount: next.length },
-    });
-  }
+  return runWithBrandLoader("جاري حذف الحساب...", async () => {
+    await dbFetch<{ ok: boolean }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts/${encodeURIComponent(accountId)}`,
+      { method: "DELETE" },
+    );
+    if (activeBundle) {
+      const next = activeBundle.accounts.filter((a) => a.id !== accountId);
+      applyBundle({
+        ...activeBundle,
+        accounts: next,
+        stats: { ...activeBundle.stats, accountsCount: next.length },
+      });
+    }
+  });
 }
 
 export async function permanentlyDeleteLedger(uid: string, entryId: string): Promise<void> {
-  const { inventory: nextInventory } = await dbFetch<{ ok: boolean; inventory?: InventoryItemRecord[] }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
-    { method: "DELETE" },
-  );
-  if (activeBundle) {
-    const next = activeBundle.ledger.filter((e) => e.id !== entryId);
-    applyBundle({
-      ...activeBundle,
-      ledger: next,
-      inventory: nextInventory ?? activeBundle.inventory,
-      stats: { ...activeBundle.stats, ledgerCount: next.length },
-    });
-  }
+  return runWithBrandLoader("جاري حذف السجل نهائيًا...", async () => {
+    const { inventory: nextInventory } = await dbFetch<{ ok: boolean; inventory?: InventoryItemRecord[] }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/ledger/${encodeURIComponent(entryId)}`,
+      { method: "DELETE" },
+    );
+    if (activeBundle) {
+      const next = activeBundle.ledger.filter((e) => e.id !== entryId);
+      applyBundle({
+        ...activeBundle,
+        ledger: next,
+        inventory: nextInventory ?? activeBundle.inventory,
+        stats: { ...activeBundle.stats, ledgerCount: next.length },
+      });
+    }
+  });
 }
 
 export async function saveWarehouse(
@@ -943,67 +970,73 @@ export async function saveWarehouse(
   _allWarehouses: readonly WarehouseRecord[],
   existingId?: string,
 ): Promise<string> {
-  const { warehouse: saved } = await dbFetch<{ warehouse: WarehouseRecord }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/warehouses`,
-    {
-      method: "POST",
-      body: JSON.stringify({ warehouse, existingId }),
-    },
-  );
-  if (activeBundle) {
-    let next = activeBundle.warehouses.map((w) => (saved.isDefault ? { ...w, isDefault: w.id === saved.id } : w));
-    const idx = next.findIndex((w) => w.id === saved.id);
-    if (idx >= 0) next[idx] = saved;
-    else next = [...next, saved];
-    applyBundle({
-      ...activeBundle,
-      warehouses: next,
-      stats: { ...activeBundle.stats, warehousesCount: next.length },
-    });
-  }
-  return saved.id;
+  return runWithBrandLoader("جاري حفظ بيانات المخزن...", async () => {
+    const { warehouse: saved } = await dbFetch<{ warehouse: WarehouseRecord }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/warehouses`,
+      {
+        method: "POST",
+        body: JSON.stringify({ warehouse, existingId }),
+      },
+    );
+    if (activeBundle) {
+      let next = activeBundle.warehouses.map((w) => (saved.isDefault ? { ...w, isDefault: w.id === saved.id } : w));
+      const idx = next.findIndex((w) => w.id === saved.id);
+      if (idx >= 0) next[idx] = saved;
+      else next = [...next, saved];
+      applyBundle({
+        ...activeBundle,
+        warehouses: next,
+        stats: { ...activeBundle.stats, warehousesCount: next.length },
+      });
+    }
+    return saved.id;
+  });
 }
 
 export async function createInventoryItem(
   uid: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId?: string },
 ): Promise<string> {
-  const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory`,
-    {
-      method: "POST",
-      body: JSON.stringify({ item }),
-    },
-  );
-  if (activeBundle) {
-    const next = [...activeBundle.inventory, saved];
-    applyBundle({
-      ...activeBundle,
-      inventory: next,
-      stats: { ...activeBundle.stats, inventoryCount: next.length },
-    });
-  }
-  return saved.id;
+  return runWithBrandLoader("جاري حفظ بيانات الصنف...", async () => {
+    const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory`,
+      {
+        method: "POST",
+        body: JSON.stringify({ item }),
+      },
+    );
+    if (activeBundle) {
+      const next = [...activeBundle.inventory, saved];
+      applyBundle({
+        ...activeBundle,
+        inventory: next,
+        stats: { ...activeBundle.stats, inventoryCount: next.length },
+      });
+    }
+    return saved.id;
+  });
 }
 
 export async function deleteInventoryCatalogItem(
   uid: string,
   itemId: string,
 ): Promise<void> {
-  await dbFetch<{ ok: boolean }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}`,
-    {
-      method: "DELETE",
-    },
-  );
-  if (activeBundle) {
-    const next = activeBundle.inventory.filter((i) => i.id !== itemId);
-    applyBundle({
-      ...activeBundle,
-      inventory: next,
-      stats: { ...activeBundle.stats, inventoryCount: next.length },
-    });
-  }
+  return runWithBrandLoader("جاري حذف الصنف...", async () => {
+    await dbFetch<{ ok: boolean }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}`,
+      {
+        method: "DELETE",
+      },
+    );
+    if (activeBundle) {
+      const next = activeBundle.inventory.filter((i) => i.id !== itemId);
+      applyBundle({
+        ...activeBundle,
+        inventory: next,
+        stats: { ...activeBundle.stats, inventoryCount: next.length },
+      });
+    }
+  });
 }
 
 export async function updateInventoryCatalog(
@@ -1011,20 +1044,22 @@ export async function updateInventoryCatalog(
   itemId: string,
   item: Partial<InventoryItemRecord> & { name: string },
 ): Promise<InventoryItemRecord> {
-  const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}/catalog`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ item }),
-    },
-  );
-  if (activeBundle) {
-    applyBundle({
-      ...activeBundle,
-      inventory: activeBundle.inventory.map((i) => (i.id === itemId ? { ...i, ...saved } : i)),
-    });
-  }
-  return saved;
+  return runWithBrandLoader("جاري تحديث بطاقة الصنف...", async () => {
+    const { item: saved } = await dbFetch<{ item: InventoryItemRecord }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}/catalog`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ item }),
+      },
+    );
+    if (activeBundle) {
+      applyBundle({
+        ...activeBundle,
+        inventory: activeBundle.inventory.map((i) => (i.id === itemId ? { ...i, ...saved } : i)),
+      });
+    }
+    return saved;
+  });
 }
 
 export async function updateInventoryItem(
@@ -1032,14 +1067,16 @@ export async function updateInventoryItem(
   itemId: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): Promise<void> {
-  await dbFetch<{ ok: boolean }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ item }),
-    },
-  );
-  await refreshWorkspaceFromServer(uid);
+  return runWithBrandLoader("جاري تحديث رصيد الصنف...", async () => {
+    await dbFetch<{ ok: boolean }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/${encodeURIComponent(itemId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ item }),
+      },
+    );
+    await refreshWorkspaceFromServer(uid);
+  });
 }
 
 export async function batchUpdateInventoryItems(
@@ -1054,14 +1091,16 @@ export async function batchUpdateInventoryItems(
   }[],
 ): Promise<void> {
   if (!updates.length) return;
-  await dbFetch<{ ok: boolean }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/batch`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ updates }),
-    },
-  );
-  await refreshWorkspaceFromServer(uid);
+  return runWithBrandLoader("جاري تحديث حركة المخزون...", async () => {
+    await dbFetch<{ ok: boolean }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/batch`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ updates }),
+      },
+    );
+    await refreshWorkspaceFromServer(uid);
+  });
 }
 
 export async function createCloudBackupRecord(
@@ -1075,14 +1114,16 @@ export async function createCloudBackupRecord(
     exportedAtIso: string;
   },
 ): Promise<string> {
-  const { id } = await dbFetch<{ id: string }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/backups`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
-  return id;
+  return runWithBrandLoader("جاري توثيق النسخة السحابية...", async () => {
+    const { id } = await dbFetch<{ id: string }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/backups`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return id;
+  });
 }
 
 export async function syncLocalWorkspaceToIndexedDb(
@@ -1090,22 +1131,28 @@ export async function syncLocalWorkspaceToIndexedDb(
   _liveData?: unknown,
 ): Promise<void> {
   // Unified SQLite replaces IndexedDB completely; refresh live state from server SQLite.
-  await refreshWorkspaceFromServer(uid);
+  return runWithBrandLoader("جاري مزامنة وتحديث البيانات...", () =>
+    refreshWorkspaceFromServer(uid).then(() => undefined),
+  );
 }
 
 export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Promise<void> {
-  const bundle = await dbFetch<WorkspaceBundle>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/reset`, {
-    method: "POST",
-    body: JSON.stringify({ confirmation: "RESET:" + effectiveUid(uid) }),
+  return runWithBrandLoader("جاري تفريغ قاعدة البيانات...", async () => {
+    const bundle = await dbFetch<WorkspaceBundle>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/reset`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation: "RESET:" + effectiveUid(uid) }),
+    });
+    applyBundle(bundle);
   });
-  applyBundle(bundle);
 }
 
 export async function seedDemoWorkspace(uid = LOCAL_WORKSPACE_UID): Promise<void> {
-  const { bundle } = await dbFetch<{ bundle: WorkspaceBundle }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/seed-demo`, {
-    method: "POST",
+  return runWithBrandLoader("جاري تجهيز البيانات التجريبية...", async () => {
+    const { bundle } = await dbFetch<{ bundle: WorkspaceBundle }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/seed-demo`, {
+      method: "POST",
+    });
+    applyBundle(bundle);
   });
-  applyBundle(bundle);
 }
 
 export async function fetchInvoiceFromDatabase(uid: string, entryId: string): Promise<LedgerEntryRecord | null> {
@@ -1205,25 +1252,27 @@ export async function importSmartProSqlIntoServer(
   fileName: string,
   replaceExisting = true,
 ) {
-  const utf8Bytes = new TextEncoder().encode(sqlText);
-  const res =
-    utf8Bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES
-      ? await uploadRestoreBytesChunked<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
-          uid,
-          utf8Bytes,
-          { kind: "sql", fileName, replaceExisting },
-          true,
-        )
-      : await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
-          `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
-          {
-            method: "POST",
-            body: JSON.stringify({ sqlText, fileName, replaceExisting }),
-          },
-          120_000,
-        );
-  applyBundle(res.bundle);
-  return res.report;
+  return runWithBrandLoader(`جاري استيراد ${fileName}...`, async () => {
+    const utf8Bytes = new TextEncoder().encode(sqlText);
+    const res =
+      utf8Bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES
+        ? await uploadRestoreBytesChunked<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
+            uid,
+            utf8Bytes,
+            { kind: "sql", fileName, replaceExisting },
+            true,
+          )
+        : await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
+            `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
+            {
+              method: "POST",
+              body: JSON.stringify({ sqlText, fileName, replaceExisting }),
+            },
+            120_000,
+          );
+    applyBundle(res.bundle);
+    return res.report;
+  });
 }
 
 export async function importSqliteBytesIntoServer(
@@ -1234,31 +1283,39 @@ export async function importSqliteBytesIntoServer(
   groupCategories?: Record<string, AccountCategory>,
   replaceExisting?: boolean,
 ) {
-  if (bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
-    const res = await uploadRestoreBytesChunked<Record<string, unknown>>(
-      uid,
-      bytes,
-      {
-        kind: "sqlite",
-        fileName,
-        mode,
-        groupCategories,
-        ...(replaceExisting !== undefined ? { replaceExisting } : {}),
-      },
-      mode !== "inspect",
-    );
-    if (res.bundle) {
-      applyBundle(res.bundle as WorkspaceBundle, true);
+  const label =
+    mode === "inspect"
+      ? `جاري فحص ${fileName}...`
+      : mode === "restore"
+        ? `جاري استعادة ${fileName}...`
+        : `جاري استيراد ودمج ${fileName}...`;
+  return runWithBrandLoader(label, async () => {
+    if (bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
+      const res = await uploadRestoreBytesChunked<Record<string, unknown>>(
+        uid,
+        bytes,
+        {
+          kind: "sqlite",
+          fileName,
+          mode,
+          groupCategories,
+          ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+        },
+        mode !== "inspect",
+      );
+      if (res.bundle) {
+        applyBundle(res.bundle as WorkspaceBundle, true);
+      }
+      return res;
     }
-    return res;
-  }
 
-  let binary = "";
-  const step = 0x8000;
-  for (let i = 0; i < bytes.length; i += step) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + step));
-  }
-  return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting);
+    let binary = "";
+    const step = 0x8000;
+    for (let i = 0; i < bytes.length; i += step) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + step));
+    }
+    return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting);
+  });
 }
 
 export async function importSqliteLegacyIntoServer(
@@ -1269,64 +1326,74 @@ export async function importSqliteLegacyIntoServer(
   groupCategories?: Record<string, AccountCategory>,
   replaceExisting?: boolean,
 ) {
-  const res =
-    base64.length > Math.ceil((CHUNKED_UPLOAD_THRESHOLD_BYTES * 4) / 3)
-      ? await uploadRestoreBytesChunked<Record<string, unknown>>(
-          uid,
-          decodeBase64ToBytes(base64),
-          {
-            kind: "sqlite",
-            fileName,
-            mode,
-            groupCategories,
-            ...(replaceExisting !== undefined ? { replaceExisting } : {}),
-          },
-          mode !== "inspect",
-        )
-      : await dbFetch<Record<string, unknown>>(
-          `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/sqlite-legacy`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              base64,
+  const label =
+    mode === "inspect"
+      ? `جاري فحص ${fileName}...`
+      : mode === "restore"
+        ? `جاري استعادة ${fileName}...`
+        : `جاري استيراد ${fileName}...`;
+  return runWithBrandLoader(label, async () => {
+    const res =
+      base64.length > Math.ceil((CHUNKED_UPLOAD_THRESHOLD_BYTES * 4) / 3)
+        ? await uploadRestoreBytesChunked<Record<string, unknown>>(
+            uid,
+            decodeBase64ToBytes(base64),
+            {
+              kind: "sqlite",
               fileName,
               mode,
               groupCategories,
               ...(replaceExisting !== undefined ? { replaceExisting } : {}),
-            }),
-          },
-          mode === "inspect" ? 20_000 : 120_000,
-          { mutating: mode !== "inspect" },
-        );
-  if (res.bundle) {
-    applyBundle(res.bundle as WorkspaceBundle, true);
-  }
-  return res;
+            },
+            mode !== "inspect",
+          )
+        : await dbFetch<Record<string, unknown>>(
+            `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/sqlite-legacy`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                base64,
+                fileName,
+                mode,
+                groupCategories,
+                ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+              }),
+            },
+            mode === "inspect" ? 20_000 : 120_000,
+            { mutating: mode !== "inspect" },
+          );
+    if (res.bundle) {
+      applyBundle(res.bundle as WorkspaceBundle, true);
+    }
+    return res;
+  });
 }
 
 export async function restoreJsonBackupIntoServer(
   uid: string,
   payload: Record<string, unknown>,
 ) {
-  const bodyStr = JSON.stringify({ payload });
-  const res =
-    bodyStr.length > CHUNKED_UPLOAD_THRESHOLD_BYTES
-      ? await uploadRestoreBytesChunked<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
-          uid,
-          new TextEncoder().encode(JSON.stringify(payload)),
-          { kind: "json", fileName: "backup.json" },
-          true,
-        )
-      : await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
-          `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/json`,
-          {
-            method: "POST",
-            body: bodyStr,
-          },
-          120_000,
-        );
-  applyBundle(res.bundle, true);
-  return res;
+  return runWithBrandLoader("جاري استعادة النسخة الاحتياطية...", async () => {
+    const bodyStr = JSON.stringify({ payload });
+    const res =
+      bodyStr.length > CHUNKED_UPLOAD_THRESHOLD_BYTES
+        ? await uploadRestoreBytesChunked<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
+            uid,
+            new TextEncoder().encode(JSON.stringify(payload)),
+            { kind: "json", fileName: "backup.json" },
+            true,
+          )
+        : await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
+            `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/json`,
+            {
+              method: "POST",
+              body: bodyStr,
+            },
+            120_000,
+          );
+    applyBundle(res.bundle, true);
+    return res;
+  });
 }
 
 export async function mergeLegacyMasterBatch(
@@ -1337,77 +1404,87 @@ export async function mergeLegacyMasterBatch(
     inventory: readonly InventoryItemRecord[];
   },
 ): Promise<{ accountsAdded: number; warehousesAdded: number; inventoryAdded: number }> {
-  const out = await dbFetch<{ accountsAdded: number; warehousesAdded: number; inventoryAdded: number }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/merge-master`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
-  await refreshWorkspaceFromServer(uid);
-  return out;
+  return runWithBrandLoader("جاري دمج الحسابات والأصناف...", async () => {
+    const out = await dbFetch<{ accountsAdded: number; warehousesAdded: number; inventoryAdded: number }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/merge-master`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    await refreshWorkspaceFromServer(uid);
+    return out;
+  });
 }
 
 export async function postLegacyLedgerBatch(
   uid: string,
   entries: readonly LedgerEntryRecord[],
 ): Promise<{ added: number; skippedDuplicates: number }> {
-  const out = await dbFetch<{ added: number; skippedDuplicates: number }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/post-entries`,
-    {
-      method: "POST",
-      body: JSON.stringify({ entries }),
-    },
-  );
-  await refreshWorkspaceFromServer(uid);
-  return out;
+  return runWithBrandLoader("جاري ترحيل القيود...", async () => {
+    const out = await dbFetch<{ added: number; skippedDuplicates: number }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/post-entries`,
+      {
+        method: "POST",
+        body: JSON.stringify({ entries }),
+      },
+    );
+    await refreshWorkspaceFromServer(uid);
+    return out;
+  });
 }
 
 export async function rollbackLegacyLivePrefix(
   uid: string,
   prefix: string,
 ): Promise<{ accountsRemoved: number; warehousesRemoved: number; inventoryRemoved: number; ledgerRemoved: number }> {
-  const out = await dbFetch<{ accountsRemoved: number; warehousesRemoved: number; inventoryRemoved: number; ledgerRemoved: number }>(
-    `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/rollback/${encodeURIComponent(prefix)}`,
-    { method: "POST" },
-  );
-  await refreshWorkspaceFromServer(uid);
-  return out;
+  return runWithBrandLoader("جاري التراجع عن الدفعة...", async () => {
+    const out = await dbFetch<{ accountsRemoved: number; warehousesRemoved: number; inventoryRemoved: number; ledgerRemoved: number }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/legacy/rollback/${encodeURIComponent(prefix)}`,
+      { method: "POST" },
+    );
+    await refreshWorkspaceFromServer(uid);
+    return out;
+  });
 }
 
 export async function downloadUnifiedSqliteFile(
   uid = LOCAL_WORKSPACE_UID,
   timeoutMs = 15_000,
 ): Promise<void> {
-  const controller = new AbortController();
-  const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(
-      `${apiBase()}/workspace/${encodeURIComponent(effectiveUid(uid))}/export/sqlite`,
-      { signal: controller.signal, cache: "no-store" },
-    );
-    if (!res.ok) throw new Error("تعذر تصدير النسخة الاحتياطية الكاملة.");
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new Error("انتهت مهلة تحميل النسخة الاحتياطية. يرجى إعادة المحاولة.");
+  return runWithBrandLoader("جاري تصدير النسخة الاحتياطية الكاملة...", async () => {
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(
+        `${apiBase()}/workspace/${encodeURIComponent(effectiveUid(uid))}/export/sqlite`,
+        { signal: controller.signal, cache: "no-store" },
+      );
+      if (!res.ok) throw new Error("تعذر تصدير النسخة الاحتياطية الكاملة.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new Error("انتهت مهلة تحميل النسخة الاحتياطية. يرجى إعادة المحاولة.");
+      }
+      throw err;
+    } finally {
+      globalThis.clearTimeout(timer);
     }
-    throw err;
-  } finally {
-    globalThis.clearTimeout(timer);
-  }
+  });
 }
 
 export async function fetchUnifiedJsonExport(uid = LOCAL_WORKSPACE_UID): Promise<unknown> {
-  return dbFetch<unknown>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/export/json`);
+  return runWithBrandLoader("جاري تجهيز النسخة الاحتياطية...", () =>
+    dbFetch<unknown>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/export/json`),
+  );
 }
 
 export async function listUnifiedSqliteTables(uid = LOCAL_WORKSPACE_UID): Promise<{ tables: UnifiedTableMeta[]; stats: UnifiedDbStats }> {

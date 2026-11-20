@@ -7,6 +7,7 @@ import type { LegacyInvoice } from "../legacy/analysis";
 import { unifiedDetailToLegacyInvoice } from "../legacy/unifiedView";
 import type { AccountRecord, LedgerEntryRecord } from "../types";
 import { LegacyInvoicePreview } from "./LegacyInvoicePreview";
+import { NasqoBrandLoader } from "./NasqoBrandLoader";
 
 export function CustomerLegacyArchiveSection({ account }: { account: AccountRecord }) {
   const [moves, setMoves] = useState<LedgerEntryRecord[]>([]);
@@ -95,9 +96,7 @@ export function CustomerLegacyArchiveSection({ account }: { account: AccountReco
       </div>
 
       {loadingInvoice ? (
-        <div style={{ marginTop: 8, color: "var(--nasqo-blue)", fontWeight: 600 }}>
-          جاري تحميل بنود الفاتورة...
-        </div>
+        <NasqoBrandLoader size="sm" label="جاري تحميل بنود الفاتورة..." />
       ) : null}
 
       {selectedInvoice ? (

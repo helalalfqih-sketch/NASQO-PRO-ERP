@@ -4,6 +4,8 @@ import { KeyboardInput, useKeyboard } from "../mobile";
 import {
   computeAccountSummary,
   formatAmount,
+  limitSelectAccounts,
+  maxNumericField,
   parseArabicNumber,
   rankAccountSearchMatches,
 } from "../accounting";
@@ -16,6 +18,7 @@ import {
   type LedgerEntryRecord,
 } from "../types";
 import { triggerHaptic } from "../utils/haptics";
+import { OutlinedAmountField } from "./OutlinedAmountField";
 
 interface TransferModalProps {
   open: boolean;
@@ -73,8 +76,8 @@ export function TransferModal({
   const [saving, setSaving] = useState(false);
 
   const cashboxes = useMemo(
-    () => accounts.filter((a) => a.isCashAccount || a.category === "shop"),
-    [accounts],
+    () => (open ? accounts.filter((a) => a.isCashAccount || a.category === "shop") : []),
+    [accounts, open],
   );
 
   useEffect(() => {
@@ -93,8 +96,8 @@ export function TransferModal({
   }, [accounts, cashboxId, cashboxes, defaultAccountId, open, selectedAccountId, sqliteCashboxId, sqliteCashboxes]);
 
   const filteredAccounts = useMemo(
-    () => rankAccountSearchMatches(accounts, search),
-    [accounts, search],
+    () => (open ? rankAccountSearchMatches(accounts, search) : []),
+    [accounts, open, search],
   );
 
   const activeAccount =
@@ -104,8 +107,18 @@ export function TransferModal({
     accounts[0];
 
   const activeSummary = useMemo(
-    () => (activeAccount ? computeAccountSummary(activeAccount, ledger) : null),
-    [activeAccount, ledger],
+    () => (open && activeAccount ? computeAccountSummary(activeAccount, ledger) : null),
+    [activeAccount, ledger, open],
+  );
+
+  const selectAccountOpts = useMemo(
+    () => limitSelectAccounts(filteredAccounts, activeAccount?.id, 150),
+    [activeAccount?.id, filteredAccounts],
+  );
+
+  const selectCashboxOpts = useMemo(
+    () => limitSelectAccounts(cashboxes.length ? cashboxes : accounts, cashboxId, 150),
+    [accounts, cashboxId, cashboxes],
   );
 
   if (!open) return null;
@@ -157,7 +170,7 @@ export function TransferModal({
     }
     setSaving(true);
     try {
-      const nextNum = Math.max(1000, ...ledger.map((e) => e.entryNumber)) + 1;
+      const nextNum = maxNumericField(ledger, (e) => e.entryNumber, 1000) + 1;
       const composedDetails = composeDetailsText();
       const payload: Omit<LedgerEntryRecord, "id" | "ownerId" | "createdAtMs"> = {
         accountId: activeAccount.id,
@@ -302,11 +315,18 @@ export function TransferModal({
             {filteredAccounts.length === 0 ? (
               <option value="">لا توجد حسابات مطابقة</option>
             ) : (
-              filteredAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name}
-                </option>
-              ))
+              <>
+                {selectAccountOpts.options.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.name}
+                  </option>
+                ))}
+                {selectAccountOpts.truncatedCount > 0 ? (
+                  <option value="" disabled>
+                    — ابحث أعلاه لعرض باقي الحسابات (+{selectAccountOpts.truncatedCount}) —
+                  </option>
+                ) : null}
+              </>
             )}
           </select>
           <ChevronDownIcon className="transfer-select-chevron" />
@@ -321,48 +341,49 @@ export function TransferModal({
           </strong>
         </div>
 
-        <div className="transfer-amount-commission-row">
-          <div className="transfer-money-cell">
-            <KeyboardInput
-              aria-label="مبلغ الحوالة"
-              data-testid="transfer-amount-input"
-              inputMode="decimal"
-              placeholder="المبلغ"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            <select
-              aria-label="عملة الحوالة"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-            >
-              {currencyOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="transfer-money-cell">
-            <KeyboardInput
-              aria-label="عمولة الحوالة"
-              inputMode="decimal"
-              placeholder="العمولة"
-              value={commission}
-              onChange={(e) => setCommission(e.target.value)}
-            />
-            <select
-              aria-label="عملة العمولة"
-              value={commissionCurrency}
-              onChange={(e) => setCommissionCurrency(e.target.value as CurrencyCode)}
-            >
-              {currencyOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="transfer-amount-commission-stack">
+          <OutlinedAmountField
+            label="المبلغ"
+            ariaLabel="مبلغ الحوالة"
+            testId="transfer-amount-input"
+            currency={currency}
+            value={amount}
+            onChange={(next) => setAmount(next)}
+            currencySlot={
+              <select
+                aria-label="عملة الحوالة"
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+              >
+                {currencyOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            }
+          />
+          <OutlinedAmountField
+            label="العمولة"
+            ariaLabel="عمولة الحوالة"
+            currency={commissionCurrency}
+            value={commission}
+            compact
+            onChange={(next) => setCommission(next)}
+            currencySlot={
+              <select
+                aria-label="عملة العمولة"
+                value={commissionCurrency}
+                onChange={(e) => setCommissionCurrency(e.target.value as CurrencyCode)}
+              >
+                {currencyOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            }
+          />
         </div>
 
         <div className="transfer-grid-2">
@@ -408,11 +429,16 @@ export function TransferModal({
             value={cashboxId}
             onChange={(e) => setCashboxId(e.target.value)}
           >
-            {(cashboxes.length ? cashboxes : accounts).map((acc) => (
+            {selectCashboxOpts.options.map((acc) => (
               <option key={acc.id} value={acc.id}>
                 {acc.name}
               </option>
             ))}
+            {selectCashboxOpts.truncatedCount > 0 ? (
+              <option value="" disabled>
+                — يتم عرض أول {selectCashboxOpts.options.length} حساب —
+              </option>
+            ) : null}
           </select>
         </label>
 

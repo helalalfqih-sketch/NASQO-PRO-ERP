@@ -64,7 +64,12 @@ export function matchesArabicSearch(haystack: string, query: string): boolean {
   if (!normQuery) return true;
   const normHaystack = normalizeArabicSearch(haystack);
   const tokens = normQuery.split(" ").filter(Boolean);
-  return tokens.every((token) => normHaystack.includes(token));
+  return tokens.every((token) => {
+    if (normHaystack.includes(token)) return true;
+    if (token.startsWith("ال") && token.length > 2 && normHaystack.includes(token.slice(2))) return true;
+    if (!token.startsWith("ال") && normHaystack.includes("ال" + token)) return true;
+    return false;
+  });
 }
 
 export function clampString(value: string, max: number): string {
@@ -214,6 +219,86 @@ export function affectsAccountBalance(entry: Pick<LedgerEntryRecord, "deleted" |
   return entry.kind !== "quote" && entry.kind !== "order";
 }
 
+export function maxNumericField<T>(
+  items: readonly T[],
+  selector: (item: T) => number,
+  floor = 0,
+): number {
+  let maxVal = floor;
+  for (let i = 0; i < items.length; i += 1) {
+    const val = selector(items[i]);
+    if (Number.isFinite(val) && val > maxVal) {
+      maxVal = val;
+    }
+  }
+  return maxVal;
+}
+
+export function limitSelectAccounts(
+  accounts: readonly AccountRecord[],
+  selectedId?: string,
+  maxOptions = 150,
+): { options: AccountRecord[]; truncatedCount: number } {
+  if (accounts.length <= maxOptions) {
+    return { options: accounts as AccountRecord[], truncatedCount: 0 };
+  }
+  const sliced = accounts.slice(0, maxOptions);
+  if (selectedId && !sliced.some((a) => a.id === selectedId)) {
+    const selected = accounts.find((a) => a.id === selectedId);
+    if (selected) {
+      return {
+        options: [selected, ...sliced.slice(0, maxOptions - 1)],
+        truncatedCount: accounts.length - maxOptions,
+      };
+    }
+  }
+  return {
+    options: sliced,
+    truncatedCount: accounts.length - sliced.length,
+  };
+}
+
+type AccountEntriesIndex = {
+  length: number;
+  byAccount: Map<string, LedgerEntryRecord[]>;
+};
+
+const ledgerByAccountCache = new WeakMap<readonly LedgerEntryRecord[], AccountEntriesIndex>();
+
+function getEntriesForAccount(
+  entries: readonly LedgerEntryRecord[],
+  accountId: string,
+): readonly LedgerEntryRecord[] {
+  let cached = ledgerByAccountCache.get(entries);
+  if (!cached || cached.length !== entries.length) {
+    const byAccount = new Map<string, LedgerEntryRecord[]>();
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i];
+      const primaryId = entry.accountId;
+      if (primaryId) {
+        let list = byAccount.get(primaryId);
+        if (!list) {
+          list = [];
+          byAccount.set(primaryId, list);
+        }
+        list.push(entry);
+      }
+      const counterId = entry.counterpartAccountId;
+      if (counterId && counterId !== primaryId) {
+        let list = byAccount.get(counterId);
+        if (!list) {
+          list = [];
+          byAccount.set(counterId, list);
+        }
+        list.push(entry);
+      }
+    }
+    cached = { length: entries.length, byAccount };
+    ledgerByAccountCache.set(entries, cached);
+  }
+  return cached.byAccount.get(accountId) ?? [];
+}
+
 export function computeAccountSummary(
   account: AccountRecord,
   entries: readonly LedgerEntryRecord[],
@@ -231,7 +316,9 @@ export function computeAccountSummary(
     }
   }
 
-  for (const entry of entries) {
+  const accountEntries = getEntriesForAccount(entries, account.id);
+  for (let i = 0; i < accountEntries.length; i += 1) {
+    const entry = accountEntries[i];
     if (entry.deleted) continue;
     const isPrimary = entry.accountId === account.id;
     const isCounterpart = entry.counterpartAccountId === account.id && entry.counterpartAccountId !== "";
@@ -397,7 +484,8 @@ export function computeStatementRows(
   const toDate = options.toDate?.trim() || "";
   const docKind = options.docKind ?? "all";
 
-  const belongsAndCurrency = entries
+  const accountEntries = getEntriesForAccount(entries, account.id);
+  const belongsAndCurrency = accountEntries
     .filter((entry) => {
       if (entry.deleted) return false;
       const belongs = entry.accountId === account.id || entry.counterpartAccountId === account.id;
@@ -551,46 +639,66 @@ export function rankAccountSearchMatches(
     : preferredCategories
       ? [preferredCategories]
       : [];
+  const prefSet = prefs.length > 0 ? new Set(prefs) : null;
 
-  const matched = normQuery
-    ? accounts.filter((a) => accountMatchesQuery(a, normQuery))
-    : [...accounts];
-
-  matched.sort((a, b) => {
-    const aPref = prefs.includes(a.category) ? 0 : 1;
-    const bPref = prefs.includes(b.category) ? 0 : 1;
-    if (aPref !== bPref) return aPref - bPref;
-
-    if (!normQuery) {
+  if (!normQuery) {
+    const ordered = [...accounts];
+    ordered.sort((a, b) => {
+      if (prefSet) {
+        const aPref = prefSet.has(a.category) ? 0 : 1;
+        const bPref = prefSet.has(b.category) ? 0 : 1;
+        if (aPref !== bPref) return aPref - bPref;
+      }
       return a.codeNumber - b.codeNumber || a.name.localeCompare(b.name, "ar");
-    }
+    });
+    return typeof limit === "number" ? ordered.slice(0, limit) : ordered;
+  }
 
-    const aName = normalizeArabicSearch(a.name);
-    const bName = normalizeArabicSearch(b.name);
-    const aScore =
-      aName === normQuery
+  const tokens = normQuery.split(" ").filter(Boolean);
+  const scored: { acc: AccountRecord; pref: number; score: number }[] = [];
+  for (let i = 0; i < accounts.length; i += 1) {
+    const acc = accounts[i];
+    const haystack = normalizeArabicSearch(
+      `${acc.name} ${acc.phone} ${acc.codeNumber} ${acc.id} ${acc.note ?? ""} ${acc.legacyRef ?? ""} ${acc.currency}`,
+    );
+    let matches = true;
+    for (let t = 0; t < tokens.length; t += 1) {
+      if (!haystack.includes(tokens[t])) {
+        matches = false;
+        break;
+      }
+    }
+    if (!matches) continue;
+    const normName = normalizeArabicSearch(acc.name);
+    const score =
+      normName === normQuery
         ? 0
-        : aName.startsWith(normQuery)
+        : normName.startsWith(normQuery)
           ? 1
-          : String(a.codeNumber) === normQuery || normalizeArabicSearch(a.phone) === normQuery
+          : String(acc.codeNumber) === normQuery || normalizeArabicSearch(acc.phone) === normQuery
             ? 2
-            : aName.includes(normQuery)
+            : normName.includes(normQuery)
               ? 3
               : 4;
-    const bScore =
-      bName === normQuery
-        ? 0
-        : bName.startsWith(normQuery)
-          ? 1
-          : String(b.codeNumber) === normQuery || normalizeArabicSearch(b.phone) === normQuery
-            ? 2
-            : bName.includes(normQuery)
-              ? 3
-              : 4;
-    if (aScore !== bScore) return aScore - bScore;
-    return a.name.localeCompare(b.name, "ar");
+    scored.push({
+      acc,
+      pref: prefSet ? (prefSet.has(acc.category) ? 0 : 1) : 0,
+      score,
+    });
+  }
+
+  scored.sort((a, b) => {
+    if (a.pref !== b.pref) return a.pref - b.pref;
+    if (a.score !== b.score) return a.score - b.score;
+    return a.acc.name.localeCompare(b.acc.name, "ar");
   });
-  return typeof limit === "number" ? matched.slice(0, limit) : matched;
+
+  const end = typeof limit === "number" ? Math.min(limit, scored.length) : scored.length;
+  const result = new Array<AccountRecord>(end);
+  for (let i = 0; i < end; i += 1) {
+    result[i] = scored[i].acc;
+  }
+  return result;
 }
 
 function escapeCsvCell(cell: string | number | boolean): string {
@@ -1129,7 +1237,7 @@ export function computeSupplierPerformance(
   const results: SupplierPerformanceMetric[] = [];
 
   for (const supplier of supplierAccounts) {
-    const supplierEntries = entries
+    const supplierEntries = getEntriesForAccount(entries, supplier.id)
       .filter((e) => !e.deleted && (e.accountId === supplier.id || e.counterpartAccountId === supplier.id))
       .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
 

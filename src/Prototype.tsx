@@ -12,8 +12,10 @@ import {
   type ComponentType,
   type DragEvent,
   type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "motion/react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { APP_ICON_URL } from "./utils/appBrand";
 import {
@@ -31,12 +33,15 @@ import {
   CardStackIcon,
   ChatBubbleIcon,
   CheckCircledIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   Cross2Icon,
   CubeIcon,
   DownloadIcon,
   DragHandleDots2Icon,
+  DrawingPinFilledIcon,
+  DrawingPinIcon,
   ExclamationTriangleIcon,
   FilePlusIcon,
   FileTextIcon,
@@ -57,6 +62,7 @@ import {
   PlusIcon,
   ReaderIcon,
   ReloadIcon,
+  ResetIcon,
   RocketIcon,
   Share1Icon,
   SwitchIcon,
@@ -116,7 +122,9 @@ import {
   formatAmount,
   formatSignedSmartBalance,
   isBackupOverdue,
+  limitSelectAccounts,
   matchesArabicSearch,
+  maxNumericField,
   normalizeArabicSearch,
   parseArabicNumber,
   rankAccountSearchMatches,
@@ -198,16 +206,29 @@ import { describeGoogleSignInError } from "./utils/authError";
 import { exportSummaryAsPngImage } from "./utils/canvasExport";
 import {
   DEFAULT_HOME_METRIC_ORDER,
+  DEFAULT_HOME_TILE_LAYOUT,
+  getVisibleOrderedHomeTiles,
+  isDefaultHomeTileLayout,
+  moveHomeTile,
   readHomeMetricOrder,
+  readHomeTileLayout,
   readLastBackupIso,
   readPinnedFavorites,
   readWidgetOrder,
   recordLastBackupNow,
+  stepHomeTile,
+  toggleHideHomeTile,
+  togglePinHomeTile,
+  toggleToneHomeTile,
   writeHomeMetricOrder,
+  writeHomeTileLayout,
   writePinnedFavorites,
   writeWidgetOrder,
   type DashboardWidgetId,
   type HomeMetricId,
+  type HomeTileId,
+  type HomeTileLayout,
+  type HomeTileTone,
   type PinnedFavoriteItem,
 } from "./utils/dashboardPrefs";
 import {
@@ -217,6 +238,9 @@ import {
 } from "./utils/exportPdf";
 import { readHapticsEnabled, triggerHaptic, writeHapticsEnabled } from "./utils/haptics";
 import { useThemeMode, type ThemeMode } from "./utils/theme";
+import { OutlinedAmountField } from "./components/OutlinedAmountField";
+import { GlobalNasqoBrandLoader, NasqoBrandLoader } from "./components/NasqoBrandLoader";
+import { runWithBrandLoader } from "./utils/brandLoaderBus";
 
 type IconComponent = ComponentType<{ className?: string }>;
 type SheetKind = "filters" | "export" | "notifications" | null;
@@ -378,6 +402,7 @@ type LiveWorkspaceState = {
   launchFavorite: (item: PinnedFavoriteItem) => void;
   lastBackupIso: string | null;
   showToast: (message: string, durationMs?: number) => void;
+  runWithLoader: <T>(label: string, task: () => Promise<T>) => Promise<T>;
   triggerJsonBackup: () => void;
   triggerJsonRestore: () => void;
   triggerCsvImport: () => void;
@@ -406,25 +431,41 @@ function downloadFile(filename: string, content: string, mimeType: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function triggerPrintWithLoader(label = "جاري تجهيز الطباعة...") {
+  void runWithBrandLoader(
+    label,
+    () => {
+      window.print();
+    },
+    { preDelayMs: 320, minDurationMs: 420 },
+  );
+}
+
 async function shareOrCopyText(title: string, text: string, showToast: (msg: string) => void) {
-  try {
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-      await navigator.share({ title, text });
-      return;
-    }
-  } catch {
-    // Fallback to clipboard below when user cancels or share fails
-  }
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      showToast("تم نسخ الملخص إلى الحافظة للمشاركة");
-      return;
-    }
-  } catch {
-    // Ignore clipboard error in restricted frames
-  }
-  showToast("تم تجهيز نص الملخص للمشاركة");
+  await runWithBrandLoader(
+    "جاري تجهيز المشاركة...",
+    async () => {
+      try {
+        if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+          await navigator.share({ title, text });
+          return;
+        }
+      } catch {
+        // Fallback to clipboard below when user cancels or share fails
+      }
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          showToast("تم نسخ الملخص إلى الحافظة للمشاركة");
+          return;
+        }
+      } catch {
+        // Ignore clipboard error in restricted frames
+      }
+      showToast("تم تجهيز نص الملخص للمشاركة");
+    },
+    { minDurationMs: 420 },
+  );
 }
 
 async function openWhatsAppChat(
@@ -432,29 +473,35 @@ async function openWhatsAppChat(
   message: string,
   showToast: (msg: string) => void,
 ) {
-  triggerHaptic("light");
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(message);
-    }
-  } catch {
-    // Ignore clipboard restriction inside sandboxed frames
-  }
-  const waUrl = buildWhatsAppMessageUrl(account?.phone, message);
-  if (typeof document !== "undefined") {
-    const link = document.createElement("a");
-    link.href = waUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-  if (account?.phone) {
-    showToast(`جاري فتح واتساب لمراسلة ${account.name}`);
-  } else {
-    showToast("تم تجهيز رسالة واتساب ونسخها — اختر جهة الاتصال داخل واتساب");
-  }
+  await runWithBrandLoader(
+    account?.name ? `جاري فتح واتساب لمراسلة ${account.name}...` : "جاري فتح واتساب...",
+    async () => {
+      triggerHaptic("light");
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(message);
+        }
+      } catch {
+        // Ignore clipboard restriction inside sandboxed frames
+      }
+      const waUrl = buildWhatsAppMessageUrl(account?.phone, message);
+      if (typeof document !== "undefined") {
+        const link = document.createElement("a");
+        link.href = waUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      if (account?.phone) {
+        showToast(`جاري فتح واتساب لمراسلة ${account.name}`);
+      } else {
+        showToast("تم تجهيز رسالة واتساب ونسخها — اختر جهة الاتصال داخل واتساب");
+      }
+    },
+    { preDelayMs: 280, minDurationMs: 440 },
+  );
 }
 
 function buildAccountBalanceMessage(
@@ -780,11 +827,11 @@ function NasqoProductionShell() {
           </header>
           <main className="auth-gate-main">
             <section className="auth-card">
-              <span className="drawer-hero-mark">
-                <img src={APP_ICON_URL} alt="شعار نسقو برو" className="app-brand-icon-img" draggable={false} />
-              </span>
               {startupError ? (
                 <>
+                  <span className="drawer-hero-mark">
+                    <img src={APP_ICON_URL} alt="شعار نسقو برو" className="app-brand-icon-img" draggable={false} />
+                  </span>
                   <h1>تعذر فتح مساحة العمل</h1>
                   <p role="alert" className="auth-error" data-testid="startup-storage-error">{startupError}</p>
                   <button
@@ -802,9 +849,8 @@ function NasqoProductionShell() {
                 </>
               ) : (
                 <>
-                  <h1>جاري تحميل النظام...</h1>
+                  <NasqoBrandLoader size="lg" label="جاري تحميل النظام..." testId="startup-brand-loader" />
                   <p>يتم تجهيز بيانات العمل المحفوظة بأمان.</p>
-
                 </>
               )}
             </section>
@@ -867,6 +913,7 @@ function NasqoProductionShell() {
             </section>
           </main>
         </div>
+        <GlobalNasqoBrandLoader />
       </div>
     );
   }
@@ -874,9 +921,10 @@ function NasqoProductionShell() {
   if (primaryMode === "on") {
     return (
       <div className="nasqo-app" dir="rtl">
-        <Suspense fallback={<div role="status" className="erp-lazy-loading">جاري فتح الإدارة المركزية...</div>}>
+        <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح الإدارة المركزية..." />}>
           <SmartProControlScreen key={user.uid} />
         </Suspense>
+        <GlobalNasqoBrandLoader />
       </div>
     );
   }
@@ -1089,6 +1137,8 @@ function AuthenticatedWorkspace({
     [user.uid],
   );
 
+
+
   useEffect(() => {
     const unsub = subscribeWorkspace(user.uid, {
       onWorkspace: (ws) => {
@@ -1119,6 +1169,12 @@ function AuthenticatedWorkspace({
     return unsub;
   }, [user.uid]);
 
+  const runWithLoader = useCallback(
+    async <T,>(label: string, task: () => Promise<T>): Promise<T> =>
+      runWithBrandLoader(label, task),
+    [],
+  );
+
   const showToast = useCallback((message: string, durationMs = 2600) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     setToast(message);
@@ -1128,7 +1184,9 @@ function AuthenticatedWorkspace({
   const retrySync = useCallback(async () => {
     setRetryingSync(true);
     try {
-      await refreshWorkspaceFromServer(user.uid);
+      await runWithLoader("جاري مزامنة وتحديث البيانات...", () =>
+        refreshWorkspaceFromServer(user.uid),
+      );
       setSyncError(null);
       showToast("تم تحديث البيانات بنجاح");
     } catch (err) {
@@ -1138,7 +1196,7 @@ function AuthenticatedWorkspace({
     } finally {
       setRetryingSync(false);
     }
-  }, [showToast, user.uid]);
+  }, [runWithLoader, showToast, user.uid]);
 
   const dismissKeyboard = useCallback(() => {
     keyboard.hide();
@@ -1300,24 +1358,28 @@ function AuthenticatedWorkspace({
     dismissKeyboard();
     setOptionsMenuOpen(false);
     try {
-      await seedDemoWorkspace(user.uid);
+      await runWithLoader("جاري تجهيز البيانات التجريبية...", () =>
+        seedDemoWorkspace(user.uid),
+      );
       triggerHaptic("success");
       showToast("تم تحميل بيانات تجريبية في قاعدة البيانات بنجاح.");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "تعذر تحميل البيانات التجريبية.");
     }
-  }, [dismissKeyboard, showToast, user.uid]);
+  }, [dismissKeyboard, runWithLoader, showToast, user.uid]);
 
   const confirmResetWorkspaceDatabase = useCallback(async () => {
     try {
-      await resetLocalWorkspaceDatabase(user.uid);
+      await runWithLoader("جاري تفريغ قاعدة البيانات...", () =>
+        resetLocalWorkspaceDatabase(user.uid),
+      );
       setOverlay(null);
       triggerHaptic("success");
       showToast("تم تفريغ البيانات بعد التأكيد.");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "تعذر تفريغ البيانات.");
     }
-  }, [showToast, user.uid]);
+  }, [runWithLoader, showToast, user.uid]);
 
   const closeOverlay = useCallback(() => {
     dismissKeyboard();
@@ -1433,91 +1495,96 @@ function AuthenticatedWorkspace({
 
   const saveLocalNamedBackup = useCallback(
     async (backupName: string) => {
-      const exportedAt = new Date().toISOString();
-      const fileName = buildLocalBackupDownloadName(backupName);
-      try {
-        const serverExport = await fetchUnifiedJsonExport(user.uid);
-        const merged =
-          serverExport && typeof serverExport === "object"
-            ? { ...(serverExport as Record<string, unknown>), name: backupName, exportedAt }
-            : JSON.parse(buildBackupJsonString(backupName, exportedAt));
-        downloadFile(
-          fileName,
-          JSON.stringify(merged, null, 2),
-          "application/json;charset=utf-8",
-        );
-        const savedIso = recordLastBackupNow(exportedAt);
-        setLastBackupIso(savedIso);
-        triggerHaptic("success");
-        showToast(`تم تنزيل النسخة الاحتياطية الكاملة: ${fileName}`);
-      } catch (err) {
-        triggerHaptic("warning");
-        showToast(
-          err instanceof Error && err.message
-            ? `تعذر تصدير النسخة الاحتياطية: ${err.message}`
-            : "تعذر تصدير النسخة الاحتياطية الكاملة.",
-          6000,
-        );
-      }
+      await runWithLoader("جاري تجهيز وتصدير النسخة الاحتياطية...", async () => {
+        const exportedAt = new Date().toISOString();
+        const fileName = buildLocalBackupDownloadName(backupName);
+        try {
+          const serverExport = await fetchUnifiedJsonExport(user.uid);
+          const merged =
+            serverExport && typeof serverExport === "object"
+              ? { ...(serverExport as Record<string, unknown>), name: backupName, exportedAt }
+              : JSON.parse(buildBackupJsonString(backupName, exportedAt));
+          downloadFile(
+            fileName,
+            JSON.stringify(merged, null, 2),
+            "application/json;charset=utf-8",
+          );
+          const savedIso = recordLastBackupNow(exportedAt);
+          setLastBackupIso(savedIso);
+          triggerHaptic("success");
+          showToast(`تم تنزيل النسخة الاحتياطية الكاملة: ${fileName}`);
+        } catch (err) {
+          triggerHaptic("warning");
+          showToast(
+            err instanceof Error && err.message
+              ? `تعذر تصدير النسخة الاحتياطية: ${err.message}`
+              : "تعذر تصدير النسخة الاحتياطية الكاملة.",
+            6000,
+          );
+        }
+      });
     },
-    [buildBackupJsonString, showToast, user.uid],
+    [buildBackupJsonString, runWithLoader, showToast, user.uid],
   );
 
   const saveCloudNamedBackup = useCallback(
     async (backupName: string) => {
-      const exportedAtIso = new Date().toISOString();
-      const fileName = buildLocalBackupDownloadName(backupName);
-      let token = getGoogleAccessToken();
-      if (!token) {
-        const authResult = await connectGoogleDrive();
-        token = authResult.accessToken;
-      }
-      try {
-        const folder = await findOrCreateDriveFolder(token, "NASQO Pro Backups");
-        await uploadFileToDrive(token, {
-          name: fileName,
-          content: buildBackupJsonString(backupName, exportedAtIso),
-          mimeType: "application/json",
-          parentId: folder.id,
-          description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
-        });
-      } catch (err) {
-        if (err instanceof DriveAuthExpiredError) {
+      await runWithLoader("جاري رفع النسخة الاحتياطية إلى Google Drive...", async () => {
+        const exportedAtIso = new Date().toISOString();
+        const fileName = buildLocalBackupDownloadName(backupName);
+        let token = getGoogleAccessToken();
+        if (!token) {
           const authResult = await connectGoogleDrive();
-          const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Backups");
-          await uploadFileToDrive(authResult.accessToken, {
+          token = authResult.accessToken;
+        }
+        try {
+          const folder = await findOrCreateDriveFolder(token, "NASQO Pro Backups");
+          await uploadFileToDrive(token, {
             name: fileName,
             content: buildBackupJsonString(backupName, exportedAtIso),
             mimeType: "application/json",
             parentId: folder.id,
             description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
           });
-        } else {
-          showToast(
-            err instanceof Error
-              ? `تعذر الرفع إلى Google Drive: ${err.message}`
-              : "تعذر الرفع إلى Google Drive",
-          );
-          throw err;
+        } catch (err) {
+          if (err instanceof DriveAuthExpiredError) {
+            const authResult = await connectGoogleDrive();
+            const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Backups");
+            await uploadFileToDrive(authResult.accessToken, {
+              name: fileName,
+              content: buildBackupJsonString(backupName, exportedAtIso),
+              mimeType: "application/json",
+              parentId: folder.id,
+              description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
+            });
+          } else {
+            showToast(
+              err instanceof Error
+                ? `تعذر الرفع إلى Google Drive: ${err.message}`
+                : "تعذر الرفع إلى Google Drive",
+            );
+            throw err;
+          }
         }
-      }
-      await createCloudBackupRecord(user.uid, {
-        name: backupName,
-        accountsCount: accounts.length,
-        ledgerCount: ledger.length,
-        warehousesCount: warehouses.length,
-        inventoryCount: inventory.length,
-        exportedAtIso,
+        await createCloudBackupRecord(user.uid, {
+          name: backupName,
+          accountsCount: accounts.length,
+          ledgerCount: ledger.length,
+          warehousesCount: warehouses.length,
+          inventoryCount: inventory.length,
+          exportedAtIso,
+        });
+        const savedIso = recordLastBackupNow(exportedAtIso);
+        setLastBackupIso(savedIso);
+        showToast(`تم حفظ النسخة في Google Drive: ${fileName}`);
       });
-      const savedIso = recordLastBackupNow(exportedAtIso);
-      setLastBackupIso(savedIso);
-      showToast(`تم حفظ النسخة في Google Drive: ${fileName}`);
     },
     [
       accounts.length,
       buildBackupJsonString,
       inventory.length,
       ledger.length,
+      runWithLoader,
       showToast,
       user.uid,
       warehouses.length,
@@ -1538,98 +1605,99 @@ function AuthenticatedWorkspace({
 
   const restoreBackupFromBytes = useCallback(
     async (bytes: Uint8Array, fileName: string) => {
-      try {
-        showToast(`جارٍ استعادة ${fileName} وتجهيز النظام...`);
-        let effectiveBytes = bytes;
-        if (
-          effectiveBytes.length >= 2 &&
-          effectiveBytes[0] === 0x1f &&
-          effectiveBytes[1] === 0x8b &&
-          typeof DecompressionStream !== "undefined"
-        ) {
-          try {
-            const copy = new Uint8Array(effectiveBytes);
-            const ds = new DecompressionStream("gzip");
-            const buf = await new Response(new Blob([copy]).stream().pipeThrough(ds)).arrayBuffer();
-            effectiveBytes = new Uint8Array(buf);
-          } catch {
-            // Fall through with original bytes if not a valid gzip stream
+      await runWithLoader(`جارٍ استعادة ${fileName} وتجهيز النظام...`, async () => {
+        try {
+          let effectiveBytes = bytes;
+          if (
+            effectiveBytes.length >= 2 &&
+            effectiveBytes[0] === 0x1f &&
+            effectiveBytes[1] === 0x8b &&
+            typeof DecompressionStream !== "undefined"
+          ) {
+            try {
+              const copy = new Uint8Array(effectiveBytes);
+              const ds = new DecompressionStream("gzip");
+              const buf = await new Response(new Blob([copy]).stream().pipeThrough(ds)).arrayBuffer();
+              effectiveBytes = new Uint8Array(buf);
+            } catch {
+              // Fall through with original bytes if not a valid gzip stream
+            }
+          }
+          const inspection = inspectBackupBytes(effectiveBytes, fileName);
+
+          if (inspection.kind === "encrypted") {
+            triggerHaptic("warning");
+            showToast(
+              `الملف ${fileName} مشفّر بكلمة مرور؛ يرجى تصدير نسخة غير مشفرة لإتمام الاستعادة`,
+            );
+            return;
+          }
+
+          if (inspection.kind === "zip") {
+            triggerHaptic("warning");
+            showToast(
+              `الملف ${fileName} مضغوط؛ فك الضغط أولًا ثم اختر ملف النسخة الاحتياطية بالداخل`,
+            );
+            return;
+          }
+
+          if (inspection.kind === "sql") {
+            const report = await importSmartProSqlIntoServer(user.uid, inspection.sqlText, fileName, true);
+            const imported = (report.imported as Record<string, number>) ?? {};
+            triggerHaptic("success");
+            showToast(
+              `تمت استعادة ${fileName} بنجاح (الصناديق: ${imported.accountGroups ?? 0} • الحسابات: ${imported.accounts ?? 0} • القيود: ${imported.ledgerEntries ?? 0} • الأصناف: ${imported.inventoryItems ?? 0})`,
+            );
+            return;
+          }
+
+          if (inspection.kind === "sqlite") {
+            const res = await importSqliteBytesIntoServer(user.uid, effectiveBytes, fileName, "restore", undefined, true);
+            const added = (res.result as { added?: Record<string, number> } | undefined)?.added ?? {};
+            triggerHaptic("success");
+            showToast(
+              `تمت استعادة ${fileName} وتجهيز النظام بنجاح (الصناديق: ${added.accountGroups ?? 0} • الحسابات: ${added.accounts ?? 0} • الحركات: ${added.ledger ?? 0} • الأصناف: ${added.inventory ?? 0})`,
+            );
+            return;
+          }
+
+          if (inspection.kind === "invalid-json") {
+            triggerHaptic("warning");
+            showToast(`تم رفض الملف ${fileName}: ${inspection.reason}`, 6000);
+            return;
+          }
+
+          if (inspection.kind !== "json") {
+            triggerHaptic("warning");
+            showToast("تعذر قراءة ملف النسخة الاحتياطية — اختر ملف نسخة احتياطية صالح", 5000);
+            return;
+          }
+
+          const jsonRes = await restoreJsonBackupIntoServer(
+            user.uid,
+            inspection.payload as Record<string, unknown>,
+          );
+          const r = jsonRes.restored ?? {};
+          triggerHaptic("success");
+          showToast(
+            `تمت استعادة ${fileName} بالكامل (المجموعات: ${r.accountGroups ?? 0} • الحسابات: ${r.accounts ?? 0} • القيود: ${r.ledger ?? 0} • البنود: ${r.invoiceLines ?? 0} • الأصناف: ${r.inventory ?? 0})`,
+          );
+        } catch (err) {
+          triggerHaptic("warning");
+          if (err instanceof UncertainWriteError) {
+            showToast(err.message, 7500);
+          } else {
+            showToast(
+              err instanceof Error && err.message
+                ? `تعذر استعادة النسخة: ${err.message}`
+                : "تعذر قراءة ملف النسخة الاحتياطية — تأكد من سلامة الملف",
+              5500,
+            );
           }
         }
-        const inspection = inspectBackupBytes(effectiveBytes, fileName);
-
-        if (inspection.kind === "encrypted") {
-          triggerHaptic("warning");
-          showToast(
-            `الملف ${fileName} مشفّر بكلمة مرور؛ يرجى تصدير نسخة غير مشفرة لإتمام الاستعادة`,
-          );
-          return;
-        }
-
-        if (inspection.kind === "zip") {
-          triggerHaptic("warning");
-          showToast(
-            `الملف ${fileName} مضغوط؛ فك الضغط أولًا ثم اختر ملف النسخة الاحتياطية بالداخل`,
-          );
-          return;
-        }
-
-        if (inspection.kind === "sql") {
-          const report = await importSmartProSqlIntoServer(user.uid, inspection.sqlText, fileName, true);
-          const imported = (report.imported as Record<string, number>) ?? {};
-          triggerHaptic("success");
-          showToast(
-            `تمت استعادة ${fileName} بنجاح (الصناديق: ${imported.accountGroups ?? 0} • الحسابات: ${imported.accounts ?? 0} • القيود: ${imported.ledgerEntries ?? 0} • الأصناف: ${imported.inventoryItems ?? 0})`,
-          );
-          return;
-        }
-
-        if (inspection.kind === "sqlite") {
-          const res = await importSqliteBytesIntoServer(user.uid, effectiveBytes, fileName, "restore", undefined, true);
-          const added = (res.result as { added?: Record<string, number> } | undefined)?.added ?? {};
-          triggerHaptic("success");
-          showToast(
-            `تمت استعادة ${fileName} وتجهيز النظام بنجاح (الصناديق: ${added.accountGroups ?? 0} • الحسابات: ${added.accounts ?? 0} • الحركات: ${added.ledger ?? 0} • الأصناف: ${added.inventory ?? 0})`,
-          );
-          return;
-        }
-
-        if (inspection.kind === "invalid-json") {
-          triggerHaptic("warning");
-          showToast(`تم رفض الملف ${fileName}: ${inspection.reason}`, 6000);
-          return;
-        }
-
-        if (inspection.kind !== "json") {
-          triggerHaptic("warning");
-          showToast("تعذر قراءة ملف النسخة الاحتياطية — اختر ملف نسخة احتياطية صالح", 5000);
-          return;
-        }
-
-        const jsonRes = await restoreJsonBackupIntoServer(
-          user.uid,
-          inspection.payload as Record<string, unknown>,
-        );
-        const r = jsonRes.restored ?? {};
-        triggerHaptic("success");
-        showToast(
-          `تمت استعادة ${fileName} بالكامل (المجموعات: ${r.accountGroups ?? 0} • الحسابات: ${r.accounts ?? 0} • القيود: ${r.ledger ?? 0} • البنود: ${r.invoiceLines ?? 0} • الأصناف: ${r.inventory ?? 0})`,
-        );
-      } catch (err) {
-        triggerHaptic("warning");
-        if (err instanceof UncertainWriteError) {
-          showToast(err.message, 7500);
-        } else {
-          showToast(
-            err instanceof Error && err.message
-              ? `تعذر استعادة النسخة: ${err.message}`
-              : "تعذر قراءة ملف النسخة الاحتياطية — تأكد من سلامة الملف",
-            5500,
-          );
-        }
-      }
+      });
     },
-    [showToast, user.uid],
+    [runWithLoader, showToast, user.uid],
   );
 
   const handleJsonFileRestore = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1644,34 +1712,36 @@ function AuthenticatedWorkspace({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    try {
-      const text = await file.text();
-      const lines = text
-        .replace(/^\uFEFF/, "")
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      let imported = 0;
-      for (let i = 1; i < lines.length; i += 1) {
-        const cols = lines[i].split(",").map((c) => c.replace(/^"|"$/g, "").trim());
-        const name = cols[0];
-        if (!name) continue;
-        const phone = cols[1] ?? "";
-        const openingBalance = parseArabicNumber(cols[2] ?? "0");
-        await createOrUpdateAccount(user.uid, {
-          name,
-          phone,
-          openingBalance,
-          openingDirection: "credit",
-          category: "purchases",
-          codeNumber: accounts.length + imported + 10,
-        });
-        imported += 1;
+    await runWithLoader("جاري استيراد الحسابات من الملف...", async () => {
+      try {
+        const text = await file.text();
+        const lines = text
+          .replace(/^\uFEFF/, "")
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+        let imported = 0;
+        for (let i = 1; i < lines.length; i += 1) {
+          const cols = lines[i].split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+          const name = cols[0];
+          if (!name) continue;
+          const phone = cols[1] ?? "";
+          const openingBalance = parseArabicNumber(cols[2] ?? "0");
+          await createOrUpdateAccount(user.uid, {
+            name,
+            phone,
+            openingBalance,
+            openingDirection: "credit",
+            category: "purchases",
+            codeNumber: accounts.length + imported + 10,
+          });
+          imported += 1;
+        }
+        showToast(`تم استيراد ${imported} حساب من الملف`);
+      } catch {
+        showToast("تعذر استيراد ملف الحسابات");
       }
-      showToast(`تم استيراد ${imported} حساب من الملف`);
-    } catch {
-      showToast("تعذر استيراد ملف الحسابات");
-    }
+    });
   };
 
   const handleSignOut = useCallback(async () => {
@@ -1892,6 +1962,7 @@ function AuthenticatedWorkspace({
       launchFavorite,
       lastBackupIso,
       showToast,
+      runWithLoader,
       triggerJsonBackup,
       triggerJsonRestore,
       triggerCsvImport,
@@ -1958,6 +2029,7 @@ function AuthenticatedWorkspace({
       setThemeMode,
       setWidgetOrder,
       showToast,
+      runWithLoader,
       statementCurrencies,
       syncing,
       syncError,
@@ -2052,81 +2124,93 @@ function AuthenticatedWorkspace({
   };
 
   const executeExcelExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
-    if (kind === "inventory") {
-      const csv = buildCsvContent(
-        ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
-        inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
-      );
-      downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
-      showToast("تم تصدير تقرير المخزون بصيغة Excel");
-    } else if (kind === "purchases") {
-      const csv = buildCsvContent(
-        ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
-        accounts
-          .filter((a) => a.category === "purchases")
-          .map((a) => {
-            const s = computeAccountSummary(a, ledger);
-            return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
-          }),
-      );
-      downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
-      showToast("تم تصدير حسابات المشتريات بصيغة Excel");
-    } else {
-      const targetAcc = targetAccount ?? accounts[0];
-      const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-      const csv = buildCsvContent(
-        ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
-        (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
-      );
-      downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
-      showToast("تم تصدير كشف الحساب بصيغة Excel");
-    }
+    void runWithBrandLoader(
+      "جاري تصدير ملف Excel...",
+      () => {
+        if (kind === "inventory") {
+          const csv = buildCsvContent(
+            ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
+            inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
+          );
+          downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
+          showToast("تم تصدير تقرير المخزون بصيغة Excel");
+        } else if (kind === "purchases") {
+          const csv = buildCsvContent(
+            ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
+            accounts
+              .filter((a) => a.category === "purchases")
+              .map((a) => {
+                const s = computeAccountSummary(a, ledger);
+                return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
+              }),
+          );
+          downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
+          showToast("تم تصدير حسابات المشتريات بصيغة Excel");
+        } else {
+          const targetAcc = targetAccount ?? accounts[0];
+          const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
+          const csv = buildCsvContent(
+            ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
+            (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
+          );
+          downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
+          showToast("تم تصدير كشف الحساب بصيغة Excel");
+        }
+      },
+      { minDurationMs: 420 },
+    );
   };
 
   const handlePrintPngExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
-    const company = workspace?.companyName || "نسقو برو";
-    if (kind === "inventory") {
-      const invSummary = computeInventorySummary(inventory);
-      exportSummaryAsPngImage({
-        filename: "nasqo-inventory-report.png",
-        companyName: company,
-        title: "تقرير حركة المخزون",
-        subtitle: `عدد الأصناف: ${invSummary.items.length} | إجمالي القيمة: ${formatAmount(invSummary.totalValue)}`,
-        accentColor: extendedSettings.reportColor || brandColor,
-        rows: inventory.slice(0, 10).map((i) => [i.name, `${formatAmount(i.quantity)} ${i.unit}`]),
-        footerNote: extendedSettings.statementFooterNote,
-      });
-    } else if (kind === "purchases") {
-      const list = accounts.filter((a) => a.category === "purchases");
-      exportSummaryAsPngImage({
-        filename: "nasqo-purchases-summary.png",
-        companyName: company,
-        title: "ملخص حسابات المشتريات والموردين",
-        subtitle: `إجمالي الحسابات: ${list.length}`,
-        accentColor: extendedSettings.reportColor || brandColor,
-        rows: list.slice(0, 10).map((a) => {
-          const s = computeAccountSummary(a, ledger);
-          return [a.name, `${formatAmount(s.netBalance)} ${a.currency}`];
-        }),
-        footerNote: extendedSettings.statementFooterNote,
-      });
-    } else {
-      const targetAcc = targetAccount ?? accounts[0];
-      const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-      exportSummaryAsPngImage({
-        filename: `statement-${targetAcc?.codeNumber ?? "all"}.png`,
-        companyName: company,
-        title: `كشف حساب: ${targetAcc?.name ?? ""}`,
-        subtitle: `الصافي: ${formatAmount(statement?.netBalance ?? 0)} ${targetAcc?.currency ?? "ريال"}`,
-        accentColor: extendedSettings.reportColor || brandColor,
-        rows: (statement?.rows ?? []).slice(0, 10).map((r) => [
-          `${r.typeLabel} (#${r.entryNumber})`,
-          `${formatAmount(r.amount)} ${r.currency}`,
-        ]),
-        footerNote: extendedSettings.statementFooterNote,
-      });
-    }
-    showToast("تم تصدير التقرير كصورة PNG بنجاح");
+    void runWithBrandLoader(
+      "جاري تصدير التقرير كصورة...",
+      () => {
+        const company = workspace?.companyName || "نسقو برو";
+        if (kind === "inventory") {
+          const invSummary = computeInventorySummary(inventory);
+          exportSummaryAsPngImage({
+            filename: "nasqo-inventory-report.png",
+            companyName: company,
+            title: "تقرير حركة المخزون",
+            subtitle: `عدد الأصناف: ${invSummary.items.length} | إجمالي القيمة: ${formatAmount(invSummary.totalValue)}`,
+            accentColor: extendedSettings.reportColor || brandColor,
+            rows: inventory.slice(0, 10).map((i) => [i.name, `${formatAmount(i.quantity)} ${i.unit}`]),
+            footerNote: extendedSettings.statementFooterNote,
+          });
+        } else if (kind === "purchases") {
+          const list = accounts.filter((a) => a.category === "purchases");
+          exportSummaryAsPngImage({
+            filename: "nasqo-purchases-summary.png",
+            companyName: company,
+            title: "ملخص حسابات المشتريات والموردين",
+            subtitle: `إجمالي الحسابات: ${list.length}`,
+            accentColor: extendedSettings.reportColor || brandColor,
+            rows: list.slice(0, 10).map((a) => {
+              const s = computeAccountSummary(a, ledger);
+              return [a.name, `${formatAmount(s.netBalance)} ${a.currency}`];
+            }),
+            footerNote: extendedSettings.statementFooterNote,
+          });
+        } else {
+          const targetAcc = targetAccount ?? accounts[0];
+          const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
+          exportSummaryAsPngImage({
+            filename: `statement-${targetAcc?.codeNumber ?? "all"}.png`,
+            companyName: company,
+            title: `كشف حساب: ${targetAcc?.name ?? ""}`,
+            subtitle: `الصافي: ${formatAmount(statement?.netBalance ?? 0)} ${targetAcc?.currency ?? "ريال"}`,
+            accentColor: extendedSettings.reportColor || brandColor,
+            rows: (statement?.rows ?? []).slice(0, 10).map((r) => [
+              `${r.typeLabel} (#${r.entryNumber})`,
+              `${formatAmount(r.amount)} ${r.currency}`,
+            ]),
+            footerNote: extendedSettings.statementFooterNote,
+          });
+        }
+        showToast("تم تصدير التقرير كصورة PNG بنجاح");
+      },
+      { minDurationMs: 420 },
+    );
   };
 
   const handleExportAction = (kind: ExportKind, action: "pdf-print" | "pdf-share" | "excel" | "excel-share" | "balance" | "import") => {
@@ -2140,7 +2224,7 @@ function AuthenticatedWorkspace({
       return;
     }
     if (action === "balance") {
-      window.print();
+      triggerPrintWithLoader("جاري تجهيز مصادقة الرصيد للطباعة...");
       return;
     }
     if (action === "excel" || action === "excel-share") {
@@ -2312,7 +2396,9 @@ function AuthenticatedWorkspace({
           }
           onClose={() => setOverlay(null)}
           onPrintPdf={(allCurrencies) => {
-            window.print();
+            triggerPrintWithLoader(
+              allCurrencies ? "جاري تجهيز طباعة جميع العملات..." : "جاري تجهيز معاينة الطباعة PDF...",
+            );
             showToast(allCurrencies ? "تم فتح معاينة PDF لجميع العملات" : "تم فتح معاينة PDF");
           }}
           onExportExcel={() => executeExcelExport(printContext.kind, printContext.account)}
@@ -2348,7 +2434,7 @@ function AuthenticatedWorkspace({
           onSaveLocal={saveLocalNamedBackup}
           onSaveToGoogle={saveCloudNamedBackup}
         />
-        <Suspense fallback={<p role="status" className="erp-lazy-loading">جاري فتح مركز البيانات...</p>}>
+        <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح مركز البيانات..." />}>
         {overlay === "full-sqlite-import" ? (
           <FullSqliteImportModal
           open
@@ -2398,16 +2484,22 @@ function AuthenticatedWorkspace({
           onNotify={showToast}
           onSendWhatsApp={(account, message) => void openWhatsAppChat(account, message, showToast)}
           onGenerateImage={(data) => {
-            exportSummaryAsPngImage({
-              filename: `nasqo-transfer-${Date.now()}.png`,
-              companyName: workspace?.companyName || "نسقو برو",
-              title: data.title,
-              subtitle: data.subtitle,
-              accentColor: extendedSettings.reportColor || brandColor,
-              rows: data.rows,
-              footerNote: extendedSettings.statementFooterNote,
-            });
-            showToast("تم تنزيل صورة سند الحوالة بنجاح");
+            void runWithBrandLoader(
+              "جاري تصدير صورة سند الحوالة...",
+              () => {
+                exportSummaryAsPngImage({
+                  filename: `nasqo-transfer-${Date.now()}.png`,
+                  companyName: workspace?.companyName || "نسقو برو",
+                  title: data.title,
+                  subtitle: data.subtitle,
+                  accentColor: extendedSettings.reportColor || brandColor,
+                  rows: data.rows,
+                  footerNote: extendedSettings.statementFooterNote,
+                });
+                showToast("تم تنزيل صورة سند الحوالة بنجاح");
+              },
+              { minDurationMs: 420 },
+            );
           }}
         />
         <NotificationCenter
@@ -2421,7 +2513,7 @@ function AuthenticatedWorkspace({
           onSelectNotification={handleSelectNotification}
         />
         {overlay === "qr-scanner" ? (
-          <Suspense fallback={<p role="status" className="erp-lazy-loading">جاري فتح الماسح...</p>}>
+          <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح الماسح..." />}>
             <QrScannerModal
           open={overlay === "qr-scanner"}
           onClose={() => setOverlay(null)}
@@ -2463,6 +2555,8 @@ function AuthenticatedWorkspace({
           <SheetContent kind={sheet} setKind={setSheet} />
         </BottomSheet>
 
+        <GlobalNasqoBrandLoader logoUrl={extendedSettings.logoDataUrl || undefined} />
+
         {toast ? (
           <div className="app-toast" role="status" aria-live="polite">
             <CheckCircledIcon />
@@ -2479,8 +2573,332 @@ function dashboardScreen(): FlowScreen {
     id: "dashboard",
     headerHeight: 52,
     header: () => <DashboardHeader />,
+    footerHeight: 68,
+    footer: (flow) => <DashboardBottomNav flow={flow} />,
     render: (flow) => <DashboardPage flow={flow} />,
   };
+}
+
+function DashboardBottomNav({ flow }: { flow: FlowControls }) {
+  const ctx = useWorkspace();
+  const keyboard = useKeyboard();
+  const { screenRef } = useScreenPortal();
+  const [quickOpen, setQuickOpen] = useState(false);
+
+  useEffect(() => {
+    if (!quickOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setQuickOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [quickOpen]);
+
+  const scrollHomeTop = () => {
+    setQuickOpen(false);
+    triggerHaptic("light");
+    const scroller =
+      document.querySelector(".dashboard-scroll .mobile-scroll-content") ??
+      document.querySelector(".dashboard-scroll");
+    if (scroller && typeof (scroller as HTMLElement).scrollTo === "function") {
+      (scroller as HTMLElement).scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const toggleQuickSheet = () => {
+    keyboard.hide();
+    triggerHaptic(quickOpen ? "light" : "pin");
+    setQuickOpen((prev) => !prev);
+  };
+
+  const runQuickAction = (action: () => void) => {
+    keyboard.hide();
+    triggerHaptic("light");
+    setQuickOpen(false);
+    action();
+  };
+
+  const quickActions = [
+    {
+      id: "transfer",
+      label: "حوالة جديدة",
+      testId: "home-quick-transfer",
+      onClick: () => runQuickAction(() => ctx.openTransferModal()),
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 3 10 14" />
+          <path d="m21 3-6.5 18a.55.55 0 0 1-1 0L10 14l-7-3.5a.55.55 0 0 1 0-1L21 3Z" />
+        </svg>
+      ),
+    },
+    {
+      id: "barcode",
+      label: "مسح باركود",
+      testId: "home-quick-barcode",
+      onClick: () => runQuickAction(() => ctx.openQrScanner()),
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 8V6a2 2 0 0 1 2-2h2" />
+          <path d="M16 4h2a2 2 0 0 1 2 2v2" />
+          <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
+          <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
+          <path d="M7.5 12h9" />
+          <path d="M9.5 8.5h5" />
+          <path d="M9.5 15.5h5" />
+        </svg>
+      ),
+    },
+    {
+      id: "invoice",
+      label: "فاتورة جديدة",
+      testId: "home-quick-invoice",
+      onClick: () => runQuickAction(() => ctx.openInvoice()),
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 3h12a1 1 0 0 1 1 1v17l-2.5-1.6L14 21l-2-1.6L10 21l-2.5-1.6L5 21V4a1 1 0 0 1 1-1Z" />
+          <path d="M9 8.5h6" />
+          <path d="M9 12.5h6" />
+          <path d="M9 16.5h4" />
+        </svg>
+      ),
+    },
+    {
+      id: "voucher",
+      label: "سند جديد",
+      testId: "home-quick-voucher",
+      onClick: () => runQuickAction(() => ctx.openTransaction()),
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+          <path d="M14 3v5h5" />
+          <path d="M12 11v6" />
+          <path d="M9 14h6" />
+        </svg>
+      ),
+    },
+  ];
+
+  const backdropPortal = screenRef.current
+    ? createPortal(
+        <AnimatePresence>
+          {quickOpen ? (
+            <motion.div
+              key="home-quick-backdrop"
+              className="home-quick-sheet-backdrop"
+              aria-hidden="true"
+              data-testid="home-quick-sheet-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              onClick={() => {
+                triggerHaptic("light");
+                setQuickOpen(false);
+              }}
+            />
+          ) : null}
+        </AnimatePresence>,
+        screenRef.current,
+      )
+    : null;
+
+  return (
+    <>
+      {backdropPortal}
+      <nav
+        className={`home-bottom-nav${quickOpen ? " quick-open" : ""}`}
+        aria-label="الشريط السفلي للشاشة الرئيسية"
+        data-testid="home-bottom-nav"
+      >
+        <AnimatePresence>
+          {quickOpen ? (
+            <motion.div
+              key="home-quick-sheet"
+              className="home-quick-sheet"
+              role="dialog"
+              aria-label="إجراءات سريعة"
+              data-testid="home-quick-sheet"
+              initial={{ opacity: 0, y: 46, scale: 0.86 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{
+                opacity: 0,
+                y: 36,
+                scale: 0.9,
+                transition: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
+              }}
+              transition={{
+                type: "spring",
+                stiffness: 380,
+                damping: 27,
+                mass: 0.82,
+              }}
+            >
+              <div className="home-quick-sheet-grid">
+                {quickActions.map((item, idx) => (
+                  <motion.button
+                    key={item.id}
+                    type="button"
+                    className="home-quick-sheet-cell"
+                    data-testid={item.testId}
+                    initial={{ opacity: 0, y: 14, scale: 0.94 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, transition: { duration: 0.12 } }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 420,
+                      damping: 26,
+                      delay: 0.045 + idx * 0.035,
+                    }}
+                    whileTap={{ scale: 0.94 }}
+                    onClick={item.onClick}
+                  >
+                    <span className="home-quick-sheet-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span className="home-quick-sheet-label">{item.label}</span>
+                  </motion.button>
+                ))}
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <button
+          type="button"
+          className="home-bottom-nav-item active"
+          aria-current="page"
+          data-testid="home-nav-home"
+          onClick={scrollHomeTop}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="home-bottom-nav-svg">
+            <path
+              fill="currentColor"
+              d="M11.17 3.32a1.3 1.3 0 0 1 1.66 0l7.6 6.38c.36.3.57.75.57 1.22v8.28c0 1-.8 1.8-1.8 1.8h-4.4a.8.8 0 0 1-.8-.8v-4.7a2 2 0 0 0-4 0v4.7a.8.8 0 0 1-.8.8H4.8c-1 0-1.8-.8-1.8-1.8v-8.28c0-.47.21-.92.57-1.22l7.6-6.38Z"
+            />
+          </svg>
+          <span>الرئيسية</span>
+        </button>
+
+        <button
+          type="button"
+          className="home-bottom-nav-item"
+          data-testid="home-nav-services"
+          onClick={() => {
+            setQuickOpen(false);
+            triggerHaptic("light");
+            flow.push(erpModuleScreen("erp-hub"));
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="home-bottom-nav-svg">
+            <path
+              fill="currentColor"
+              d="M8.5 7V6a3.5 3.5 0 1 1 7 0v1h2.7c1.05 0 1.9.85 1.9 1.9v9.2A2.9 2.9 0 0 1 17.2 21H6.8a2.9 2.9 0 0 1-2.9-2.9V8.9C3.9 7.85 4.75 7 5.8 7h2.7Zm1.8 0h3.4V6a1.7 1.7 0 1 0-3.4 0v1Z"
+            />
+          </svg>
+          <span>الخدمات</span>
+        </button>
+
+        <div className="home-bottom-nav-center-slot">
+          <motion.button
+            type="button"
+            className={`home-bottom-nav-fab${quickOpen ? " is-open" : ""}`}
+            aria-label={quickOpen ? "إغلاق الإجراءات السريعة" : "الإجراءات السريعة"}
+            aria-expanded={quickOpen}
+            data-testid="home-nav-center-fab"
+            animate={{ scale: quickOpen ? 1.05 : 1, y: quickOpen ? -2 : 0 }}
+            whileTap={{ scale: 0.89 }}
+            transition={{ type: "spring", stiffness: 440, damping: 24 }}
+            onClick={toggleQuickSheet}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              {quickOpen ? (
+                <motion.svg
+                  key="fab-close"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="home-bottom-nav-fab-svg"
+                  initial={{ opacity: 0, rotate: -90, scale: 0.6 }}
+                  animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                  exit={{ opacity: 0, rotate: 90, scale: 0.6 }}
+                  transition={{ type: "spring", stiffness: 460, damping: 26 }}
+                >
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.9"
+                    strokeLinecap="round"
+                    d="M7 7l10 10M17 7 7 17"
+                  />
+                </motion.svg>
+              ) : (
+                <motion.svg
+                  key="fab-open"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="home-bottom-nav-fab-svg"
+                  initial={{ opacity: 0, y: 6, scale: 0.7 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.7 }}
+                  transition={{ type: "spring", stiffness: 460, damping: 26 }}
+                >
+                  <path
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3.1"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6.8 12.6 12 7.4l5.2 5.2"
+                  />
+                  <circle cx="12" cy="16.8" r="2.2" fill="currentColor" />
+                </motion.svg>
+              )}
+            </AnimatePresence>
+          </motion.button>
+        </div>
+
+        <button
+          type="button"
+          className="home-bottom-nav-item"
+          data-testid="home-nav-reports"
+          onClick={() => {
+            setQuickOpen(false);
+            triggerHaptic("light");
+            ctx.openReportsHub();
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="home-bottom-nav-svg">
+            <circle cx="5.2" cy="7" r="1.7" fill="currentColor" />
+            <rect x="9.2" y="5.6" width="10.8" height="2.8" rx="1.4" fill="currentColor" />
+            <circle cx="5.2" cy="12.2" r="1.7" fill="currentColor" />
+            <rect x="9.2" y="10.8" width="10.8" height="2.8" rx="1.4" fill="currentColor" />
+            <circle cx="5.2" cy="17.4" r="1.7" fill="currentColor" />
+            <rect x="9.2" y="16" width="10.8" height="2.8" rx="1.4" fill="currentColor" />
+          </svg>
+          <span>التقارير</span>
+        </button>
+
+        <button
+          type="button"
+          className="home-bottom-nav-item"
+          data-testid="home-nav-profile"
+          onClick={() => {
+            setQuickOpen(false);
+            triggerHaptic("light");
+            ctx.openSettings();
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="home-bottom-nav-svg">
+            <circle cx="12" cy="7.6" r="4" fill="currentColor" />
+            <path
+              fill="currentColor"
+              d="M4.6 19.6c0-3.3 3.3-5.6 7.4-5.6s7.4 2.3 7.4 5.6c0 .8-.65 1.4-1.45 1.4H6.05c-.8 0-1.45-.6-1.45-1.4Z"
+            />
+          </svg>
+          <span>الملف</span>
+        </button>
+      </nav>
+    </>
+  );
 }
 
 function DashboardHeader() {
@@ -2777,6 +3195,7 @@ function ShopPage({ flow }: { flow: FlowControls }) {
   const [sort, setSort] = useState("تنازلي");
   const [currencyFilter, setCurrencyFilter] = useState<string>(ctx.workspace?.defaultCurrency ?? "ريال");
   const [byCurrency, setByCurrency] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(60);
 
   const periodRange = useMemo(() => computePeriodDateRange(period), [period]);
   const periodLedger = useMemo(() => {
@@ -2862,7 +3281,7 @@ function ShopPage({ flow }: { flow: FlowControls }) {
               <ArrowLeftIcon />
             </div>
           </section>
-          {ordered.map((acc) => {
+          {ordered.slice(0, visibleCount).map((acc) => {
             const s = computeAccountSummary(acc, periodLedger, activeCurrencyParam);
             return (
               <article className="shop-account-card" key={acc.id}>
@@ -2881,6 +3300,17 @@ function ShopPage({ flow }: { flow: FlowControls }) {
               </article>
             );
           })}
+          {ordered.length > visibleCount ? (
+            <div className="load-more-list-wrap">
+              <button
+                type="button"
+                className="load-more-list-btn"
+                onClick={() => setVisibleCount((v) => v + 80)}
+              >
+                عرض المزيد (المعروض {visibleCount} من {ordered.length} حساب)
+              </button>
+            </div>
+          ) : null}
         </main>
       </MobileScroll>
       <button
@@ -3004,7 +3434,10 @@ function WarehousesPage({
               ctx.uid,
               {
                 ...value,
-                codeNumber: editing === "new" ? Math.max(0, ...ctx.warehouses.map((w) => w.codeNumber)) + 1 : editing.codeNumber,
+                codeNumber:
+                  editing === "new"
+                    ? maxNumericField(ctx.warehouses, (w) => w.codeNumber, 0) + 1
+                    : editing.codeNumber,
               },
               ctx.warehouses,
               editing === "new" ? undefined : editing.id,
@@ -3785,6 +4218,11 @@ function InventoryReportPage({
   const [activeMovementItem, setActiveMovementItem] = useState<InventoryItemRecord | null>(null);
   const [itemMoves, setItemMoves] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movements"]>([]);
   const [loadingMoves, setLoadingMoves] = useState(false);
+  const [visibleRowCount, setVisibleRowCount] = useState(80);
+
+  useEffect(() => {
+    setVisibleRowCount(80);
+  }, [searchQuery, selectedWarehouseId, selectedCurrency, period, onlyMoved]);
 
   const selectPeriod = (nextPeriod: string) => {
     setPeriod(nextPeriod);
@@ -4108,7 +4546,7 @@ function InventoryReportPage({
               </tr>
             </thead>
             <tbody>
-              {reportRows.map((row, idx) => {
+              {reportRows.slice(0, visibleRowCount).map((row, idx) => {
                 const liveItem = inventoryById.get(row.id);
                 const checked = selectedIds.has(row.id);
                 const isActiveRow = activeRowId ? activeRowId === row.id : idx === 0;
@@ -4185,10 +4623,27 @@ function InventoryReportPage({
                   </tr>
                 );
               })}
+              {reportRows.length > visibleRowCount ? (
+                <tr>
+                  <td colSpan={showOpeningCol ? 15 : 13} style={{ textAlign: "center", padding: 10 }}>
+                    <button
+                      type="button"
+                      className="load-more-list-btn"
+                      onClick={() => setVisibleRowCount((v) => v + 100)}
+                    >
+                      عرض المزيد (المعروض {visibleRowCount} من {reportRows.length} صنف)
+                    </button>
+                  </td>
+                </tr>
+              ) : null}
               {reportRows.length === 0 ? (
                 <tr>
                   <td colSpan={showOpeningCol ? 15 : 13} style={{ textAlign: "center", padding: 16, color: "#64748b" }}>
-                    {movementReport ? "لا توجد حركات أصناف في النطاق المحدد." : "جاري تحميل تقرير حركة المخازن..."}
+                    {movementReport ? (
+                      "لا توجد حركات أصناف في النطاق المحدد."
+                    ) : (
+                      <NasqoBrandLoader size="sm" label="جاري تحميل تقرير حركة المخازن..." />
+                    )}
                   </td>
                 </tr>
               ) : null}
@@ -4244,7 +4699,7 @@ function InventoryReportPage({
               </header>
               <div style={{ padding: "8px 12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
                 {loadingMoves ? (
-                  <p className="cash-empty">جاري جلب سجل الحركات...</p>
+                  <NasqoBrandLoader size="sm" label="جاري جلب سجل الحركات..." />
                 ) : itemMoves.length === 0 ? (
                   <p className="cash-empty">لا توجد فواتير أو تحويلات مخزنية مرتبطة بهذا الصنف.</p>
                 ) : (
@@ -4370,7 +4825,7 @@ function smartProControlScreen(): FlowScreen {
     headerHeight: 54,
     header: (flow) => <SimpleAppHeader title="الإدارة المركزية المتقدمة" onBack={flow.pop} />,
     render: () => (
-      <Suspense fallback={<div role="status" className="erp-lazy-loading">جاري فتح الإدارة المركزية...</div>}>
+      <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح الإدارة المركزية..." />}>
         <SmartProControlScreen />
       </Suspense>
     ),
@@ -4383,7 +4838,7 @@ function erpModuleScreen(moduleId: ErpModuleId): FlowScreen {
     headerHeight: 54,
     header: (flow) => <SimpleAppHeader title={ERP_SCREEN_TITLES[moduleId]} onBack={flow.pop} />,
     render: (flow) => (
-      <Suspense fallback={<div role="status" className="erp-lazy-loading" data-testid="erp-module-loading">جاري فتح الشاشة...</div>}>
+      <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح الشاشة..." testId="erp-module-loading" />}>
         <ErpModulePage moduleId={moduleId} flow={flow} />
       </Suspense>
     ),
@@ -4500,6 +4955,15 @@ function dailyJournalScreen(): FlowScreen {
 function DailyJournalPage({ flow }: { flow: FlowControls }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "invoice" | "voucher" | "transfer" | "other">("all");
+  const [visibleCount, setVisibleCount] = useState(60);
+
+  const accountsById = useMemo(
+    () => new Map(ctx.accounts.map((a) => [a.id, a])),
+    [ctx.accounts],
+  );
+
   const activeEntries = useMemo(
     () =>
       ctx.ledger
@@ -4507,21 +4971,107 @@ function DailyJournalPage({ flow }: { flow: FlowControls }) {
         .sort((a, b) => b.createdAtMs - a.createdAtMs || b.entryNumber - a.entryNumber),
     [ctx.ledger],
   );
+
+  const filteredEntries = useMemo(() => {
+    const q = normalizeArabicSearch(searchQuery);
+    return activeEntries.filter((item) => {
+      if (kindFilter === "invoice") {
+        if (item.kind !== "invoice" && item.kind !== "return") return false;
+      } else if (kindFilter === "voucher") {
+        if (item.kind !== "voucher") return false;
+      } else if (kindFilter === "transfer") {
+        if (item.kind !== "transfer") return false;
+      } else if (kindFilter === "other") {
+        if (item.kind === "invoice" || item.kind === "return" || item.kind === "voucher" || item.kind === "transfer") {
+          return false;
+        }
+      }
+      if (!q) return true;
+      return matchesArabicSearch(
+        `${item.entryNumber} ${item.accountName} ${item.details} ${item.typeLabel} ${item.entryDate} ${item.documentNumber} ${item.amount} ${item.currency} ${item.warehouseName}`,
+        q,
+      );
+    });
+  }, [activeEntries, kindFilter, searchQuery]);
+
+  useEffect(() => {
+    setVisibleCount(60);
+  }, [searchQuery, kindFilter]);
+
+  const visibleEntries = useMemo(
+    () => filteredEntries.slice(0, visibleCount),
+    [filteredEntries, visibleCount],
+  );
+
+  const remainingCount = Math.max(0, filteredEntries.length - visibleEntries.length);
+
   return (
     <MobileScroll className="app-screen">
       <main className="purchases-page page-with-footer" data-testid="daily-journal-screen">
         <div className="list-heading">
           <div>
             <strong>سجل القيود والعمليات</strong>
-            <span>جميع الحركات المحفوظة في قاعدة البيانات</span>
+            <span>
+              {filteredEntries.length === activeEntries.length
+                ? `جميع الحركات المحفوظة (${activeEntries.length})`
+                : `نتائج التصفية: ${filteredEntries.length} من ${activeEntries.length}`}
+            </span>
           </div>
-          <span className="result-count">{activeEntries.length}</span>
+          <span className="result-count">{filteredEntries.length}</span>
         </div>
-        {activeEntries.length === 0 ? (
-          <p className="cash-empty">لا توجد حركات مسجلة بعد.</p>
+
+        <section className="daily-journal-toolbar" aria-label="تصفية وبحث الحركة اليومية">
+          <div className="daily-journal-search-box">
+            <KeyboardInput
+              aria-label="بحث في الحركة اليومية"
+              data-testid="daily-journal-search"
+              placeholder="ابحث باسم الحساب، البيان، الرقم، أو التاريخ..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                className="daily-journal-search-clear"
+                aria-label="مسح البحث"
+                onClick={() => setSearchQuery("")}
+              >
+                <Cross2Icon />
+              </button>
+            ) : null}
+          </div>
+          <div className="daily-journal-chips" role="group" aria-label="نوع الحركة">
+            {(
+              [
+                ["all", "الكل"],
+                ["invoice", "فواتير"],
+                ["voucher", "سندات"],
+                ["transfer", "حوالات"],
+                ["other", "أخرى"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`daily-journal-chip${kindFilter === key ? " active" : ""}`}
+                aria-pressed={kindFilter === key}
+                onClick={() => setKindFilter(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {filteredEntries.length === 0 ? (
+          <p className="cash-empty">
+            {activeEntries.length === 0
+              ? "لا توجد حركات مسجلة بعد."
+              : "لا توجد حركات مطابقة للبحث أو التصفية الحالية."}
+          </p>
         ) : (
           <section className="transactions-list">
-            {activeEntries.map((item) => (
+            {visibleEntries.map((item) => (
               <article key={item.id} className="transaction-card">
                 <div className="transaction-grid">
                   <span className={`transaction-type ${item.direction}`}>{item.typeLabel}</span>
@@ -4542,7 +5092,7 @@ function DailyJournalPage({ flow }: { flow: FlowControls }) {
                   <button
                     aria-label={`تعديل #${item.entryNumber}`}
                     onClick={() => {
-                      const acc = ctx.accounts.find((a) => a.id === item.accountId);
+                      const acc = accountsById.get(item.accountId);
                       if (item.kind === "invoice" || item.kind === "return" || item.kind === "quote" || item.kind === "order") {
                         ctx.openInvoiceEdit(item, acc);
                       } else {
@@ -4574,6 +5124,18 @@ function DailyJournalPage({ flow }: { flow: FlowControls }) {
                 </div>
               </article>
             ))}
+            {remainingCount > 0 ? (
+              <div className="load-more-list-wrap">
+                <button
+                  type="button"
+                  className="load-more-list-btn"
+                  data-testid="daily-journal-load-more"
+                  onClick={() => setVisibleCount((v) => v + 80)}
+                >
+                  عرض المزيد (المعروض {visibleEntries.length} من {filteredEntries.length} · متبقي {remainingCount})
+                </button>
+              </div>
+            ) : null}
           </section>
         )}
       </main>
@@ -4771,11 +5333,12 @@ function InvoiceModal({
   }, [ctx.inventory, ctx.uid, editingEntry, open]);
 
   const inventoryById = useMemo(
-    () => new Map(ctx.inventory.map((i) => [i.id, i])),
-    [ctx.inventory],
+    () => (open ? new Map(ctx.inventory.map((i) => [i.id, i])) : new Map<string, InventoryItemRecord>()),
+    [ctx.inventory, open],
   );
 
   const matchingInventory = useMemo(() => {
+    if (!open) return [];
     const q = normalizeArabicSearch(itemSearch);
     if (!q) return [];
     const sorted = [...ctx.inventory].filter((item) =>
@@ -4796,19 +5359,22 @@ function InvoiceModal({
       return aWh - bWh;
     });
     return sorted.slice(0, 10);
-  }, [ctx.inventory, itemSearch, warehouseId]);
+  }, [ctx.inventory, itemSearch, open, warehouseId]);
 
   const matchingAccounts = useMemo(
     () =>
-      rankAccountSearchMatches(
-        ctx.accounts,
-        search,
-        kind === "sale" ? ["sales", "clients", "shop"] : ["purchases", "shop"],
-      ),
-    [ctx.accounts, search, kind],
+      open
+        ? rankAccountSearchMatches(
+            ctx.accounts,
+            search,
+            kind === "sale" ? ["sales", "clients", "shop"] : ["purchases", "shop"],
+          )
+        : [],
+    [ctx.accounts, kind, open, search],
   );
 
   const parsedLegacyRows = useMemo<DraftInvoiceRow[]>(() => {
+    if (!open) return [];
     const sourceText = editingEntry?.details || note || "";
     if (!sourceText) return [];
     const matches: DraftInvoiceRow[] = [];
@@ -4838,7 +5404,7 @@ function InvoiceModal({
       });
     }
     return matches;
-  }, [ctx.inventory, editingEntry?.details, kind, note]);
+  }, [ctx.inventory, editingEntry?.details, kind, note, open]);
 
   if (!open) return null;
 
@@ -5056,7 +5622,7 @@ function InvoiceModal({
             : editingEntry.entryNumber
           : Number.isFinite(parsedEntryNum) && parsedEntryNum > 0
             ? parsedEntryNum
-            : Math.max(1000, ...ctx.ledger.map((e) => e.entryNumber)) + 1;
+            : maxNumericField(ctx.ledger, (e) => e.entryNumber, 1000) + 1;
       const entryKind =
         intent === "quote" ? "quote" : intent === "order" ? "order" : isReturn ? "return" : "invoice";
       const typeLabel =
@@ -5311,11 +5877,24 @@ function InvoiceModal({
                 ) : search.trim() && matchingAccounts.length === 0 ? (
                   <option value="">لا توجد حسابات مطابقة للبحث</option>
                 ) : null}
-                {(search.trim() ? matchingAccounts : ctx.accounts).map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                  </option>
-                ))}
+                {(() => {
+                  const baseList = search.trim() ? matchingAccounts : ctx.accounts;
+                  const { options, truncatedCount } = limitSelectAccounts(baseList, selectedAccount?.id, 150);
+                  return (
+                    <>
+                      {options.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.name}
+                        </option>
+                      ))}
+                      {truncatedCount > 0 ? (
+                        <option value="" disabled>
+                          — ابحث أعلاه لعرض باقي الحسابات (+{truncatedCount}) —
+                        </option>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </select>
             </div>
 
@@ -5441,9 +6020,7 @@ function InvoiceModal({
               </div>
 
               {loadingLines ? (
-                <p className="cash-empty" style={{ margin: "4px 0" }}>
-                  جاري تحميل بنود الفاتورة...
-                </p>
+                <NasqoBrandLoader size="sm" label="جاري تحميل بنود الفاتورة..." />
               ) : null}
 
               {!loadingLines && editingEntry && linesLoadedEmpty ? (
@@ -5709,24 +6286,22 @@ function InvoiceModal({
             </section>
           ) : (
             <div className="invoice-free-amount-wrap">
-              <label className="invoice-field-box invoice-free-amount-box">
-                <span>إجمالي مبلغ الفاتورة ({currency})</span>
-                <KeyboardInput
-                  ref={freeAmountInputRef}
-                  aria-label="إجمالي مبلغ الفاتورة"
-                  data-testid="invoice-free-amount"
-                  aria-invalid={formError?.field === "amount"}
-                  inputMode="decimal"
-                  placeholder="أدخل إجمالي المبلغ"
-                  value={amount}
-                  onChange={(event) => {
-                    if (formError?.field === "amount" || formError?.field === "submit") {
-                      setFormError(null);
-                    }
-                    setAmount(event.target.value);
-                  }}
-                />
-              </label>
+              <OutlinedAmountField
+                label={`المبلغ (${currency})`}
+                ariaLabel="إجمالي مبلغ الفاتورة"
+                testId="invoice-free-amount"
+                inputRef={freeAmountInputRef}
+                ariaInvalid={formError?.field === "amount"}
+                currency={currency}
+                value={amount}
+                placeholder="0"
+                onChange={(next) => {
+                  if (formError?.field === "amount" || formError?.field === "submit") {
+                    setFormError(null);
+                  }
+                  setAmount(next);
+                }}
+              />
               {formError?.field === "amount" ? (
                 <div className="field-inline-error" role="alert" data-testid="invoice-amount-error">
                   {formError.message}
@@ -6058,6 +6633,49 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
   ctx.flowRef.current = flow;
   const defaultCurr = ctx.workspace?.defaultCurrency ?? "ريال";
   const [groupCurrencyMap, setGroupCurrencyMap] = useState<Record<number, string>>({});
+  const [tileLayout, setTileLayout] = useState<HomeTileLayout>(() => readHomeTileLayout());
+  const [tileEditMode, setTileEditMode] = useState(false);
+  const [selectedTileId, setSelectedTileId] = useState<HomeTileId | null>(null);
+  const [draggingTileId, setDraggingTileId] = useState<HomeTileId | null>(null);
+
+  const longPressTimerRef = useRef<number | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number; tileId: HomeTileId } | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const didDragMoveRef = useRef(false);
+  const lastSwapTargetRef = useRef<HomeTileId | null>(null);
+
+  const updateTileLayout = useCallback((updater: (prev: HomeTileLayout) => HomeTileLayout) => {
+    setTileLayout((prev) => {
+      const next = updater(prev);
+      writeHomeTileLayout(next);
+      return next;
+    });
+  }, []);
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => clearLongPressTimer();
+  }, [clearLongPressTimer]);
+
+  useEffect(() => {
+    if (!tileEditMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTileEditMode(false);
+        setDraggingTileId(null);
+        setSelectedTileId(null);
+        writeHomeTileLayout(tileLayout);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [tileEditMode, tileLayout]);
 
   const groupRows = useMemo(
     () =>
@@ -6071,69 +6689,348 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     [ctx.accountGroups, ctx.accounts, ctx.ledger, groupCurrencyMap, defaultCurr],
   );
 
-  const rightBlueActions: { label: string; icon: IconComponent; action: () => void }[] = [
-    { label: "سند جديد", icon: FilePlusIcon, action: () => { triggerHaptic("light"); ctx.openTransaction(); } },
-    { label: "حوالة جديدة", icon: PaperPlaneIcon, action: () => { triggerHaptic("light"); ctx.openTransferModal(); } },
-    { label: "فاتورة جديدة", icon: FileTextIcon, action: () => { triggerHaptic("light"); ctx.openInvoice(); } },
-    { label: "مردود جديد", icon: ReloadIcon, action: () => { triggerHaptic("light"); ctx.openVendorInvoice(ctx.accounts[0], "return"); } },
-    { label: "قيد بسيط", icon: MixIcon, action: () => { triggerHaptic("light"); flow.push(simpleEntryScreen()); } },
-    { label: "عرض سعر", icon: ReaderIcon, action: () => { triggerHaptic("light"); ctx.openVendorInvoice(ctx.accounts[0], "quote"); } },
-    { label: "صرف عملات", icon: SwitchIcon, action: () => { triggerHaptic("light"); flow.push(currencyScreen()); } },
-    { label: "طلبية جديدة", icon: BackpackIcon, action: () => { triggerHaptic("light"); ctx.openVendorInvoice(ctx.accounts[0], "order"); } },
+  type HomeTileDef = {
+    id: HomeTileId;
+    label: string;
+    icon: IconComponent;
+    defaultTone: HomeTileTone;
+    defaultGroup: "ops-blue" | "ops-amber" | "admin-blue" | "admin-amber";
+    testId?: string;
+    action: () => void;
+  };
+
+  const allTiles: HomeTileDef[] = [
+    { id: "new-voucher", label: "سند جديد", icon: FilePlusIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); ctx.openTransaction(); } },
+    { id: "new-transfer", label: "حوالة جديدة", icon: PaperPlaneIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); ctx.openTransferModal(); } },
+    { id: "new-invoice", label: "فاتورة جديدة", icon: FileTextIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); ctx.openInvoice(); } },
+    { id: "new-return", label: "مردود جديد", icon: ReloadIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); ctx.openVendorInvoice(ctx.accounts[0], "return"); } },
+    { id: "simple-entry", label: "قيد بسيط", icon: MixIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); flow.push(simpleEntryScreen()); } },
+    { id: "quote", label: "عرض سعر", icon: ReaderIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); ctx.openVendorInvoice(ctx.accounts[0], "quote"); } },
+    { id: "currency-exchange", label: "صرف عملات", icon: SwitchIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); flow.push(currencyScreen()); } },
+    { id: "new-order", label: "طلبية جديدة", icon: BackpackIcon, defaultTone: "blue", defaultGroup: "ops-blue", action: () => { triggerHaptic("light"); ctx.openVendorInvoice(ctx.accounts[0], "order"); } },
+    { id: "quick-search", label: "البحث السريع", icon: MagnifyingGlassIcon, defaultTone: "amber", defaultGroup: "ops-amber", action: () => { triggerHaptic("light"); ctx.openQuickSearch(); } },
+    { id: "daily-journal", label: "الحركة اليومية", icon: ActivityLogIcon, defaultTone: "amber", defaultGroup: "ops-amber", action: () => { triggerHaptic("light"); flow.push(dailyJournalScreen()); } },
+    { id: "cashboxes", label: "صناديق النقدية", icon: CardStackIcon, defaultTone: "amber", defaultGroup: "ops-amber", action: () => { triggerHaptic("light"); ctx.openCashboxesReport(); } },
+    { id: "statement", label: "كشف حساب", icon: ReaderIcon, defaultTone: "amber", defaultGroup: "ops-amber", action: () => { triggerHaptic("light"); ctx.openAccountPicker(); } },
+    { id: "reports", label: "التقارير", icon: BarChartIcon, defaultTone: "amber", defaultGroup: "ops-amber", action: () => { triggerHaptic("light"); ctx.openReportsHub(); } },
+    { id: "currencies", label: "العملات", icon: CardStackIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); ctx.openCurrenciesManager(); } },
+    { id: "account-groups", label: "دليل الحسابات", icon: LayersIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); ctx.openAccountGroups(); } },
+    { id: "accounts", label: "الحسابات", icon: PeopleIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); ctx.openChartOfAccounts(); } },
+    { id: "warehouses", label: "المخازن", icon: CubeIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); flow.push(warehousesScreen()); } },
+    { id: "sales-dashboard", label: "لوحة المبيعات", icon: BarChartIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); flow.push(analyticsDashboardScreen()); } },
+    { id: "trash", label: "سلة المحذوفات", icon: TrashIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); ctx.openTrash(); } },
+    { id: "trial-balance", label: "ميزان المراجعة", icon: GaugeIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-trial-balance-btn", action: () => { triggerHaptic("light"); ctx.openTrialBalance(); } },
+    { id: "items", label: "الأصناف", icon: TagPriceIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-items-btn", action: () => { triggerHaptic("light"); flow.push(itemsScreen()); } },
+    { id: "stock-movement", label: "حركة المخزون", icon: ActivityLogIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-stock-movement-btn", action: () => { triggerHaptic("light"); flow.push(inventoryReportScreen()); } },
+    { id: "erp-hub", label: "الإدارة المتقدمة", icon: RocketIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-erp-hub-btn", action: () => { triggerHaptic("light"); flow.push(erpModuleScreen("erp-hub")); } },
+    { id: "settings", label: "الإعدادات", icon: GearIcon, defaultTone: "amber", defaultGroup: "admin-amber", action: () => { triggerHaptic("light"); ctx.openSettings(); } },
   ];
 
-  const rightAmberActions: { label: string; icon: IconComponent; action: () => void }[] = [
-    { label: "البحث السريع", icon: MagnifyingGlassIcon, action: () => { triggerHaptic("light"); ctx.openQuickSearch(); } },
-    { label: "الحركة اليومية", icon: ActivityLogIcon, action: () => { triggerHaptic("light"); flow.push(dailyJournalScreen()); } },
-    { label: "صناديق النقدية", icon: CardStackIcon, action: () => { triggerHaptic("light"); ctx.openCashboxesReport(); } },
-    { label: "كشف حساب", icon: ReaderIcon, action: () => { triggerHaptic("light"); ctx.openAccountPicker(); } },
-    { label: "التقارير", icon: BarChartIcon, action: () => { triggerHaptic("light"); ctx.openReportsHub(); } },
-  ];
+  const tileById = useMemo(() => {
+    const map = new Map<HomeTileId, HomeTileDef>();
+    for (const item of allTiles) map.set(item.id, item);
+    return map;
+  }, [allTiles]);
 
-  const leftBlueActions: { label: string; icon: IconComponent; action: () => void }[] = [
-    { label: "العملات", icon: CardStackIcon, action: () => { triggerHaptic("light"); ctx.openCurrenciesManager(); } },
-    { label: "دليل الحسابات", icon: LayersIcon, action: () => { triggerHaptic("light"); ctx.openAccountGroups(); } },
-    { label: "الحسابات", icon: PeopleIcon, action: () => { triggerHaptic("light"); ctx.openChartOfAccounts(); } },
-    { label: "المخازن", icon: CubeIcon, action: () => { triggerHaptic("light"); flow.push(warehousesScreen()); } },
-    { label: "لوحة المبيعات", icon: BarChartIcon, action: () => { triggerHaptic("light"); flow.push(analyticsDashboardScreen()); } },
-    { label: "سلة المحذوفات", icon: TrashIcon, action: () => { triggerHaptic("light"); ctx.openTrash(); } },
-  ];
+  const { pinnedIds, unpinnedIds } = useMemo(
+    () => getVisibleOrderedHomeTiles(tileLayout),
+    [tileLayout],
+  );
+  const pinnedSet = useMemo(() => new Set(tileLayout.pinned), [tileLayout.pinned]);
+  const isCustomLayout = tileEditMode || !isDefaultHomeTileLayout(tileLayout);
+  const selectedTile = selectedTileId ? tileById.get(selectedTileId) ?? null : null;
 
-  const leftAmberActions: { label: string; icon: IconComponent; testId?: string; action: () => void }[] = [
-    { label: "ميزان المراجعة", icon: GaugeIcon, testId: "open-trial-balance-btn", action: () => { triggerHaptic("light"); ctx.openTrialBalance(); } },
-    { label: "الأصناف", icon: TagPriceIcon, testId: "open-items-btn", action: () => { triggerHaptic("light"); flow.push(itemsScreen()); } },
-    { label: "حركة المخزون", icon: ActivityLogIcon, testId: "open-stock-movement-btn", action: () => { triggerHaptic("light"); flow.push(inventoryReportScreen()); } },
-    { label: "الإدارة المتقدمة", icon: RocketIcon, testId: "open-erp-hub-btn", action: () => { triggerHaptic("light"); flow.push(erpModuleScreen("erp-hub")); } },
-    { label: "الإعدادات", icon: GearIcon, action: () => { triggerHaptic("light"); ctx.openSettings(); } },
-  ];
+  const handleTilePointerDown = (tileId: HomeTileId, e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const targetEl = e.target as HTMLElement | null;
+    if (targetEl?.closest('[data-tile-corner-action="true"]')) return;
+
+    pointerStartRef.current = { x: e.clientX, y: e.clientY, tileId };
+    didDragMoveRef.current = false;
+    lastSwapTargetRef.current = null;
+
+    if (tileEditMode) {
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore synthetic pointer events without capture support
+      }
+      return;
+    }
+
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      suppressNextClickRef.current = true;
+      triggerHaptic("pin");
+      setTileEditMode(true);
+      setSelectedTileId(tileId);
+      ctx.showToast("وضع تحرير البطائق — اسحب للترتيب أو ثبّت المفضلة ثم اضغط تثبيت");
+    }, 450);
+  };
+
+  const handleTilePointerMove = (tileId: HomeTileId, e: ReactPointerEvent<HTMLButtonElement>) => {
+    const start = pointerStartRef.current;
+    if (!start || start.tileId !== tileId) return;
+    const dist = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+
+    if (!tileEditMode) {
+      if (dist > 10) {
+        clearLongPressTimer();
+        pointerStartRef.current = null;
+      }
+      return;
+    }
+
+    if (dist > 8) {
+      didDragMoveRef.current = true;
+      if (draggingTileId !== tileId) {
+        setDraggingTileId(tileId);
+        setSelectedTileId(tileId);
+      }
+      if (typeof document.elementsFromPoint === "function") {
+        const els = document.elementsFromPoint(e.clientX, e.clientY);
+        for (const el of els) {
+          const tileEl = (el as HTMLElement).closest?.("[data-home-tile-id]") as HTMLElement | null;
+          const overId = tileEl?.dataset.homeTileId as HomeTileId | undefined;
+          if (overId && overId !== tileId) {
+            if (lastSwapTargetRef.current !== overId) {
+              lastSwapTargetRef.current = overId;
+              triggerHaptic("light");
+              updateTileLayout((prev) => moveHomeTile(prev, tileId, overId));
+            }
+            break;
+          }
+        }
+      }
+    }
+  };
+
+  const handleTilePointerEnd = (tileId: HomeTileId, e: ReactPointerEvent<HTMLButtonElement>) => {
+    clearLongPressTimer();
+    if (tileEditMode) {
+      try {
+        if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch {
+        // Ignore release errors
+      }
+      if (didDragMoveRef.current) {
+        suppressNextClickRef.current = true;
+      }
+      if (draggingTileId === tileId) {
+        setDraggingTileId(null);
+      }
+    }
+    pointerStartRef.current = null;
+    lastSwapTargetRef.current = null;
+  };
+
+  const finishTileEditMode = () => {
+    clearLongPressTimer();
+    writeHomeTileLayout(tileLayout);
+    setTileEditMode(false);
+    setDraggingTileId(null);
+    setSelectedTileId(null);
+    triggerHaptic("success");
+    ctx.showToast("تم تثبيت ترتيب البطائق بنجاح");
+  };
+
+  const resetTileLayoutToDefault = () => {
+    triggerHaptic("light");
+    updateTileLayout(() => DEFAULT_HOME_TILE_LAYOUT);
+    setSelectedTileId(null);
+    ctx.showToast("تمت استعادة الترتيب الافتراضي للبطائق");
+  };
+
+  const renderTileButton = (item: HomeTileDef) => {
+    const effectiveTone = tileLayout.toneOverrides[item.id] ?? item.defaultTone;
+    const isPinned = pinnedSet.has(item.id);
+    const isSelected = tileEditMode && selectedTileId === item.id;
+    const isDragging = tileEditMode && draggingTileId === item.id;
+    const canHide = item.id !== "settings";
+
+    return (
+      <button
+        key={item.id}
+        type="button"
+        data-testid={item.testId ?? `home-tile-${item.id}`}
+        data-home-tile-id={item.id}
+        data-scroll-drag={tileEditMode ? "ignore" : undefined}
+        className={`smart-tile ${effectiveTone}${tileEditMode ? " editing" : ""}${isSelected ? " selected" : ""}${isDragging ? " dragging" : ""}${isPinned ? " pinned" : ""}`}
+        onContextMenu={(e) => e.preventDefault()}
+        onPointerDown={(e) => handleTilePointerDown(item.id, e)}
+        onPointerMove={(e) => handleTilePointerMove(item.id, e)}
+        onPointerUp={(e) => handleTilePointerEnd(item.id, e)}
+        onPointerCancel={(e) => handleTilePointerEnd(item.id, e)}
+        onPointerLeave={() => {
+          if (!tileEditMode) clearLongPressTimer();
+        }}
+        onClick={(e) => {
+          const targetEl = e.target as HTMLElement | null;
+          if (targetEl?.closest('[data-tile-corner-action="true"]')) return;
+          if (suppressNextClickRef.current) {
+            suppressNextClickRef.current = false;
+            return;
+          }
+          if (tileEditMode) {
+            triggerHaptic("light");
+            setSelectedTileId(item.id);
+            return;
+          }
+          item.action();
+        }}
+      >
+        {tileEditMode ? (
+          <>
+            <span
+              role="button"
+              tabIndex={0}
+              data-tile-corner-action="true"
+              data-testid={`tile-pin-${item.id}`}
+              className={`smart-tile-corner-btn pin${isPinned ? " active" : ""}`}
+              aria-label={isPinned ? `إلغاء تثبيت ${item.label}` : `تثبيت ${item.label} بالأعلى`}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                triggerHaptic("light");
+                setSelectedTileId(item.id);
+                updateTileLayout((prev) => togglePinHomeTile(prev, item.id));
+              }}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  updateTileLayout((prev) => togglePinHomeTile(prev, item.id));
+                }
+              }}
+            >
+              {isPinned ? <DrawingPinFilledIcon /> : <DrawingPinIcon />}
+            </span>
+            {canHide ? (
+              <span
+                role="button"
+                tabIndex={0}
+                data-tile-corner-action="true"
+                data-testid={`tile-hide-${item.id}`}
+                className="smart-tile-corner-btn hide"
+                aria-label={`إخفاء ${item.label}`}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("light");
+                  if (selectedTileId === item.id) setSelectedTileId(null);
+                  updateTileLayout((prev) => toggleHideHomeTile(prev, item.id));
+                }}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" || ev.key === " ") {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    updateTileLayout((prev) => toggleHideHomeTile(prev, item.id));
+                  }
+                }}
+              >
+                <Cross2Icon />
+              </span>
+            ) : null}
+          </>
+        ) : isPinned ? (
+          <span className="smart-tile-pin-mark" aria-label="بطاقة مثبّتة" title="مثبّتة">
+            <DrawingPinFilledIcon />
+          </span>
+        ) : null}
+
+        <span className="smart-tile-icon" aria-hidden="true">
+          <item.icon />
+        </span>
+        <span className="smart-tile-label">{item.label}</span>
+      </button>
+    );
+  };
+
+  const defaultOpsBlue = allTiles.filter((t) => t.defaultGroup === "ops-blue");
+  const defaultOpsAmber = allTiles.filter((t) => t.defaultGroup === "ops-amber");
+  const defaultAdminBlue = allTiles.filter((t) => t.defaultGroup === "admin-blue");
+  const defaultAdminAmber = allTiles.filter((t) => t.defaultGroup === "admin-amber");
+  const hiddenTiles = tileLayout.hidden
+    .map((id) => tileById.get(id))
+    .filter((t): t is HomeTileDef => Boolean(t));
 
   return (
     <>
       <MobileScroll className="app-screen dashboard-scroll smart-workbench-scroll">
-        <main className="dashboard-page page-with-footer smart-home-workbench" data-testid="dashboard-screen">
+        <main
+          className={`dashboard-page page-with-footer smart-home-workbench${isCustomLayout ? " custom-tile-layout" : ""}${tileEditMode ? " is-editing-tiles" : ""}`}
+          data-testid="dashboard-screen"
+        >
           {/* Right / Primary Quick Operations Column */}
-          <aside className="smart-panel smart-panel-ops" aria-label="العمليات والتقارير">
-            <div className="smart-btn-grid">
-              {rightBlueActions.map((item) => (
-                <button key={item.label} type="button" className="smart-tile blue" onClick={item.action}>
-                  <span className="smart-tile-icon" aria-hidden="true">
-                    <item.icon />
-                  </span>
-                  <span className="smart-tile-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-            <div className="smart-btn-grid">
-              {rightAmberActions.map((item) => (
-                <button key={item.label} type="button" className="smart-tile amber" onClick={item.action}>
-                  <span className="smart-tile-icon" aria-hidden="true">
-                    <item.icon />
-                  </span>
-                  <span className="smart-tile-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </aside>
+          {!isCustomLayout ? (
+            <aside className="smart-panel smart-panel-ops" aria-label="العمليات والتقارير">
+              <div className="smart-btn-grid">
+                {defaultOpsBlue.map((item) => renderTileButton(item))}
+              </div>
+              <div className="smart-btn-grid">
+                {defaultOpsAmber.map((item) => renderTileButton(item))}
+              </div>
+            </aside>
+          ) : (
+            <aside className="smart-panel smart-panel-unified" aria-label="بطائق الواجهة الرئيسية">
+              {pinnedIds.length > 0 ? (
+                <div className="smart-pinned-section" data-testid="home-pinned-tiles">
+                  <div className="smart-section-label">
+                    <DrawingPinFilledIcon />
+                    <span>البطائق المثبّتة</span>
+                  </div>
+                  <div className="smart-btn-grid">
+                    {pinnedIds
+                      .map((id) => tileById.get(id))
+                      .filter((t): t is HomeTileDef => Boolean(t))
+                      .map((item) => renderTileButton(item))}
+                  </div>
+                </div>
+              ) : null}
+
+              {unpinnedIds.length > 0 ? (
+                <div className="smart-unpinned-section">
+                  {pinnedIds.length > 0 ? (
+                    <div className="smart-section-label muted">
+                      <span>باقي البطائق</span>
+                    </div>
+                  ) : null}
+                  <div className="smart-btn-grid">
+                    {unpinnedIds
+                      .map((id) => tileById.get(id))
+                      .filter((t): t is HomeTileDef => Boolean(t))
+                      .map((item) => renderTileButton(item))}
+                  </div>
+                </div>
+              ) : null}
+
+              {tileEditMode && hiddenTiles.length > 0 ? (
+                <div className="smart-hidden-tray" data-testid="home-hidden-tiles-tray">
+                  <div className="smart-section-label muted">
+                    <span>بطائق مخفية — اضغط لإعادتها</span>
+                  </div>
+                  <div className="smart-hidden-chips">
+                    {hiddenTiles.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="smart-hidden-chip"
+                        data-testid={`tile-restore-${item.id}`}
+                        onClick={() => {
+                          triggerHaptic("light");
+                          updateTileLayout((prev) => toggleHideHomeTile(prev, item.id));
+                        }}
+                      >
+                        <PlusIcon />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </aside>
+          )}
 
           {/* Center Live Account Groups Grid */}
           <section className="smart-center-stage" aria-label="مجموعات الحسابات والأرصدة">
@@ -6173,6 +7070,94 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
                 <QrScanIcon />
               </button>
             </header>
+
+            {tileEditMode ? (
+              <div className="smart-edit-bar" role="region" aria-label="أدوات تحرير وتثبيت البطائق" data-testid="home-tiles-edit-bar">
+                <div className="smart-edit-bar-top">
+                  <div className="smart-edit-bar-title">
+                    <DrawingPinFilledIcon />
+                    <div>
+                      <strong>تحرير البطائق</strong>
+                      <small>اسحب البطاقة لتغيير مكانها أو اضغط الدبوس للتثبيت</small>
+                    </div>
+                  </div>
+                  <div className="smart-edit-bar-actions">
+                    <button
+                      type="button"
+                      className="smart-edit-btn secondary"
+                      data-testid="home-tiles-reset-btn"
+                      onClick={resetTileLayoutToDefault}
+                    >
+                      <ResetIcon />
+                      <span>افتراضي</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="smart-edit-btn primary"
+                      data-testid="home-tiles-save-btn"
+                      onClick={finishTileEditMode}
+                    >
+                      <CheckIcon />
+                      <span>تثبيت</span>
+                    </button>
+                  </div>
+                </div>
+
+                {selectedTile ? (
+                  <div className="smart-edit-selected-strip" data-testid="home-tiles-selected-controls">
+                    <span className="smart-edit-selected-name">{selectedTile.label}</span>
+                    <div className="smart-edit-selected-btns">
+                      <button
+                        type="button"
+                        className={pinnedSet.has(selectedTile.id) ? "active" : ""}
+                        data-testid="selected-tile-pin-btn"
+                        onClick={() => {
+                          triggerHaptic("light");
+                          updateTileLayout((prev) => togglePinHomeTile(prev, selectedTile.id));
+                        }}
+                      >
+                        {pinnedSet.has(selectedTile.id) ? <DrawingPinFilledIcon /> : <DrawingPinIcon />}
+                        <span>{pinnedSet.has(selectedTile.id) ? "مثبّتة" : "تثبيت بالأعلى"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="تقديم البطاقة"
+                        data-testid="selected-tile-prev-btn"
+                        onClick={() => {
+                          triggerHaptic("light");
+                          updateTileLayout((prev) => stepHomeTile(prev, selectedTile.id, -1));
+                        }}
+                      >
+                        <ArrowRightIcon />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="تأخير البطاقة"
+                        data-testid="selected-tile-next-btn"
+                        onClick={() => {
+                          triggerHaptic("light");
+                          updateTileLayout((prev) => stepHomeTile(prev, selectedTile.id, 1));
+                        }}
+                      >
+                        <ArrowLeftIcon />
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="selected-tile-tone-btn"
+                        onClick={() => {
+                          triggerHaptic("light");
+                          updateTileLayout((prev) =>
+                            toggleToneHomeTile(prev, selectedTile.id, selectedTile.defaultTone),
+                          );
+                        }}
+                      >
+                        <span>تبديل اللون</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {ctx.syncError || groupRows.length > 0 || ctx.accounts.length > 0 ? (
               <div className="smart-groups-table-wrap" data-testid="account-groups-table">
@@ -6269,34 +7254,16 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
           </section>
 
           {/* Left Administration & Analytics Column */}
-          <aside className="smart-panel smart-panel-admin" aria-label="الإدارة والتقارير">
-            <div className="smart-btn-grid">
-              {leftBlueActions.map((item) => (
-                <button key={item.label} type="button" className="smart-tile blue" onClick={item.action}>
-                  <span className="smart-tile-icon" aria-hidden="true">
-                    <item.icon />
-                  </span>
-                  <span className="smart-tile-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-            <div className="smart-btn-grid">
-              {leftAmberActions.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  data-testid={item.testId}
-                  className="smart-tile amber"
-                  onClick={item.action}
-                >
-                  <span className="smart-tile-icon" aria-hidden="true">
-                    <item.icon />
-                  </span>
-                  <span className="smart-tile-label">{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </aside>
+          {!isCustomLayout ? (
+            <aside className="smart-panel smart-panel-admin" aria-label="الإدارة والتقارير">
+              <div className="smart-btn-grid">
+                {defaultAdminBlue.map((item) => renderTileButton(item))}
+              </div>
+              <div className="smart-btn-grid">
+                {defaultAdminAmber.map((item) => renderTileButton(item))}
+              </div>
+            </aside>
+          ) : null}
         </main>
       </MobileScroll>
     </>
@@ -6725,7 +7692,7 @@ function SupplierPage({
               <button
                 type="button"
                 className="supplier-whatsapp-btn"
-                style={{ background: "var(--nasqo-orange, #f39a16)", color: "#fff" }}
+                style={{ background: "var(--nasqo-home-secondary-bg, var(--nasqo-orange, #0891b2))", color: "#fff" }}
                 data-testid="supplier-new-invoice-btn"
                 aria-label={`فاتورة جديدة لـ ${account.name}`}
                 onClick={() => ctx.openVendorInvoice(account)}
@@ -7652,35 +8619,32 @@ function SimpleEntryPage({
             الرصيد: <bdi>{formatAmount(toSummary?.netBalance ?? 0)}</bdi>
           </div>
         </section>
-        <div className="simple-entry-amount-row">
-          <label className="simple-entry-amount-field">
-            <span>أدخل المبلغ</span>
-            <KeyboardInput
-              data-testid="simple-entry-amount"
-              aria-label="مبلغ القيد"
-              inputMode="decimal"
-              value={amount}
-              onChange={(event) => {
-                setAmount(event.target.value);
-                setError("");
-              }}
-            />
-          </label>
-          <select
-            className="simple-entry-currency"
-            aria-label="عملة القيد"
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value as CurrencyCode)}
-          >
-            {ctx.currencyCodes.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="simple-entry-amount-caption">
-          {amount ? `${formatAmount(parseArabicNumber(amount))} ${currency}` : `صفر ${currency}`}
+        <div className="simple-entry-amount-row outlined">
+          <OutlinedAmountField
+            label="المبلغ"
+            ariaLabel="مبلغ القيد"
+            testId="simple-entry-amount"
+            currency={currency}
+            value={amount}
+            onChange={(next) => {
+              setAmount(next);
+              setError("");
+            }}
+            currencySlot={
+              <select
+                className="simple-entry-currency-inline"
+                aria-label="عملة القيد"
+                value={currency}
+                onChange={(event) => setCurrency(event.target.value as CurrencyCode)}
+              >
+                {ctx.currencyCodes.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            }
+          />
         </div>
         <div className="simple-entry-note-row">
           <KeyboardInput
@@ -7865,25 +8829,15 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
               />
             </span>
           </div>
-          <div className="currency-entry">
-            <TableIcon />
-            <label htmlFor="currency-amount">
-              <span>أدخل المبلغ</span>
-              <KeyboardInput
-                id="currency-amount"
-                data-testid="currency-amount"
-                inputMode="decimal"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="0"
-              />
-            </label>
-            <button aria-label="مسح" onClick={() => setAmount("")}>
-              <Cross2Icon />
-            </button>
-            <em>
-              {formatAmount(parsedAmount)} {fromCurrency}
-            </em>
+          <div className="currency-entry-outlined">
+            <OutlinedAmountField
+              id="currency-amount"
+              label={`المبلغ (${fromCurrency})`}
+              testId="currency-amount"
+              currency={fromCurrency}
+              value={amount}
+              onChange={(next) => setAmount(next)}
+            />
           </div>
           <div className="exchange-rate-card">
             <span>
@@ -8866,31 +9820,19 @@ function TransactionModal({
               ? `الرصيد عليكم: ${formatAmount(summary.netBalance)} ${currency}`
               : `الرصيد الحالي: 0 ${currency}`}
         </strong>
-        <div className="transaction-input amount-input">
-          <TableIcon />
-          <label htmlFor="new-transaction-amount">
-            <span>أدخل المبلغ</span>
-            <KeyboardInput
-              ref={amountInputRef}
-              id="new-transaction-amount"
-              data-testid="transaction-amount"
-              aria-invalid={txError?.field === "amount"}
-              inputMode="decimal"
-              value={amount}
-              onChange={(event) => {
-                if (txError?.field === "amount" || txError?.field === "submit") setTxError(null);
-                setAmount(event.target.value);
-              }}
-              placeholder="0"
-            />
-          </label>
-          <button aria-label="مسح المبلغ" onClick={() => setAmount("")}>
-            <Cross2Icon />
-          </button>
-          <em>
-            {amount ? `${formatAmount(parseArabicNumber(amount))} ${currency}` : `صفر ${currency}`}
-          </em>
-        </div>
+        <OutlinedAmountField
+          id="new-transaction-amount"
+          label="المبلغ"
+          testId="transaction-amount"
+          inputRef={amountInputRef}
+          ariaInvalid={txError?.field === "amount"}
+          currency={currency}
+          value={amount}
+          onChange={(next) => {
+            if (txError?.field === "amount" || txError?.field === "submit") setTxError(null);
+            setAmount(next);
+          }}
+        />
         {txError ? (
           <div className="field-inline-error" role="alert" data-testid="transaction-amount-error">
             {txError.message}
@@ -10072,7 +11014,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
 
         <div className="account-groups-table-wrap cashboxes-table-wrap">
           {loading ? (
-            <p className="cash-empty">جاري حساب حركة الصناديق...</p>
+            <NasqoBrandLoader size="sm" label="جاري حساب حركة الصناديق..." />
           ) : (
             <>
               <table className="account-groups-table" style={{ fontSize: 12, marginBottom: 12 }}>
@@ -10563,7 +11505,7 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                     style={{
                       padding: "4px 8px",
                       borderRadius: 5,
-                      background: "#075da8",
+                      background: "var(--nasqo-home-primary-bg, var(--nasqo-blue, #4338ca))",
                       color: "#fff",
                       fontSize: 11,
                     }}
@@ -10830,6 +11772,7 @@ function WorkspaceSettingsModal({ open, onClose }: { open: boolean; onClose: () 
               onClick={() => {
                 triggerHaptic("light");
                 ctx.resetBrandColor();
+                ctx.setThemeMode("light");
               }}
             >
               الافتراضي
@@ -11212,7 +12155,7 @@ function SheetContent({
         <button
           onClick={() => {
             setKind(null);
-            window.print();
+            triggerPrintWithLoader("جاري تجهيز الطباعة...");
           }}
         >
           <span>
@@ -11309,13 +12252,15 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     setDownloadingPdf(true);
     triggerHaptic("light");
     try {
-      const { filename } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
-        companyName: ctx.workspace?.companyName || "نسقو برو",
-        footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
-        fallbackEntry: entry,
+      await ctx.runWithLoader("جاري إنشاء ملف PDF للفاتورة...", async () => {
+        const { filename } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
+          companyName: ctx.workspace?.companyName || "نسقو برو",
+          footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
+          fallbackEntry: entry,
+        });
+        triggerHaptic("success");
+        ctx.showToast(`تم تنزيل ملخص الفاتورة (${filename})`);
       });
-      triggerHaptic("success");
-      ctx.showToast(`تم تنزيل ملخص الفاتورة (${filename})`);
     } catch {
       triggerHaptic("warning");
       ctx.showToast("تعذّر إنشاء ملف PDF للفاتورة");
@@ -11329,42 +12274,44 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     setUploadingDrive(true);
     triggerHaptic("light");
     try {
-      const summary = buildInvoicePdfSummaryData(entry, {
-        companyName: ctx.workspace?.companyName || "نسقو برو",
-        footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
-      });
-      const { bytes, filename, mimeType } = await buildInvoiceSummaryPdfBytes(summary);
-      let token = getGoogleAccessToken();
-      if (!token) {
-        const authResult = await connectGoogleDrive();
-        token = authResult.accessToken;
-      }
-      try {
-        const folder = await findOrCreateDriveFolder(token, "NASQO Pro Invoices");
-        await uploadFileToDrive(token, {
-          name: filename,
-          content: bytes,
-          mimeType,
-          parentId: folder.id,
-          description: `فاتورة ${summary.title} #${summary.entryNumber} - ${summary.accountName}`,
+      await ctx.runWithLoader("جاري رفع الفاتورة إلى Google Drive...", async () => {
+        const summary = buildInvoicePdfSummaryData(entry, {
+          companyName: ctx.workspace?.companyName || "نسقو برو",
+          footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
         });
-      } catch (err) {
-        if (err instanceof DriveAuthExpiredError) {
+        const { bytes, filename, mimeType } = await buildInvoiceSummaryPdfBytes(summary);
+        let token = getGoogleAccessToken();
+        if (!token) {
           const authResult = await connectGoogleDrive();
-          const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Invoices");
-          await uploadFileToDrive(authResult.accessToken, {
+          token = authResult.accessToken;
+        }
+        try {
+          const folder = await findOrCreateDriveFolder(token, "NASQO Pro Invoices");
+          await uploadFileToDrive(token, {
             name: filename,
             content: bytes,
             mimeType,
             parentId: folder.id,
             description: `فاتورة ${summary.title} #${summary.entryNumber} - ${summary.accountName}`,
           });
-        } else {
-          throw err;
+        } catch (err) {
+          if (err instanceof DriveAuthExpiredError) {
+            const authResult = await connectGoogleDrive();
+            const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Invoices");
+            await uploadFileToDrive(authResult.accessToken, {
+              name: filename,
+              content: bytes,
+              mimeType,
+              parentId: folder.id,
+              description: `فاتورة ${summary.title} #${summary.entryNumber} - ${summary.accountName}`,
+            });
+          } else {
+            throw err;
+          }
         }
-      }
-      triggerHaptic("success");
-      ctx.showToast(`تم حفظ الفاتورة PDF في Google Drive: ${filename}`);
+        triggerHaptic("success");
+        ctx.showToast(`تم حفظ الفاتورة PDF في Google Drive: ${filename}`);
+      });
     } catch (err) {
       triggerHaptic("warning");
       ctx.showToast(
@@ -11413,7 +12360,11 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
         <button className="cash-invoice-actual" data-testid="cash-invoice-actual-size" onClick={() => setZoom(1)}>
           100%
         </button>
-        <button className="cash-invoice-actual" onClick={() => window.print()} aria-label="طباعة الفاتورة">
+        <button
+          className="cash-invoice-actual"
+          onClick={() => triggerPrintWithLoader("جاري تجهيز طباعة الفاتورة...")}
+          aria-label="طباعة الفاتورة"
+        >
           طباعة PDF
         </button>
         <button

@@ -150,7 +150,9 @@ export function SystemSettingsPage({
       homeFontFamily: DEFAULT_EXTENDED_SETTINGS.homeFontFamily,
       homeFontSize: DEFAULT_EXTENDED_SETTINGS.homeFontSize,
     });
-    onNotify("تمت استعادة الإعدادات الافتراضية للواجهة الرئيسية");
+    onResetBrandColor();
+    onChangeThemeMode("light");
+    onNotify("تمت استعادة الإعدادات الافتراضية (نيلي حديث • فاتح)");
   };
 
   const homeTokens = resolveHomeAppearanceTokens(draft);
@@ -547,8 +549,8 @@ export function SystemSettingsPage({
                             : `${Math.max(30, Math.round(draft.homeButtonHeight * 0.72))}px`,
                         background:
                           kind === "primary"
-                            ? homeTokens.primaryBg || "#0b5ca8"
-                            : homeTokens.secondaryBg || "#ea8c0d",
+                            ? homeTokens.primaryBg || "#4338ca"
+                            : homeTokens.secondaryBg || "#0891b2",
                         color: homeTokens.btnText || "#ffffff",
                         fontSize: `${Math.max(9.5, Math.min(15, Math.round(draft.homeFontSize * 0.78 * 10) / 10))}px`,
                       }}
@@ -755,6 +757,9 @@ export function SystemSettingsPage({
                       homeCanvasBgColor: preset.canvasBg,
                       homeBtnTextColor: preset.btnText,
                     });
+                    if (preset.primary) {
+                      onChangeBrandColor(preset.primary);
+                    }
                   }}
                 >
                   <span
@@ -774,13 +779,14 @@ export function SystemSettingsPage({
                   <input
                     type="color"
                     aria-label="لون الأزرار الأساسية في الرئيسية"
-                    value={draft.homePrimaryBtnColor || homeTokens.primaryBg || "#0b5ca8"}
-                    onChange={(e) =>
+                    value={draft.homePrimaryBtnColor || homeTokens.primaryBg || "#4338ca"}
+                    onChange={(e) => {
                       updateFields({
                         homeColorPreset: "custom",
                         homePrimaryBtnColor: e.target.value,
-                      })
-                    }
+                      });
+                      onChangeBrandColor(e.target.value);
+                    }}
                   />
                   {draft.homePrimaryBtnColor ? (
                     <button
@@ -802,7 +808,7 @@ export function SystemSettingsPage({
                   <input
                     type="color"
                     aria-label="لون الأزرار الثانوية في الرئيسية"
-                    value={draft.homeSecondaryBtnColor || homeTokens.secondaryBg || "#ea8c0d"}
+                    value={draft.homeSecondaryBtnColor || homeTokens.secondaryBg || "#0891b2"}
                     onChange={(e) =>
                       updateFields({
                         homeColorPreset: "custom",
@@ -830,7 +836,7 @@ export function SystemSettingsPage({
                   <input
                     type="color"
                     aria-label="لون الشريط العلوي للرئيسية"
-                    value={draft.homeHeaderColor || homeTokens.headerBg || "#0b5ca8"}
+                    value={draft.homeHeaderColor || homeTokens.headerBg || "#312e81"}
                     onChange={(e) =>
                       updateFields({
                         homeColorPreset: "custom",
@@ -1294,6 +1300,7 @@ export function SystemSettingsPage({
               onClick={() => {
                 triggerHaptic("light");
                 onResetBrandColor();
+                onChangeThemeMode("light");
               }}
             >
               الافتراضي

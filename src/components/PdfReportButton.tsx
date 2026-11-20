@@ -4,6 +4,7 @@ import type { DashboardSummary } from "../accounting";
 import type { CurrencyCode } from "../types";
 import { exportDashboardSummaryPdf } from "../utils/exportPdf";
 import { triggerHaptic } from "../utils/haptics";
+import { runWithBrandLoader } from "../utils/brandLoaderBus";
 
 interface PdfReportButtonProps {
   companyName: string;
@@ -26,20 +27,26 @@ export function PdfReportButton({
     setExporting(true);
     triggerHaptic("light");
     try {
-      const result = await exportDashboardSummaryPdf(
-        {
-          companyName: companyName || "نسقو برو",
-          defaultCurrency,
-          periodLabel,
-          summary,
+      await runWithBrandLoader(
+        mode === "share" ? "جاري تجهيز مشاركة التقرير PDF..." : "جاري تصدير التقرير PDF...",
+        async () => {
+          const result = await exportDashboardSummaryPdf(
+            {
+              companyName: companyName || "نسقو برو",
+              defaultCurrency,
+              periodLabel,
+              summary,
+            },
+            mode,
+          );
+          triggerHaptic("success");
+          onNotify(
+            result === "shared"
+              ? "تمت مشاركة تقرير PDF المالي ونواقص المخزون بنجاح"
+              : "تم تنزيل التقرير المالي وتنبيهات المخزون بصيغة PDF",
+          );
         },
-        mode,
-      );
-      triggerHaptic("success");
-      onNotify(
-        result === "shared"
-          ? "تمت مشاركة تقرير PDF المالي ونواقص المخزون بنجاح"
-          : "تم تنزيل التقرير المالي وتنبيهات المخزون بصيغة PDF",
+        { minDurationMs: 420 },
       );
     } catch {
       triggerHaptic("warning");
