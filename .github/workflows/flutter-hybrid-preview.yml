@@ -49,7 +49,8 @@ jobs:
       - name: Generate Android scaffold (not committed)
         working-directory: flutter_app
         run: |
-          flutter create --platforms=android .
+          flutter create --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
           flutter pub get
 
       - name: Analyze and test Flutter/Dart
