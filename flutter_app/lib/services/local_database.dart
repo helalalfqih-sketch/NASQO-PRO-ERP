@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 2;
+  static const int dbVersion = 3;
 
   Database? _db;
 
@@ -43,6 +43,7 @@ class LocalDatabase {
       version: dbVersion,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await createSyncSchema(db);
+        if (oldVersion < 3) await createAccountingSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -114,6 +115,7 @@ class LocalDatabase {
           )
         ''');
         await createSyncSchema(db);
+        await createAccountingSchema(db);
       },
     );
     return _db!;
@@ -150,6 +152,29 @@ class LocalDatabase {
         last_success_at TEXT
       )
     ''');
+  }
+
+  static Future<void> createAccountingSchema(DatabaseExecutor db) async {
+    await db.execute('CREATE TABLE IF NOT EXISTS journal_entries (id TEXT PRIMARY KEY, currency TEXT NOT NULL, created_at TEXT NOT NULL)');
+    await db.execute('CREATE TABLE IF NOT EXISTS journal_lines (id TEXT PRIMARY KEY, journal_id TEXT NOT NULL REFERENCES journal_entries(id), account_id TEXT NOT NULL REFERENCES accounts(id), debit_minor INTEGER NOT NULL CHECK(debit_minor >= 0), credit_minor INTEGER NOT NULL CHECK(credit_minor >= 0), CHECK((debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0)))');
+    await db.execute('CREATE TABLE IF NOT EXISTS invoice_lines (id TEXT PRIMARY KEY, ledger_id TEXT NOT NULL REFERENCES ledger_entries(id), item_id TEXT, quantity REAL NOT NULL CHECK(quantity > 0), unit_price_minor INTEGER NOT NULL CHECK(unit_price_minor >= 0))');
+    await db.execute('CREATE TABLE IF NOT EXISTS stock_movements (id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES inventory_items(id), quantity_delta REAL NOT NULL, operation_id TEXT NOT NULL)');
+    await db.execute('CREATE TABLE IF NOT EXISTS sync_inbox (workspace_id TEXT NOT NULL, operation_id TEXT NOT NULL, PRIMARY KEY(workspace_id, operation_id))');
+    await db.execute('CREATE TABLE IF NOT EXISTS sync_conflicts (workspace_id TEXT NOT NULL, operation_id TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(workspace_id, operation_id))');
+  }
+
+  Future<Map<String, dynamic>> createAccountAtomic(
+      String workspaceId, String operationId, AccountRecord account) {
+    if (account.name.trim().isEmpty || account.id.isEmpty ||
+        account.openingBalance != 0) {
+      throw ArgumentError('New account requires a name, ID and zero opening balance');
+    }
+    final row = _accountToMap(account);
+    return commitOperation(workspaceId: workspaceId, operationId: operationId,
+        operationType: 'account.create', payload: Map<String, dynamic>.from(row), apply: (txn) async {
+      await txn.insert('accounts', row);
+      return {'id': account.id};
+    });
   }
 
   /// Foundation for future domain commands. The callback must use only txn.
