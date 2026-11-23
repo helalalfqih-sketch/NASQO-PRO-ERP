@@ -45,9 +45,11 @@ flutter test
 flutter run
 ```
 
-In an **Android debug build only**, tap the web icon in the top app bar to
-open the original React hybrid bundle. The icon is intentionally absent from
-release builds until end-to-end verification is complete.
+An **Android debug build starts in the modern React hybrid UI**. Tap
+**واجهة Flutter** in the app bar to switch to the native fallback interface.
+The native debug interface also has a web icon to reopen React.
+Release builds still use the established native Flutter interface until
+device-level visual, offline and transactional verification is complete.
 
 `npm run sync:flutter-hybrid` builds `dist/hybrid`, checks its offline
 security manifest and copies it to `flutter_app/assets/web/`. Run it each
