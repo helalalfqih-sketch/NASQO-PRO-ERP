@@ -197,6 +197,40 @@ class LocalDatabase {
     });
   }
 
+  Future<List<Map<String, Object?>>> pendingOperations(String workspaceId,
+      {int limit = 100}) async {
+    if (limit < 1 || limit > 500) throw ArgumentError('Invalid batch size');
+    final db = await database;
+    return db.query('sync_outbox',
+        where: 'workspace_id = ? AND acknowledged_at IS NULL',
+        whereArgs: [workspaceId], orderBy: 'created_at, operation_id',
+        limit: limit);
+  }
+
+  /// Call only after validating an authenticated server acknowledgement.
+  Future<void> acknowledgeOperation(String workspaceId, String operationId,
+      String serverRevision) async {
+    if (serverRevision.isEmpty) throw ArgumentError('Missing server revision');
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('sync_outbox',
+          where: 'workspace_id = ? AND operation_id = ?',
+          whereArgs: [workspaceId, operationId]);
+      if (rows.length != 1) throw StateError('Unknown operation');
+      final previous = rows.single['server_revision'];
+      if (previous != null && previous != serverRevision) {
+        throw StateError('Conflicting acknowledgement');
+      }
+      if (previous == null) {
+        await txn.update('sync_outbox', {
+          'acknowledged_at': DateTime.now().toUtc().toIso8601String(),
+          'server_revision': serverRevision,
+        }, where: 'workspace_id = ? AND operation_id = ?',
+            whereArgs: [workspaceId, operationId]);
+      }
+    });
+  }
+
   Future<bool> hasSeededData() async {
     final db = await database;
     final res = await db.rawQuery('SELECT COUNT(*) AS cnt FROM accounts');
