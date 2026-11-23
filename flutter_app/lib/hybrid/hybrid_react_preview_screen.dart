@@ -10,7 +10,9 @@ import '../services/local_database.dart';
 /// local HTTPS origin; no network or external navigation is permitted.
 /// Only getSnapshot is implemented, with financial mutations explicitly denied.
 class HybridReactPreviewScreen extends StatefulWidget {
-  const HybridReactPreviewScreen({super.key});
+  const HybridReactPreviewScreen({super.key, this.onShowNative});
+
+  final VoidCallback? onShowNative;
 
   @override
   State<HybridReactPreviewScreen> createState() => _HybridReactPreviewScreenState();
@@ -59,7 +61,16 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('نسقو — واجهة React المحلية')),
+      appBar: AppBar(
+        title: const Text('نسقو — واجهة React المحلية'),
+        actions: [
+          if (widget.onShowNative != null)
+            TextButton(
+              onPressed: widget.onShowNative,
+              child: const Text('واجهة Flutter'),
+            ),
+        ],
+      ),
       body: Column(
         children: [
           Container(
