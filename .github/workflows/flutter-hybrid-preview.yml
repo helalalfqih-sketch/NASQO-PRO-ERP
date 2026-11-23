@@ -72,7 +72,13 @@ jobs:
 
       - name: Build debug APK for review only
         working-directory: flutter_app
-        run: flutter build apk --debug
+        env:
+          NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
+          NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
+        run: |
+          flutter build apk --debug \
+            --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
+            --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
 
       - name: Upload isolated preview artifact
         uses: actions/upload-artifact@v4
