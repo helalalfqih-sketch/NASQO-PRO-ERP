@@ -24,6 +24,7 @@ class NasqoProErpApp extends StatefulWidget {
 
 class _NasqoProErpAppState extends State<NasqoProErpApp> {
   final ErpController _controller = ErpController();
+  bool _showNativeInDebug = false;
 
   @override
   void dispose() {
@@ -64,7 +65,13 @@ class _NasqoProErpAppState extends State<NasqoProErpApp> {
           ),
           home: Directionality(
             textDirection: TextDirection.rtl,
-            child: NasqoMainShell(controller: _controller),
+            child: kDebugMode &&
+                    defaultTargetPlatform == TargetPlatform.android &&
+                    !_showNativeInDebug
+                ? HybridReactPreviewScreen(
+                    onShowNative: () => setState(() => _showNativeInDebug = true),
+                  )
+                : NasqoMainShell(controller: _controller),
           ),
         );
       },
