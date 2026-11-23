@@ -1,6 +1,8 @@
 name: Flutter hybrid offline preview (no deployment)
 
 on:
+  push:
+    branches: [dev/offline-first-android-phase2]
   pull_request:
     branches: [main]
     paths:
@@ -58,6 +60,9 @@ jobs:
           flutter create --platforms=android --org=com.indexesstore .
           node ../scripts/setup-android-hybrid.mjs
           flutter pub get
+
+      - name: Install SQLite test runtime
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
       - name: Analyze and test Flutter/Dart
         working-directory: flutter_app
