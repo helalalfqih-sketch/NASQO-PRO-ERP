@@ -63,6 +63,7 @@ class HybridLocalSnapshotAdapter {
       ],
       'uiPreferences': {
         'themeMode': snapshot.isDarkMode == true ? 'dark' : 'light',
+        ...snapshot.uiPreferences,
       },
       'capabilities': {
         'offlineReady': true,
