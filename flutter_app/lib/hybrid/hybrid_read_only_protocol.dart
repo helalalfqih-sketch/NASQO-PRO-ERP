@@ -10,10 +10,12 @@ class HybridReadOnlyProtocol {
   HybridReadOnlyProtocol({
     required this.readSnapshot,
     this.saveUiPreferences,
+    this.createAccount,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
   final Future<void> Function(Map<String, dynamic>)? saveUiPreferences;
+  final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -85,6 +87,30 @@ class HybridReadOnlyProtocol {
       } catch (_) {
         return _error(id, actionName, 'SERVICE_UNAVAILABLE',
             'تعذر حفظ إعدادات المظهر في SQLite.');
+      }
+    }
+
+    if (actionName == 'saveAccount' && createAccount != null) {
+      final params = request['payload'];
+      final key = request['idempotencyKey'];
+      if (key is! String || key.isEmpty || key.length > 150 ||
+          params is! Map<String, dynamic> ||
+          params['workspaceId'] != 'local-erp-workspace' ||
+          params['accountId'] != null ||
+          params.keys.any((k) => !const ['workspaceId', 'payload', 'accountId'].contains(k)) ||
+          params['payload'] is! Map<String, dynamic>) {
+        return _error(id, actionName, 'VALIDATION_ERROR', 'طلب إنشاء الحساب غير صالح.');
+      }
+      try {
+        final result = await createAccount!(key, params['payload'] as Map<String, dynamic>);
+        return jsonEncode({
+          'protocolVersion': version, 'kind': 'response',
+          'requestId': id, 'action': actionName, 'ok': true, 'data': result,
+        });
+      } on ArgumentError {
+        return _error(id, actionName, 'VALIDATION_ERROR', 'حقول الحساب غير مدعومة أو غير صالحة.');
+      } catch (_) {
+        return _error(id, actionName, 'SERVICE_UNAVAILABLE', 'تعذر تأكيد حفظ الحساب المحلي.');
       }
     }
 
