@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'hybrid_read_only_protocol.dart';
 import 'local_snapshot_adapter.dart';
+import '../services/local_database.dart';
 
 /// Android-only debug preview of the original React/Vite UI.
 ///
@@ -18,6 +19,7 @@ class HybridReactPreviewScreen extends StatefulWidget {
 class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   final HybridReadOnlyProtocol _protocol = HybridReadOnlyProtocol(
     readSnapshot: HybridLocalSnapshotAdapter.readFromDevice,
+    saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
   );
   MethodChannel? _channel;
   String? _error;
