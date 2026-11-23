@@ -1,0 +1,88 @@
+name: NASQO Android hybrid device smoke (review only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "flutter_app/**"
+      - "src/hybrid/**"
+      - "scripts/build-hybrid.mjs"
+      - "scripts/sync-hybrid-to-flutter.mjs"
+      - ".github/workflows/android-hybrid-ui-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nasqo-device-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.12.0"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.3"
+          channel: stable
+          cache: true
+
+      - name: Build local hybrid UI
+        run: |
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run sync:flutter-hybrid
+
+      - name: Build Android debug preview
+        working-directory: flutter_app
+        run: |
+          flutter create --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
+          flutter pub get
+          flutter build apk --debug
+
+      - name: Enable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install APK, launch and capture offline UI
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: |
+            mkdir -p qa/android-smoke
+            adb install -r flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            adb shell am start -n com.indexesstore.nasqo_pro_erp/.MainActivity
+            sleep 15
+            adb shell pidof com.indexesstore.nasqo_pro_erp
+            adb exec-out screencap -p > qa/android-smoke/launch.png
+            adb shell uiautomator dump /sdcard/window.xml || true
+            adb pull /sdcard/window.xml qa/android-smoke/window.xml || true
+            adb logcat -d -t 4000 > qa/android-smoke/logcat.txt
+            test -s qa/android-smoke/launch.png
+
+      - name: Save screenshots and diagnostics (not production data)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-hybrid-android-smoke
+          path: qa/android-smoke/
+          if-no-files-found: warn
+          retention-days: 5

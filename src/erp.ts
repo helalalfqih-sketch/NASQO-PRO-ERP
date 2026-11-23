@@ -1249,11 +1249,14 @@ export function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): void 
     __nasqoHybridReady?: boolean;
     __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
   };
-  if (import.meta.env.VITE_NASQO_HYBRID === "1" || win.__nasqoHybridReady) {
+  const isHybridBundle =
+    (import.meta as { env?: { VITE_NASQO_HYBRID?: string } }).env
+      ?.VITE_NASQO_HYBRID === "1";
+  if (isHybridBundle || win.__nasqoHybridReady) {
     win.__nasqoHybridSaveErp?.(key, data);
     return;
   }
-  if (import.meta.env.VITE_NASQO_HYBRID !== "1") {
+  if (!isHybridBundle) {
     try {
       const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
       const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;

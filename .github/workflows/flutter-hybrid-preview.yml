@@ -1,0 +1,78 @@
+name: Flutter hybrid offline preview (no deployment)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "flutter_app/**"
+      - "src/hybrid/**"
+      - "scripts/build-hybrid.mjs"
+      - "scripts/sync-hybrid-to-flutter.mjs"
+      - ".github/workflows/flutter-hybrid-preview.yml"
+  workflow_dispatch:
+
+# Only the newest revision of this review branch needs an APK.
+concurrency:
+  group: nasqo-flutter-hybrid-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-hybrid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.12.0"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # ubuntu-latest already provides ANDROID_HOME and SDK tooling.
+      # setup-android@v3 currently fails while requesting the retired
+      # sdkmanager "tools" package; use the preinstalled SDK instead.
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.3"
+          channel: stable
+          cache: true
+
+      - name: Build and audit local React assets
+        run: |
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run sync:flutter-hybrid
+          npx tsx --test tests/hybrid.test.ts
+
+      - name: Generate Android scaffold (not committed)
+        working-directory: flutter_app
+        run: |
+          flutter create --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
+          flutter pub get
+
+      - name: Analyze and test Flutter/Dart
+        working-directory: flutter_app
+        run: |
+          flutter analyze --no-fatal-infos
+          flutter test
+
+      - name: Build debug APK for review only
+        working-directory: flutter_app
+        run: flutter build apk --debug
+
+      - name: Upload isolated preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-hybrid-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
