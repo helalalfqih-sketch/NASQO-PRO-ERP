@@ -177,6 +177,57 @@ class LocalDatabase {
     });
   }
 
+  /// Sale repository foundation; callers must supply a stable operation ID.
+  /// This is not a general ledger posting engine and is not enabled in the UI.
+  Future<Map<String, dynamic>> createSaleAtomic({
+    required String workspaceId,
+    required String operationId,
+    required LedgerEntryRecord entry,
+    required List<Map<String, dynamic>> lines,
+  }) {
+    if (entry.kind != LedgerKind.invoice || entry.direction != EntryDirection.debit ||
+        entry.deleted || !entry.amount.isFinite || entry.amount <= 0 ||
+        lines.isEmpty || entry.id.isEmpty) {
+      throw ArgumentError('Invalid sales invoice');
+    }
+    final row = _ledgerToMap(entry);
+    final normalized = lines.map((line) {
+      final itemId = line['item_id'];
+      final quantity = line['quantity'];
+      final price = line['unit_price_minor'];
+      if (itemId is! String || itemId.isEmpty || quantity is! num ||
+          !quantity.isFinite || quantity <= 0 || price is! int || price < 0) {
+        throw ArgumentError('Invalid invoice line');
+      }
+      return <String, dynamic>{'item_id': itemId, 'quantity': quantity,
+        'unit_price_minor': price};
+    }).toList();
+    return commitOperation(workspaceId: workspaceId, operationId: operationId,
+        operationType: 'sale.create', payload: {'entry': row, 'lines': normalized},
+        apply: (txn) async {
+      final accounts = await txn.query('accounts', where: 'id = ?',
+          whereArgs: [entry.accountId], limit: 1);
+      if (accounts.isEmpty) throw StateError('Account does not exist');
+      await txn.insert('ledger_entries', row);
+      for (var i = 0; i < normalized.length; i++) {
+        final line = normalized[i];
+        final itemId = line['item_id'] as String;
+        final quantity = line['quantity'] as num;
+        final changed = await txn.rawUpdate(
+            'UPDATE inventory_items SET quantity = quantity - ? WHERE id = ? AND warehouseId = ? AND quantity >= ?',
+            [quantity, itemId, entry.warehouseId, quantity]);
+        if (changed != 1) throw StateError('Insufficient stock or invalid warehouse');
+        final lineId = '${entry.id}:$i';
+        await txn.insert('invoice_lines', {'id': lineId, 'ledger_id': entry.id,
+          'item_id': itemId, 'quantity': quantity,
+          'unit_price_minor': line['unit_price_minor']});
+        await txn.insert('stock_movements', {'id': lineId, 'item_id': itemId,
+          'quantity_delta': -quantity, 'operation_id': operationId});
+      }
+      return {'id': entry.id};
+    });
+  }
+
   /// Foundation for future domain commands. The callback must use only txn.
   /// No network calls or external side effects inside the transaction.
   Future<Map<String, dynamic>> commitOperation({
