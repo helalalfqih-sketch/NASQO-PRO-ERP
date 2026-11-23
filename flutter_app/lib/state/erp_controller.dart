@@ -18,6 +18,7 @@ class ErpController extends ChangeNotifier {
   CurrencyCode defaultCurrency = CurrencyCode.sar;
   bool isDarkMode = false;
   bool dbReady = false;
+  String? storageError;
 
   final List<AccountRecord> accounts = [];
   final List<LedgerEntryRecord> ledger = [];
@@ -377,7 +378,9 @@ class ErpController extends ChangeNotifier {
       dbReady = true;
       notifyListeners();
     } catch (_) {
-      // Safe fallback when sqflite platform channel is unavailable in headless unit tests
+      dbReady = false;
+      storageError = 'تعذر فتح قاعدة البيانات المحلية';
+      notifyListeners();
     }
   }
 
@@ -394,14 +397,20 @@ class ErpController extends ChangeNotifier {
       );
       dbReady = true;
     } catch (_) {
-      // Ignore if running outside device SQLite runtime
+      dbReady = false;
+      storageError = 'تعذر حفظ البيانات المحلية';
+      notifyListeners();
     }
   }
 
   Future<void> resetLocalDatabase() async {
     try {
       await LocalDatabase.instance.clearAll();
-    } catch (_) {}
+    } catch (_) {
+      storageError = 'تعذر تفريغ قاعدة البيانات';
+      notifyListeners();
+      return;
+    }
     accounts.clear();
     ledger.clear();
     warehouses.clear();
