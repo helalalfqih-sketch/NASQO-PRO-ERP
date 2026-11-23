@@ -1,0 +1,45 @@
+import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:nasqo_pro_erp/services/local_database.dart';
+
+void main() {
+  test('atomic operation replay, rollback and acknowledgement', () async {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    final dir = await Directory.systemTemp.createTemp('nasqo_test_');
+    await databaseFactory.setDatabasesPath(dir.path);
+    final store = LocalDatabase.instance;
+    final db = await store.database;
+    try {
+      await db.execute('CREATE TABLE test_effect (id TEXT PRIMARY KEY)');
+      Future<Map<String, dynamic>> commit(String id, {bool fail = false}) =>
+          store.commitOperation(
+            workspaceId: 'test',
+            operationId: id,
+            operationType: 'test',
+            payload: {'id': id},
+            apply: (txn) async {
+              await txn.insert('test_effect', {'id': id});
+              if (fail) throw StateError('rollback');
+              return {'id': id};
+            },
+          );
+      expect(await commit('one'), {'id': 'one'});
+      expect(await commit('one'), {'id': 'one'});
+      expect(await db.query('test_effect'), hasLength(1));
+      expect(await store.pendingOperations('test'), hasLength(1));
+      await expectLater(commit('two', fail: true), throwsStateError);
+      expect(await db.query('test_effect'), hasLength(1));
+      expect(await store.pendingOperations('test'), hasLength(1));
+      await store.acknowledgeOperation('test', 'one', 'rev1');
+      await store.acknowledgeOperation('test', 'one', 'rev1');
+      expect(await store.pendingOperations('test'), isEmpty);
+      await expectLater(
+        store.acknowledgeOperation('test', 'one', 'rev2'), throwsStateError);
+    } finally {
+      await db.close();
+      await dir.delete(recursive: true);
+    }
+  });
+}
