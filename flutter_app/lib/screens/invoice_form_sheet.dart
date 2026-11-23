@@ -29,10 +29,10 @@ class _InvoiceFormSheetState extends State<InvoiceFormSheet> {
   void initState() {
     super.initState();
     final preferredAccounts = _clientAccounts;
-    _selectedAccountId = preferredAccounts.isNotEmpty
-        ? preferredAccounts.first.id
-        : widget.controller.accounts.first.id;
-    _selectedWhId = widget.controller.warehouses.first.id;
+    _selectedAccountId = preferredAccounts.isNotEmpty ? preferredAccounts.first.id : '';
+    _selectedWhId = widget.controller.warehouses.isNotEmpty
+        ? widget.controller.warehouses.first.id
+        : '';
     final firstItem = widget.controller.inventory.isNotEmpty
         ? widget.controller.inventory.first
         : null;
@@ -83,6 +83,12 @@ class _InvoiceFormSheetState extends State<InvoiceFormSheet> {
   }
 
   void _saveInvoice() {
+    if (widget.controller.accounts.isEmpty || widget.controller.warehouses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أضف حساب عميل ومستودعًا قبل إنشاء فاتورة.')),
+      );
+      return;
+    }
     final activeAcc = widget.controller.accounts.firstWhere(
       (a) => a.id == _selectedAccountId,
       orElse: () => widget.controller.accounts.first,
@@ -122,6 +128,33 @@ class _InvoiceFormSheetState extends State<InvoiceFormSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // A fresh offline database contains no accounts or warehouses. Never
+    // show invalid dropdown defaults or generate placeholder financial data.
+    if (widget.controller.accounts.isEmpty || widget.controller.warehouses.isEmpty) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('لا يمكن إنشاء فاتورة بعد',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              const Text('أضف حساب عميل ومستودعًا أولًا. قاعدة البيانات تبدأ فارغة دون بيانات تجريبية.'),
+              const SizedBox(height: 16),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('إغلاق'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final currencyLabel = widget.controller.defaultCurrency.label;
     return SafeArea(
       child: Padding(
