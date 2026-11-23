@@ -12,6 +12,7 @@ class LocalDbSnapshot {
     this.companyName,
     this.isDarkMode,
     this.nextEntryNumber,
+    this.uiPreferences = const <String, dynamic>{},
   });
 
   final List<AccountRecord> accounts;
@@ -21,6 +22,7 @@ class LocalDbSnapshot {
   final String? companyName;
   final bool? isDarkMode;
   final int? nextEntryNumber;
+  final Map<String, dynamic> uiPreferences;
 }
 
 class LocalDatabase {
@@ -127,6 +129,18 @@ class LocalDatabase {
     final whRows = await db.query('warehouses');
     final invRows = await db.query('inventory_items');
     final metaRows = await db.query('erp_state', where: 'stateKey = ?', whereArgs: ['settings']);
+    final prefsRows = await db.query('erp_state',
+        where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
+
+    final preferences = <String, dynamic>{};
+    if (prefsRows.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(prefsRows.first['payloadJson'] as String);
+        if (decoded is Map<String, dynamic>) preferences.addAll(decoded);
+      } on FormatException {
+        // A malformed appearance row must not hide or erase financial data.
+      }
+    }
 
     String? companyName;
     bool? isDarkMode;
@@ -146,7 +160,33 @@ class LocalDatabase {
       companyName: companyName,
       isDarkMode: isDarkMode,
       nextEntryNumber: nextEntryNumber,
+      uiPreferences: preferences,
     );
+  }
+
+  /// Non-financial UI preferences are stored independently of the accounting
+  /// snapshot, so saving a theme cannot replace any invoice, stock or ledger.
+  Future<void> saveUiPreferences(Map<String, dynamic> updates) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('erp_state',
+          where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
+      final previous = <String, dynamic>{};
+      if (rows.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rows.first['payloadJson'] as String);
+          if (decoded is Map<String, dynamic>) previous.addAll(decoded);
+        } on FormatException {
+          // Recover only the independent UI row; financial data is untouched.
+        }
+      }
+      final next = <String, dynamic>{...previous, ...updates};
+      await txn.insert('erp_state', {
+        'stateKey': 'hybridUiPreferences',
+        'payloadJson': jsonEncode(next),
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
   }
 
   Future<void> saveSnapshot({
