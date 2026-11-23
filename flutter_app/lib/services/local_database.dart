@@ -124,12 +124,13 @@ class LocalDatabase {
 
   Future<LocalDbSnapshot> loadSnapshot() async {
     final db = await database;
-    final accRows = await db.query('accounts', orderBy: 'codeNumber ASC');
-    final ledRows = await db.query('ledger_entries', orderBy: 'entryNumber DESC');
-    final whRows = await db.query('warehouses');
-    final invRows = await db.query('inventory_items');
-    final metaRows = await db.query('erp_state', where: 'stateKey = ?', whereArgs: ['settings']);
-    final prefsRows = await db.query('erp_state',
+    return db.transaction((txn) async {
+    final accRows = await txn.query('accounts', orderBy: 'codeNumber ASC');
+    final ledRows = await txn.query('ledger_entries', orderBy: 'entryNumber DESC');
+    final whRows = await txn.query('warehouses');
+    final invRows = await txn.query('inventory_items');
+    final metaRows = await txn.query('erp_state', where: 'stateKey = ?', whereArgs: ['settings']);
+    final prefsRows = await txn.query('erp_state',
         where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
 
     final preferences = <String, dynamic>{};
@@ -162,6 +163,7 @@ class LocalDatabase {
       nextEntryNumber: nextEntryNumber,
       uiPreferences: preferences,
     );
+    });
   }
 
   /// Non-financial UI preferences are stored independently of the accounting
