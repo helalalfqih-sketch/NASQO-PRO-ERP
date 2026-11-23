@@ -6,6 +6,10 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
+import android.webkit.ConsoleMessage
+import android.webkit.WebResourceError
+import android.util.Log
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -55,7 +59,33 @@ private class OfflineHybridView(
             javaScriptCanOpenWindowsAutomatically = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                Log.w("NASQO_HYBRID", "console ${message.messageLevel()} ${message.sourceId()}:${message.lineNumber()} ${message.message()}")
+                return true
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                Log.i("NASQO_HYBRID", "pageFinished url=$url")
+                view.evaluateJavascript(
+                    "(function(){return JSON.stringify({title:document.title,ready:document.readyState,root:document.getElementById('root')?.innerText?.slice(0,200) || '',scripts:document.scripts.length});})()"
+                ) { answer -> Log.i("NASQO_HYBRID", "pageState=$answer") }
+            }
+            override fun onReceivedError(
+                view: WebView,
+                request: WebResourceRequest,
+                error: WebResourceError
+            ) {
+                Log.e("NASQO_HYBRID", "loadError=${request.url} code=${error.errorCode} reason=${error.description}")
+            }
+            override fun onReceivedHttpError(
+                view: WebView,
+                request: WebResourceRequest,
+                response: WebResourceResponse
+            ) {
+                Log.e("NASQO_HYBRID", "httpError=${request.url} status=${response.statusCode}")
+            }
             override fun shouldInterceptRequest(
                 view: WebView,
                 request: WebResourceRequest
