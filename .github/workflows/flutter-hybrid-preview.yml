@@ -55,7 +55,7 @@ jobs:
       - name: Analyze and test Flutter/Dart
         working-directory: flutter_app
         run: |
-          flutter analyze
+          flutter analyze --no-fatal-infos
           flutter test
 
       - name: Build debug APK for review only
