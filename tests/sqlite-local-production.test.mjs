@@ -230,7 +230,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     assert.equal(itemRes.status, 201);
     const { item } = await itemRes.json();
 
-    // Oversell 8 units against stock 5 -> true negative stock (-3), NOT clamped to 0; soft/hard delete restores exact +5
+    // Reject overselling 8 units against stock 5; inventory must remain unchanged.
     const oversellRes = await fetch(prefix + "/ledger", {
       method: "POST",
       headers: jsonHeaders,
@@ -253,10 +253,38 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
         },
       }),
     });
-    assert.equal(oversellRes.status, 201);
-    const { entry: savedSale } = await oversellRes.json();
+    assert.equal(oversellRes.status, 400);
     let wsAfter = await (await fetch(prefix)).json();
-    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, -3);
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 5);
+    assert.equal(wsAfter.ledger.length, 0, "A rejected oversell cannot create a ledger entry");
+
+    // Post a valid sale against the same stock; soft delete/restore must preserve exact quantities.
+    const saleRes = await fetch(prefix + "/ledger", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        entry: {
+          accountId: account.id,
+          accountName: account.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 20,
+          currency: "ريال",
+          warehouseId: warehouse.id,
+          warehouseName: warehouse.name,
+          invoiceContent: "items",
+          entryNumber: 1,
+          entryDate: "2026-11-18",
+          lines: [{ inventoryItemId: item.id, warehouseId: warehouse.id, itemName: item.name, unit: "حبة", quantity: 2, price: 10, total: 20 }],
+        },
+      }),
+    });
+    assert.equal(saleRes.status, 201);
+    const { entry: savedSale } = await saleRes.json();
+    wsAfter = await (await fetch(prefix)).json();
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 3);
 
     // Mismatched invoice header vs line total -> HTTP 400
     const mismatchRes = await fetch(prefix + "/ledger", {
@@ -283,7 +311,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     });
     assert.equal(mismatchRes.status, 400);
 
-    // Soft delete oversold bill (-3 -> +5), restore (+5 -> -3), hard delete active (-3 -> +5)
+    // Soft-delete valid sale (3 -> 5), restore (5 -> 3), then hard-delete (3 -> 5).
     await fetch(`${prefix}/ledger/${savedSale.id}/deleted`, {
       method: "PATCH",
       headers: jsonHeaders,
@@ -298,7 +326,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
       body: JSON.stringify({ deleted: false }),
     });
     wsAfter = await (await fetch(prefix)).json();
-    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, -3);
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 3);
 
     await fetch(`${prefix}/ledger/${savedSale.id}`, {
       method: "DELETE",
