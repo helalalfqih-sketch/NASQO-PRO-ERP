@@ -5,9 +5,9 @@ class FirebaseSyncAuth {
   static Future<void> initialize() async {
     if (Firebase.apps.isNotEmpty) return;
     const apiKey = String.fromEnvironment('NASQO_FIREBASE_API_KEY');
-    const appId = String.fromEnvironment('NASQO_FIREBASE_APP_ID');
-    const sender = String.fromEnvironment('NASQO_FIREBASE_SENDER_ID');
-    const project = String.fromEnvironment('NASQO_FIREBASE_PROJECT_ID');
+    const appId = String.fromEnvironment('NASQO_FIREBASE_APP_ID', defaultValue: '1:944118860365:android:af6a1eb1ff4217b0802a04');
+    const sender = String.fromEnvironment('NASQO_FIREBASE_SENDER_ID', defaultValue: '944118860365');
+    const project = String.fromEnvironment('NASQO_FIREBASE_PROJECT_ID', defaultValue: 'gen-lang-client-0457000612');
     if (apiKey.isEmpty || appId.isEmpty || sender.isEmpty || project.isEmpty) {
       throw StateError('Official Android Firebase configuration required');
     }
