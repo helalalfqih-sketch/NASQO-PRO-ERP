@@ -150,9 +150,7 @@ class _NasqoMainShellState extends State<NasqoMainShell> {
       appBar: AppBar(
         title: const Text('نسقو برو ERP — Flutter'),
         actions: [
-          if (kDebugMode &&
-              (defaultTargetPlatform == TargetPlatform.android ||
-                  defaultTargetPlatform == TargetPlatform.iOS))
+          if (kDebugMode && defaultTargetPlatform == TargetPlatform.android)
             IconButton(
               tooltip: 'معاينة واجهة React محليًا (قراءة فقط)',
               icon: const Icon(Icons.web_asset_outlined),
