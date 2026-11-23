@@ -43,6 +43,7 @@ private class OfflineHybridView(
 
     private val webView = WebView(context)
     private val channel = MethodChannel(messenger, "nasqo/offline_hybrid/$id")
+    private var started = false
 
     init {
         webView.settings.apply {
@@ -91,7 +92,7 @@ private class OfflineHybridView(
                     }
                 }
             }
-            webView.loadUrl("$origin${resourcePrefix}index.html")
+            // Flutter registers its MethodChannel handler first, then sends "start".
         } else {
             webView.loadDataWithBaseURL(
                 origin,
@@ -104,6 +105,17 @@ private class OfflineHybridView(
 
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "start" -> {
+                    if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                        result.error("UNSUPPORTED", "WebView message listener is unavailable", null)
+                    } else {
+                        if (!started) {
+                            started = true
+                            webView.loadUrl("$origin${resourcePrefix}index.html")
+                        }
+                        result.success(null)
+                    }
+                }
                 "respond" -> {
                     val response = call.arguments as? String
                     if (response == null || response.length > 4000000) {
