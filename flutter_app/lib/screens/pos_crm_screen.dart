@@ -33,6 +33,12 @@ class _PosCrmScreenState extends State<PosCrmScreen> {
 
   void _checkout() {
     if (_cart.isEmpty) return;
+    if (widget.controller.accounts.isEmpty || widget.controller.warehouses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('أضف حساب مبيعات ومستودعًا قبل إتمام البيع.')),
+      );
+      return;
+    }
     final rows = <InvoiceItemRow>[];
     for (final entry in _cart.entries) {
       final item = widget.controller.inventory.firstWhere((i) => i.id == entry.key);
