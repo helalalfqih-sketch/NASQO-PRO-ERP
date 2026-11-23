@@ -38,7 +38,8 @@ npm ci
 npm run sync:flutter-hybrid
 cd flutter_app
 # The source repository has no Android platform scaffold committed yet:
-flutter create --platforms=android .
+flutter create --platforms=android --org=com.indexesstore .
+node ../scripts/setup-android-hybrid.mjs
 flutter pub get
 flutter test
 flutter run
@@ -73,3 +74,7 @@ SQLite empty/restore/migration behavior, account and currency mappings,
 transaction rollback, duplicate-submission protection, invoice and stock
 integrity, Arabic/RTL layouts and real-device tests. Never merge into `main`
 until the tests pass and the user approves.
+
+### Local Android ES module hosting
+
+The debug preview now uses a single native Android WebView PlatformView backed by `androidx.webkit.WebViewAssetLoader` and `NasqoHome`. It serves the offline React bundle under `https://appassets.androidplatform.net/offline/flutter_assets/assets/web/` and rejects all remote requests. Run `node ../scripts/setup-android-hybrid.mjs` **after** `flutter create` whenever regenerating the Android scaffold. Do not enable file:// cross-file access or unrestricted WebView networking.
