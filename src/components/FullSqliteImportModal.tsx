@@ -241,16 +241,21 @@ export function FullSqliteImportModal({
     <div className="center-modal-layer" dir="rtl" style={{ zIndex: 70 }}>
       <button type="button" className="center-modal-backdrop" aria-label="إغلاق مركز قاعدة البيانات" onClick={onClose} />
       <section
+        className="full-sqlite-import-modal"
         role="dialog"
         aria-modal="true"
         style={{
-          position: "relative",
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
           zIndex: 71,
-          width: "min(96vw, 960px)",
-          maxHeight: "92vh",
+          width: "min(calc(100% - 16px), 920px)",
+          maxHeight: "min(88%, 760px)",
           display: "flex",
           flexDirection: "column",
-          background: "#ffffff",
+          background: "var(--nasqo-surface, #ffffff)",
+          color: "var(--nasqo-ink, #0f172a)",
           borderRadius: 20,
           boxShadow: "0 25px 60px rgba(0,0,0,0.35)",
           overflow: "hidden",

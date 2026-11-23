@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { MagicWandIcon } from "@radix-ui/react-icons";
 import { inferExpenseCategory, normalizeExpenseCategory } from "../accounting";
+import { useHybridPresentation } from "../hybrid/presentationAdapter";
 import { EXPENSE_CATEGORIES, type AccountCategory, type ExpenseCategory } from "../types";
 import { triggerHaptic } from "../utils/haptics";
 
@@ -25,6 +26,7 @@ export function ExpenseCategorySelector({
   currency,
   entryType,
 }: ExpenseCategorySelectorProps) {
+  const hybrid = useHybridPresentation();
   const [loading, setLoading] = useState(false);
   const [aiNote, setAiNote] = useState("");
   const [aiError, setAiError] = useState("");
@@ -38,6 +40,16 @@ export function ExpenseCategorySelector({
     }
 
     triggerHaptic("light");
+    if (import.meta.env.VITE_NASQO_HYBRID === "1" || hybrid.isHybrid) {
+      const localCategory = inferExpenseCategory(description, vendorName, accountCategory);
+      onChange(localCategory);
+      triggerHaptic("success");
+      setAiNote(`تصنيف محاسبي محلي (دون اتصال): ${localCategory}`);
+      return;
+    }
+
+    if (import.meta.env.VITE_NASQO_HYBRID === "1") return;
+
     setLoading(true);
     const controller = new AbortController();
     const timer = globalThis.setTimeout(() => controller.abort(), 12_000);

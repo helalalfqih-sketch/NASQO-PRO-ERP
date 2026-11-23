@@ -16,6 +16,7 @@ import {
   type InventoryItemRecord,
   type LedgerEntryRecord,
 } from "./types.ts";
+import { addMoney, mulMoney, roundMoney, subMoney } from "./utils/moneyMath.ts";
 
 export type ErpModuleId =
   | "erp-hub"
@@ -254,6 +255,9 @@ export type BalanceSheetReport = {
   currentPeriodProfit: number;
   totalEquity: number;
   totalLiabilitiesAndEquity: number;
+  recordedEquityAccounts?: number;
+  accountingImbalance?: number;
+  isBalancedWithoutPlug?: boolean;
   cashReconciliation?: CashReconciliationSummary;
   inventoryReconciliation?: InventoryReconciliationSummary;
   scope?: FinancialScopeMetadata;
@@ -276,7 +280,7 @@ export type VatSummaryReport = {
 };
 
 function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+  return roundMoney(n, 2);
 }
 
 function entryMatchesCurrency(entry: LedgerEntryRecord, currency?: string): boolean {
@@ -286,9 +290,9 @@ function entryMatchesCurrency(entry: LedgerEntryRecord, currency?: string): bool
 
 function entryAmountInCurrency(entry: LedgerEntryRecord, currency?: string): number {
   if (!currency || currency === "الكل") {
-    return entry.amount * (entry.exchangeRate || 1);
+    return mulMoney(entry.amount, entry.exchangeRate || 1, 2);
   }
-  return entry.amount;
+  return roundMoney(entry.amount, 2);
 }
 
 function collectEntryScope(
@@ -309,7 +313,7 @@ function collectEntryScope(
   const matched: LedgerEntryRecord[] = [];
 
   for (const e of entries) {
-    if (e.deleted) continue;
+    if (e.deleted || e.postingStatus === "draft") continue;
     if (!entryMatchesCurrency(e, effectiveCurrency)) {
       excludedByCurrencyCount += 1;
       continue;
@@ -467,14 +471,22 @@ export function computeTrialBalance(
   const { matched: rangeEntries, scope } = collectEntryScope(entries, options);
   const priorEntries = fromDate
     ? entries.filter(
-        (e) => !e.deleted && entryMatchesCurrency(e, effectiveCurrency) && e.entryDate < fromDate,
+        (e) =>
+          !e.deleted &&
+          e.postingStatus !== "draft" &&
+          entryMatchesCurrency(e, effectiveCurrency) &&
+          e.entryDate < fromDate,
       )
     : [];
   const upToEntries = toDate
     ? entries.filter(
-        (e) => !e.deleted && entryMatchesCurrency(e, effectiveCurrency) && e.entryDate <= toDate,
+        (e) =>
+          !e.deleted &&
+          e.postingStatus !== "draft" &&
+          entryMatchesCurrency(e, effectiveCurrency) &&
+          e.entryDate <= toDate,
       )
-    : entries.filter((e) => !e.deleted && entryMatchesCurrency(e, effectiveCurrency));
+    : entries.filter((e) => !e.deleted && e.postingStatus !== "draft" && entryMatchesCurrency(e, effectiveCurrency));
 
   const rows: TrialBalanceRow[] = [];
   let totalDebitTurnover = 0;
@@ -493,7 +505,7 @@ export function computeTrialBalance(
       ? computeAccountSummary(account, priorEntries, summaryCurrency)
       : null;
 
-    const netSigned = closingSummary.creditTotal - closingSummary.debitTotal;
+    const netSigned = subMoney(closingSummary.creditTotal, closingSummary.debitTotal);
     const closingDebit = netSigned < 0 ? Math.abs(netSigned) : 0;
     const closingCredit = netSigned > 0 ? netSigned : 0;
 
@@ -502,17 +514,17 @@ export function computeTrialBalance(
       codeNumber: account.codeNumber,
       accountName: account.name,
       category: account.category,
-      ...(priorSummary ? { openingNet: priorSummary.creditTotal - priorSummary.debitTotal } : {}),
+      ...(priorSummary ? { openingNet: subMoney(priorSummary.creditTotal, priorSummary.debitTotal) } : {}),
       debitTurnover: turnoverSummary.debitTotal,
       creditTurnover: turnoverSummary.creditTotal,
       closingDebit,
       closingCredit,
     });
 
-    totalDebitTurnover += turnoverSummary.debitTotal;
-    totalCreditTurnover += turnoverSummary.creditTotal;
-    totalClosingDebit += closingDebit;
-    totalClosingCredit += closingCredit;
+    totalDebitTurnover = addMoney(totalDebitTurnover, turnoverSummary.debitTotal);
+    totalCreditTurnover = addMoney(totalCreditTurnover, turnoverSummary.creditTotal);
+    totalClosingDebit = addMoney(totalClosingDebit, closingDebit);
+    totalClosingCredit = addMoney(totalClosingCredit, closingCredit);
   }
 
   return {
@@ -521,7 +533,7 @@ export function computeTrialBalance(
     totalCreditTurnover,
     totalClosingDebit,
     totalClosingCredit,
-    netDifference: Math.abs(totalClosingDebit - totalClosingCredit),
+    netDifference: Math.abs(subMoney(totalClosingDebit, totalClosingCredit)),
     scope,
   };
 }
@@ -560,22 +572,33 @@ export function computeIncomeStatement(
   }
 
   for (const entry of scopedEntries) {
-    if (entry.deleted) continue;
+    if (entry.deleted || entry.postingStatus === "draft") continue;
     if (entry.kind === "quote" || entry.kind === "order") continue;
 
     const amount = entryAmountInCurrency(entry, effectiveCurrency);
     if (amount <= 0) continue;
 
     const acc = accountMap.get(entry.accountId);
+    const dt = entry.docType !== undefined && entry.docType !== null ? Number(entry.docType) : null;
+    const lbl = entry.typeLabel || "";
     const isSale =
-      salesIds.has(entry.accountId) ||
-      (entry.kind === "invoice" && entry.direction === "debit");
+      entry.kind === "return"
+        ? dt !== null
+          ? dt === 4
+          : salesIds.has(entry.accountId) ||
+            acc?.category === "clients" ||
+            lbl.includes("مبيعات") ||
+            lbl.includes("بيع")
+        : dt !== null
+          ? dt === 2 || dt === 7
+          : salesIds.has(entry.accountId) ||
+            (entry.kind === "invoice" && entry.direction === "debit");
 
     if (isSale) {
       if (entry.kind === "return") {
-        salesReturns += amount;
+        salesReturns = addMoney(salesReturns, amount);
       } else {
-        salesRevenue += amount;
+        salesRevenue = addMoney(salesRevenue, amount);
       }
       continue;
     }
@@ -585,14 +608,15 @@ export function computeIncomeStatement(
       explicitCategory ?? inferExpenseCategory(entry.details, entry.accountName, acc?.category);
 
     const isPurchaseCogs =
-      inferred === "مشتريات بضائع" &&
-      (acc?.category === "purchases" || (entry.kind === "invoice" && entry.direction === "credit"));
+      (entry.kind === "return" && (dt === 5 || acc?.category === "purchases" || lbl.includes("مشتريات") || lbl.includes("شراء"))) ||
+      (inferred === "مشتريات بضائع" &&
+        (acc?.category === "purchases" || (entry.kind === "invoice" && entry.direction === "credit")));
 
     if (isPurchaseCogs) {
       if (entry.kind === "return") {
-        cogs = Math.max(0, cogs - amount);
+        cogs = Math.max(0, subMoney(cogs, amount));
       } else {
-        cogs += amount;
+        cogs = addMoney(cogs, amount);
       }
       continue;
     }
@@ -604,12 +628,12 @@ export function computeIncomeStatement(
       (entry.kind === "voucher" && entry.direction === "debit");
 
     if (isOperatingExpense && inferred !== "مشتريات بضائع") {
-      expenseBuckets.set(inferred, (expenseBuckets.get(inferred) ?? 0) + amount);
+      expenseBuckets.set(inferred, addMoney(expenseBuckets.get(inferred) ?? 0, amount));
     }
   }
 
-  const netSales = Math.max(0, salesRevenue - salesReturns);
-  const grossProfit = netSales - cogs;
+  const netSales = Math.max(0, subMoney(salesRevenue, salesReturns));
+  const grossProfit = subMoney(netSales, cogs);
   const grossMarginPct = netSales > 0 ? Math.round((grossProfit / netSales) * 1000) / 10 : 0;
 
   const expensesByCategory = Array.from(expenseBuckets.entries())
@@ -617,8 +641,8 @@ export function computeIncomeStatement(
     .map(([category, amount]) => ({ category, amount }))
     .sort((a, b) => b.amount - a.amount);
 
-  const totalOperatingExpenses = expensesByCategory.reduce((sum, item) => sum + item.amount, 0);
-  const netProfit = grossProfit - totalOperatingExpenses;
+  const totalOperatingExpenses = expensesByCategory.reduce((sum, item) => addMoney(sum, item.amount), 0);
+  const netProfit = subMoney(grossProfit, totalOperatingExpenses);
 
   return {
     salesRevenue,
@@ -655,8 +679,14 @@ export function computeBalanceSheet(
 
   // Balance sheet balances are always point-in-time up to `toDate`
   const pointEntries = hasExplicitScope
-    ? entries.filter((e) => !e.deleted && entryMatchesCurrency(e, effectiveCurrency) && (!toDate || e.entryDate <= toDate))
-    : entries;
+    ? entries.filter(
+        (e) =>
+          !e.deleted &&
+          e.postingStatus !== "draft" &&
+          entryMatchesCurrency(e, effectiveCurrency) &&
+          (!toDate || e.entryDate <= toDate),
+      )
+    : entries.filter((e) => !e.deleted && e.postingStatus !== "draft");
 
   const invSummary = computeInventorySummary(inventory);
   let fallbackUnverifiedEstimated = 0;
@@ -664,7 +694,7 @@ export function computeBalanceSheet(
     if (!item.quantityUnverified) continue;
     const qty = item.computedQuantity ?? 0;
     if (qty > 0 && item.avgCost > 0) {
-      fallbackUnverifiedEstimated += qty * item.avgCost;
+      fallbackUnverifiedEstimated = addMoney(fallbackUnverifiedEstimated, mulMoney(qty, item.avgCost, 2));
     }
   }
   const unverifiedEstimatedValue =
@@ -682,31 +712,34 @@ export function computeBalanceSheet(
   let accountsReceivable = 0;
   let accountsPayable = 0;
   let payrollPayable = 0;
+  let recordedEquityAccounts = 0;
 
   for (const acc of accounts) {
     const summary = hasExplicitScope
       ? computeAccountSummary(acc, pointEntries, summaryCurrency)
       : computeAccountSummary(acc, entries);
-    const netSigned = summary.creditTotal - summary.debitTotal;
+    const netSigned = subMoney(summary.creditTotal, summary.debitTotal);
 
     if (acc.isCashAccount || acc.category === "transfers") {
-      cashAndBank += Math.abs(netSigned) > 0 ? Math.abs(netSigned) : summary.creditTotal;
+      cashAndBank = addMoney(cashAndBank, Math.abs(netSigned) > 0 ? Math.abs(netSigned) : summary.creditTotal);
     } else if (acc.category === "clients") {
       if (netSigned < 0) {
-        accountsReceivable += Math.abs(netSigned);
+        accountsReceivable = addMoney(accountsReceivable, Math.abs(netSigned));
       } else if (netSigned > 0) {
-        accountsPayable += netSigned;
+        accountsPayable = addMoney(accountsPayable, netSigned);
       }
     } else if (acc.category === "purchases") {
       if (netSigned > 0) {
-        accountsPayable += netSigned;
+        accountsPayable = addMoney(accountsPayable, netSigned);
       } else if (netSigned < 0) {
-        accountsReceivable += Math.abs(netSigned);
+        accountsReceivable = addMoney(accountsReceivable, Math.abs(netSigned));
       }
     } else if (acc.category === "employees") {
       if (netSigned > 0) {
-        payrollPayable += netSigned;
+        payrollPayable = addMoney(payrollPayable, netSigned);
       }
+    } else if (acc.category === "shop") {
+      recordedEquityAccounts = addMoney(recordedEquityAccounts, netSigned);
     }
   }
 
@@ -719,10 +752,10 @@ export function computeBalanceSheet(
     : "verified_only";
   const inventoryValue =
     activeInventoryBasis === "include_unverified_estimated"
-      ? round2(invSummary.totalValue + unverifiedEstimatedValue)
+      ? addMoney(invSummary.totalValue, unverifiedEstimatedValue)
       : round2(invSummary.totalValue);
 
-  const inventoryReportTotalValue = round2(invSummary.totalValue + unverifiedEstimatedValue);
+  const inventoryReportTotalValue = addMoney(invSummary.totalValue, unverifiedEstimatedValue);
   const inventoryReconciliation: InventoryReconciliationSummary = {
     verifiedCount: invSummary.verifiedCount,
     verifiedValue: round2(invSummary.totalValue),
@@ -730,14 +763,18 @@ export function computeBalanceSheet(
     unverifiedEstimatedValue,
     inventoryReportTotalValue,
     activeBasis: activeInventoryBasis,
-    differenceVsInventoryReport: round2(inventoryReportTotalValue - inventoryValue),
+    differenceVsInventoryReport: subMoney(inventoryReportTotalValue, inventoryValue),
   };
 
-  const totalAssets = round2(cashAndBank + accountsReceivable + inventoryValue);
-  const totalLiabilities = round2(accountsPayable + payrollPayable);
+  const totalAssets = addMoney(addMoney(cashAndBank, accountsReceivable), inventoryValue);
+  const totalLiabilities = addMoney(accountsPayable, payrollPayable);
   const currentPeriodProfit = income.netProfit;
-  const ownerEquityBase = round2(totalAssets - totalLiabilities - currentPeriodProfit);
-  const totalEquity = round2(ownerEquityBase + currentPeriodProfit);
+  const ownerEquityBase = subMoney(subMoney(totalAssets, totalLiabilities), currentPeriodProfit);
+  const totalEquity = addMoney(ownerEquityBase, currentPeriodProfit);
+  const accountingImbalance = subMoney(
+    totalAssets,
+    addMoney(totalLiabilities, addMoney(recordedEquityAccounts, currentPeriodProfit)),
+  );
 
   const { scope } = collectEntryScope(entries, {
     currency: options?.currency,
@@ -755,7 +792,10 @@ export function computeBalanceSheet(
     ownerEquityBase,
     currentPeriodProfit,
     totalEquity,
-    totalLiabilitiesAndEquity: round2(totalLiabilities + totalEquity),
+    totalLiabilitiesAndEquity: addMoney(totalLiabilities, totalEquity),
+    recordedEquityAccounts: round2(recordedEquityAccounts),
+    accountingImbalance,
+    isBalancedWithoutPlug: Math.abs(accountingImbalance) < 0.01,
     cashReconciliation,
     inventoryReconciliation,
     scope,
@@ -782,31 +822,54 @@ export function computeVatSummary(
   let entriesWithRecordedTaxCount = 0;
 
   for (const entry of scopedEntries) {
-    if (entry.deleted) continue;
+    if (entry.deleted || entry.postingStatus === "draft") continue;
     if (entry.kind !== "invoice" && entry.kind !== "return") continue;
     const amount = entryAmountInCurrency(entry, effectiveCurrency);
     const acc = accountMap.get(entry.accountId);
-    const isSale = acc?.category === "sales" || entry.direction === "debit";
-    const recordedTax = Number(entry.taxAmount ?? 0) * (!options?.currency || options.currency === "الكل" ? (entry.exchangeRate || 1) : 1);
+    const dt = entry.docType !== undefined && entry.docType !== null ? Number(entry.docType) : null;
+    const lbl = entry.typeLabel || "";
+    const isSale =
+      entry.kind === "return"
+        ? dt !== null
+          ? dt === 4
+          : acc?.category === "sales" ||
+            acc?.category === "clients" ||
+            lbl.includes("مبيعات") ||
+            lbl.includes("بيع") ||
+            (!lbl.includes("مشتريات") && !lbl.includes("شراء") && acc?.category !== "purchases" && entry.direction === "credit")
+        : dt !== null
+          ? dt === 2 || dt === 7
+          : acc?.category === "sales" ||
+            lbl.includes("مبيعات") ||
+            lbl.includes("بيع") ||
+            (!lbl.includes("مشتريات") && !lbl.includes("شراء") && acc?.category !== "purchases" && entry.direction === "debit");
+
+    const recordedTax =
+      !options?.currency || options.currency === "الكل"
+        ? mulMoney(Number(entry.taxAmount ?? 0), entry.exchangeRate || 1, 2)
+        : round2(Number(entry.taxAmount ?? 0));
     if (recordedTax > 0) entriesWithRecordedTaxCount += 1;
 
     if (isSale) {
-      taxableSales += entry.kind === "return" ? -amount : amount;
-      recordedOutputVat += entry.kind === "return" ? -recordedTax : recordedTax;
+      taxableSales = entry.kind === "return" ? subMoney(taxableSales, amount) : addMoney(taxableSales, amount);
+      recordedOutputVat =
+        entry.kind === "return" ? subMoney(recordedOutputVat, recordedTax) : addMoney(recordedOutputVat, recordedTax);
     } else {
-      taxablePurchases += entry.kind === "return" ? -amount : amount;
-      recordedInputVat += entry.kind === "return" ? -recordedTax : recordedTax;
+      taxablePurchases =
+        entry.kind === "return" ? subMoney(taxablePurchases, amount) : addMoney(taxablePurchases, amount);
+      recordedInputVat =
+        entry.kind === "return" ? subMoney(recordedInputVat, recordedTax) : addMoney(recordedInputVat, recordedTax);
     }
   }
 
-  taxableSales = Math.max(0, taxableSales);
-  taxablePurchases = Math.max(0, taxablePurchases);
+  taxableSales = Math.max(0, round2(taxableSales));
+  taxablePurchases = Math.max(0, round2(taxablePurchases));
   recordedOutputVat = Math.max(0, round2(recordedOutputVat));
   recordedInputVat = Math.max(0, round2(recordedInputVat));
 
   const vatMode = options?.vatMode ?? "estimated_gross";
-  const outputVat = vatMode === "recorded_only" ? recordedOutputVat : round2(taxableSales * vatRate);
-  const inputVat = vatMode === "recorded_only" ? recordedInputVat : round2(taxablePurchases * vatRate);
+  const outputVat = vatMode === "recorded_only" ? recordedOutputVat : mulMoney(taxableSales, vatRate, 2);
+  const inputVat = vatMode === "recorded_only" ? recordedInputVat : mulMoney(taxablePurchases, vatRate, 2);
 
   return {
     vatRate,
@@ -817,7 +880,7 @@ export function computeVatSummary(
     outputVat,
     taxablePurchases,
     inputVat,
-    netVatPayable: round2(outputVat - inputVat),
+    netVatPayable: subMoney(outputVat, inputVat),
     recordedOutputVat,
     recordedInputVat,
     entriesWithRecordedTaxCount,
@@ -1182,21 +1245,31 @@ export function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): void 
     listener(data);
   }
   if (typeof window === "undefined") return;
-  try {
-    const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
-    const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
-    const ctrl = new AbortController();
-    const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
-    void fetch(`${base}local-erp-workspace/erp`, {
-      method: "PUT",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    })
-      .catch(() => {})
-      .finally(() => globalThis.clearTimeout(timer));
-  } catch {
-    // Ignore non-browser test environments
+  const win = window as unknown as {
+    __nasqoHybridReady?: boolean;
+    __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
+  };
+  if (import.meta.env.VITE_NASQO_HYBRID === "1" || win.__nasqoHybridReady) {
+    win.__nasqoHybridSaveErp?.(key, data);
+    return;
+  }
+  if (import.meta.env.VITE_NASQO_HYBRID !== "1") {
+    try {
+      const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
+      const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
+      const ctrl = new AbortController();
+      const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
+      void fetch(`${base}local-erp-workspace/erp`, {
+        method: "PUT",
+        signal: ctrl.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      })
+        .catch(() => {})
+        .finally(() => globalThis.clearTimeout(timer));
+    } catch {
+      // Ignore non-browser test environments
+    }
   }
 }
 

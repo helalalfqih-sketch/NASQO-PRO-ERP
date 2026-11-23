@@ -41,18 +41,25 @@ import {
   getInventoryMovementsReport,
   getProductPriceStats,
   getSqliteDb,
+  importInventoryCatalogRows,
+  insertCashTransferAtomic,
   insertInventoryItemRow,
+  insertJournalEntryRow,
   insertLedgerEntryRow,
   listUnifiedTablesMeta,
   listWorkspaceInventoryRows,
   makeId,
   mapLedgerRow,
+  postDraftLedgerEntryRow,
   queryUnifiedTable,
   resetWorkspaceToEmpty,
   restoreUnifiedJsonBundle,
+  reverseJournalEntryRow,
+  reverseLedgerEntryRow,
   saveErpDataRows,
   saveWorkspaceSettingsRow,
   setLedgerDeletedRow,
+  setWorkspaceClosedUntilDate,
   updateInventoryCatalogRow,
   updateInventoryItemRow,
   updateLedgerEntryRow,
@@ -63,6 +70,7 @@ import {
   withTransaction,
   writeAudit,
 } from "./sqliteDb.ts";
+import { isStrictlyFiniteNumeric, roundMoney } from "./moneyMath.ts";
 
 function paramStr(req: Request, key: string): string {
   const v = req.params[key];
@@ -186,6 +194,19 @@ export function mountSqliteApi(app: Express): void {
     }),
   );
 
+  router.put(
+    "/workspace/:uid/fiscal-lock",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const closedUntilDate =
+        typeof req.body?.closedUntilDate === "string" && req.body.closedUntilDate.trim()
+          ? req.body.closedUntilDate.trim()
+          : null;
+      const workspace = setWorkspaceClosedUntilDate(db, uid, closedUntilDate);
+      res.json({ workspace });
+    }),
+  );
+
   router.post(
     "/workspace/:uid/reset",
     route((req, res, db) => {
@@ -280,6 +301,60 @@ export function mountSqliteApi(app: Express): void {
       setLedgerDeletedRow(db, uid, entryId, Boolean(req.body?.deleted));
       const inventory = listWorkspaceInventoryRows(db, uid);
       res.json({ ok: true, inventory });
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/ledger/:entryId/post",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const entryId = paramStr(req, "entryId").trim();
+      const entry = postDraftLedgerEntryRow(db, uid, entryId);
+      const inventory = listWorkspaceInventoryRows(db, uid);
+      res.json({ entry, inventory });
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/ledger/:entryId/reverse",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const entryId = paramStr(req, "entryId").trim();
+      const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+      const reversalDate = typeof req.body?.reversalDate === "string" ? req.body.reversalDate : undefined;
+      const result = reverseLedgerEntryRow(db, uid, entryId, { reason, reversalDate });
+      const inventory = listWorkspaceInventoryRows(db, uid);
+      res.status(201).json({ ...result, inventory });
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/journals",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const journal = insertJournalEntryRow(db, uid, req.body ?? {});
+      res.status(201).json({ journal });
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/journals/:journalId/reverse",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const journalId = paramStr(req, "journalId").trim();
+      const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+      const reversalDate = typeof req.body?.reversalDate === "string" ? req.body.reversalDate : undefined;
+      const result = reverseJournalEntryRow(db, uid, journalId, { reason, reversalDate });
+      res.status(201).json(result);
+    }),
+  );
+
+  router.post(
+    "/workspace/:uid/transfers/cash",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const result = insertCashTransferAtomic(db, uid, req.body ?? {});
+      res.status(201).json(result);
     }),
   );
 
@@ -520,6 +595,26 @@ export function mountSqliteApi(app: Express): void {
     }),
   );
 
+  router.post(
+    "/workspace/:uid/inventory/import",
+    route((req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
+      const body = (req.body ?? {}) as {
+        items?: (Partial<InventoryItemRecord> & { name: string; warehouseId?: string })[];
+        mode?: "upsert" | "skip";
+        warehouseId?: string;
+      };
+      if (!Array.isArray(body.items) || body.items.length === 0) {
+        throw new HttpError(400, "لا توجد أصناف صالحة للاستيراد.");
+      }
+      const result = importInventoryCatalogRows(db, uid, body.items, {
+        mode: body.mode === "skip" ? "skip" : "upsert",
+        warehouseId: typeof body.warehouseId === "string" ? body.warehouseId : undefined,
+      });
+      res.status(201).json(result);
+    }),
+  );
+
   router.delete(
     "/workspace/:uid/inventory/:itemId",
     route((req, res, db) => {
@@ -603,14 +698,15 @@ export function mountSqliteApi(app: Express): void {
 
   router.get(
     "/workspace/:uid/export/sqlite",
-    route(async (_req, res, db) => {
+    route(async (req, res, db) => {
+      const uid = validWsId(paramStr(req, "uid"));
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nasqo-export-"));
       const tmpFile = path.join(tmpDir, "nasqo-export.sqlite");
       try {
-        const bytes = await exportCleanSqliteSnapshotBytes(db, tmpFile);
+        const bytes = await exportCleanSqliteSnapshotBytes(db, tmpFile, uid);
         const stamp = new Date().toISOString().slice(0, 10);
         res.setHeader("Content-Type", "application/x-sqlite3");
-        res.setHeader("Content-Disposition", `attachment; filename="nasqo-unified-${stamp}.sqlite"`);
+        res.setHeader("Content-Disposition", `attachment; filename="nasqo-unified-${uid}-${stamp}.sqlite"`);
         res.send(Buffer.from(bytes));
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -767,29 +863,62 @@ export function mountSqliteApi(app: Express): void {
       const uid = validWsId(paramStr(req, "uid"));
       ensureEmptyWorkspace(db, uid);
       const entries = Array.isArray(req.body?.entries) ? (req.body.entries as LedgerEntryRecord[]) : [];
+      const wsRow = db
+        .prepare("SELECT closed_until_date FROM workspaces WHERE id = ?")
+        .get(uid) as { closed_until_date?: string | null } | undefined;
+      const closedUntil = wsRow?.closed_until_date?.trim() || "";
+      const findAccount = db.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND id = ?");
+
       const out = withTransaction(db, () => {
         const ins = db.prepare(
           `INSERT INTO ledger_entries (
              id, workspace_id, account_id, account_name, counterpart_account_id, counterpart_account_name,
-             kind, type_label, payment, direction, amount, currency, exchange_rate, details, document_number,
+             kind, type_label, payment, direction, amount, raw_dain, raw_madin, currency, exchange_rate, details, document_number,
              warehouse_id, warehouse_name, invoice_content, entry_number, deleted, entry_date,
              source_origin, posting_status, created_at_ms, legacy_ref
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'legacy_sqlite', 'posted', ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'legacy_sqlite', 'posted', ?, ?)
            ON CONFLICT(id) DO NOTHING`,
         );
         let added = 0;
         let skippedDuplicates = 0;
         for (const e of entries) {
+          if (!e || typeof e.id !== "string" || !e.id.trim()) {
+            throw new SqliteValidationError("معرف القيد مطلوب لكل سجل مستورد.");
+          }
+          if (!e.accountId || !findAccount.get(uid, e.accountId)) {
+            throw new SqliteValidationError(`الحساب (${String(e.accountId ?? "")}) غير موجود في مساحة العمل.`);
+          }
+          if (!isStrictlyFiniteNumeric(e.amount) || Number(e.amount) < 0) {
+            throw new SqliteValidationError(`مبلغ القيد (${e.id}) غير صالح أو سالب.`);
+          }
+          const rate = e.exchangeRate ?? 1;
+          if (!isStrictlyFiniteNumeric(rate) || Number(rate) <= 0) {
+            throw new SqliteValidationError(`سعر الصرف للقيد (${e.id}) يجب أن يكون أكبر من صفر.`);
+          }
+          const entryDate = String(e.entryDate ?? "").trim();
+          if (closedUntil && entryDate && entryDate <= closedUntil) {
+            throw new SqliteValidationError(
+              `لا يمكن ترحيل القيد (${e.id}) بتاريخ (${entryDate}) لأنه يقع ضمن فترة مالية مغلقة حتى ${closedUntil}.`,
+            );
+          }
+          const cleanAmount = roundMoney(Number(e.amount), 2);
+          const dir = e.direction === "credit" ? "credit" : "debit";
+          const rawDain = dir === "debit" ? cleanAmount : 0;
+          const rawMadin = dir === "credit" ? cleanAmount : 0;
           const r = ins.run(
-            e.id, uid, e.accountId, e.accountName, e.counterpartAccountId ?? "", e.counterpartAccountName ?? "",
-            e.kind, e.typeLabel, e.payment, e.direction, e.amount, e.currency, e.exchangeRate ?? 1,
-            e.details ?? "", e.documentNumber ?? "", e.warehouseId ?? "", e.warehouseName ?? "",
-            e.invoiceContent ?? "none", e.entryNumber ?? 1, e.deleted ? 1 : 0, e.entryDate,
-            e.createdAtMs ?? Date.now(), e.legacyRef ?? null,
+            e.id.trim(), uid, e.accountId, String(e.accountName ?? "").slice(0, 140),
+            String(e.counterpartAccountId ?? ""), String(e.counterpartAccountName ?? "").slice(0, 140),
+            e.kind || "voucher", String(e.typeLabel ?? "").slice(0, 60), e.payment || "balance", dir,
+            cleanAmount, rawDain, rawMadin, e.currency || "ريال", Number(rate),
+            String(e.details ?? "").slice(0, 500), String(e.documentNumber ?? "").slice(0, 80),
+            String(e.warehouseId ?? ""), String(e.warehouseName ?? "").slice(0, 120),
+            e.invoiceContent ?? "none", Number(e.entryNumber ?? 1), e.deleted ? 1 : 0, entryDate,
+            Number(e.createdAtMs ?? Date.now()), e.legacyRef ?? null,
           );
           if (Number(r.changes) > 0) added += 1;
           else skippedDuplicates += 1;
         }
+        writeAudit(db, uid, uid, "legacy_post_entries", "batch", "post", { added, skippedDuplicates });
         return { added, skippedDuplicates };
       });
       res.json(out);

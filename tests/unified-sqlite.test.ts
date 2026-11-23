@@ -36,9 +36,11 @@ import {
   insertLedgerEntryRow,
   listUnifiedTablesMeta,
   loadErpDataRows,
+  postDraftLedgerEntryRow,
   queryUnifiedTable,
   resetWorkspaceToEmpty,
   restoreUnifiedJsonBundle,
+  reverseLedgerEntryRow,
   saveErpDataRows,
   setLedgerDeletedRow,
   updateLedgerEntryRow,
@@ -564,13 +566,13 @@ test("5. empty ERP workspace starts clean, restores .back/.sqlite + native snaps
   }
 });
 
-test("6. schema v2 migration, multi-unit stock math, in-place invoice edits, delete reversal, transfers report, cashboxes, and dated statement previous balance", () => {
+test("6. schema v3 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
   const { dir, filePath } = makeTempDbPath();
   try {
-    // Verify schema v2 indexes & PRAGMA user_version upgrade non-destructively
+    // Verify schema v3 indexes & PRAGMA user_version upgrade non-destructively
     const db = getSqliteDb(filePath);
     const uv = db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(uv.user_version, 2);
+    assert.equal(uv.user_version, 3);
     const idx = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_inv_lines_ws_entry'")
       .get() as { name?: string } | undefined;
@@ -656,8 +658,8 @@ test("6. schema v2 migration, multi-unit stock math, in-place invoice edits, del
     const stockAfterBuy = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
     assert.equal(stockAfterBuy.quantity, 24);
 
-    // 2. Cash sale of 1 dozen (unitNum=2 -> 6 base units)
-    const saleEntry = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+    // 2. Draft cash sale of 1 dozen (unitNum=2 -> 6 base units): drafts do NOT affect stock until posted
+    const saleDraft = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
       accountId: accClient.id,
       accountName: accClient.name,
       cashboxId: cashboxRow.id,
@@ -665,6 +667,7 @@ test("6. schema v2 migration, multi-unit stock math, in-place invoice edits, del
       typeLabel: "فاتورة بيع نقدي",
       payment: "cash",
       direction: "debit",
+      postingStatus: "draft",
       amount: 750,
       currency: "ريال",
       warehouseId: whMain.id,
@@ -686,11 +689,11 @@ test("6. schema v2 migration, multi-unit stock math, in-place invoice edits, del
         },
       ],
     });
-    const stockAfterSale = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
-    assert.equal(stockAfterSale.quantity, 18);
+    const stockWhileDraft = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
+    assert.equal(stockWhileDraft.quantity, 24);
 
-    // 3. Edit sale in-place to 2 dozens (unitNum=2 -> 12 base units), verifying NO duplicate ledger row and accurate stock delta
-    const updatedSale = updateLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, saleEntry.id, {
+    // 3. Edit draft in-place to 2 dozens (unitNum=2 -> 12 base units), then POST it atomically
+    const updatedSale = updateLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, saleDraft.id, {
       accountId: accClient.id,
       accountName: accClient.name,
       cashboxId: cashboxRow.id,
@@ -721,18 +724,22 @@ test("6. schema v2 migration, multi-unit stock math, in-place invoice edits, del
     });
     assert.ok(updatedSale);
     assert.equal(updatedSale!.amount, 1550);
+    const saleEntry = postDraftLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, saleDraft.id);
+    assert.equal(saleEntry.postingStatus, "posted");
     const totalEntriesCount = db.prepare("SELECT COUNT(*) AS c FROM ledger_entries WHERE workspace_id = ?").get(DEFAULT_WORKSPACE_ID) as { c: number };
     assert.equal(totalEntriesCount.c, 2);
-    const stockAfterEdit = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
-    assert.equal(stockAfterEdit.quantity, 12);
+    const stockAfterPost = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
+    assert.equal(stockAfterPost.quantity, 12);
 
-    // 4. Soft delete & restore reverses and re-applies stock atomically
-    setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, saleEntry.id, true);
-    const stockAfterDelete = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
-    assert.equal(stockAfterDelete.quantity, 24);
-    setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, saleEntry.id, false);
-    const stockAfterRestore = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
-    assert.equal(stockAfterRestore.quantity, 12);
+    // 4. Posted entries cannot be directly edited or soft-deleted (immutability policy)
+    assert.throws(
+      () => setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, saleEntry.id, true),
+      (err) => err instanceof SqliteValidationError,
+    );
+    assert.throws(
+      () => deleteLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, saleEntry.id),
+      (err) => err instanceof SqliteValidationError,
+    );
 
     // 5. Stock transfers + anomalies + Cashboxes report
     const txRes = db
@@ -816,7 +823,7 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
     const accClient = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, { name: "عميل نقدي", category: "clients", currency: "ريال" });
     const accSupplier = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, { name: "مورد بضاعة", category: "purchases", currency: "ريال" });
 
-    // A) Verified item with opening quantity = 5; oversell 8 -> -3 -> soft-delete/restore/hard-delete must return to 5
+    // A) Verified item with opening quantity = 5; oversell 8 MUST be rejected (no negative stock policy)
     const itemVerified = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
       id: "prod_oversell",
       name: "كشاف يدوي",
@@ -829,33 +836,28 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
     });
     assert.equal(itemVerified.quantity, 5);
 
-    const oversellSale = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
-      accountId: accClient.id,
-      accountName: accClient.name,
-      kind: "invoice",
-      typeLabel: "فاتورة بيع آجل",
-      payment: "credit",
-      direction: "debit",
-      amount: 1200,
-      currency: "ريال",
-      warehouseId: whMain.id,
-      warehouseName: whMain.name,
-      invoiceContent: "items",
-      entryNumber: 501,
-      entryDate: "2026-06-05",
-      lines: [
-        { inventoryItemId: itemVerified.id, warehouseId: whMain.id, itemName: itemVerified.name, unit: "حبة", quantity: 8, price: 150, total: 1200 },
-      ],
-    });
-    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, -3);
-
-    setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, oversellSale.id, true);
-    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, 5);
-
-    setLedgerDeletedRow(db, DEFAULT_WORKSPACE_ID, oversellSale.id, false);
-    assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, -3);
-
-    deleteLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, oversellSale.id);
+    assert.throws(
+      () =>
+        insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
+          accountId: accClient.id,
+          accountName: accClient.name,
+          kind: "invoice",
+          typeLabel: "فاتورة بيع آجل",
+          payment: "credit",
+          direction: "debit",
+          amount: 1200,
+          currency: "ريال",
+          warehouseId: whMain.id,
+          warehouseName: whMain.name,
+          invoiceContent: "items",
+          entryNumber: 501,
+          entryDate: "2026-06-05",
+          lines: [
+            { inventoryItemId: itemVerified.id, warehouseId: whMain.id, itemName: itemVerified.name, unit: "حبة", quantity: 8, price: 150, total: 1200 },
+          ],
+        }),
+      (err) => err instanceof SqliteValidationError,
+    );
     assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, 5);
 
     // B) Invoice line recomputation + mismatch rejection
@@ -943,9 +945,12 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
       ],
     });
     assert.equal(vatSale.amount, 322);
-    deleteLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, vatSale.id);
+    reverseLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, vatSale.id, {
+      reason: "عكس فاتورة الاختبار",
+      reversalDate: "2026-06-06",
+    });
 
-    // Stock after validSale(2) should be 5 - 2 = 3
+    // Stock after validSale(2) + vatSale(2) + reversal(-2) should be 5 - 2 = 3
     assert.equal((db.prepare("SELECT quantity FROM inventory_items WHERE id = ?").get(itemVerified.id) as { quantity: number }).quantity, 3);
 
     // C) Period report with opening balance + pre-period purchase/transfer:

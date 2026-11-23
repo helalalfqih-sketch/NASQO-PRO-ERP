@@ -1,0 +1,123 @@
+=== COMMAND: node scripts/verify-hybrid-home.mjs ===
+{
+  "timestamp": "2026-11-21T23:28:17.283Z",
+  "offlineMode": true,
+  "consoleErrors": [],
+  "pageErrors": [],
+  "externalRequests": [],
+  "failedRequests": [],
+  "step7Checks": {
+    "10_bridge_failure_honest_error": true,
+    "11_prod_bundle_blocks_mockFlutter_param": true,
+    "01_snapshot_received_and_rendered": true,
+    "02_signed_balances_with_correct_currencies": true,
+    "07_light_and_dark_themes": true,
+    "08_zero_external_network_requests": true,
+    "09_all_viewports_zero_overflow_and_clean_geometry": true,
+    "03_currency_switch_updates_balance_and_notifies_flutter": true,
+    "05_tile_longpress_pin_color_hide_restore_and_bridge_save": true,
+    "04_single_navigation_event_per_click": true,
+    "06_back_and_reopen_works": true
+  },
+  "viewports": {
+    "393x852_light": {
+      "vw": 393,
+      "vh": 852,
+      "dir": "rtl",
+      "theme": "light",
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "offscreenButtonCount": 0,
+      "offscreenButtons": [],
+      "headerOverlapsContent": false,
+      "canScroll": true,
+      "lastTileClearsBottomNav": true
+    },
+    "320x640_light": {
+      "vw": 320,
+      "vh": 640,
+      "dir": "rtl",
+      "theme": "light",
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "offscreenButtonCount": 0,
+      "offscreenButtons": [],
+      "headerOverlapsContent": false,
+      "canScroll": true,
+      "lastTileClearsBottomNav": true
+    },
+    "360x800_light": {
+      "vw": 360,
+      "vh": 800,
+      "dir": "rtl",
+      "theme": "light",
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "offscreenButtonCount": 0,
+      "offscreenButtons": [],
+      "headerOverlapsContent": false,
+      "canScroll": true,
+      "lastTileClearsBottomNav": true
+    },
+    "360x800_dark": {
+      "vw": 360,
+      "vh": 800,
+      "dir": "rtl",
+      "theme": "dark",
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "offscreenButtonCount": 0,
+      "offscreenButtons": [],
+      "headerOverlapsContent": false,
+      "canScroll": true,
+      "lastTileClearsBottomNav": true
+    },
+    "427x952_light": {
+      "vw": 427,
+      "vh": 952,
+      "dir": "rtl",
+      "theme": "light",
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "offscreenButtonCount": 0,
+      "offscreenButtons": [],
+      "headerOverlapsContent": false,
+      "canScroll": true,
+      "lastTileClearsBottomNav": true
+    },
+    "393x852_font130": {
+      "vw": 393,
+      "vh": 852,
+      "dir": "rtl",
+      "theme": "light",
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "offscreenButtonCount": 0,
+      "offscreenButtons": [],
+      "headerOverlapsContent": false,
+      "canScroll": true,
+      "lastTileClearsBottomNav": true
+    }
+  },
+  "screenshots": [
+    "/app/applet/qa/hybrid_home/hybrid-10-bridge-error-393.png",
+    "/app/applet/qa/hybrid_home/hybrid-01-home-393-light.png",
+    "/app/applet/qa/hybrid_home/hybrid-02-home-320-light.png",
+    "/app/applet/qa/hybrid_home/hybrid-03-home-360-light.png",
+    "/app/applet/qa/hybrid_home/hybrid-04-home-360-dark.png",
+    "/app/applet/qa/hybrid_home/hybrid-05-home-427-light.png",
+    "/app/applet/qa/hybrid_home/hybrid-06-home-393-font130.png",
+    "/app/applet/qa/hybrid_home/hybrid-07-tile-edit-mode-393.png",
+    "/app/applet/qa/hybrid_home/ref-05-web-home-427-light.png",
+    "/app/applet/qa/hybrid_home/ref-04-web-home-360-dark.png"
+  ],
+  "bridgeChannelTested": "NasqoHome",
+  "bridgeActionsObserved": [
+    "getSnapshot",
+    "saveUiPreferences",
+    "changeCurrency",
+    "navigate",
+    "goBack"
+  ]
+}
+EXIT_CODE=0

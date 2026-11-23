@@ -1,4 +1,4 @@
-export const SQLITE_SCHEMA_VERSION = 2;
+export const SQLITE_SCHEMA_VERSION = 3;
 
 export const UNIFIED_SQLITE_TABLES = [
   "workspaces",
@@ -10,6 +10,8 @@ export const UNIFIED_SQLITE_TABLES = [
   "inventory_items",
   "ledger_entries",
   "invoice_lines",
+  "journal_entries",
+  "journal_entry_lines",
   "stock_transfers",
   "stock_transfer_lines",
   "price_offers",
@@ -43,6 +45,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   whatsapp_provider TEXT NOT NULL DEFAULT 'nasqo',
   whatsapp_instant_enabled INTEGER NOT NULL DEFAULT 0,
   whatsapp_phone TEXT NOT NULL DEFAULT '',
+  closed_until_date TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -200,6 +203,10 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   bstate INTEGER,
   source_origin TEXT NOT NULL DEFAULT 'native',
   posting_status TEXT NOT NULL DEFAULT 'posted',
+  idempotency_key TEXT,
+  reversed_entry_id TEXT,
+  reversal_entry_id TEXT,
+  paid_amount REAL NOT NULL DEFAULT 0,
   created_at_ms INTEGER NOT NULL,
   legacy_id INTEGER,
   legacy_ref TEXT
@@ -224,12 +231,45 @@ CREATE TABLE IF NOT EXISTS invoice_lines (
   bonus REAL NOT NULL DEFAULT 0,
   unit TEXT NOT NULL DEFAULT '',
   unit_num INTEGER NOT NULL DEFAULT 1,
+  unit_cost_at_sale REAL NOT NULL DEFAULT 0,
   details TEXT NOT NULL DEFAULT '',
   expiry_date TEXT NOT NULL DEFAULT '',
   legacy_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_inv_lines_entry ON invoice_lines(entry_id);
 CREATE INDEX IF NOT EXISTS idx_inv_lines_item ON invoice_lines(workspace_id, inventory_item_id);
+
+CREATE TABLE IF NOT EXISTS journal_entries (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  entry_number INTEGER NOT NULL DEFAULT 1,
+  entry_date TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  currency TEXT NOT NULL DEFAULT 'ريال',
+  exchange_rate REAL NOT NULL DEFAULT 1,
+  posting_status TEXT NOT NULL DEFAULT 'posted' CHECK(posting_status IN ('draft','posted','reversed')),
+  idempotency_key TEXT,
+  reversed_journal_id TEXT,
+  reversal_journal_id TEXT,
+  total_debit_minor INTEGER NOT NULL DEFAULT 0,
+  total_credit_minor INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journal_entries_ws ON journal_entries(workspace_id, entry_date);
+
+CREATE TABLE IF NOT EXISTS journal_entry_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  journal_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+  account_name TEXT NOT NULL DEFAULT '',
+  debit_minor INTEGER NOT NULL DEFAULT 0 CHECK(debit_minor >= 0),
+  credit_minor INTEGER NOT NULL DEFAULT 0 CHECK(credit_minor >= 0),
+  description TEXT NOT NULL DEFAULT '',
+  CHECK((debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0))
+);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_journal ON journal_entry_lines(journal_id);
+CREATE INDEX IF NOT EXISTS idx_journal_lines_acc ON journal_entry_lines(workspace_id, account_id);
 
 CREATE TABLE IF NOT EXISTS stock_transfers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -528,6 +568,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_ws ON audit_log(workspace_id, id DESC);
 `;
 
 export const SQLITE_SCHEMA_V2 = 2;
+export const SQLITE_SCHEMA_V3 = 3;
 export const SQLITE_SCHEMA_MIGRATION_V2_DDL = `
 CREATE INDEX IF NOT EXISTS idx_inv_lines_ws_entry ON invoice_lines(workspace_id, entry_id);
 CREATE INDEX IF NOT EXISTS idx_stock_tx_lines_item ON stock_transfer_lines(workspace_id, inventory_item_id);
@@ -535,4 +576,12 @@ CREATE INDEX IF NOT EXISTS idx_stock_transfers_wh ON stock_transfers(workspace_i
 CREATE INDEX IF NOT EXISTS idx_ledger_acc_curr ON ledger_entries(workspace_id, account_id, deleted, currency);
 CREATE INDEX IF NOT EXISTS idx_ledger_doc_type ON ledger_entries(workspace_id, doc_type, deleted);
 CREATE INDEX IF NOT EXISTS idx_accounts_ws_group ON accounts(workspace_id, group_id, sort_order);
+`;
+export const SQLITE_SCHEMA_MIGRATION_V3_DDL = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_idempotency
+  ON ledger_entries(workspace_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL AND idempotency_key != '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_idempotency
+  ON journal_entries(workspace_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL AND idempotency_key != '';
 `;

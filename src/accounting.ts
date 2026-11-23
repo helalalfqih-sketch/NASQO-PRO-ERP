@@ -17,6 +17,8 @@ import {
   type WarehouseRecord,
   type WorkspaceSettings,
 } from "./types.ts";
+import { buildDateSearchTokens, isWithinDateRange } from "./utils/dateUtils.ts";
+import { addMoney, mulMoney, roundMoney, subMoney } from "./utils/moneyMath.ts";
 
 const ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩";
 const PERSIAN_INDIC = "۰۱۲۳۴۵۶۷۸۹";
@@ -37,7 +39,7 @@ export function parseArabicNumber(raw: string | number | null | undefined): numb
 
 export function formatAmount(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
-  const rounded = Math.round(safe * 100) / 100;
+  const rounded = roundMoney(safe, 2);
   return new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
   }).format(rounded);
@@ -214,8 +216,11 @@ export type AccountSummary = {
   entryCount: number;
 };
 
-export function affectsAccountBalance(entry: Pick<LedgerEntryRecord, "deleted" | "kind">): boolean {
+export function affectsAccountBalance(
+  entry: Pick<LedgerEntryRecord, "deleted" | "kind" | "postingStatus">,
+): boolean {
   if (entry.deleted) return false;
+  if (entry.postingStatus === "draft") return false;
   return entry.kind !== "quote" && entry.kind !== "order";
 }
 
@@ -309,17 +314,18 @@ export function computeAccountSummary(
   let entryCount = 0;
 
   if (account.openingBalance > 0 && (!currencyFilter || currencyFilter === "الكل" || currencyFilter === account.currency)) {
+    const opening = roundMoney(account.openingBalance, 2);
     if (account.openingDirection === "credit") {
-      creditTotal += account.openingBalance;
+      creditTotal = addMoney(creditTotal, opening);
     } else {
-      debitTotal += account.openingBalance;
+      debitTotal = addMoney(debitTotal, opening);
     }
   }
 
   const accountEntries = getEntriesForAccount(entries, account.id);
   for (let i = 0; i < accountEntries.length; i += 1) {
     const entry = accountEntries[i];
-    if (entry.deleted) continue;
+    if (entry.deleted || entry.postingStatus === "draft") continue;
     const isPrimary = entry.accountId === account.id;
     const isCounterpart = entry.counterpartAccountId === account.id && entry.counterpartAccountId !== "";
     if (!isPrimary && !isCounterpart) continue;
@@ -338,7 +344,9 @@ export function computeAccountSummary(
     if (!affectsAccountBalance(entry)) continue;
 
     const effectiveAmount =
-      currencyFilter === "مصارفة الكل بعملة ريال" ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
+      currencyFilter === "مصارفة الكل بعملة ريال"
+        ? mulMoney(entry.amount, entry.exchangeRate || 1, 2)
+        : roundMoney(entry.amount, 2);
     const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
     const shouldWashCash = hasExplicitSides
       ? Boolean(entry.settledOnReceipt)
@@ -347,24 +355,24 @@ export function computeAccountSummary(
     if (isPrimary) {
       if (shouldWashCash) {
         // Cash settlement washes both sides while preserving turnover totals.
-        creditTotal += effectiveAmount;
-        debitTotal += effectiveAmount;
+        creditTotal = addMoney(creditTotal, effectiveAmount);
+        debitTotal = addMoney(debitTotal, effectiveAmount);
       } else if (entry.direction === "credit") {
-        creditTotal += effectiveAmount;
+        creditTotal = addMoney(creditTotal, effectiveAmount);
       } else {
-        debitTotal += effectiveAmount;
+        debitTotal = addMoney(debitTotal, effectiveAmount);
       }
     } else if (isCounterpart) {
       // Counterpart in simple entry receives the opposite side.
       if (entry.direction === "credit") {
-        debitTotal += effectiveAmount;
+        debitTotal = addMoney(debitTotal, effectiveAmount);
       } else {
-        creditTotal += effectiveAmount;
+        creditTotal = addMoney(creditTotal, effectiveAmount);
       }
     }
   }
 
-  const netSigned = creditTotal - debitTotal;
+  const netSigned = subMoney(creditTotal, debitTotal);
   const tone: "credit" | "debit" | "neutral" =
     Math.abs(netSigned) < 0.005 ? "neutral" : netSigned > 0 ? "credit" : "debit";
 
@@ -381,6 +389,7 @@ export function computeCategoryTotals(
   accounts: readonly AccountRecord[],
   entries: readonly LedgerEntryRecord[],
   currencyFilter?: string,
+  dateRange?: { fromDate?: string; toDate?: string },
 ): Record<AccountCategory, { netSigned: number; debitTotal: number; creditTotal: number; count: number }> {
   const result: Record<AccountCategory, { netSigned: number; debitTotal: number; creditTotal: number; count: number }> =
     {
@@ -391,6 +400,10 @@ export function computeCategoryTotals(
       transfers: { netSigned: 0, debitTotal: 0, creditTotal: 0, count: 0 },
       shop: { netSigned: 0, debitTotal: 0, creditTotal: 0, count: 0 },
     };
+
+  const fromDate = dateRange?.fromDate?.trim() || "";
+  const toDate = dateRange?.toDate?.trim() || "";
+  const hasFromDate = Boolean(fromDate);
 
   const filterSpecific =
     Boolean(currencyFilter) &&
@@ -404,11 +417,13 @@ export function computeCategoryTotals(
     accMap.set(account.id, account);
     const bucket = result[account.category];
     bucket.count += 1;
-    if (account.openingBalance > 0 && (!filterSpecific || account.currency === currencyFilter)) {
+    // Opening balances apply when not scoped strictly to a mid-history start date
+    if (!hasFromDate && account.openingBalance > 0 && (!filterSpecific || account.currency === currencyFilter)) {
+      const opening = roundMoney(account.openingBalance, 2);
       if (account.openingDirection === "credit") {
-        bucket.creditTotal += account.openingBalance;
+        bucket.creditTotal = addMoney(bucket.creditTotal, opening);
       } else {
-        bucket.debitTotal += account.openingBalance;
+        bucket.debitTotal = addMoney(bucket.debitTotal, opening);
       }
     }
   }
@@ -416,7 +431,10 @@ export function computeCategoryTotals(
   for (const entry of entries) {
     if (entry.deleted || !affectsAccountBalance(entry)) continue;
     if (filterSpecific && entry.currency !== currencyFilter) continue;
-    const effectiveAmount = convertAllToRiyal ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
+    if ((fromDate || toDate) && !isWithinDateRange(entry.entryDate, fromDate, toDate)) continue;
+    const effectiveAmount = convertAllToRiyal
+      ? mulMoney(entry.amount, entry.exchangeRate || 1, 2)
+      : roundMoney(entry.amount, 2);
 
     const primary = accMap.get(entry.accountId);
     if (primary) {
@@ -426,12 +444,12 @@ export function computeCategoryTotals(
         ? Boolean(entry.settledOnReceipt)
         : Boolean((primary.isCashAccount && entry.payment === "cash") || entry.settledOnReceipt);
       if (shouldWashCash) {
-        bucket.creditTotal += effectiveAmount;
-        bucket.debitTotal += effectiveAmount;
+        bucket.creditTotal = addMoney(bucket.creditTotal, effectiveAmount);
+        bucket.debitTotal = addMoney(bucket.debitTotal, effectiveAmount);
       } else if (entry.direction === "credit") {
-        bucket.creditTotal += effectiveAmount;
+        bucket.creditTotal = addMoney(bucket.creditTotal, effectiveAmount);
       } else {
-        bucket.debitTotal += effectiveAmount;
+        bucket.debitTotal = addMoney(bucket.debitTotal, effectiveAmount);
       }
     }
     if (entry.counterpartAccountId) {
@@ -439,9 +457,9 @@ export function computeCategoryTotals(
       if (counter) {
         const bucket = result[counter.category];
         if (entry.direction === "credit") {
-          bucket.debitTotal += effectiveAmount;
+          bucket.debitTotal = addMoney(bucket.debitTotal, effectiveAmount);
         } else {
-          bucket.creditTotal += effectiveAmount;
+          bucket.creditTotal = addMoney(bucket.creditTotal, effectiveAmount);
         }
       }
     }
@@ -449,7 +467,7 @@ export function computeCategoryTotals(
 
   for (const key of ACCOUNT_CATEGORIES) {
     const b = result[key];
-    b.netSigned = b.creditTotal - b.debitTotal;
+    b.netSigned = subMoney(b.creditTotal, b.debitTotal);
   }
 
   return result;
@@ -487,7 +505,7 @@ export function computeStatementRows(
   const accountEntries = getEntriesForAccount(entries, account.id);
   const belongsAndCurrency = accountEntries
     .filter((entry) => {
-      if (entry.deleted) return false;
+      if (entry.deleted || entry.postingStatus === "draft") return false;
       const belongs = entry.accountId === account.id || entry.counterpartAccountId === account.id;
       if (!belongs) return false;
       if (
@@ -505,7 +523,9 @@ export function computeStatementRows(
   const signedEffect = (entry: LedgerEntryRecord): { debit: number; credit: number; netDelta: number } => {
     const isPrimary = entry.accountId === account.id;
     const amount =
-      currency === "مصارفة الكل بعملة ريال" ? entry.amount * (entry.exchangeRate || 1) : entry.amount;
+      currency === "مصارفة الكل بعملة ريال"
+        ? mulMoney(entry.amount, entry.exchangeRate || 1, 2)
+        : roundMoney(entry.amount, 2);
     if (!affectsAccountBalance(entry)) {
       return { debit: 0, credit: 0, netDelta: 0 };
     }
@@ -529,7 +549,7 @@ export function computeStatementRows(
   for (const entry of belongsAndCurrency) {
     const dt = entry.entryDate || "";
     if (fromDate && dt && dt < fromDate) {
-      prePeriodSigned += signedEffect(entry).netDelta;
+      prePeriodSigned = addMoney(prePeriodSigned, signedEffect(entry).netDelta);
       continue;
     }
     if (toDate && dt && dt > toDate) {
@@ -545,8 +565,10 @@ export function computeStatementRows(
   }
 
   const openingSigned =
-    account.openingDirection === "credit" ? account.openingBalance : -account.openingBalance;
-  const previousBalanceSigned = openingSigned + prePeriodSigned;
+    account.openingDirection === "credit"
+      ? roundMoney(account.openingBalance, 2)
+      : -roundMoney(account.openingBalance, 2);
+  const previousBalanceSigned = addMoney(openingSigned, prePeriodSigned);
 
   let running = options.showPreviousBalance ? previousBalanceSigned : 0;
   let debitTotal = 0;
@@ -554,9 +576,9 @@ export function computeStatementRows(
 
   const chronological: StatementRowWithBalance[] = relevant.map((entry) => {
     const eff = signedEffect(entry);
-    debitTotal += eff.debit;
-    creditTotal += eff.credit;
-    running += eff.netDelta;
+    debitTotal = addMoney(debitTotal, eff.debit);
+    creditTotal = addMoney(creditTotal, eff.credit);
+    running = addMoney(running, eff.netDelta);
 
     return {
       ...entry,
@@ -566,8 +588,10 @@ export function computeStatementRows(
 
   // Newest entries appear at the top of statements cleanly
   const rows = options.sortOrder === "asc" ? chronological : [...chronological].reverse();
-  const netSigned =
-    creditTotal - debitTotal + (options.showPreviousBalance ? previousBalanceSigned : 0);
+  const netSigned = addMoney(
+    subMoney(creditTotal, debitTotal),
+    options.showPreviousBalance ? previousBalanceSigned : 0,
+  );
 
   return {
     rows,
@@ -601,7 +625,13 @@ export function ledgerEntryMatchesQuery(entry: LedgerEntryRecord, normalizedQuer
   };
   if (mode === "الكل") {
     return matchesArabicSearch(
-      [...Object.values(fields), entry.typeLabel, entry.entryDate, entry.currency].join(" "),
+      [
+        ...Object.values(fields),
+        entry.typeLabel,
+        entry.entryDate,
+        buildDateSearchTokens(entry.entryDate),
+        entry.currency,
+      ].join(" "),
       normalizedQuery,
     );
   }
@@ -1096,8 +1126,8 @@ export function computeWorkspaceNotifications(
     id: "sys_cloud_sync",
     category: "system",
     severity: "info",
-    title: "المزامنة السحابية نشطة ومؤمنة",
-    message: `يتم حفظ ${accounts.length} حساب و${entries.filter((e) => !e.deleted).length} قيد في Firestore تلقائيًا.`,
+    title: "قاعدة البيانات المحلية SQLite نشطة ومؤمنة",
+    message: `يتم حفظ ${accounts.length} حساب و${entries.filter((e) => !e.deleted && e.postingStatus !== "draft").length} قيد مرحّل في قاعدة بيانات SQLite المحلية تلقائيًا.`,
     dateLabel: todayIso,
     targetType: "settings",
   });
@@ -1550,7 +1580,7 @@ export function computeAccountGroupsSummary(
   >();
 
   for (const g of groups) {
-    const chosenCurrency = currencyByGroupId[g.id] ?? defaultCurrency ?? g.currencyCode ?? "ريال";
+    const chosenCurrency = currencyByGroupId[g.id] ?? (g.currencyCode || defaultCurrency || "ريال");
     byGroupId.set(g.id, {
       group: g,
       currency: chosenCurrency,
@@ -1568,8 +1598,9 @@ export function computeAccountGroupsSummary(
     accToGroup.set(acc.id, acc.groupId);
     target.accountIds.add(acc.id);
     if (acc.openingBalance > 0 && (target.currency === "الكل" || acc.currency === target.currency)) {
-      if (acc.openingDirection === "credit") target.creditTotal += acc.openingBalance;
-      else target.debitTotal += acc.openingBalance;
+      const opening = roundMoney(acc.openingBalance, 2);
+      if (acc.openingDirection === "credit") target.creditTotal = addMoney(target.creditTotal, opening);
+      else target.debitTotal = addMoney(target.debitTotal, opening);
     }
   }
 
@@ -1582,15 +1613,21 @@ export function computeAccountGroupsSummary(
     if (bucket.currency !== "الكل" && entry.currency !== bucket.currency) continue;
     const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
     if (hasExplicitSides && entry.settledOnReceipt) {
-      bucket.debitTotal += entry.amount;
-      bucket.creditTotal += entry.amount;
+      bucket.debitTotal = addMoney(bucket.debitTotal, entry.amount);
+      bucket.creditTotal = addMoney(bucket.creditTotal, entry.amount);
     } else if (hasExplicitSides) {
-      bucket.debitTotal += entry.rawDain ?? (entry.direction === "debit" ? entry.amount : 0);
-      bucket.creditTotal += entry.rawMadin ?? (entry.direction === "credit" ? entry.amount : 0);
+      bucket.debitTotal = addMoney(
+        bucket.debitTotal,
+        entry.rawDain ?? (entry.direction === "debit" ? entry.amount : 0),
+      );
+      bucket.creditTotal = addMoney(
+        bucket.creditTotal,
+        entry.rawMadin ?? (entry.direction === "credit" ? entry.amount : 0),
+      );
     } else if (entry.direction === "credit") {
-      bucket.creditTotal += entry.amount;
+      bucket.creditTotal = addMoney(bucket.creditTotal, entry.amount);
     } else {
-      bucket.debitTotal += entry.amount;
+      bucket.debitTotal = addMoney(bucket.debitTotal, entry.amount);
     }
   }
 
@@ -1604,7 +1641,7 @@ export function computeAccountGroupsSummary(
       currency: item.currency,
       debitTotal: item.debitTotal,
       creditTotal: item.creditTotal,
-      netDebitMinusCredit: item.debitTotal - item.creditTotal,
+      netDebitMinusCredit: subMoney(item.debitTotal, item.creditTotal),
       accountCount: item.accountIds.size,
     }));
 }
@@ -1630,6 +1667,7 @@ export function computeTrialBalanceReport(
   _cashboxes: readonly CashboxRecord[] = [],
   options: { currency?: string; fromDate?: string; toDate?: string } = {},
 ): TrialBalanceReport {
+  const round2 = (v: number) => roundMoney(v, 2);
   const currency = options.currency || "ريال";
   const fromDate = options.fromDate || "";
   const toDate = options.toDate || "";
@@ -1638,7 +1676,8 @@ export function computeTrialBalanceReport(
   for (const acc of accounts) {
     let init = 0;
     if (acc.openingBalance > 0 && (currency === "الكل" || acc.currency === currency)) {
-      init = acc.openingDirection === "credit" ? -acc.openingBalance : acc.openingBalance;
+      const opening = roundMoney(acc.openingBalance, 2);
+      init = acc.openingDirection === "credit" ? -opening : opening;
     }
     accNets.set(acc.id, init);
   }
@@ -1651,92 +1690,183 @@ export function computeTrialBalanceReport(
   for (const e of entries) {
     if (e.deleted || !affectsAccountBalance(e)) continue;
     if (currency !== "الكل" && e.currency !== currency) continue;
-    if (fromDate && e.entryDate < fromDate) continue;
     if (toDate && e.entryDate > toDate) continue;
+
+    const isBeforePeriod = Boolean(fromDate && e.entryDate < fromDate);
 
     const hasExplicitSides = e.rawDain !== undefined || e.rawMadin !== undefined;
     const dVal = hasExplicitSides
       ? e.settledOnReceipt
         ? 0
-        : (e.rawDain ?? (e.direction === "debit" ? e.amount : 0))
+        : roundMoney(e.rawDain ?? (e.direction === "debit" ? e.amount : 0), 2)
       : e.settledOnReceipt
         ? 0
         : e.direction === "debit"
-          ? e.amount
+          ? roundMoney(e.amount, 2)
           : 0;
     const cVal = hasExplicitSides
       ? e.settledOnReceipt
         ? 0
-        : (e.rawMadin ?? (e.direction === "credit" ? e.amount : 0))
+        : roundMoney(e.rawMadin ?? (e.direction === "credit" ? e.amount : 0), 2)
       : e.settledOnReceipt
         ? 0
         : e.direction === "credit"
-          ? e.amount
+          ? roundMoney(e.amount, 2)
           : 0;
 
-    accNets.set(e.accountId, (accNets.get(e.accountId) ?? 0) + (dVal - cVal));
+    // Account balances & cumulative cash include prior periods up to toDate
+    accNets.set(e.accountId, addMoney(accNets.get(e.accountId) ?? 0, subMoney(dVal, cVal)));
 
-    // Cashbox cash inflows/outflows (vouchers, transfers, simple-entries + cash-settled invoices/returns)
-    if (e.payment === "cash" || e.settledOnReceipt) {
+    // Cashbox inflows/outflows: only genuine cash vouchers, cash-settled invoices/returns, or entries linked to a cashbox
+    const affectsCashbox =
+      (e.payment === "cash" || e.settledOnReceipt) &&
+      (e.kind === "voucher" || e.kind === "invoice" || e.kind === "return" || e.cashboxId !== undefined);
+    if (affectsCashbox) {
       if (e.kind === "voucher" || e.kind === "transfer" || e.kind === "simple-entry") {
-        if (e.direction === "credit") cashIn += e.amount;
-        else cashOut += e.amount;
+        if (e.direction === "credit") cashIn = addMoney(cashIn, e.amount);
+        else cashOut = addMoney(cashOut, e.amount);
       } else {
         const isInflow =
           e.docType !== undefined && e.docType !== null
             ? [2, 7, 5].includes(Number(e.docType))
             : e.direction === "debit";
-        if (isInflow) cashIn += e.amount;
-        else cashOut += e.amount;
+        if (isInflow) cashIn = addMoney(cashIn, e.amount);
+        else cashOut = addMoney(cashOut, e.amount);
       }
     }
 
-    // Invoice-based sales vs purchases for profit estimation
+    // Period P&L activity (sales & purchases strictly within [fromDate, toDate])
+    if (isBeforePeriod) continue;
     if (e.kind === "invoice") {
+      const dt = e.docType !== undefined && e.docType !== null ? Number(e.docType) : null;
       const lbl = e.typeLabel || "";
-      if (lbl.includes("بيع") || e.direction === "debit") salesTotal += e.amount;
-      else purchasesTotal += e.amount;
+      const isSale =
+        dt !== null
+          ? dt === 2 || dt === 7
+          : lbl.includes("بيع") || (!lbl.includes("شراء") && !lbl.includes("مشتريات") && e.direction === "debit");
+      if (isSale) salesTotal = addMoney(salesTotal, e.amount);
+      else purchasesTotal = addMoney(purchasesTotal, e.amount);
     } else if (e.kind === "return") {
+      const dt = e.docType !== undefined && e.docType !== null ? Number(e.docType) : null;
       const lbl = e.typeLabel || "";
-      if (lbl.includes("مبيعات") || e.direction === "credit") salesTotal -= e.amount;
-      else purchasesTotal -= e.amount;
+      const isSaleReturn =
+        dt !== null
+          ? dt === 4
+          : lbl.includes("مبيعات") || (!lbl.includes("مشتريات") && e.direction === "credit");
+      if (isSaleReturn) salesTotal = subMoney(salesTotal, e.amount);
+      else purchasesTotal = subMoney(purchasesTotal, e.amount);
     }
   }
 
   let totalDebitAccounts = 0;
   let totalCreditAccounts = 0;
   for (const net of accNets.values()) {
-    if (net > 0.005) totalDebitAccounts += net;
-    else if (net < -0.005) totalCreditAccounts += Math.abs(net);
+    if (net > 0.005) totalDebitAccounts = addMoney(totalDebitAccounts, net);
+    else if (net < -0.005) totalCreditAccounts = addMoney(totalCreditAccounts, Math.abs(net));
   }
 
   let inventoryValue = 0;
   for (const item of inventory) {
+    const itemCurr = (item.currencyCode || "ريال").trim();
+    if (currency !== "الكل" && itemCurr !== currency) continue;
     const qty = item.quantityUnverified ? (item.computedQuantity ?? 0) : item.quantity;
     if (qty > 0 && item.avgCost > 0) {
-      inventoryValue += qty * item.avgCost;
+      inventoryValue = addMoney(inventoryValue, mulMoney(qty, item.avgCost, 2));
     } else if (qty !== 0 && item.avgCost > 0 && !item.quantityUnverified) {
-      inventoryValue += qty * item.avgCost;
+      inventoryValue = addMoney(inventoryValue, mulMoney(qty, item.avgCost, 2));
     }
   }
 
-  const cashTotal = Math.max(0, cashIn - cashOut);
-  const netBalance = totalDebitAccounts - totalCreditAccounts;
+  const cashTotal = subMoney(cashIn, cashOut);
+  const netBalance = subMoney(totalDebitAccounts, totalCreditAccounts);
   const liquidityRatioPercent =
-    totalCreditAccounts > 0 ? Math.round((cashTotal / totalCreditAccounts) * 1000) / 10 : 0;
-  const netProfit = salesTotal + inventoryValue - purchasesTotal;
+    totalCreditAccounts > 0 ? Math.round((Math.max(0, cashTotal) / totalCreditAccounts) * 1000) / 10 : 0;
+  const netProfit = subMoney(addMoney(salesTotal, inventoryValue), purchasesTotal);
 
   return {
     currency,
-    totalDebitAccounts,
-    totalCreditAccounts,
+    totalDebitAccounts: round2(totalDebitAccounts),
+    totalCreditAccounts: round2(totalCreditAccounts),
     cashTotal,
     netBalance,
     resultLabel: Math.abs(netBalance) < 0.005 ? "متزن" : netBalance >= 0 ? "فائض" : "عجز",
     liquidityRatioPercent,
-    salesTotal,
-    purchasesTotal,
-    inventoryValue,
+    salesTotal: round2(salesTotal),
+    purchasesTotal: round2(purchasesTotal),
+    inventoryValue: round2(inventoryValue),
     netProfit,
   };
 }
+
+export function collectActiveCurrencies(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  inventory: readonly InventoryItemRecord[],
+  preferredCurrencies: readonly string[] = [],
+): string[] {
+  const set = new Set<string>();
+  for (const c of preferredCurrencies) {
+    const clean = c.trim();
+    if (clean && clean !== "الكل") set.add(clean);
+  }
+  for (const acc of accounts) {
+    if (acc.openingBalance > 0 && acc.currency) set.add(acc.currency);
+  }
+  for (const e of entries) {
+    if (!e.deleted && e.currency) set.add(e.currency);
+  }
+  for (const i of inventory) {
+    const qty = i.quantityUnverified ? (i.computedQuantity ?? 0) : i.quantity;
+    if (Math.abs(qty) > 0.0001 && i.currencyCode) set.add(i.currencyCode);
+  }
+  if (set.size === 0) set.add("ريال");
+  return [...set];
+}
+
+export function computeTrialBalanceByCurrency(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  inventory: readonly InventoryItemRecord[],
+  cashboxes: readonly CashboxRecord[] = [],
+  options: { currencies?: readonly string[]; fromDate?: string; toDate?: string } = {},
+): TrialBalanceReport[] {
+  const currencies = collectActiveCurrencies(accounts, entries, inventory, options.currencies);
+  return currencies
+    .map((curr) =>
+      computeTrialBalanceReport(accounts, entries, inventory, cashboxes, {
+        currency: curr,
+        fromDate: options.fromDate,
+        toDate: options.toDate,
+      }),
+    )
+    .filter(
+      (r, idx) =>
+        idx === 0 ||
+        r.totalDebitAccounts !== 0 ||
+        r.totalCreditAccounts !== 0 ||
+        r.cashTotal !== 0 ||
+        r.salesTotal !== 0 ||
+        r.purchasesTotal !== 0 ||
+        r.inventoryValue !== 0,
+    );
+}
+
+export function computeCategoryTotalsByCurrency(
+  accounts: readonly AccountRecord[],
+  entries: readonly LedgerEntryRecord[],
+  preferredCurrencies: readonly string[] = [],
+  dateRange?: { fromDate?: string; toDate?: string },
+): Array<{ currency: string; totals: ReturnType<typeof computeCategoryTotals> }> {
+  const currencies = collectActiveCurrencies(accounts, entries, [], preferredCurrencies);
+  return currencies
+    .map((curr) => ({
+      currency: curr,
+      totals: computeCategoryTotals(accounts, entries, curr, dateRange),
+    }))
+    .filter(
+      (row, idx) =>
+        idx === 0 ||
+        Object.values(row.totals).some((b) => b.debitTotal !== 0 || b.creditTotal !== 0),
+    );
+}
+

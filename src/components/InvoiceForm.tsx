@@ -11,6 +11,7 @@ import type {
   WarehouseRecord,
 } from "../types";
 import { triggerHaptic } from "../utils/haptics";
+import { AccountSelectCombobox } from "./AccountSelectCombobox";
 import { CustomerList } from "./CustomerList";
 import { approvedLiveSellingPrice, requiresStockReconciliation } from "../legacy/liveSafety";
 
@@ -341,18 +342,17 @@ export function InvoiceForm({
             </div>
           ) : (
             <div style={{ marginTop: "4px" }}>
-              <select
-                aria-label="اختر حساب العميل"
+              <AccountSelectCombobox
+                accounts={salesAndClientAccounts}
                 value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                style={{ width: "100%", padding: "6px", border: "1px solid #ccd9e6", borderRadius: "6px", fontSize: "11px" }}
-              >
-                {salesAndClientAccounts.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.category})
-                  </option>
-                ))}
-              </select>
+                onChange={(nextId) => setSelectedAccountId(nextId)}
+                preferredCategories={["sales", "clients"]}
+                placeholder="اختر حساب العميل"
+                searchPlaceholder="ابحث عن العميل..."
+                ariaLabel="اختر حساب العميل"
+                searchAriaLabel="البحث عن العميل"
+                compact
+              />
             </div>
           )}
 

@@ -193,22 +193,17 @@ export type HomeTileId =
   | "quote"
   | "currency-exchange"
   | "new-order"
-  | "quick-search"
   | "daily-journal"
   | "cashboxes"
   | "statement"
-  | "reports"
   | "currencies"
   | "account-groups"
   | "accounts"
   | "warehouses"
   | "sales-dashboard"
-  | "trash"
   | "trial-balance"
   | "items"
-  | "stock-movement"
-  | "erp-hub"
-  | "settings";
+  | "stock-movement";
 
 export const DEFAULT_HOME_TILE_ORDER: readonly HomeTileId[] = [
   "new-voucher",
@@ -219,22 +214,17 @@ export const DEFAULT_HOME_TILE_ORDER: readonly HomeTileId[] = [
   "quote",
   "currency-exchange",
   "new-order",
-  "quick-search",
   "daily-journal",
   "cashboxes",
   "statement",
-  "reports",
   "currencies",
   "account-groups",
   "accounts",
   "warehouses",
   "sales-dashboard",
-  "trash",
   "trial-balance",
   "items",
   "stock-movement",
-  "erp-hub",
-  "settings",
 ];
 
 export interface HomeTileLayout {
@@ -291,7 +281,7 @@ export function normalizeHomeTileLayout(raw?: Partial<HomeTileLayout> | null): H
   const validHidden: HomeTileId[] = [];
   if (Array.isArray(safe.hidden)) {
     for (const id of safe.hidden) {
-      if (isValidHomeTileId(id) && id !== "settings" && !seenHidden.has(id)) {
+      if (isValidHomeTileId(id) && !seenHidden.has(id)) {
         seenHidden.add(id);
         validHidden.push(id);
       }
@@ -435,7 +425,6 @@ export function togglePinHomeTile(layout: HomeTileLayout, tileId: HomeTileId): H
 }
 
 export function toggleHideHomeTile(layout: HomeTileLayout, tileId: HomeTileId): HomeTileLayout {
-  if (tileId === "settings") return layout;
   const isHidden = layout.hidden.includes(tileId);
   if (isHidden) {
     return normalizeHomeTileLayout({

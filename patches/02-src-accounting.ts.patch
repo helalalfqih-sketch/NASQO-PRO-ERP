@@ -1,0 +1,11 @@
+--- a/src/accounting.ts
++++ b/src/accounting.ts
+@@ -1550,7 +1550,7 @@
+   >();
+ 
+   for (const g of groups) {
+-    const chosenCurrency = currencyByGroupId[g.id] ?? defaultCurrency;
++    const chosenCurrency = currencyByGroupId[g.id] ?? (g.currencyCode || defaultCurrency || "ريال");
+     byGroupId.set(g.id, {
+       group: g,
+       currency: chosenCurrency,

@@ -1,0 +1,142 @@
+TAP version 13
+# Subtest: Hybrid Bridge Contracts & Security Validation
+    # Subtest: accepts all 12 core commands plus domain commands in strict allowlist
+    ok 1 - accepts all 12 core commands plus domain commands in strict allowlist
+      ---
+      duration_ms: 1.495191
+      type: 'test'
+      ...
+    # Subtest: rejects unauthorized actions and raw SQL/shell injection keys
+    ok 2 - rejects unauthorized actions and raw SQL/shell injection keys
+      ---
+      duration_ms: 0.909654
+      type: 'test'
+      ...
+    # Subtest: enforces mandatory idempotencyKey on financial mutations
+    ok 3 - enforces mandatory idempotencyKey on financial mutations
+      ---
+      duration_ms: 0.487993
+      type: 'test'
+      ...
+    # Subtest: validates inbound responses and rejects malformed or unknown host events
+    ok 4 - validates inbound responses and rejects malformed or unknown host events
+      ---
+      duration_ms: 0.717085
+      type: 'test'
+      ...
+    1..4
+ok 1 - Hybrid Bridge Contracts & Security Validation
+  ---
+  duration_ms: 5.215628
+  type: 'suite'
+  ...
+# Subtest: NasqoHybridBridge Runtime & Duplicate Prevention
+    # Subtest: blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST
+    ok 1 - blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST
+      ---
+      duration_ms: 4.185779
+      type: 'test'
+      ...
+    # Subtest: propagates Flutter service errors and timeouts without faking success
+    ok 2 - propagates Flutter service errors and timeouts without faking success
+      ---
+      duration_ms: 36.302347
+      type: 'test'
+      ...
+    # Subtest: rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached
+    ok 3 - rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached
+      ---
+      duration_ms: 0.536506
+      type: 'test'
+      ...
+    1..3
+ok 2 - NasqoHybridBridge Runtime & Duplicate Prevention
+  ---
+  duration_ms: 41.723846
+  type: 'suite'
+  ...
+# Subtest: Hybrid Service Adapter Simulated Flutter Host Round-Trip
+    # Subtest: hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge
+    ok 1 - hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge
+      ---
+      duration_ms: 3.934407
+      type: 'test'
+      ...
+    1..1
+ok 3 - Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ---
+  duration_ms: 4.118866
+  type: 'suite'
+  ...
+# Subtest: Hybrid Routes Canonical Mapping
+    # Subtest: normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches
+    ok 1 - normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches
+      ---
+      duration_ms: 0.641151
+      type: 'test'
+      ...
+    1..1
+ok 4 - Hybrid Routes Canonical Mapping
+  ---
+  duration_ms: 0.784448
+  type: 'suite'
+  ...
+# Subtest: Offline Hybrid Build Output Integrity (dist/hybrid)
+    # Subtest: produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code
+    ok 1 - produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code
+      ---
+      duration_ms: 33.508005
+      type: 'test'
+      ...
+    # Subtest: prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge
+    ok 2 - prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge
+      ---
+      duration_ms: 1.121883
+      type: 'test'
+      ...
+    1..2
+ok 5 - Offline Hybrid Build Output Integrity (dist/hybrid)
+  ---
+  duration_ms: 34.798685
+  type: 'suite'
+  ...
+# Subtest: Stage 2 Home Screen Batch 1 Requirements
+    # Subtest: validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads
+    ok 1 - validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads
+      ---
+      duration_ms: 0.814269
+      type: 'test'
+      ...
+    # Subtest: computes signed multi-currency group balances accurately without mixing currencies
+    ok 2 - computes signed multi-currency group balances accurately without mixing currencies
+      ---
+      duration_ms: 0.724395
+      type: 'test'
+      ...
+    # Subtest: blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences
+    ok 3 - blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences
+      ---
+      duration_ms: 1.071741
+      type: 'test'
+      ...
+    # Subtest: supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout
+    ok 4 - supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout
+      ---
+      duration_ms: 1.05722
+      type: 'test'
+      ...
+    1..4
+ok 6 - Stage 2 Home Screen Batch 1 Requirements
+  ---
+  duration_ms: 3.844643
+  type: 'suite'
+  ...
+1..6
+# tests 15
+# suites 6
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 353.4428

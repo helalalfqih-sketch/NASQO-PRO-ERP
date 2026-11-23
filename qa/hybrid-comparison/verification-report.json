@@ -1,0 +1,68 @@
+{
+  "hybridUrl": "http://127.0.0.1:26697/",
+  "consoleErrors": [],
+  "pageErrors": [],
+  "externalRequests": [],
+  "failedRequests": [],
+  "viewports": {
+    "393x852_light": {
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "dir": "rtl",
+      "theme": "light",
+      "fontFamily": "\"IBM Plex Sans Arabic\", Cairo, system-ui, -apple-system, sans-serif",
+      "viewportWidth": 393,
+      "viewportHeight": 852
+    },
+    "320x640_light": {
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "dir": "rtl",
+      "theme": "light",
+      "fontFamily": "\"IBM Plex Sans Arabic\", Cairo, system-ui, -apple-system, sans-serif",
+      "viewportWidth": 320,
+      "viewportHeight": 640
+    },
+    "360x800_dark": {
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "dir": "rtl",
+      "theme": "dark",
+      "fontFamily": "\"IBM Plex Sans Arabic\", Cairo, system-ui, -apple-system, sans-serif",
+      "viewportWidth": 360,
+      "viewportHeight": 800
+    },
+    "427x952_font130": {
+      "docOverflow": 0,
+      "bodyOverflow": 0,
+      "dir": "rtl",
+      "theme": "light",
+      "fontFamily": "\"IBM Plex Sans Arabic\", Cairo, system-ui, -apple-system, sans-serif",
+      "viewportWidth": 427,
+      "viewportHeight": 952
+    }
+  },
+  "bridgeActionsVerified": [
+    "getSnapshot",
+    "saveUiPreferences",
+    "navigate",
+    "openInvoice",
+    "getInventoryMovementsReport"
+  ],
+  "screenshots": [
+    "/app/applet/qa/hybrid-comparison/01-hybrid-home-393-light.png",
+    "/app/applet/qa/hybrid-comparison/02-hybrid-home-320-narrow.png",
+    "/app/applet/qa/hybrid-comparison/03-hybrid-home-360-dark.png",
+    "/app/applet/qa/hybrid-comparison/04-hybrid-home-427-font130.png",
+    "/app/applet/qa/hybrid-comparison/05-hybrid-supplier-statement-393.png",
+    "/app/applet/qa/hybrid-comparison/06-hybrid-reports-hub-393.png",
+    "/app/applet/qa/hybrid-comparison/07-hybrid-inventory-report-393.png",
+    "/app/applet/qa/hybrid-comparison/08-hybrid-settings-393.png",
+    "/app/applet/qa/hybrid-comparison/10-hybrid-settings-dark-db-393.png",
+    "/app/applet/qa/hybrid-comparison/09-web-reference-home-427.png"
+  ],
+  "interactiveChecks": {
+    "dbTabNotTruncated": true
+  },
+  "totalBridgeMessages": 15
+}

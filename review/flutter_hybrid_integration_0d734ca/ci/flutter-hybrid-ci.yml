@@ -1,0 +1,89 @@
+name: NASQO PRO Flutter Hybrid Offline CI (Review Branch Only)
+
+# Safety boundary:
+# - NEVER deploys to production, NEVER publishes APK, NEVER touches `main` release/signing/update channel.
+# - Uses the repository's EXISTING Android Kotlin DSL (*.gradle.kts), signing, and applicationId
+#   (`com.indexesstore.nasqo_qa`) from commit 0d734ca2ce1716de8f7005f8339f395fbd396da6.
+on:
+  pull_request:
+    branches:
+      - integration/**
+  push:
+    branches:
+      - feature/**
+      - integration/**
+  workflow_dispatch:
+
+concurrency:
+  group: flutter-hybrid-compat-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify_react_and_flutter_debug_apk:
+    name: Offline React Audit + Flutter Analyze/Test + Debug APK (com.indexesstore.nasqo_qa)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build 100% offline React Hybrid bundle & run React tests
+        run: |
+          npm run check:runtime
+          npx tsc --noEmit
+          npm run build:hybrid
+          npx tsx --test tests/hybrid.test.ts
+
+      - name: Run React Hybrid Playwright offline & Light/Dark parity checks
+        run: |
+          npx playwright install --with-deps chromium
+          node scripts/verify-hybrid-home.mjs
+          node scripts/verify-hybrid-full-offline.mjs
+
+      - name: Sync verified dist/hybrid assets into flutter_app/assets/web
+        run: npm run sync:flutter-hybrid -- --skip-build
+
+      - name: Setup Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Run Flutter pub get, analyze, and Dart/SQLite tests
+        working-directory: flutter_app
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build Experimental Debug APK (Current React UI default + fallback button)
+        working-directory: flutter_app
+        run: |
+          flutter build apk --debug
+
+      - name: Upload Experimental Debug APK & Offline Verification Reports (Non-Production)
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-qa-react-hybrid-offline-debug-apk
+          retention-days: 14
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            dist/hybrid/hybrid-manifest.json
+            qa/hybrid_home/home-verification-report.json
+            qa/hybrid_offline/offline-full-verification-report.json

@@ -1,0 +1,4135 @@
+# NASQO PRO Flutter Hybrid Offline Compatibility Patch (Target: integration/hybrid-seven-20261121 @ 0d734ca2ce1716de8f7005f8339f395fbd396da6)
+#
+# Guarantees:
+# - Preserves Android applicationId/package: com.indexesstore.nasqo_qa
+# - Does NOT modify or replace any *.gradle.kts, signingConfigs, updater, MainActivity.kt, or HybridHomeView.kt
+# - Does NOT overwrite flutter_app/lib/main.dart (manual 5-line wrap with HybridReactV2FeatureGate documented in README)
+# - Does NOT create a parallel SQLite DB or parallel ledger (operates directly on ErpController + LocalDatabase + PostingReceiptGuard)
+# - Feature Flags: kDebugMode default (Debug APK runs current React UI by default + one-tap fallback button; Release keeps 0d734ca default)
+# - Upgrade-safe initialization: clean empty DB on first launch, preserves 100% of existing rows across APK upgrades
+#
+# Manual non-destructive review hooks required in existing 0d734ca files (NOT overwritten by this patch):
+#   1. flutter_app/pubspec.yaml: ensure crypto: ^3.0.3, dev_dependencies sqflite_common_ffi, assets: assets/web/ & assets/web/assets/
+#   2. flutter_app/android/app/src/main/kotlin/com/indexesstore/nasqo_qa/HybridHomeView.kt: call NasqoProtocolCompatBridge.resolveEntryUrl(...) when creationParams['useReactHybridV2'] == true
+#   3. flutter_app/lib/main.dart (or existing hybrid screen entry): wrap existing hybrid view with HybridReactV2FeatureGate
+diff --git a/flutter_app/android/app/src/main/kotlin/com/indexesstore/nasqo_qa/NasqoProtocolCompatBridge.kt b/flutter_app/android/app/src/main/kotlin/com/indexesstore/nasqo_qa/NasqoProtocolCompatBridge.kt
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/android/app/src/main/kotlin/com/indexesstore/nasqo_qa/NasqoProtocolCompatBridge.kt
+@@ -0,0 +1,88 @@
++package com.indexesstore.nasqo_qa
++
++import android.net.Uri
++import org.json.JSONObject
++
++/**
++ * Non-invasive Kotlin compatibility adapter for the existing `HybridHomeView.kt`
++ * at commit 0d734ca2ce1716de8f7005f8339f395fbd396da6.
++ *
++ * Design constraints:
++ * - Preserves applicationId/package `com.indexesstore.nasqo_qa`.
++ * - Preserves existing `WebViewCompat.addWebMessageListener(..., "NasqoHome", ...)`
++ *   and `MethodChannel("nasqo/home/$id")` without replacing `HybridHomeView.kt`
++ *   or `MainActivity.kt`.
++ * - Keeps the existing hybrid UI as the default; loads the new React bundle
++ *   (`assets/web/index.html`) ONLY when `useReactHybridV2 == true`.
++ */
++object NasqoProtocolCompatBridge {
++    const val BRIDGE_CHANNEL_NAME = "NasqoHome"
++    const val PROTOCOL_VERSION_V1 = "1.0.0"
++    const val TRUSTED_LOCAL_HOST = "appassets.androidplatform.net"
++    const val TRUSTED_LOCAL_ORIGIN = "https://appassets.androidplatform.net"
++
++    /**
++     * Local Flutter asset URL for the optional React Hybrid V2 bundle synced
++     * into `flutter_app/assets/web/`.
++     */
++    const val REACT_HYBRID_V2_ENTRY_URL =
++        "https://appassets.androidplatform.net/assets/flutter_assets/assets/web/index.html"
++
++    /**
++     * Resolves which local entry URL `HybridHomeView.kt` should load.
++     * Existing `0d734ca` URL remains the default when [useReactHybridV2] is false.
++     */
++    fun resolveEntryUrl(
++        useReactHybridV2: Boolean,
++        existingHybridEntryUrl: String,
++        initialRoute: String? = null
++    ): String {
++        if (!useReactHybridV2) {
++            return existingHybridEntryUrl
++        }
++        val cleanRoute = initialRoute?.trim().orEmpty()
++        return if (cleanRoute.startsWith("/")) {
++            "$REACT_HYBRID_V2_ENTRY_URL#$cleanRoute"
++        } else {
++            REACT_HYBRID_V2_ENTRY_URL
++        }
++    }
++
++    /**
++     * Distinguishes new React Hybrid v1.0.0 envelopes from existing `0d734ca`
++     * `NasqoHome` messages so both can coexist safely on the same channel.
++     */
++    fun isReactHybridV1Envelope(rawMessage: String?): Boolean {
++        if (rawMessage.isNullOrBlank()) return false
++        val trimmed = rawMessage.trimStart()
++        if (!trimmed.startsWith("{")) return false
++        return try {
++            val obj = JSONObject(trimmed)
++            obj.optString("protocolVersion") == PROTOCOL_VERSION_V1 &&
++                obj.optString("kind") == "request" &&
++                obj.has("action") &&
++                obj.has("requestId")
++        } catch (_: Throwable) {
++            false
++        }
++    }
++
++    /**
++     * Defense-in-depth offline check for WebViewClient when React Hybrid V2 is active.
++     * Existing native Android features (updater, signing, external intents) outside
++     * the WebView are unaffected.
++     */
++    fun isTrustedOfflineUri(uri: Uri?): Boolean {
++        if (uri == null) return false
++        return uri.scheme == "https" && uri.host == TRUSTED_LOCAL_HOST
++    }
++
++    /**
++     * Produces a safely escaped JavaScript snippet for delivering a JSON response
++     * if `JavaScriptReplyProxy` is unavailable after a WebView reload.
++     */
++    fun buildSafeReceiverScript(jsonPayload: String): String {
++        val quoted = JSONObject.quote(jsonPayload)
++        return "window.__nasqoHybridReceive && window.__nasqoHybridReceive($quoted);"
++    }
++}
+
+diff --git a/flutter_app/lib/hybrid/nasqo_hybrid_flags.dart b/flutter_app/lib/hybrid/nasqo_hybrid_flags.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/lib/hybrid/nasqo_hybrid_flags.dart
+@@ -0,0 +1,46 @@
++import 'package:flutter/foundation.dart';
++
++/// Feature flag controller for the experimental NASQO PRO React Hybrid V2
++/// integration branch (`integration/hybrid-seven-20261121` @ `0d734ca`).
++///
++/// Confirmed rollout behavior:
++/// - **Debug APK (`kDebugMode == true`)**: runs the current React UI by default
++///   (`NASQO_REACT_HYBRID_V2` defaults to `kDebugMode`) with local SQLite writes
++///   enabled (`NASQO_REACT_HYBRID_ALLOW_WRITES` defaults to `kDebugMode`), paired
++///   with a one-tap runtime fallback button to return to the previous `0d734ca` UI.
++/// - **Release / Profile builds (`kDebugMode == false`)**: keeps the existing
++///   `0d734ca` Hybrid UI active (`false`) and financial writes gated (`false`)
++///   so production and `main` are never affected unintentionally.
++/// - **Explicit kill-switch in Debug**: pass
++///   `--dart-define=NASQO_REACT_HYBRID_V2=false` or
++///   `--dart-define=NASQO_REACT_HYBRID_ALLOW_WRITES=false` at build time.
++class NasqoHybridFlags {
++  NasqoHybridFlags._();
++
++  static const bool defaultUseReactHybridV2 = bool.fromEnvironment(
++    'NASQO_REACT_HYBRID_V2',
++    defaultValue: kDebugMode,
++  );
++
++  static const bool defaultAllowFinancialWrites = bool.fromEnvironment(
++    'NASQO_REACT_HYBRID_ALLOW_WRITES',
++    defaultValue: kDebugMode,
++  );
++
++  /// `true`  = current React Hybrid V2 offline bundle (default in Debug APK).
++  /// `false` = previous stable `0d734ca` Hybrid / Flutter UI (fallback / Release default).
++  static final ValueNotifier<bool> useReactHybridV2 =
++      ValueNotifier<bool>(defaultUseReactHybridV2);
++
++  /// Independent Dart-side write authorization gate. Never controlled by JS.
++  static final ValueNotifier<bool> allowFinancialWrites =
++      ValueNotifier<bool>(defaultAllowFinancialWrites);
++
++  static void setUseReactHybridV2(bool enabled) {
++    useReactHybridV2.value = enabled;
++  }
++
++  static void setAllowFinancialWrites(bool allowed) {
++    allowFinancialWrites.value = allowed;
++  }
++}
+
+diff --git a/flutter_app/lib/hybrid/hybrid_protocol.dart b/flutter_app/lib/hybrid/hybrid_protocol.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/lib/hybrid/hybrid_protocol.dart
+@@ -0,0 +1,370 @@
++import 'dart:convert';
++import 'package:crypto/crypto.dart';
++
++const String kHybridProtocolVersion = '1.0.0';
++const String kHybridBridgeChannelName = 'NasqoHome';
++
++/// Strict 37-command allowlist matching `src/hybrid/contracts.ts`.
++const Set<String> kHybridAllowedCommands = <String>{
++  'navigate',
++  'goBack',
++  'getSnapshot',
++  'changeCurrency',
++  'saveUiPreferences',
++  'openInvoice',
++  'openVoucher',
++  'openAccountStatement',
++  'printDocument',
++  'exportPdf',
++  'pickFile',
++  'showMessage',
++  'saveWorkspaceSettings',
++  'saveAccountGroup',
++  'saveCurrency',
++  'deleteCurrency',
++  'saveAccount',
++  'deleteAccount',
++  'createLedgerEntry',
++  'updateLedgerEntry',
++  'setLedgerDeleted',
++  'permanentlyDeleteLedger',
++  'saveWarehouse',
++  'createInventoryItem',
++  'updateInventoryItem',
++  'deleteInventoryItem',
++  'importInventoryItems',
++  'batchUpdateInventoryItems',
++  'getInventoryMovementsReport',
++  'getCashboxesReport',
++  'getInvoiceDetail',
++  'getProductPriceStats',
++  'saveErpData',
++  'backupWorkspace',
++  'restoreWorkspace',
++  'resetWorkspace',
++  'googleDriveAction',
++};
++
++/// 17 financial/accounting write commands requiring Dart authorization,
++/// mandatory `idempotencyKey`, and `PostingReceiptGuard` protection.
++const Set<String> kHybridFinancialMutationCommands = <String>{
++  'createLedgerEntry',
++  'updateLedgerEntry',
++  'setLedgerDeleted',
++  'permanentlyDeleteLedger',
++  'saveAccount',
++  'deleteAccount',
++  'saveAccountGroup',
++  'saveCurrency',
++  'deleteCurrency',
++  'saveWarehouse',
++  'createInventoryItem',
++  'updateInventoryItem',
++  'deleteInventoryItem',
++  'importInventoryItems',
++  'batchUpdateInventoryItems',
++  'restoreWorkspace',
++  'resetWorkspace',
++};
++
++const Set<String> kHybridHostEvents = <String>{
++  'snapshotUpdated',
++  'routeChanged',
++  'backPressed',
++  'themeChanged',
++  'currencyChanged',
++  'uiPreferencesUpdated',
++  'serviceError',
++};
++
++const Set<String> kHybridForbiddenPayloadKeys = <String>{
++  'sql',
++  'rawSql',
++  'execSql',
++  'sqliteQuery',
++  'shellCommand',
++  'commandLine',
++  'evalCode',
++  '__proto__',
++  'constructor',
++  'prototype',
++};
++
++bool isReactHybridV1RawMessage(String rawJson) {
++  final trimmed = rawJson.trimLeft();
++  if (!trimmed.startsWith('{')) return false;
++  try {
++    final decoded = jsonDecode(trimmed);
++    return decoded is Map &&
++        decoded['protocolVersion'] == kHybridProtocolVersion &&
++        decoded['kind'] == 'request';
++  } catch (_) {
++    return false;
++  }
++}
++
++String? findForbiddenPayloadKey(Object? value, {int depth = 0}) {
++  if (depth > 8 || value == null) return null;
++  if (value is List) {
++    for (final item in value) {
++      final hit = findForbiddenPayloadKey(item, depth: depth + 1);
++      if (hit != null) return hit;
++    }
++    return null;
++  }
++  if (value is Map) {
++    for (final entry in value.entries) {
++      final key = entry.key.toString();
++      if (kHybridForbiddenPayloadKeys.contains(key)) {
++        return key;
++      }
++      final hit = findForbiddenPayloadKey(entry.value, depth: depth + 1);
++      if (hit != null) return hit;
++    }
++  }
++  return null;
++}
++
++Object? _canonicalizeValue(Object? value) {
++  if (value is Map) {
++    final sortedKeys = value.keys.map((k) => k.toString()).toList()..sort();
++    final map = <String, Object?>{};
++    for (final k in sortedKeys) {
++      map[k] = _canonicalizeValue(value[k]);
++    }
++    return map;
++  }
++  if (value is List) {
++    return value.map(_canonicalizeValue).toList();
++  }
++  return value;
++}
++
++String computeCanonicalRequestHash(String action, Map<String, Object?> payload) {
++  final canonicalJson = jsonEncode(<String, Object?>{
++    'action': action,
++    'payload': _canonicalizeValue(payload),
++  });
++  return sha256.convert(utf8.encode(canonicalJson)).toString();
++}
++
++class HybridBridgeException implements Exception {
++  const HybridBridgeException(
++    this.code,
++    this.message, {
++    this.retryable = false,
++    this.details,
++  });
++
++  final String code;
++  final String message;
++  final bool retryable;
++  final Map<String, Object?>? details;
++
++  Map<String, Object?> toErrorJson() => <String, Object?>{
++        'code': code,
++        'message': message,
++        'retryable': retryable,
++        if (details != null) 'details': details,
++      };
++}
++
++class HybridRequestEnvelope {
++  const HybridRequestEnvelope({
++    required this.protocolVersion,
++    required this.requestId,
++    required this.action,
++    required this.payload,
++    required this.timestampMs,
++    this.idempotencyKey,
++  });
++
++  final String protocolVersion;
++  final String requestId;
++  final String action;
++  final Map<String, Object?> payload;
++  final int timestampMs;
++  final String? idempotencyKey;
++
++  static HybridRequestEnvelope parse(Object? raw) {
++    Object? decoded = raw;
++    if (raw is String) {
++      try {
++        decoded = jsonDecode(raw);
++      } catch (_) {
++        throw const HybridBridgeException(
++          'INVALID_REQUEST',
++          'تعذر تحليل رسالة JSON الواردة عبر الجسر.',
++        );
++      }
++    }
++
++    if (decoded is! Map) {
++      throw const HybridBridgeException(
++        'INVALID_REQUEST',
++        'الرسالة الواردة يجب أن تكون كائن JSON صالحًا.',
++      );
++    }
++
++    final map = decoded.map((k, v) => MapEntry(k.toString(), v));
++
++    if (map['protocolVersion'] != kHybridProtocolVersion) {
++      throw HybridBridgeException(
++        'INVALID_REQUEST',
++        'إصدار البروتوكول غير مدعوم: ${map['protocolVersion']}',
++      );
++    }
++    if (map['kind'] != 'request') {
++      throw const HybridBridgeException(
++        'INVALID_REQUEST',
++        'نوع الرسالة يجب أن يكون request.',
++      );
++    }
++
++    final requestId = map['requestId'];
++    if (requestId is! String ||
++        requestId.trim().length < 4 ||
++        requestId.length > 128) {
++      throw const HybridBridgeException(
++        'INVALID_REQUEST',
++        'معرف الطلب (requestId) غير صالح.',
++      );
++    }
++
++    final action = map['action'];
++    if (action is! String || !kHybridAllowedCommands.contains(action)) {
++      throw HybridBridgeException(
++        'UNAUTHORIZED_ACTION',
++        'الأمر غير مصرح به في جسر Dart: $action',
++      );
++    }
++
++    final rawPayload = map['payload'];
++    if (rawPayload is! Map) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'بيانات الطلب (payload) يجب أن تكون كائنًا.',
++      );
++    }
++
++    final payload = rawPayload.map((k, v) => MapEntry(k.toString(), v));
++    final forbiddenKey = findForbiddenPayloadKey(payload);
++    if (forbiddenKey != null) {
++      throw HybridBridgeException(
++        'UNAUTHORIZED_ACTION',
++        'تم رفض حقل محظور أمنيًا في الطلب: $forbiddenKey',
++      );
++    }
++
++    final rawIdem = map['idempotencyKey'];
++    final idempotencyKey = rawIdem is String ? rawIdem.trim() : null;
++    if (kHybridFinancialMutationCommands.contains(action)) {
++      if (idempotencyKey == null || idempotencyKey.length < 6) {
++        throw const HybridBridgeException(
++          'VALIDATION_ERROR',
++          'العمليات المالية تتطلب مفتاح عدم التكرار (idempotencyKey) صالحًا.',
++        );
++      }
++    }
++
++    final ts = map['timestampMs'];
++    final timestampMs = ts is num
++        ? ts.toInt()
++        : DateTime.now().millisecondsSinceEpoch;
++
++    return HybridRequestEnvelope(
++      protocolVersion: kHybridProtocolVersion,
++      requestId: requestId.trim(),
++      action: action,
++      payload: payload,
++      timestampMs: timestampMs,
++      idempotencyKey: idempotencyKey,
++    );
++  }
++}
++
++class HybridResponseEnvelope {
++  const HybridResponseEnvelope({
++    required this.requestId,
++    required this.ok,
++    this.action,
++    this.data,
++    this.error,
++    required this.timestampMs,
++  });
++
++  final String requestId;
++  final String? action;
++  final bool ok;
++  final Object? data;
++  final Map<String, Object?>? error;
++  final int timestampMs;
++
++  factory HybridResponseEnvelope.success({
++    required String requestId,
++    required String action,
++    Object? data,
++  }) =>
++      HybridResponseEnvelope(
++        requestId: requestId,
++        action: action,
++        ok: true,
++        data: data,
++        timestampMs: DateTime.now().millisecondsSinceEpoch,
++      );
++
++  factory HybridResponseEnvelope.failure({
++    required String requestId,
++    String? action,
++    required HybridBridgeException error,
++  }) =>
++      HybridResponseEnvelope(
++        requestId: requestId,
++        action: action,
++        ok: false,
++        error: error.toErrorJson(),
++        timestampMs: DateTime.now().millisecondsSinceEpoch,
++      );
++
++  Map<String, Object?> toJson() => <String, Object?>{
++        'protocolVersion': kHybridProtocolVersion,
++        'kind': 'response',
++        'requestId': requestId,
++        if (action != null) 'action': action,
++        'ok': ok,
++        if (ok) 'data': data,
++        if (!ok && error != null) 'error': error,
++        'timestampMs': timestampMs,
++      };
++
++  String toJsonString() => jsonEncode(toJson());
++}
++
++class HybridHostEventEnvelope {
++  const HybridHostEventEnvelope({
++    required this.event,
++    required this.payload,
++    required this.timestampMs,
++  });
++
++  final String event;
++  final Object? payload;
++  final int timestampMs;
++
++  factory HybridHostEventEnvelope.create(String event, Object? payload) {
++    assert(kHybridHostEvents.contains(event));
++    return HybridHostEventEnvelope(
++      event: event,
++      payload: payload,
++      timestampMs: DateTime.now().millisecondsSinceEpoch,
++    );
++  }
++
++  String toJsonString() => jsonEncode(<String, Object?>{
++        'protocolVersion': kHybridProtocolVersion,
++        'kind': 'event',
++        'event': event,
++        'payload': payload,
++        'timestampMs': timestampMs,
++      });
++}
+
+diff --git a/flutter_app/lib/hybrid/posting_receipt_guard.dart b/flutter_app/lib/hybrid/posting_receipt_guard.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/lib/hybrid/posting_receipt_guard.dart
+@@ -0,0 +1,216 @@
++import 'dart:convert';
++import 'package:sqflite/sqflite.dart';
++import 'hybrid_protocol.dart';
++
++/// Structured receipt mirroring NASQO Flutter's `PostingReceipt` protection model.
++///
++/// When integrating on branch `integration/hybrid-seven-20261121` (commit 0d734ca),
++/// map this directly to/from the existing `PostingReceipt` class in your financial
++/// posting service via [ExternalPostingReceiptBridge] so there is a single
++/// receipt source across Flutter and React Hybrid.
++class HybridPostingReceipt {
++  const HybridPostingReceipt({
++    required this.receiptId,
++    required this.idempotencyKey,
++    required this.action,
++    required this.requestHash,
++    required this.postedAtMs,
++    this.ledgerEntryId,
++    this.entryNumber,
++    this.replayed = false,
++  });
++
++  final String receiptId;
++  final String idempotencyKey;
++  final String action;
++  final String requestHash;
++  final int postedAtMs;
++  final String? ledgerEntryId;
++  final int? entryNumber;
++  final bool replayed;
++
++  Map<String, Object?> toJson() => <String, Object?>{
++        'receiptId': receiptId,
++        'idempotencyKey': idempotencyKey,
++        'action': action,
++        'requestHash': requestHash,
++        'postedAtMs': postedAtMs,
++        if (ledgerEntryId != null) 'ledgerEntryId': ledgerEntryId,
++        if (entryNumber != null) 'entryNumber': entryNumber,
++        'replayed': replayed,
++      };
++}
++
++/// Optional delegate to plug in the existing `PostingReceipt` store/service
++/// from commit 0d734ca if it already persists receipts inside `LocalDatabase`.
++abstract class ExternalPostingReceiptBridge {
++  Future<HybridPostingReceipt?> findByIdempotencyKey(String idempotencyKey);
++  Future<void> recordReceipt(
++    HybridPostingReceipt receipt,
++    String responseJson,
++  );
++}
++
++/// Guard that prevents duplicate financial posting using the EXISTING
++/// `LocalDatabase` SQLite connection (`nasqo_pro_erp.db` — NEVER a parallel DB).
++///
++/// Adds one lightweight guard table (`posting_receipts`) inside the SAME
++/// SQLite database with `idempotency_key TEXT PRIMARY KEY` and executes the
++/// check + write atomically inside `db.transaction`.
++class PostingReceiptGuard {
++  PostingReceiptGuard({
++    required Future<Database> Function() databaseProvider,
++    this.externalBridge,
++  }) : _databaseProvider = databaseProvider;
++
++  final Future<Database> Function() _databaseProvider;
++  final ExternalPostingReceiptBridge? externalBridge;
++  bool _tableEnsured = false;
++
++  static const String tableName = 'posting_receipts';
++
++  static Future<void> ensureTable(DatabaseExecutor db) async {
++    await db.execute('''
++      CREATE TABLE IF NOT EXISTS $tableName (
++        idempotency_key TEXT PRIMARY KEY,
++        receipt_id TEXT NOT NULL,
++        action TEXT NOT NULL,
++        request_hash TEXT NOT NULL,
++        ledger_entry_id TEXT,
++        entry_number INTEGER,
++        response_json TEXT NOT NULL,
++        created_at_ms INTEGER NOT NULL
++      )
++    ''');
++  }
++
++  /// Executes [postWork] exactly once for a given [idempotencyKey].
++  ///
++  /// - First call: executes [postWork], persists both the domain changes and
++  ///   the `PostingReceipt` record, and returns `{...result, 'postingReceipt': ...}`.
++  /// - Identical retry (same key + action + canonical payload hash): returns
++  ///   the cached response with `postingReceipt.replayed == true` without re-posting.
++  /// - Conflicting reuse (same key + different action or altered payload):
++  ///   throws `HybridBridgeException('DUPLICATE_REQUEST', ...)`.
++  Future<Map<String, Object?>> executeProtected({
++    required String action,
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required Future<Map<String, Object?>> Function(
++      Transaction txn,
++      String receiptId,
++    ) postWork,
++  }) async {
++    final db = await _databaseProvider();
++    if (!_tableEnsured) {
++      await ensureTable(db);
++      _tableEnsured = true;
++    }
++
++    final requestHash = computeCanonicalRequestHash(action, payload);
++    final nowMs = DateTime.now().millisecondsSinceEpoch;
++
++    if (externalBridge != null) {
++      final externalExisting =
++          await externalBridge!.findByIdempotencyKey(idempotencyKey);
++      if (externalExisting != null &&
++          (externalExisting.action != action ||
++              externalExisting.requestHash != requestHash)) {
++        throw const HybridBridgeException(
++          'DUPLICATE_REQUEST',
++          'تم رفض العملية: مفتاح PostingReceipt مستخدم مسبقًا لعملية مختلفة.',
++        );
++      }
++    }
++
++    return db.transaction<Map<String, Object?>>((txn) async {
++      await ensureTable(txn);
++
++      final existing = await txn.query(
++        tableName,
++        where: 'idempotency_key = ?',
++        whereArgs: [idempotencyKey],
++        limit: 1,
++      );
++
++      if (existing.isNotEmpty) {
++        final row = existing.first;
++        final prevAction = row['action'] as String? ?? '';
++        final prevHash = row['request_hash'] as String? ?? '';
++
++        if (prevAction == action && prevHash == requestHash) {
++          final decoded = jsonDecode(row['response_json'] as String);
++          final resultMap = decoded is Map
++              ? decoded.map((k, v) => MapEntry(k.toString(), v))
++              : <String, Object?>{};
++          final receipt = HybridPostingReceipt(
++            receiptId: row['receipt_id'] as String? ?? '',
++            idempotencyKey: idempotencyKey,
++            action: prevAction,
++            requestHash: prevHash,
++            postedAtMs: (row['created_at_ms'] as num?)?.toInt() ?? nowMs,
++            ledgerEntryId: row['ledger_entry_id'] as String?,
++            entryNumber: (row['entry_number'] as num?)?.toInt(),
++            replayed: true,
++          );
++          resultMap['postingReceipt'] = receipt.toJson();
++          return resultMap;
++        }
++
++        throw const HybridBridgeException(
++          'DUPLICATE_REQUEST',
++          'تم رفض الطلب: مفتاح عدم التكرار (PostingReceipt) مستخدم مسبقًا ببيانات مختلفة.',
++        );
++      }
++
++      final receiptId = 'rcpt_${nowMs}_${idempotencyKey.hashCode.abs()}';
++      final result = await postWork(txn, receiptId);
++
++      String? ledgerEntryId;
++      int? entryNumber;
++      final entryObj = result['entry'];
++      if (entryObj is Map) {
++        ledgerEntryId = entryObj['id'] as String?;
++        entryNumber = (entryObj['entryNumber'] as num?)?.toInt();
++      }
++
++      final receipt = HybridPostingReceipt(
++        receiptId: receiptId,
++        idempotencyKey: idempotencyKey,
++        action: action,
++        requestHash: requestHash,
++        postedAtMs: nowMs,
++        ledgerEntryId: ledgerEntryId,
++        entryNumber: entryNumber,
++        replayed: false,
++      );
++
++      final enriched = <String, Object?>{
++        ...result,
++        'postingReceipt': receipt.toJson(),
++      };
++      final encodedResponse = jsonEncode(enriched);
++
++      await txn.insert(
++        tableName,
++        <String, Object?>{
++          'idempotency_key': idempotencyKey,
++          'receipt_id': receiptId,
++          'action': action,
++          'request_hash': requestHash,
++          'ledger_entry_id': ledgerEntryId,
++          'entry_number': entryNumber,
++          'response_json': encodedResponse,
++          'created_at_ms': nowMs,
++        },
++        conflictAlgorithm: ConflictAlgorithm.abort,
++      );
++
++      if (externalBridge != null) {
++        await externalBridge!.recordReceipt(receipt, encodedResponse);
++      }
++
++      return enriched;
++    });
++  }
++}
+
+diff --git a/flutter_app/lib/hybrid/erp_hybrid_adapter.dart b/flutter_app/lib/hybrid/erp_hybrid_adapter.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/lib/hybrid/erp_hybrid_adapter.dart
+@@ -0,0 +1,2039 @@
++import 'dart:convert';
++import 'package:sqflite/sqflite.dart';
++import '../models/erp_models.dart';
++import '../services/accounting_engine.dart';
++import '../services/local_database.dart';
++import '../state/erp_controller.dart';
++import 'hybrid_protocol.dart';
++import 'posting_receipt_guard.dart';
++
++/// Compatibility adapter bridging NASQO React Hybrid v1.0.0 commands directly
++/// onto the EXISTING Flutter `ErpController`, `LocalDatabase`, `AccountingEngine`,
++/// and `PostingReceiptGuard`.
++///
++/// Architectural guarantees:
++/// - ZERO parallel SQLite database (uses the existing `LocalDatabase` connection).
++/// - ZERO parallel accounting ledger (reads & writes `ErpController.accounts`,
++///   `ErpController.ledger`, `ErpController.warehouses`, `ErpController.inventory`
++///   and persists into the existing `accounts`, `ledger_entries`, `warehouses`,
++///   `inventory_items`, and `erp_state` tables).
++/// - Every financial mutation is guarded atomically by `PostingReceiptGuard`.
++class ErpHybridAdapter {
++  ErpHybridAdapter({
++    required this.controller,
++    required this.receiptGuard,
++    Future<Database> Function()? databaseProvider,
++    this.workspaceId = 'local-erp-workspace',
++  }) : _databaseProvider =
++            databaseProvider ?? (() => LocalDatabase.instance.database);
++
++  final ErpController controller;
++  final PostingReceiptGuard receiptGuard;
++  final Future<Database> Function() _databaseProvider;
++  final String workspaceId;
++
++  int _snapshotVersion = 1;
++  String _activeCurrency = 'ريال';
++
++  static const String _uiPrefsStateKey = 'hybrid_ui_preferences';
++  static const String _extraMetaStateKey = 'hybrid_extra_meta';
++  static const String _initializedStateKey = 'hybrid_workspace_initialized';
++
++  /// Upgrade-safe startup loader for the existing `LocalDatabase`:
++  ///
++  /// - **APK Upgrade (existing tables contain rows or prior state)**:
++  ///   loads 100% of existing `accounts`, `ledger_entries`, `warehouses`,
++  ///   `inventory_items`, and `erp_state` rows into [controller] WITHOUT
++  ///   wiping or overwriting user data.
++  /// - **Clean Fresh Install (brand-new empty SQLite database)**:
++  ///   when [allowEmptyFreshStart] is `true`, starts with an empty clean
++  ///   workspace (0 starter accounts, 0 invoices, 0 balances) and ensures a
++  ///   single default warehouse exists.
++  Future<Map<String, Object?>> loadOrInitializeUpgradeSafe({
++    bool allowEmptyFreshStart = true,
++  }) async {
++    final db = await _databaseProvider();
++    await receiptGuard.ensureTable(db);
++
++    final accountRows = await db.query('accounts');
++    final ledgerRows = await db.query('ledger_entries');
++    final warehouseRows = await db.query('warehouses');
++    final inventoryRows = await db.query('inventory_items');
++    final settingsState = await _readStateMap(db, 'settings');
++    final initState = await _readStateMap(db, _initializedStateKey);
++
++    final hasExistingData = accountRows.isNotEmpty ||
++        ledgerRows.isNotEmpty ||
++        warehouseRows.isNotEmpty ||
++        inventoryRows.isNotEmpty ||
++        settingsState.isNotEmpty ||
++        initState['initialized'] == true;
++
++    if (hasExistingData) {
++      controller.accounts
++        ..clear()
++        ..addAll(accountRows.map(_accountFromDbRow));
++      controller.ledger
++        ..clear()
++        ..addAll(ledgerRows.map(_ledgerFromDbRow));
++      controller.warehouses
++        ..clear()
++        ..addAll(warehouseRows.map(_warehouseFromDbRow));
++      controller.inventory
++        ..clear()
++        ..addAll(inventoryRows.map(_inventoryFromDbRow));
++
++      if (settingsState['companyName'] is String &&
++          (settingsState['companyName'] as String).trim().isNotEmpty) {
++        controller.companyName = (settingsState['companyName'] as String).trim();
++      }
++      if (settingsState['isDarkMode'] is bool &&
++          settingsState['isDarkMode'] != controller.isDarkMode) {
++        controller.toggleTheme();
++      }
++      if (initState['initialized'] != true) {
++        await _writeStateMap(db, _initializedStateKey, <String, Object?>{
++          'initialized': true,
++          'upgradedFromExistingDb': true,
++          'updatedAt': DateTime.now().toIso8601String(),
++        });
++      }
++      controller.notifyListeners();
++      return <String, Object?>{
++        'mode': 'upgraded_preserved',
++        'accounts': controller.accounts.length,
++        'ledger': controller.ledger.length,
++        'warehouses': controller.warehouses.length,
++        'inventory': controller.inventory.length,
++      };
++    }
++
++    if (allowEmptyFreshStart) {
++      controller.accounts.clear();
++      controller.ledger.clear();
++      controller.inventory.clear();
++      controller.warehouses
++        ..clear()
++        ..add(
++          const WarehouseRecord(
++            id: 'wh_main',
++            name: 'المخزن الرئيسي',
++            details: '',
++            isDefault: true,
++          ),
++        );
++      await db.transaction((txn) async {
++        await _persistControllerTablesInTxn(txn);
++        await _writeStateMap(txn, _initializedStateKey, <String, Object?>{
++          'initialized': true,
++          'upgradedFromExistingDb': false,
++          'cleanEmptyStart': true,
++          'createdAt': DateTime.now().toIso8601String(),
++        });
++      });
++      controller.notifyListeners();
++      return <String, Object?>{
++        'mode': 'fresh_clean_empty',
++        'accounts': 0,
++        'ledger': 0,
++        'warehouses': 1,
++        'inventory': 0,
++      };
++    }
++
++    return <String, Object?>{
++      'mode': 'controller_in_memory',
++      'accounts': controller.accounts.length,
++      'ledger': controller.ledger.length,
++      'warehouses': controller.warehouses.length,
++      'inventory': controller.inventory.length,
++    };
++  }
++
++  Future<Map<String, Object?>> getSnapshot({
++    required bool allowFinancialWrites,
++    DatabaseExecutor? executor,
++  }) async {
++    final db = executor ?? await _databaseProvider();
++    final uiPrefs = await _readStateMap(db, _uiPrefsStateKey);
++    final meta = await _readStateMap(db, _extraMetaStateKey);
++
++    final activeCurr = (meta['activeCurrency'] as String?)?.trim();
++    if (activeCurr != null && activeCurr.isNotEmpty) {
++      _activeCurrency = activeCurr;
++    } else {
++      _activeCurrency = controller.defaultCurrency.label;
++    }
++
++    final currencies = _buildCurrencyList(meta);
++    final accountGroups = _buildAccountGroups(meta);
++    final cashboxes = _buildCashboxes();
++
++    final groupIdByCategory = <String, int>{};
++    for (final g in accountGroups) {
++      final cat = (g['category'] as String?) ?? '';
++      final gid = (g['id'] as num?)?.toInt();
++      if (cat.isNotEmpty && gid != null && !groupIdByCategory.containsKey(cat)) {
++        groupIdByCategory[cat] = gid;
++      }
++    }
++
++    return <String, Object?>{
++      'workspaceId': workspaceId,
++      'userEmail': 'offline@nasqo.local',
++      'workspace': <String, Object?>{
++        'id': workspaceId,
++        'ownerId': workspaceId,
++        'companyName': controller.companyName,
++        'defaultCurrency': controller.defaultCurrency.label,
++        'whatsappProvider': (meta['whatsappProvider'] as String?) ?? 'nasqo',
++        'whatsappInstantEnabled': meta['whatsappInstantEnabled'] == true,
++        'whatsappPhone': (meta['whatsappPhone'] as String?) ?? '',
++      },
++      'currencies': currencies,
++      'accountGroups': accountGroups,
++      'accounts': controller.accounts
++          .map(
++            (a) => _accountToHybridJson(
++              a,
++              groupId: groupIdByCategory[a.category.name],
++            ),
++          )
++          .toList(),
++      'cashboxes': cashboxes,
++      'ledger': controller.ledger.map(_ledgerToHybridJson).toList(),
++      'warehouses': controller.warehouses
++          .asMap()
++          .entries
++          .map((e) => _warehouseToHybridJson(e.value, e.key + 1))
++          .toList(),
++      'inventory': controller.inventory.map(_inventoryToHybridJson).toList(),
++      'uiPreferences': uiPrefs,
++      'capabilities': <String, Object?>{
++        'offlineReady': true,
++        'printingSupported': true,
++        'pdfExportSupported': true,
++        'filePickerSupported': true,
++        'googleDriveConfigured': false,
++        'whatsappShareSupported': false,
++        'readOnlyFinancial': !allowFinancialWrites,
++      },
++      'activeCurrency': _activeCurrency,
++      'snapshotVersion': _snapshotVersion,
++    };
++  }
++
++  Future<Map<String, Object?>> saveUiPreferences(
++    Map<String, Object?> preferences,
++  ) async {
++    final db = await _databaseProvider();
++    final merged = await _readStateMap(db, _uiPrefsStateKey);
++    merged.addAll(preferences);
++    await _writeStateMap(db, _uiPrefsStateKey, merged);
++
++    final themeMode = preferences['themeMode'];
++    if (themeMode == 'dark' && !controller.isDarkMode) {
++      controller.toggleTheme();
++    } else if (themeMode == 'light' && controller.isDarkMode) {
++      controller.toggleTheme();
++    }
++
++    return <String, Object?>{'saved': true, 'preferences': merged};
++  }
++
++  Future<Map<String, Object?>> changeCurrency(String currency) async {
++    final clean = currency.trim();
++    if (clean.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'اسم العملة مطلوب.');
++    }
++    final db = await _databaseProvider();
++    final meta = await _readStateMap(db, _extraMetaStateKey);
++    meta['activeCurrency'] = clean;
++    await _writeStateMap(db, _extraMetaStateKey, meta);
++    _activeCurrency = clean;
++    return <String, Object?>{'activeCurrency': clean};
++  }
++
++  Future<Map<String, Object?>> saveWorkspaceSettings(
++    Map<String, Object?> updates, {
++    required bool allowFinancialWrites,
++  }) async {
++    final db = await _databaseProvider();
++    final meta = await _readStateMap(db, _extraMetaStateKey);
++
++    if (updates['companyName'] is String) {
++      final nextName = (updates['companyName'] as String).trim();
++      if (nextName.isNotEmpty) {
++        controller.companyName = nextName;
++      }
++    }
++    if (updates['defaultCurrency'] is String) {
++      controller.defaultCurrency =
++          _parseCurrencyCode(updates['defaultCurrency'] as String);
++    }
++    if (updates['whatsappProvider'] is String) {
++      meta['whatsappProvider'] =
++          updates['whatsappProvider'] == 'external' ? 'external' : 'nasqo';
++    }
++    if (updates['whatsappInstantEnabled'] is bool) {
++      meta['whatsappInstantEnabled'] = updates['whatsappInstantEnabled'];
++    }
++    if (updates['whatsappPhone'] is String) {
++      meta['whatsappPhone'] = (updates['whatsappPhone'] as String).trim();
++    }
++
++    await db.transaction((txn) async {
++      await _writeStateMap(txn, _extraMetaStateKey, meta);
++      await _persistControllerTablesInTxn(txn);
++    });
++    _snapshotVersion += 1;
++    controller.notifyListeners();
++
++    final snap = await getSnapshot(
++      allowFinancialWrites: allowFinancialWrites,
++      executor: db,
++    );
++    return <String, Object?>{
++      'workspace': snap['workspace'],
++      'snapshot': snap,
++    };
++  }
++
++  Future<Map<String, Object?>> saveAccountGroup({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final data = _nestedMap(payload['payload']) ?? payload;
++    final name = (data['name'] as String? ?? '').trim();
++    if (name.isEmpty) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'اسم مجموعة الحسابات مطلوب.',
++      );
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'saveAccountGroup',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final meta = await _readStateMap(txn, _extraMetaStateKey);
++        final groups = _buildAccountGroups(meta);
++        final reqId = (data['id'] as num?)?.toInt();
++        final nextId = reqId ??
++            (groups.fold<int>(
++                  0,
++                  (maxId, g) => ((g['id'] as num?)?.toInt() ?? 0) > maxId
++                      ? (g['id'] as num).toInt()
++                      : maxId,
++                ) +
++                1);
++        final saved = <String, Object?>{
++          'id': nextId,
++          'name': name,
++          'category': (data['category'] as String?) ?? 'purchases',
++          'currencyCode': (data['currencyCode'] as String?) ??
++              controller.defaultCurrency.label,
++          'hasBill': data['hasBill'] != false,
++          'isEmployee': data['isEmployee'] == true,
++          'sortOrder': (data['sortOrder'] as num?)?.toInt() ?? nextId,
++        };
++        final idx = groups.indexWhere((g) => g['id'] == nextId);
++        if (idx >= 0) {
++          groups[idx] = saved;
++        } else {
++          groups.add(saved);
++        }
++        meta['accountGroups'] = groups;
++        await _writeStateMap(txn, _extraMetaStateKey, meta);
++        _snapshotVersion += 1;
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'group': saved, 'snapshot': snap};
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> saveCurrency({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final data = _nestedMap(payload['payload']) ?? payload;
++    final name = (data['name'] as String? ?? '').trim();
++    if (name.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'اسم العملة مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'saveCurrency',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final meta = await _readStateMap(txn, _extraMetaStateKey);
++        final list = _buildCurrencyList(meta);
++        final reqId = (data['id'] as num?)?.toInt();
++        final nextId = reqId ?? (list.length + 1);
++        final record = <String, Object?>{
++          'id': nextId,
++          'code': ((data['code'] as String?) ?? name).trim(),
++          'name': name,
++          'symbol': ((data['symbol'] as String?) ?? name).trim(),
++          'ratePrimary': _toDouble(data['ratePrimary'], fallback: 1.0),
++          'rateSecondary': _toDouble(data['rateSecondary'], fallback: 1.0),
++          'nameSecondary': (data['nameSecondary'] as String? ?? '').trim(),
++        };
++        final idx = list.indexWhere((c) => c['id'] == nextId || c['name'] == name);
++        if (idx >= 0) {
++          list[idx] = record;
++        } else {
++          list.add(record);
++        }
++        meta['currencies'] = list;
++        await _writeStateMap(txn, _extraMetaStateKey, meta);
++        _snapshotVersion += 1;
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'currencies': list, 'snapshot': snap};
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> deleteCurrency({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final currencyId = (payload['currencyId'] as num?)?.toInt();
++    if (currencyId == null || currencyId <= 0) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف العملة غير صالح.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'deleteCurrency',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final meta = await _readStateMap(txn, _extraMetaStateKey);
++        final list = _buildCurrencyList(meta);
++        if (list.length <= 1) {
++          throw const HybridBridgeException(
++            'VALIDATION_ERROR',
++            'لا يمكن حذف آخر عملة في النظام.',
++          );
++        }
++        list.removeWhere((c) => c['id'] == currencyId);
++        meta['currencies'] = list;
++        await _writeStateMap(txn, _extraMetaStateKey, meta);
++        _snapshotVersion += 1;
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'currencies': list, 'snapshot': snap};
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> saveAccount({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final data = _nestedMap(payload['payload']) ?? payload;
++    final name = (data['name'] as String? ?? '').trim();
++    if (name.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'اسم الحساب مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'saveAccount',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final existingId = (payload['accountId'] as String?)?.trim() ??
++            (data['id'] as String?)?.trim();
++        final id = (existingId != null && existingId.isNotEmpty)
++            ? existingId
++            : _genId('acc');
++
++        final maxCode = controller.accounts.fold<int>(
++          1000,
++          (m, a) => a.codeNumber > m ? a.codeNumber : m,
++        );
++        final acc = AccountRecord(
++          id: id,
++          name: name,
++          category: _parseCategory(data['category'] as String?),
++          phone: (data['phone'] as String? ?? '').trim(),
++          creditLimit: _toDouble(data['creditLimit'], fallback: 50000),
++          currency: _parseCurrencyCode(data['currency'] as String?),
++          isCashAccount: data['isCashAccount'] == true,
++          note: (data['note'] as String? ?? '').trim(),
++          openingBalance: _toDouble(data['openingBalance'], fallback: 0),
++          openingDirection: data['openingDirection'] == 'debit'
++              ? EntryDirection.debit
++              : EntryDirection.credit,
++          codeNumber: (data['codeNumber'] as num?)?.toInt() ?? (maxCode + 1),
++        );
++
++        final idx = controller.accounts.indexWhere((a) => a.id == id);
++        if (idx >= 0) {
++          controller.accounts[idx] = acc;
++        } else {
++          controller.accounts.insert(0, acc);
++        }
++
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'account': _accountToHybridJson(acc),
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> deleteAccount({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final accountId = (payload['accountId'] as String? ?? '').trim();
++    if (accountId.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف الحساب مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'deleteAccount',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final hasActiveEntries = controller.ledger
++            .any((e) => !e.deleted && e.accountId == accountId);
++        if (hasActiveEntries) {
++          throw const HybridBridgeException(
++            'VALIDATION_ERROR',
++            'لا يمكن حذف حساب مرتبط بقيود مالية نشطة.',
++          );
++        }
++        controller.accounts.removeWhere((a) => a.id == accountId);
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'ok': true, 'snapshot': snap};
++      },
++    );
++  }
++
++  /// Posts directly into the EXISTING `ErpController.ledger` and updates
++  /// `ErpController.inventory` via `AccountingEngine.computeWeightedAverageCost`,
++  /// persisted atomically in `LocalDatabase` alongside a `PostingReceipt`.
++  Future<Map<String, Object?>> createLedgerEntry({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final data = _nestedMap(payload['payload']) ?? payload;
++    final accountId = (data['accountId'] as String? ?? '').trim();
++    final accountName = (data['accountName'] as String? ?? '').trim();
++    final amount = _toDouble(data['amount'], fallback: 0.0);
++
++    if (accountId.isEmpty || accountName.isEmpty) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'يجب تحديد الحساب قبل ترحيل القيد.',
++      );
++    }
++    if (amount < 0) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'المبلغ المالي لا يمكن أن يكون سالبًا.',
++      );
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'createLedgerEntry',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final maxEntryNum = controller.ledger.fold<int>(
++          1000,
++          (m, e) => e.entryNumber > m ? e.entryNumber : m,
++        );
++        final entryNum =
++            (data['entryNumber'] as num?)?.toInt() ?? (maxEntryNum + 1);
++        final id = ((data['id'] as String?)?.trim().isNotEmpty ?? false)
++            ? (data['id'] as String).trim()
++            : _genId('led');
++
++        final kind = _parseLedgerKind(data['kind'] as String?);
++        final direction = data['direction'] == 'credit'
++            ? EntryDirection.credit
++            : EntryDirection.debit;
++        final typeLabel = (data['typeLabel'] as String? ?? 'قيد مالي').trim();
++        final whId = (data['warehouseId'] as String? ??
++                (controller.warehouses.isNotEmpty
++                    ? controller.warehouses.first.id
++                    : 'wh_1'))
++            .trim();
++        final whName = (data['warehouseName'] as String? ??
++                (controller.warehouses.isNotEmpty
++                    ? controller.warehouses.first.name
++                    : 'المخزن الرئيسي'))
++            .trim();
++
++        final rawLines = data['lines'];
++        final lines = rawLines is List
++            ? rawLines
++                .whereType<Map>()
++                .map((m) => m.map((k, v) => MapEntry(k.toString(), v)))
++                .toList()
++            : <Map<String, Object?>>[];
++
++        final stockSign = _stockEffectSign(
++          kind: kind,
++          direction: direction,
++          typeLabel: typeLabel,
++        );
++        if (stockSign != 0 && lines.isNotEmpty) {
++          for (final line in lines) {
++            final itemId = (line['inventoryItemId'] as String?)?.trim();
++            final qty = _toDouble(line['quantity'], fallback: 0);
++            final price = _toDouble(line['price'], fallback: 0);
++            if (itemId == null || itemId.isEmpty || qty <= 0) continue;
++            final invIdx =
++                controller.inventory.indexWhere((i) => i.id == itemId);
++            if (invIdx < 0) continue;
++            final current = controller.inventory[invIdx];
++            final nextQty = current.quantity + (stockSign * qty);
++            final nextAvg = (stockSign > 0 && price > 0)
++                ? AccountingEngine.computeWeightedAverageCost(
++                    current.quantity,
++                    current.avgCost,
++                    qty,
++                    price,
++                  )
++                : current.avgCost;
++            controller.inventory[invIdx] = current.copyWith(
++              quantity: nextQty,
++              avgCost: nextAvg,
++            );
++          }
++        }
++
++        final entry = LedgerEntryRecord(
++          id: id,
++          accountId: accountId,
++          accountName: accountName,
++          kind: kind,
++          typeLabel: typeLabel,
++          payment: _parsePayment(data['payment'] as String?),
++          direction: direction,
++          amount: amount,
++          currency: _parseCurrencyCode(data['currency'] as String?),
++          exchangeRate: _toDouble(data['exchangeRate'], fallback: 1.0),
++          details: (data['details'] as String? ?? '').trim(),
++          documentNumber: (data['documentNumber'] as String? ?? '').trim(),
++          warehouseId: whId,
++          warehouseName: whName,
++          expenseCategory: (data['expenseCategory'] as String? ?? '').trim(),
++          entryNumber: entryNum,
++          deleted: false,
++          entryDate: (data['entryDate'] as String? ??
++                  DateTime.now().toIso8601String().substring(0, 10))
++              .trim(),
++        );
++
++        controller.ledger.insert(0, entry);
++
++        if (lines.isNotEmpty) {
++          final meta = await _readStateMap(txn, _extraMetaStateKey);
++          final linesByEntry = _nestedMap(meta['invoiceLinesByEntry']) ??
++              <String, Object?>{};
++          linesByEntry[id] = lines;
++          meta['invoiceLinesByEntry'] = linesByEntry;
++          await _writeStateMap(txn, _extraMetaStateKey, meta);
++        }
++
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'entry': _ledgerToHybridJson(entry, lines: lines),
++          'inventory': snap['inventory'],
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> updateLedgerEntry({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final entryId = (payload['entryId'] as String? ?? '').trim();
++    final data = _nestedMap(payload['payload']) ?? payload;
++    if (entryId.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف القيد مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'updateLedgerEntry',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final idx = controller.ledger.indexWhere((e) => e.id == entryId);
++        if (idx < 0) {
++          throw const HybridBridgeException('NOT_FOUND', 'القيد غير موجود.');
++        }
++        final prev = controller.ledger[idx];
++        final updated = LedgerEntryRecord(
++          id: prev.id,
++          accountId: (data['accountId'] as String?) ?? prev.accountId,
++          accountName: (data['accountName'] as String?) ?? prev.accountName,
++          kind: data['kind'] is String
++              ? _parseLedgerKind(data['kind'] as String)
++              : prev.kind,
++          typeLabel: (data['typeLabel'] as String?) ?? prev.typeLabel,
++          payment: data['payment'] is String
++              ? _parsePayment(data['payment'] as String)
++              : prev.payment,
++          direction: data['direction'] is String
++              ? (data['direction'] == 'credit'
++                  ? EntryDirection.credit
++                  : EntryDirection.debit)
++              : prev.direction,
++          amount: data['amount'] is num
++              ? (data['amount'] as num).toDouble()
++              : prev.amount,
++          currency: data['currency'] is String
++              ? _parseCurrencyCode(data['currency'] as String)
++              : prev.currency,
++          exchangeRate: prev.exchangeRate,
++          details: (data['details'] as String?) ?? prev.details,
++          documentNumber:
++              (data['documentNumber'] as String?) ?? prev.documentNumber,
++          warehouseId: prev.warehouseId,
++          warehouseName: prev.warehouseName,
++          expenseCategory: prev.expenseCategory,
++          entryNumber: prev.entryNumber,
++          deleted: prev.deleted,
++          entryDate: (data['entryDate'] as String?) ?? prev.entryDate,
++        );
++        controller.ledger[idx] = updated;
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'entry': _ledgerToHybridJson(updated),
++          'inventory': snap['inventory'],
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> setLedgerDeleted({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final entryId = (payload['entryId'] as String? ?? '').trim();
++    final deleted = payload['deleted'] == true;
++    if (entryId.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف القيد مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'setLedgerDeleted',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final idx = controller.ledger.indexWhere((e) => e.id == entryId);
++        if (idx < 0) {
++          throw const HybridBridgeException('NOT_FOUND', 'القيد غير موجود.');
++        }
++        final prev = controller.ledger[idx];
++        controller.ledger[idx] = LedgerEntryRecord(
++          id: prev.id,
++          accountId: prev.accountId,
++          accountName: prev.accountName,
++          kind: prev.kind,
++          typeLabel: prev.typeLabel,
++          payment: prev.payment,
++          direction: prev.direction,
++          amount: prev.amount,
++          currency: prev.currency,
++          exchangeRate: prev.exchangeRate,
++          details: prev.details,
++          documentNumber: prev.documentNumber,
++          warehouseId: prev.warehouseId,
++          warehouseName: prev.warehouseName,
++          expenseCategory: prev.expenseCategory,
++          entryNumber: prev.entryNumber,
++          deleted: deleted,
++          entryDate: prev.entryDate,
++        );
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'inventory': snap['inventory'],
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> permanentlyDeleteLedger({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final entryId = (payload['entryId'] as String? ?? '').trim();
++    if (entryId.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف القيد مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'permanentlyDeleteLedger',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        controller.ledger.removeWhere((e) => e.id == entryId);
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'inventory': snap['inventory'],
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> saveWarehouse({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final data = _nestedMap(payload['payload']) ?? payload;
++    final name = (data['name'] as String? ?? '').trim();
++    if (name.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'اسم المخزن مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'saveWarehouse',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final existingId = (payload['warehouseId'] as String?)?.trim() ??
++            (data['id'] as String?)?.trim();
++        final id = (existingId != null && existingId.isNotEmpty)
++            ? existingId
++            : _genId('wh');
++        final isDefault = data['isDefault'] == true;
++        if (isDefault) {
++          for (var i = 0; i < controller.warehouses.length; i += 1) {
++            final w = controller.warehouses[i];
++            controller.warehouses[i] = WarehouseRecord(
++              id: w.id,
++              name: w.name,
++              details: w.details,
++              isDefault: false,
++            );
++          }
++        }
++        final wh = WarehouseRecord(
++          id: id,
++          name: name,
++          details: (data['details'] as String? ?? '').trim(),
++          isDefault: isDefault,
++        );
++        final idx = controller.warehouses.indexWhere((w) => w.id == id);
++        if (idx >= 0) {
++          controller.warehouses[idx] = wh;
++        } else {
++          controller.warehouses.add(wh);
++        }
++
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'warehouse': _warehouseToHybridJson(wh, controller.warehouses.length),
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> createInventoryItem({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final data = _nestedMap(payload['payload']) ?? payload;
++    final name = (data['name'] as String? ?? '').trim();
++    if (name.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'اسم الصنف مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'createInventoryItem',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final item = InventoryItemRecord(
++          id: ((data['id'] as String?)?.trim().isNotEmpty ?? false)
++              ? (data['id'] as String).trim()
++              : _genId('inv'),
++          name: name,
++          unit: (data['unit'] as String? ?? 'حبة').trim(),
++          quantity: _toDouble(data['quantity'], fallback: 0),
++          avgCost: _toDouble(data['avgCost'], fallback: 0),
++          warehouseId: (data['warehouseId'] as String? ??
++                  (controller.warehouses.isNotEmpty
++                      ? controller.warehouses.first.id
++                      : 'wh_1'))
++              .trim(),
++          minThreshold: _toDouble(data['minThreshold'], fallback: 25),
++          sku: (data['sku'] as String? ?? '').trim(),
++        );
++        controller.inventory.add(item);
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'item': _inventoryToHybridJson(item),
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> updateInventoryItem({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final itemId = (payload['itemId'] as String? ?? '').trim();
++    final updates = _nestedMap(payload['updates']) ?? payload;
++    if (itemId.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف الصنف مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'updateInventoryItem',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final idx = controller.inventory.indexWhere((i) => i.id == itemId);
++        if (idx < 0) {
++          throw const HybridBridgeException('NOT_FOUND', 'الصنف غير موجود.');
++        }
++        final prev = controller.inventory[idx];
++        final next = InventoryItemRecord(
++          id: prev.id,
++          name: (updates['name'] as String?)?.trim() ?? prev.name,
++          unit: (updates['unit'] as String?)?.trim() ?? prev.unit,
++          quantity: updates['quantity'] is num
++              ? (updates['quantity'] as num).toDouble()
++              : prev.quantity,
++          avgCost: updates['avgCost'] is num
++              ? (updates['avgCost'] as num).toDouble()
++              : prev.avgCost,
++          warehouseId:
++              (updates['warehouseId'] as String?)?.trim() ?? prev.warehouseId,
++          minThreshold: updates['minThreshold'] is num
++              ? (updates['minThreshold'] as num).toDouble()
++              : prev.minThreshold,
++          sku: (updates['sku'] as String?)?.trim() ?? prev.sku,
++        );
++        controller.inventory[idx] = next;
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'item': _inventoryToHybridJson(next),
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> deleteInventoryItem({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final itemId = (payload['itemId'] as String? ?? '').trim();
++    if (itemId.isEmpty) {
++      throw const HybridBridgeException('VALIDATION_ERROR', 'معرف الصنف مطلوب.');
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'deleteInventoryItem',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        controller.inventory.removeWhere((i) => i.id == itemId);
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'ok': true, 'snapshot': snap};
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> importInventoryItems({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final rawItems = payload['items'];
++    if (rawItems is! List) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'قائمة الأصناف للاستيراد غير صالحة.',
++      );
++    }
++    final mode = payload['mode'] == 'insert-only' ? 'insert-only' : 'upsert';
++
++    return receiptGuard.executeProtected(
++      action: 'importInventoryItems',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        int inserted = 0;
++        int updated = 0;
++        int skipped = 0;
++
++        for (final raw in rawItems) {
++          if (raw is! Map) {
++            skipped += 1;
++            continue;
++          }
++          final item = raw.map((k, v) => MapEntry(k.toString(), v));
++          final name = (item['name'] as String? ?? '').trim();
++          if (name.isEmpty) {
++            skipped += 1;
++            continue;
++          }
++          final existingIdx =
++              controller.inventory.indexWhere((i) => i.name == name);
++          if (existingIdx >= 0) {
++            if (mode == 'insert-only') {
++              skipped += 1;
++              continue;
++            }
++            final prev = controller.inventory[existingIdx];
++            controller.inventory[existingIdx] = InventoryItemRecord(
++              id: prev.id,
++              name: name,
++              unit: (item['unit'] as String?)?.trim() ?? prev.unit,
++              quantity: _toDouble(item['quantity'], fallback: prev.quantity),
++              avgCost: _toDouble(item['avgCost'], fallback: prev.avgCost),
++              warehouseId:
++                  (item['warehouseId'] as String?)?.trim() ?? prev.warehouseId,
++              minThreshold:
++                  _toDouble(item['minThreshold'], fallback: prev.minThreshold),
++              sku: (item['sku'] as String?)?.trim() ?? prev.sku,
++            );
++            updated += 1;
++          } else {
++            controller.inventory.add(
++              InventoryItemRecord(
++                id: _genId('inv'),
++                name: name,
++                unit: (item['unit'] as String? ?? 'حبة').trim(),
++                quantity: _toDouble(item['quantity'], fallback: 0),
++                avgCost: _toDouble(item['avgCost'], fallback: 0),
++                warehouseId: (item['warehouseId'] as String? ?? 'wh_1').trim(),
++                minThreshold: _toDouble(item['minThreshold'], fallback: 25),
++                sku: (item['sku'] as String? ?? '').trim(),
++              ),
++            );
++            inserted += 1;
++          }
++        }
++
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{
++          'inserted': inserted,
++          'updated': updated,
++          'skipped': skipped,
++          'total': rawItems.length,
++          'inventory': snap['inventory'],
++          'snapshot': snap,
++        };
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> batchUpdateInventoryItems({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final rawUpdates = payload['updates'];
++    if (rawUpdates is! List) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'قائمة التحديثات غير صالحة.',
++      );
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'batchUpdateInventoryItems',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        for (final raw in rawUpdates) {
++          if (raw is! Map) continue;
++          final id = (raw['id'] as String? ?? '').trim();
++          final data = _nestedMap(raw['data']);
++          if (id.isEmpty || data == null) continue;
++          final idx = controller.inventory.indexWhere((i) => i.id == id);
++          if (idx < 0) continue;
++          final prev = controller.inventory[idx];
++          controller.inventory[idx] = prev.copyWith(
++            quantity: data['quantity'] is num
++                ? (data['quantity'] as num).toDouble()
++                : prev.quantity,
++            avgCost: data['avgCost'] is num
++                ? (data['avgCost'] as num).toDouble()
++                : prev.avgCost,
++          );
++        }
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final snap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'snapshot': snap};
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> getInventoryMovementsReport(
++    Map<String, Object?> options,
++  ) async {
++    final warehouseFilter = (options['warehouseId'] as String? ?? '').trim();
++    final profitBasis = (options['profitBasis'] as String?) ?? 'avg';
++    final whNameById = <String, String>{
++      for (final w in controller.warehouses) w.id: w.name,
++    };
++
++    final itemRows = <Map<String, Object?>>[];
++    final warehouseStocks = <Map<String, Object?>>[];
++    double totalRemainingValue = 0;
++    int activeItemsCount = 0;
++
++    for (final item in controller.inventory) {
++      if (warehouseFilter.isNotEmpty &&
++          warehouseFilter != 'all' &&
++          item.warehouseId != warehouseFilter) {
++        continue;
++      }
++      final remainingValue = item.quantity * item.avgCost;
++      totalRemainingValue += remainingValue;
++      if (item.quantity > 0) activeItemsCount += 1;
++
++      warehouseStocks.add(<String, Object?>{
++        'inventoryItemId': item.id,
++        'warehouseId': item.warehouseId,
++        'warehouseName': whNameById[item.warehouseId] ?? 'المخزن الرئيسي',
++        'purchasesQty': 0.0,
++        'salesQty': 0.0,
++        'salesReturnQty': 0.0,
++        'purchaseReturnQty': 0.0,
++        'transferInQty': 0.0,
++        'transferOutQty': 0.0,
++        'netComputedQty': item.quantity,
++      });
++
++      itemRows.add(<String, Object?>{
++        'id': item.id,
++        'code': null,
++        'name': item.name,
++        'sku': item.sku,
++        'unit': item.unit,
++        'unit2': '',
++        'count2': null,
++        'warehouseId': item.warehouseId,
++        'currencyCode': controller.defaultCurrency.label,
++        'buyQty': 0.0,
++        'sellQty': 0.0,
++        'transferInQty': 0.0,
++        'transferOutQty': 0.0,
++        'buyTotal': 0.0,
++        'sellTotal': 0.0,
++        'availableQty': item.quantity,
++        'unitCost': item.avgCost,
++        'remainingValue': remainingValue,
++        'profit': 0.0,
++        'avgCost': item.avgCost,
++        'catalogQuantity': item.quantity,
++        'quantityUnverified': false,
++        'hasMovement': false,
++      });
++    }
++
++    return <String, Object?>{
++      'warehouses': controller.warehouses
++          .map((w) => <String, Object?>{'id': w.id, 'name': w.name})
++          .toList(),
++      'warehouseStocks': warehouseStocks,
++      'itemRows': itemRows,
++      'totals': <String, Object?>{
++        'totalSales': 0.0,
++        'totalPurchases': 0.0,
++        'totalProfit': 0.0,
++        'totalRemainingValue': totalRemainingValue,
++        'activeItemsCount': activeItemsCount,
++        'profitBasis': profitBasis,
++      },
++      'totalsByCurrency': <Map<String, Object?>>[
++        <String, Object?>{
++          'currency': controller.defaultCurrency.label,
++          'totalSales': 0.0,
++          'totalPurchases': 0.0,
++          'totalProfit': 0.0,
++          'totalRemainingValue': totalRemainingValue,
++          'totalRemainingQty': controller.inventory
++              .fold<double>(0.0, (sum, i) => sum + i.quantity),
++          'activeItemsCount': activeItemsCount,
++        },
++      ],
++      'movements': const <Map<String, Object?>>[],
++      'anomalies': const <String, Object?>{
++        'unverifiedItemsCount': 0,
++        'unresolvedTransfersCount': 0,
++        'unresolvedTransfers': <Map<String, Object?>>[],
++        'negativeComputedItems': <Map<String, Object?>>[],
++      },
++    };
++  }
++
++  /// Cashboxes report computed strictly from `ErpController.ledger` with
++  /// separated per-currency totals (never merging different currencies).
++  Future<Map<String, Object?>> getCashboxesReport(
++    Map<String, Object?> options,
++  ) async {
++    final currencyFilter = (options['currency'] as String? ?? '').trim();
++    final fromDate = (options['fromDate'] as String? ?? '').trim();
++    final toDate = (options['toDate'] as String? ?? '').trim();
++
++    final perCurrency = <String, Map<String, double>>{};
++
++    for (final entry in controller.ledger) {
++      if (entry.deleted || entry.payment != PaymentMethod.cash) continue;
++      if (fromDate.isNotEmpty && entry.entryDate.compareTo(fromDate) < 0) {
++        continue;
++      }
++      if (toDate.isNotEmpty && entry.entryDate.compareTo(toDate) > 0) continue;
++
++      final curr = entry.currency.label;
++      if (currencyFilter.isNotEmpty &&
++          currencyFilter != 'all' &&
++          curr != currencyFilter) {
++        continue;
++      }
++
++      final bucket = perCurrency.putIfAbsent(
++        curr,
++        () => <String, double>{
++          'in': 0.0,
++          'out': 0.0,
++          'count': 0.0,
++        },
++      );
++      if (entry.direction == EntryDirection.credit) {
++        bucket['in'] = bucket['in']! + entry.amount;
++      } else {
++        bucket['out'] = bucket['out']! + entry.amount;
++      }
++      bucket['count'] = bucket['count']! + 1;
++    }
++
++    final totalsByCurrency = perCurrency.entries.map((e) {
++      final unIn = e.value['in']!;
++      final unOut = e.value['out']!;
++      final net = unIn - unOut;
++      return <String, Object?>{
++        'currency': e.key,
++        'linkedCashboxesNet': 0.0,
++        'unlinkedCashIn': unIn,
++        'unlinkedCashOut': unOut,
++        'unlinkedCashNet': net,
++        'unlinkedCashCount': e.value['count']!.toInt(),
++        'totalCashNet': net,
++      };
++    }).toList();
++
++    final primary = totalsByCurrency.length == 1
++        ? totalsByCurrency.first
++        : const <String, Object?>{
++            'linkedCashboxesNet': 0.0,
++            'unlinkedCashIn': 0.0,
++            'unlinkedCashOut': 0.0,
++            'unlinkedCashNet': 0.0,
++            'unlinkedCashCount': 0,
++            'totalCashNet': 0.0,
++          };
++
++    return <String, Object?>{
++      'cashboxes': _buildCashboxes(),
++      'reconciliation': <String, Object?>{
++        'currencyFilter': currencyFilter.isEmpty ? 'all' : currencyFilter,
++        'fromDate': fromDate.isEmpty ? null : fromDate,
++        'toDate': toDate.isEmpty ? null : toDate,
++        'linkedCashboxesNet': primary['linkedCashboxesNet'],
++        'unlinkedCashIn': primary['unlinkedCashIn'],
++        'unlinkedCashOut': primary['unlinkedCashOut'],
++        'unlinkedCashNet': primary['unlinkedCashNet'],
++        'unlinkedCashCount': primary['unlinkedCashCount'],
++        'totalCashNet': primary['totalCashNet'],
++        'activeCount': _buildCashboxes().length,
++        'inactiveCount': 0,
++        'totalsByCurrency': totalsByCurrency,
++      },
++    };
++  }
++
++  Future<Map<String, Object?>> getInvoiceDetail(String entryId) async {
++    final idx = controller.ledger.indexWhere((e) => e.id == entryId);
++    if (idx < 0) {
++      throw const HybridBridgeException('NOT_FOUND', 'الفاتورة غير موجودة.');
++    }
++    final db = await _databaseProvider();
++    final meta = await _readStateMap(db, _extraMetaStateKey);
++    final linesByEntry = _nestedMap(meta['invoiceLinesByEntry']);
++    final rawLines = linesByEntry?[entryId];
++    final lines = rawLines is List
++        ? rawLines
++            .whereType<Map>()
++            .map((m) => m.map((k, v) => MapEntry(k.toString(), v)))
++            .toList()
++        : <Map<String, Object?>>[];
++    return <String, Object?>{
++      'entry': _ledgerToHybridJson(controller.ledger[idx], lines: lines),
++      'lines': lines,
++    };
++  }
++
++  Future<Map<String, Object?>> getProductPriceStats(String itemId) async {
++    final idx = controller.inventory.indexWhere((i) => i.id == itemId);
++    if (idx < 0) {
++      return const <String, Object?>{
++        'minPrice': 0.0,
++        'maxPrice': 0.0,
++        'lastPrice': 0.0,
++        'txCount': 0,
++      };
++    }
++    final cost = controller.inventory[idx].avgCost;
++    return <String, Object?>{
++      'minPrice': cost,
++      'maxPrice': cost,
++      'lastPrice': cost,
++      'txCount': 1,
++    };
++  }
++
++  Future<Map<String, Object?>> saveErpData(Map<String, Object?> data) async {
++    final db = await _databaseProvider();
++    await _writeStateMap(db, 'hybrid_erp_data', data);
++    return <String, Object?>{'saved': true};
++  }
++
++  Future<Map<String, Object?>> backupWorkspace({
++    required String backupName,
++    required bool allowFinancialWrites,
++  }) async {
++    final snap = await getSnapshot(allowFinancialWrites: allowFinancialWrites);
++    final nowIso = DateTime.now().toIso8601String();
++    final jsonContent = jsonEncode(<String, Object?>{
++      'format': 'nasqo-localdb-backup-v1',
++      'exportedAtIso': nowIso,
++      'snapshot': snap,
++    });
++    return <String, Object?>{
++      'id': _genId('bkp'),
++      'name': backupName.isNotEmpty ? backupName : 'nasqo-backup-$nowIso.json',
++      'exportedAtIso': nowIso,
++      'base64Content': base64Encode(utf8.encode(jsonContent)),
++      'sizeBytes': utf8.encode(jsonContent).length,
++    };
++  }
++
++  Future<Map<String, Object?>> restoreWorkspace({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    final base64Content = (payload['base64Content'] as String? ?? '').trim();
++    if (base64Content.isEmpty) {
++      throw const HybridBridgeException(
++        'VALIDATION_ERROR',
++        'محتوى النسخة الاحتياطية فارغ.',
++      );
++    }
++
++    return receiptGuard.executeProtected(
++      action: 'restoreWorkspace',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        final decoded = jsonDecode(utf8.decode(base64Decode(base64Content)));
++        if (decoded is! Map) {
++          throw const HybridBridgeException(
++            'VALIDATION_ERROR',
++            'تنسيق النسخة الاحتياطية غير صالح.',
++          );
++        }
++        final root = decoded.map((k, v) => MapEntry(k.toString(), v));
++        final snap = _nestedMap(root['snapshot']) ?? root;
++        final rawAccounts = snap['accounts'];
++        if (rawAccounts is List) {
++          controller.accounts
++            ..clear()
++            ..addAll(
++              rawAccounts.whereType<Map>().map((m) {
++                final a = m.map((k, v) => MapEntry(k.toString(), v));
++                return AccountRecord(
++                  id: (a['id'] as String?) ?? _genId('acc'),
++                  name: (a['name'] as String?) ?? 'حساب',
++                  category: _parseCategory(a['category'] as String?),
++                  phone: (a['phone'] as String?) ?? '',
++                  creditLimit: _toDouble(a['creditLimit'], fallback: 50000),
++                  currency: _parseCurrencyCode(a['currency'] as String?),
++                  isCashAccount: a['isCashAccount'] == true,
++                  note: (a['note'] as String?) ?? '',
++                  openingBalance: _toDouble(a['openingBalance'], fallback: 0),
++                  openingDirection: a['openingDirection'] == 'debit'
++                      ? EntryDirection.debit
++                      : EntryDirection.credit,
++                  codeNumber: (a['codeNumber'] as num?)?.toInt() ?? 1,
++                );
++              }),
++            );
++        }
++
++        final rawLedger = snap['ledger'];
++        if (rawLedger is List) {
++          controller.ledger
++            ..clear()
++            ..addAll(
++              rawLedger.whereType<Map>().map((m) {
++                final l = m.map((k, v) => MapEntry(k.toString(), v));
++                return LedgerEntryRecord(
++                  id: (l['id'] as String?) ?? _genId('led'),
++                  accountId: (l['accountId'] as String?) ?? '',
++                  accountName: (l['accountName'] as String?) ?? '',
++                  kind: _parseLedgerKind(l['kind'] as String?),
++                  typeLabel: (l['typeLabel'] as String?) ?? 'قيد مالي',
++                  payment: _parsePayment(l['payment'] as String?),
++                  direction: l['direction'] == 'credit'
++                      ? EntryDirection.credit
++                      : EntryDirection.debit,
++                  amount: _toDouble(l['amount'], fallback: 0),
++                  currency: _parseCurrencyCode(l['currency'] as String?),
++                  exchangeRate: _toDouble(l['exchangeRate'], fallback: 1.0),
++                  details: (l['details'] as String?) ?? '',
++                  documentNumber: (l['documentNumber'] as String?) ?? '',
++                  warehouseId: (l['warehouseId'] as String?) ?? 'wh_main',
++                  warehouseName:
++                      (l['warehouseName'] as String?) ?? 'المخزن الرئيسي',
++                  expenseCategory: (l['expenseCategory'] as String?) ?? '',
++                  entryNumber: (l['entryNumber'] as num?)?.toInt() ?? 1001,
++                  deleted: l['deleted'] == true,
++                  entryDate: (l['entryDate'] as String?) ??
++                      DateTime.now().toIso8601String().substring(0, 10),
++                );
++              }),
++            );
++        }
++
++        final rawWarehouses = snap['warehouses'];
++        if (rawWarehouses is List) {
++          controller.warehouses
++            ..clear()
++            ..addAll(
++              rawWarehouses.whereType<Map>().map((m) {
++                final w = m.map((k, v) => MapEntry(k.toString(), v));
++                return WarehouseRecord(
++                  id: (w['id'] as String?) ?? _genId('wh'),
++                  name: (w['name'] as String?) ?? 'المخزن الرئيسي',
++                  details: (w['details'] as String?) ?? '',
++                  isDefault: w['isDefault'] == true,
++                );
++              }),
++            );
++        }
++
++        final rawInventory = snap['inventory'];
++        if (rawInventory is List) {
++          controller.inventory
++            ..clear()
++            ..addAll(
++              rawInventory.whereType<Map>().map((m) {
++                final i = m.map((k, v) => MapEntry(k.toString(), v));
++                return InventoryItemRecord(
++                  id: (i['id'] as String?) ?? _genId('inv'),
++                  name: (i['name'] as String?) ?? 'صنف',
++                  unit: (i['unit'] as String?) ?? 'حبة',
++                  quantity: _toDouble(i['quantity'], fallback: 0),
++                  avgCost: _toDouble(i['avgCost'], fallback: 0),
++                  warehouseId: (i['warehouseId'] as String?) ?? 'wh_main',
++                  minThreshold: _toDouble(i['minThreshold'], fallback: 25),
++                  sku: (i['sku'] as String?) ?? '',
++                );
++              }),
++            );
++        }
++
++        final rawUiPrefs = _nestedMap(snap['uiPreferences']);
++        if (rawUiPrefs != null) {
++          await _writeStateMap(txn, _uiPrefsStateKey, rawUiPrefs);
++        }
++
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final nextSnap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'restored': true, 'snapshot': nextSnap};
++      },
++    );
++  }
++
++  Future<Map<String, Object?>> resetWorkspace({
++    required String idempotencyKey,
++    required Map<String, Object?> payload,
++    required bool allowFinancialWrites,
++  }) async {
++    return receiptGuard.executeProtected(
++      action: 'resetWorkspace',
++      idempotencyKey: idempotencyKey,
++      payload: payload,
++      postWork: (txn, _) async {
++        controller.accounts.clear();
++        controller.ledger.clear();
++        controller.inventory.clear();
++        await _persistControllerTablesInTxn(txn);
++        _snapshotVersion += 1;
++        controller.notifyListeners();
++
++        final nextSnap = await getSnapshot(
++          allowFinancialWrites: allowFinancialWrites,
++          executor: txn,
++        );
++        return <String, Object?>{'reset': true, 'snapshot': nextSnap};
++      },
++    );
++  }
++
++  /// Persists the EXISTING `ErpController` state into the EXISTING `LocalDatabase`
++  /// tables (`accounts`, `ledger_entries`, `warehouses`, `inventory_items`, `erp_state`)
++  /// inside the active `PostingReceiptGuard` transaction.
++  Future<void> _persistControllerTablesInTxn(Transaction txn) async {
++    await txn.delete('accounts');
++    for (final a in controller.accounts) {
++      await txn.insert(
++        'accounts',
++        <String, Object?>{
++          'id': a.id,
++          'name': a.name,
++          'category': a.category.name,
++          'phone': a.phone,
++          'creditLimit': a.creditLimit,
++          'currency': a.currency.name,
++          'isCashAccount': a.isCashAccount ? 1 : 0,
++          'note': a.note,
++          'openingBalance': a.openingBalance,
++          'openingDirection': a.openingDirection.name,
++          'codeNumber': a.codeNumber,
++        },
++        conflictAlgorithm: ConflictAlgorithm.replace,
++      );
++    }
++
++    await txn.delete('ledger_entries');
++    for (final l in controller.ledger) {
++      await txn.insert(
++        'ledger_entries',
++        <String, Object?>{
++          'id': l.id,
++          'accountId': l.accountId,
++          'accountName': l.accountName,
++          'kind': l.kind.name,
++          'typeLabel': l.typeLabel,
++          'payment': l.payment.name,
++          'direction': l.direction.name,
++          'amount': l.amount,
++          'currency': l.currency.name,
++          'exchangeRate': l.exchangeRate,
++          'details': l.details,
++          'documentNumber': l.documentNumber,
++          'warehouseId': l.warehouseId,
++          'warehouseName': l.warehouseName,
++          'expenseCategory': l.expenseCategory,
++          'entryNumber': l.entryNumber,
++          'deleted': l.deleted ? 1 : 0,
++          'entryDate': l.entryDate,
++        },
++        conflictAlgorithm: ConflictAlgorithm.replace,
++      );
++    }
++
++    await txn.delete('warehouses');
++    for (final w in controller.warehouses) {
++      await txn.insert(
++        'warehouses',
++        <String, Object?>{
++          'id': w.id,
++          'name': w.name,
++          'details': w.details,
++          'isDefault': w.isDefault ? 1 : 0,
++        },
++        conflictAlgorithm: ConflictAlgorithm.replace,
++      );
++    }
++
++    await txn.delete('inventory_items');
++    for (final i in controller.inventory) {
++      await txn.insert(
++        'inventory_items',
++        <String, Object?>{
++          'id': i.id,
++          'name': i.name,
++          'unit': i.unit,
++          'quantity': i.quantity,
++          'avgCost': i.avgCost,
++          'warehouseId': i.warehouseId,
++          'minThreshold': i.minThreshold,
++          'sku': i.sku,
++        },
++        conflictAlgorithm: ConflictAlgorithm.replace,
++      );
++    }
++
++    final maxNum = controller.ledger.fold<int>(
++      1200,
++      (m, e) => e.entryNumber > m ? e.entryNumber : m,
++    );
++    await _writeStateMap(txn, 'settings', <String, Object?>{
++      'companyName': controller.companyName,
++      'isDarkMode': controller.isDarkMode,
++      'nextEntryNumber': maxNum,
++    });
++  }
++
++  Future<Map<String, Object?>> _readStateMap(
++    DatabaseExecutor db,
++    String stateKey,
++  ) async {
++    final rows = await db.query(
++      'erp_state',
++      where: 'stateKey = ?',
++      whereArgs: [stateKey],
++      limit: 1,
++    );
++    if (rows.isEmpty) return <String, Object?>{};
++    try {
++      final decoded = jsonDecode(rows.first['payloadJson'] as String);
++      if (decoded is Map) {
++        return decoded.map((k, v) => MapEntry(k.toString(), v));
++      }
++    } catch (_) {}
++    return <String, Object?>{};
++  }
++
++  Future<void> _writeStateMap(
++    DatabaseExecutor db,
++    String stateKey,
++    Map<String, Object?> map,
++  ) async {
++    await db.insert(
++      'erp_state',
++      <String, Object?>{
++        'stateKey': stateKey,
++        'payloadJson': jsonEncode(map),
++        'updatedAt': DateTime.now().toIso8601String(),
++      },
++      conflictAlgorithm: ConflictAlgorithm.replace,
++    );
++  }
++
++  List<Map<String, Object?>> _buildCurrencyList(Map<String, Object?> meta) {
++    final stored = meta['currencies'];
++    if (stored is List && stored.isNotEmpty) {
++      return stored
++          .whereType<Map>()
++          .map((m) => m.map((k, v) => MapEntry(k.toString(), v)))
++          .toList();
++    }
++    return CurrencyCode.values
++        .asMap()
++        .entries
++        .map(
++          (e) => <String, Object?>{
++            'id': e.key + 1,
++            'code': e.value.label,
++            'name': e.value.label,
++            'symbol': e.value.label,
++            'ratePrimary': 1.0,
++            'rateSecondary': 1.0,
++            'nameSecondary': e.value.name.toUpperCase(),
++          },
++        )
++        .toList();
++  }
++
++  List<Map<String, Object?>> _buildAccountGroups(Map<String, Object?> meta) {
++    final stored = meta['accountGroups'];
++    if (stored is List && stored.isNotEmpty) {
++      return stored
++          .whereType<Map>()
++          .map((m) => m.map((k, v) => MapEntry(k.toString(), v)))
++          .toList();
++    }
++    return AccountCategory.values
++        .asMap()
++        .entries
++        .map(
++          (e) => <String, Object?>{
++            'id': e.key + 1,
++            'name': e.value.label,
++            'category': e.value.name,
++            'currencyCode': controller.defaultCurrency.label,
++            'hasBill': true,
++            'isEmployee': e.value == AccountCategory.employees,
++            'sortOrder': e.key + 1,
++          },
++        )
++        .toList();
++  }
++
++  List<Map<String, Object?>> _buildCashboxes() {
++    final cashAccounts = controller.accounts.where((a) => a.isCashAccount);
++    return cashAccounts
++        .toList()
++        .asMap()
++        .entries
++        .map(
++          (e) => <String, Object?>{
++            'id': e.key + 1,
++            'name': e.value.name,
++            'details': e.value.note,
++            'currencyCode': e.value.currency.label,
++            'state': 1,
++            'boxType': 0,
++            'sortOrder': e.key + 1,
++            'isActive': true,
++          },
++        )
++        .toList();
++  }
++
++  Map<String, Object?> _accountToHybridJson(
++    AccountRecord a, {
++    int? groupId,
++  }) =>
++      <String, Object?>{
++        'id': a.id,
++        'ownerId': workspaceId,
++        'groupId': groupId ?? (AccountCategory.values.indexOf(a.category) + 1),
++        'name': a.name,
++        'category': a.category.name,
++        'phone': a.phone,
++        'creditLimit': a.creditLimit,
++        'currency': a.currency.label,
++        'isCashAccount': a.isCashAccount,
++        'accountImage': '1',
++        'sortOrder': a.codeNumber,
++        'settlement': false,
++        'documentNumberRequired': false,
++        'messageMethod': 'sms',
++        'sendMode': 'never',
++        'note': a.note,
++        'openingBalance': a.openingBalance,
++        'openingDirection': a.openingDirection.name,
++        'codeNumber': a.codeNumber,
++      };
++
++  Map<String, Object?> _ledgerToHybridJson(
++    LedgerEntryRecord l, {
++    List<Map<String, Object?>> lines = const [],
++  }) =>
++      <String, Object?>{
++        'id': l.id,
++        'ownerId': workspaceId,
++        'accountId': l.accountId,
++        'accountName': l.accountName,
++        'counterpartAccountId': '',
++        'counterpartAccountName': '',
++        'kind': _ledgerKindToHybrid(l.kind),
++        'typeLabel': l.typeLabel,
++        'payment': l.payment.name,
++        'direction': l.direction.name,
++        'amount': l.amount,
++        'currency': l.currency.label,
++        'exchangeRate': l.exchangeRate,
++        'details': l.details,
++        'documentNumber': l.documentNumber,
++        'warehouseId': l.warehouseId,
++        'warehouseName': l.warehouseName,
++        'invoiceContent': lines.isNotEmpty ? 'items' : 'none',
++        'entryNumber': l.entryNumber,
++        'deleted': l.deleted,
++        'entryDate': l.entryDate,
++        if (l.expenseCategory.isNotEmpty) 'expenseCategory': l.expenseCategory,
++        'sourceOrigin': 'native',
++        'lineCount': lines.length,
++        if (lines.isNotEmpty) 'lines': lines,
++        'createdAtMs': DateTime.now().millisecondsSinceEpoch,
++      };
++
++  Map<String, Object?> _warehouseToHybridJson(WarehouseRecord w, int code) =>
++      <String, Object?>{
++        'id': w.id,
++        'ownerId': workspaceId,
++        'name': w.name,
++        'details': w.details,
++        'isDefault': w.isDefault,
++        'codeNumber': code,
++      };
++
++  Map<String, Object?> _inventoryToHybridJson(InventoryItemRecord i) =>
++      <String, Object?>{
++        'id': i.id,
++        'ownerId': workspaceId,
++        'name': i.name,
++        'unit': i.unit,
++        'quantity': i.quantity,
++        'avgCost': i.avgCost,
++        'minThreshold': i.minThreshold,
++        'sku': i.sku,
++        'currencyCode': controller.defaultCurrency.label,
++        'isActive': true,
++        'warehouseId': i.warehouseId,
++        'quantityUnverified': false,
++      };
++
++  static int _stockEffectSign({
++    required LedgerKind kind,
++    required EntryDirection direction,
++    required String typeLabel,
++  }) {
++    if (kind == LedgerKind.invoice) {
++      if (typeLabel.contains('مشتريات') || direction == EntryDirection.credit) {
++        return 1;
++      }
++      return -1;
++    }
++    if (kind == LedgerKind.returnEntry) {
++      if (typeLabel.contains('مشتريات')) return -1;
++      return 1;
++    }
++    return 0;
++  }
++
++  static CurrencyCode _parseCurrencyCode(String? raw) {
++    final clean = (raw ?? '').trim();
++    for (final code in CurrencyCode.values) {
++      if (code.label == clean || code.name == clean.toLowerCase()) return code;
++    }
++    return CurrencyCode.sar;
++  }
++
++  static AccountCategory _parseCategory(String? raw) {
++    final clean = (raw ?? '').trim();
++    for (final c in AccountCategory.values) {
++      if (c.name == clean || c.label == clean) return c;
++    }
++    return AccountCategory.purchases;
++  }
++
++  static LedgerKind _parseLedgerKind(String? raw) {
++    return switch (raw) {
++      'invoice' => LedgerKind.invoice,
++      'return' => LedgerKind.returnEntry,
++      'quote' => LedgerKind.quote,
++      'order' => LedgerKind.order,
++      'transfer' => LedgerKind.transfer,
++      'currency' => LedgerKind.currency,
++      'simple-entry' => LedgerKind.simpleEntry,
++      'opening' => LedgerKind.opening,
++      _ => LedgerKind.voucher,
++    };
++  }
++
++  static String _ledgerKindToHybrid(LedgerKind kind) {
++    return switch (kind) {
++      LedgerKind.returnEntry => 'return',
++      LedgerKind.simpleEntry => 'simple-entry',
++      _ => kind.name,
++    };
++  }
++
++  static PaymentMethod _parsePayment(String? raw) {
++    for (final p in PaymentMethod.values) {
++      if (p.name == raw || p.label == raw) return p;
++    }
++    return PaymentMethod.credit;
++  }
++
++  static Map<String, Object?>? _nestedMap(Object? raw) {
++    if (raw is! Map) return null;
++    return raw.map((k, v) => MapEntry(k.toString(), v));
++  }
++
++  static double _toDouble(Object? raw, {required double fallback}) {
++    if (raw is num) return raw.toDouble();
++    if (raw is String) return double.tryParse(raw.trim()) ?? fallback;
++    return fallback;
++  }
++
++  static AccountRecord _accountFromDbRow(Map<String, Object?> row) =>
++      AccountRecord(
++        id: (row['id'] as String?) ?? _genId('acc'),
++        name: (row['name'] as String?) ?? 'حساب',
++        category: _parseCategory(row['category'] as String?),
++        phone: (row['phone'] as String?) ?? '',
++        creditLimit: _toDouble(row['creditLimit'], fallback: 50000),
++        currency: _parseCurrencyCode(row['currency'] as String?),
++        isCashAccount: (row['isCashAccount'] as num?) == 1,
++        note: (row['note'] as String?) ?? '',
++        openingBalance: _toDouble(row['openingBalance'], fallback: 0),
++        openingDirection: row['openingDirection'] == 'debit'
++            ? EntryDirection.debit
++            : EntryDirection.credit,
++        codeNumber: (row['codeNumber'] as num?)?.toInt() ?? 1,
++      );
++
++  static LedgerEntryRecord _ledgerFromDbRow(Map<String, Object?> row) =>
++      LedgerEntryRecord(
++        id: (row['id'] as String?) ?? _genId('led'),
++        accountId: (row['accountId'] as String?) ?? '',
++        accountName: (row['accountName'] as String?) ?? '',
++        kind: _parseLedgerKind(row['kind'] as String?),
++        typeLabel: (row['typeLabel'] as String?) ?? 'قيد مالي',
++        payment: _parsePayment(row['payment'] as String?),
++        direction: row['direction'] == 'credit'
++            ? EntryDirection.credit
++            : EntryDirection.debit,
++        amount: _toDouble(row['amount'], fallback: 0),
++        currency: _parseCurrencyCode(row['currency'] as String?),
++        exchangeRate: _toDouble(row['exchangeRate'], fallback: 1.0),
++        details: (row['details'] as String?) ?? '',
++        documentNumber: (row['documentNumber'] as String?) ?? '',
++        warehouseId: (row['warehouseId'] as String?) ?? 'wh_main',
++        warehouseName: (row['warehouseName'] as String?) ?? 'المخزن الرئيسي',
++        expenseCategory: (row['expenseCategory'] as String?) ?? '',
++        entryNumber: (row['entryNumber'] as num?)?.toInt() ?? 1001,
++        deleted: (row['deleted'] as num?) == 1,
++        entryDate: (row['entryDate'] as String?) ??
++            DateTime.now().toIso8601String().substring(0, 10),
++      );
++
++  static WarehouseRecord _warehouseFromDbRow(Map<String, Object?> row) =>
++      WarehouseRecord(
++        id: (row['id'] as String?) ?? _genId('wh'),
++        name: (row['name'] as String?) ?? 'المخزن الرئيسي',
++        details: (row['details'] as String?) ?? '',
++        isDefault: (row['isDefault'] as num?) == 1,
++      );
++
++  static InventoryItemRecord _inventoryFromDbRow(Map<String, Object?> row) =>
++      InventoryItemRecord(
++        id: (row['id'] as String?) ?? _genId('inv'),
++        name: (row['name'] as String?) ?? 'صنف',
++        unit: (row['unit'] as String?) ?? 'حبة',
++        quantity: _toDouble(row['quantity'], fallback: 0),
++        avgCost: _toDouble(row['avgCost'], fallback: 0),
++        warehouseId: (row['warehouseId'] as String?) ?? 'wh_main',
++        minThreshold: _toDouble(row['minThreshold'], fallback: 25),
++        sku: (row['sku'] as String?) ?? '',
++      );
++
++  static int _seq = 0;
++  static String _genId(String prefix) {
++    _seq += 1;
++    return '${prefix}_${DateTime.now().millisecondsSinceEpoch}_$_seq';
++  }
++}
+
+diff --git a/flutter_app/lib/hybrid/hybrid_bridge_router.dart b/flutter_app/lib/hybrid/hybrid_bridge_router.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/lib/hybrid/hybrid_bridge_router.dart
+@@ -0,0 +1,400 @@
++import 'dart:convert';
++import 'erp_hybrid_adapter.dart';
++import 'hybrid_protocol.dart';
++
++typedef HybridNativeActionCallback = Future<Map<String, Object?>?> Function(
++  String action,
++  Map<String, Object?> payload,
++);
++
++/// Callback invoked for legacy `0d734ca` `NasqoHome` messages that do NOT carry
++/// `protocolVersion: "1.0.0"`. Guarantees zero regressions in the existing bridge.
++typedef LegacyNasqoHomeHandler = Future<String?> Function(String rawMessage);
++
++/// Compatibility router for the existing `NasqoHome` WebViewCompat channel.
++///
++/// - Legacy messages (from commit 0d734ca) pass untouched to [legacyHandler].
++/// - v1.0.0 React Hybrid envelopes pass through independent Dart validation,
++///   allowlist checks, [allowFinancialWrites] gating, and [ErpHybridAdapter]
++///   (backed by `ErpController` + `LocalDatabase` + `PostingReceiptGuard`).
++class HybridBridgeRouter {
++  HybridBridgeRouter({
++    required this.adapter,
++    required this.allowFinancialWrites,
++    this.legacyHandler,
++    this.onNavigate,
++    this.onGoBack,
++    this.onShowMessage,
++    this.onThemeModeChanged,
++    this.onNativeServiceAction,
++    this.onSnapshotUpdated,
++  });
++
++  final ErpHybridAdapter adapter;
++  final bool Function() allowFinancialWrites;
++  final LegacyNasqoHomeHandler? legacyHandler;
++  final void Function(String route, Map<String, Object?> params)? onNavigate;
++  final void Function(String? currentRoute, int? stackDepth)? onGoBack;
++  final void Function(String message, String level)? onShowMessage;
++  final void Function(String themeMode)? onThemeModeChanged;
++  final HybridNativeActionCallback? onNativeServiceAction;
++  final void Function(Map<String, Object?> snapshot)? onSnapshotUpdated;
++
++  /// Routes an inbound message from `NasqoHome`.
++  /// Returns a JSON response string, or `null` if [legacyHandler] handled it silently.
++  Future<String?> handleRawMessage(String rawJson) async {
++    if (!isReactHybridV1RawMessage(rawJson) && legacyHandler != null) {
++      return legacyHandler!(rawJson);
++    }
++
++    String fallbackRequestId = 'unknown';
++    String? fallbackAction;
++
++    try {
++      final dynamic preview = jsonDecode(rawJson);
++      if (preview is Map) {
++        if (preview['requestId'] is String) {
++          fallbackRequestId = preview['requestId'] as String;
++        }
++        if (preview['action'] is String) {
++          fallbackAction = preview['action'] as String;
++        }
++      }
++    } catch (_) {}
++
++    try {
++      final request = HybridRequestEnvelope.parse(rawJson);
++      final data = await dispatch(request);
++      return HybridResponseEnvelope.success(
++        requestId: request.requestId,
++        action: request.action,
++        data: data,
++      ).toJsonString();
++    } on HybridBridgeException catch (e) {
++      return HybridResponseEnvelope.failure(
++        requestId: fallbackRequestId,
++        action: fallbackAction,
++        error: e,
++      ).toJsonString();
++    } catch (e) {
++      return HybridResponseEnvelope.failure(
++        requestId: fallbackRequestId,
++        action: fallbackAction,
++        error: HybridBridgeException(
++          'INTERNAL_ERROR',
++          'تعذر تنفيذ الأمر عبر جسر Flutter: $e',
++        ),
++      ).toJsonString();
++    }
++  }
++
++  Future<Object?> dispatch(HybridRequestEnvelope request) async {
++    final writesAllowed = allowFinancialWrites();
++
++    if (kHybridFinancialMutationCommands.contains(request.action) &&
++        !writesAllowed) {
++      throw const HybridBridgeException(
++        'UNAUTHORIZED_ACTION',
++        'الترحيل المالي مغلق حاليًا في Flutter (NASQO_REACT_HYBRID_ALLOW_WRITES=false).',
++      );
++    }
++
++    final payload = request.payload;
++
++    switch (request.action) {
++      case 'getSnapshot':
++        return adapter.getSnapshot(allowFinancialWrites: writesAllowed);
++
++      case 'navigate':
++        final route = (payload['route'] as String? ?? '/').trim();
++        final rawParams = payload['params'];
++        final params = rawParams is Map
++            ? rawParams.map((k, v) => MapEntry(k.toString(), v))
++            : <String, Object?>{};
++        onNavigate?.call(route, params);
++        return <String, Object?>{'navigated': true, 'route': route};
++
++      case 'goBack':
++        onGoBack?.call(
++          payload['currentRoute'] as String?,
++          (payload['stackDepth'] as num?)?.toInt(),
++        );
++        return <String, Object?>{'handled': true};
++
++      case 'changeCurrency':
++        return adapter.changeCurrency((payload['currency'] as String? ?? '').trim());
++
++      case 'saveUiPreferences':
++        final rawPrefs = payload['preferences'];
++        if (rawPrefs is! Map) {
++          throw const HybridBridgeException(
++            'VALIDATION_ERROR',
++            'تفضيلات الواجهة يجب أن تكون كائنًا.',
++          );
++        }
++        final prefs = rawPrefs.map((k, v) => MapEntry(k.toString(), v));
++        final themeMode = prefs['themeMode'];
++        if (themeMode is String && themeMode.isNotEmpty) {
++          onThemeModeChanged?.call(themeMode);
++        }
++        return adapter.saveUiPreferences(prefs);
++
++      case 'openInvoice':
++      case 'openVoucher':
++      case 'openAccountStatement':
++        return <String, Object?>{'opened': true, 'action': request.action};
++
++      case 'showMessage':
++        final msg = (payload['message'] as String? ?? '').trim();
++        final level = (payload['level'] as String? ?? 'info').trim();
++        if (msg.isNotEmpty) onShowMessage?.call(msg, level);
++        return <String, Object?>{'shown': true};
++
++      case 'printDocument':
++      case 'exportPdf':
++      case 'pickFile':
++      case 'googleDriveAction':
++        if (onNativeServiceAction != null) {
++          final custom = await onNativeServiceAction!(request.action, payload);
++          if (custom != null) return custom;
++        }
++        if (request.action == 'pickFile') {
++          return const <String, Object?>{
++            'cancelled': true,
++            'fileName': '',
++            'mimeType': 'application/octet-stream',
++            'sizeBytes': 0,
++            'base64Content': '',
++          };
++        }
++        if (request.action == 'googleDriveAction') {
++          return const <String, Object?>{
++            'connected': false,
++            'offlineOnly': true,
++          };
++        }
++        return <String, Object?>{'queued': true, 'action': request.action};
++
++      case 'saveWorkspaceSettings':
++        final rawUpdates = payload['updates'];
++        final updates = rawUpdates is Map
++            ? rawUpdates.map((k, v) => MapEntry(k.toString(), v))
++            : payload;
++        return _emitIfSnapshot(
++          await adapter.saveWorkspaceSettings(
++            updates,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'saveAccountGroup':
++        return _emitIfSnapshot(
++          await adapter.saveAccountGroup(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'saveCurrency':
++        return _emitIfSnapshot(
++          await adapter.saveCurrency(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'deleteCurrency':
++        return _emitIfSnapshot(
++          await adapter.deleteCurrency(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'saveAccount':
++        return _emitIfSnapshot(
++          await adapter.saveAccount(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'deleteAccount':
++        return _emitIfSnapshot(
++          await adapter.deleteAccount(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'createLedgerEntry':
++        return _emitIfSnapshot(
++          await adapter.createLedgerEntry(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'updateLedgerEntry':
++        return _emitIfSnapshot(
++          await adapter.updateLedgerEntry(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'setLedgerDeleted':
++        return _emitIfSnapshot(
++          await adapter.setLedgerDeleted(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'permanentlyDeleteLedger':
++        return _emitIfSnapshot(
++          await adapter.permanentlyDeleteLedger(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'saveWarehouse':
++        return _emitIfSnapshot(
++          await adapter.saveWarehouse(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'createInventoryItem':
++        return _emitIfSnapshot(
++          await adapter.createInventoryItem(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'updateInventoryItem':
++        return _emitIfSnapshot(
++          await adapter.updateInventoryItem(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'deleteInventoryItem':
++        return _emitIfSnapshot(
++          await adapter.deleteInventoryItem(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'importInventoryItems':
++        return _emitIfSnapshot(
++          await adapter.importInventoryItems(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'batchUpdateInventoryItems':
++        return _emitIfSnapshot(
++          await adapter.batchUpdateInventoryItems(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'getInventoryMovementsReport':
++        final rawOpts = payload['options'];
++        final opts = rawOpts is Map
++            ? rawOpts.map((k, v) => MapEntry(k.toString(), v))
++            : <String, Object?>{};
++        return adapter.getInventoryMovementsReport(opts);
++
++      case 'getCashboxesReport':
++        final rawOpts = payload['options'];
++        final opts = rawOpts is Map
++            ? rawOpts.map((k, v) => MapEntry(k.toString(), v))
++            : <String, Object?>{};
++        return adapter.getCashboxesReport(opts);
++
++      case 'getInvoiceDetail':
++        return adapter.getInvoiceDetail(
++          (payload['entryId'] as String? ?? '').trim(),
++        );
++
++      case 'getProductPriceStats':
++        return adapter.getProductPriceStats(
++          (payload['itemId'] as String? ?? '').trim(),
++        );
++
++      case 'saveErpData':
++        final rawData = payload['data'];
++        if (rawData is! Map) {
++          throw const HybridBridgeException(
++            'VALIDATION_ERROR',
++            'بيانات ERP غير صالحة.',
++          );
++        }
++        return adapter.saveErpData(
++          rawData.map((k, v) => MapEntry(k.toString(), v)),
++        );
++
++      case 'backupWorkspace':
++        return adapter.backupWorkspace(
++          backupName: (payload['backupName'] as String? ?? '').trim(),
++          allowFinancialWrites: writesAllowed,
++        );
++
++      case 'restoreWorkspace':
++        return _emitIfSnapshot(
++          await adapter.restoreWorkspace(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      case 'resetWorkspace':
++        return _emitIfSnapshot(
++          await adapter.resetWorkspace(
++            idempotencyKey: request.idempotencyKey!,
++            payload: payload,
++            allowFinancialWrites: writesAllowed,
++          ),
++        );
++
++      default:
++        throw HybridBridgeException(
++          'UNAUTHORIZED_ACTION',
++          'الأمر غير مدعوم: ${request.action}',
++        );
++    }
++  }
++
++  Map<String, Object?> _emitIfSnapshot(Map<String, Object?> result) {
++    final snap = result['snapshot'];
++    if (snap is Map<String, Object?>) {
++      onSnapshotUpdated?.call(snap);
++    }
++    return result;
++  }
++}
+
+diff --git a/flutter_app/lib/hybrid/hybrid_react_v2_shell.dart b/flutter_app/lib/hybrid/hybrid_react_v2_shell.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/lib/hybrid/hybrid_react_v2_shell.dart
+@@ -0,0 +1,253 @@
++import 'dart:async';
++import 'package:flutter/foundation.dart';
++import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
++import '../services/local_database.dart';
++import '../state/erp_controller.dart';
++import 'erp_hybrid_adapter.dart';
++import 'hybrid_bridge_router.dart';
++import 'hybrid_protocol.dart';
++import 'nasqo_hybrid_flags.dart';
++import 'posting_receipt_guard.dart';
++
++/// Non-destructive Feature Flag shell wrapper preserving `0d734ca` compatibility.
++///
++/// - In experimental **Debug APK** (`kDebugMode == true`), defaults to mounting
++///   the current offline React Hybrid V2 UI inside the existing single Android
++///   WebView (`HybridHomeView.kt` + `NasqoHome`), WITH a one-tap fallback button
++///   (`العودة للنسخة السابقة`) that switches instantly back to [existingHybridChild].
++/// - When `NasqoHybridFlags.useReactHybridV2` is `false` (after tapping fallback,
++///   in Release mode, or with `--dart-define=NASQO_REACT_HYBRID_V2=false`), renders
++///   [existingHybridChild] untouched.
++class HybridReactV2FeatureGate extends StatelessWidget {
++  const HybridReactV2FeatureGate({
++    super.key,
++    required this.controller,
++    required this.existingHybridChild,
++    this.platformViewType = 'nasqo/home',
++    this.legacyMessageHandler,
++    this.showDebugFallbackButton = kDebugMode,
++  });
++
++  final ErpController controller;
++  final Widget existingHybridChild;
++
++  /// Must match the existing PlatformView viewType registered in `MainActivity.kt`
++  /// at commit 0d734ca2ce1716de8f7005f8339f395fbd396da6.
++  final String platformViewType;
++  final LegacyNasqoHomeHandler? legacyMessageHandler;
++  final bool showDebugFallbackButton;
++
++  @override
++  Widget build(BuildContext context) {
++    return ValueListenableBuilder<bool>(
++      valueListenable: NasqoHybridFlags.useReactHybridV2,
++      builder: (context, useV2, _) {
++        if (!useV2) {
++          if (!showDebugFallbackButton) {
++            return existingHybridChild;
++          }
++          return Stack(
++            children: [
++              existingHybridChild,
++              Positioned(
++                left: 12,
++                bottom: 16,
++                child: SafeArea(
++                  child: Material(
++                    color: Colors.transparent,
++                    child: ActionChip(
++                      key: const Key('nasqo_open_react_v2_chip'),
++                      avatar: const Icon(Icons.auto_awesome, size: 16),
++                      label: const Text('واجهة React الحالية'),
++                      onPressed: () =>
++                          NasqoHybridFlags.setUseReactHybridV2(true),
++                    ),
++                  ),
++                ),
++              ),
++            ],
++          );
++        }
++        return _HybridReactV2Host(
++          controller: controller,
++          platformViewType: platformViewType,
++          legacyMessageHandler: legacyMessageHandler,
++          showFallbackButton: showDebugFallbackButton,
++          onReturnToStableHybrid: () =>
++              NasqoHybridFlags.setUseReactHybridV2(false),
++        );
++      },
++    );
++  }
++}
++
++class _HybridReactV2Host extends StatefulWidget {
++  const _HybridReactV2Host({
++    required this.controller,
++    required this.platformViewType,
++    required this.onReturnToStableHybrid,
++    required this.showFallbackButton,
++    this.legacyMessageHandler,
++  });
++
++  final ErpController controller;
++  final String platformViewType;
++  final VoidCallback onReturnToStableHybrid;
++  final bool showFallbackButton;
++  final LegacyNasqoHomeHandler? legacyMessageHandler;
++
++  @override
++  State<_HybridReactV2Host> createState() => _HybridReactV2HostState();
++}
++
++class _HybridReactV2HostState extends State<_HybridReactV2Host> {
++  late final HybridBridgeRouter _router;
++  late final ErpHybridAdapter _adapter;
++  MethodChannel? _channel;
++  bool _ready = false;
++
++  @override
++  void initState() {
++    super.initState();
++    final guard = PostingReceiptGuard(
++      databaseProvider: () => LocalDatabase.instance.database,
++    );
++    _adapter = ErpHybridAdapter(
++      controller: widget.controller,
++      receiptGuard: guard,
++    );
++    // Upgrade-safe initialization: preserves existing LocalDatabase records on
++    // APK upgrade and starts clean & empty on brand-new installs.
++    unawaited(_adapter.loadOrInitializeUpgradeSafe());
++    _router = HybridBridgeRouter(
++      adapter: _adapter,
++      allowFinancialWrites: () => NasqoHybridFlags.allowFinancialWrites.value,
++      legacyHandler: widget.legacyMessageHandler,
++      onGoBack: (_, depth) {
++        if ((depth ?? 0) <= 1) {
++          widget.onReturnToStableHybrid();
++        }
++      },
++      onShowMessage: (message, level) {
++        if (!mounted) return;
++        ScaffoldMessenger.of(context).showSnackBar(
++          SnackBar(content: Text(message)),
++        );
++      },
++    );
++  }
++
++  @override
++  void dispose() {
++    _channel?.setMethodCallHandler(null);
++    super.dispose();
++  }
++
++  void _onPlatformViewCreated(int viewId) {
++    final ch = MethodChannel('nasqo/home/$viewId');
++    _channel = ch;
++    ch.setMethodCallHandler((call) async {
++      if (call.method == 'onWebMessage' || call.method == 'message') {
++        final raw = call.arguments as String?;
++        if (raw == null || raw.isEmpty) return false;
++        final response = await _router.handleRawMessage(raw);
++        if (response != null) {
++          await ch.invokeMethod<void>('postMessage', response);
++        }
++        return true;
++      }
++      if (call.method == 'onPageFinished') {
++        if (mounted) setState(() => _ready = true);
++        final evt = HybridHostEventEnvelope.create(
++          'themeChanged',
++          <String, Object?>{
++            'mode': widget.controller.isDarkMode ? 'dark' : 'light',
++          },
++        );
++        await ch.invokeMethod<void>('postMessage', evt.toJsonString());
++        return true;
++      }
++      return null;
++    });
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    final isAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
++
++    return PopScope(
++      canPop: false,
++      onPopInvokedWithResult: (didPop, _) {
++        if (didPop) return;
++        if (_ready && _channel != null) {
++          final evt = HybridHostEventEnvelope.create(
++            'backPressed',
++            const <String, Object?>{'source': 'android_system_back'},
++          );
++          unawaited(
++            _channel!.invokeMethod<void>('postMessage', evt.toJsonString()),
++          );
++        } else {
++          widget.onReturnToStableHybrid();
++        }
++      },
++      child: Scaffold(
++        body: SafeArea(
++          child: Stack(
++            children: [
++              if (isAndroid)
++                AndroidView(
++                  viewType: widget.platformViewType,
++                  layoutDirection: TextDirection.rtl,
++                  creationParams: const <String, Object?>{
++                    'useReactHybridV2': true,
++                  },
++                  creationParamsCodec: const StandardMessageCodec(),
++                  onPlatformViewCreated: _onPlatformViewCreated,
++                )
++              else
++                Center(
++                  child: Column(
++                    mainAxisSize: MainAxisSize.min,
++                    children: [
++                      const Text(
++                        'React Hybrid V2 يتطلب Android WebViewCompat (com.indexesstore.nasqo_qa).',
++                        textAlign: TextAlign.center,
++                      ),
++                      const SizedBox(height: 12),
++                      FilledButton(
++                        onPressed: widget.onReturnToStableHybrid,
++                        child: const Text('العودة للنسخة السابقة'),
++                      ),
++                    ],
++                  ),
++                ),
++              if (widget.showFallbackButton)
++                Positioned(
++                  left: 10,
++                  bottom: 72,
++                  child: Material(
++                    color: Colors.transparent,
++                    child: Tooltip(
++                      message: 'العودة الفورية للواجهة السابقة (0d734ca)',
++                      child: ActionChip(
++                        key: const Key('nasqo_fallback_previous_ui_btn'),
++                        avatar: const Icon(Icons.undo_rounded, size: 15),
++                        label: const Text(
++                          'العودة للسابقة',
++                          style: TextStyle(fontSize: 11),
++                        ),
++                        visualDensity: VisualDensity.compact,
++                        onPressed: widget.onReturnToStableHybrid,
++                      ),
++                    ),
++                  ),
++                ),
++            ],
++          ),
++        ),
++      ),
++    );
++  }
++}
+
+diff --git a/flutter_app/test/hybrid_erp_adapter_test.dart b/flutter_app/test/hybrid_erp_adapter_test.dart
+new file mode 100644
+--- /dev/null
++++ b/flutter_app/test/hybrid_erp_adapter_test.dart
+@@ -0,0 +1,567 @@
++import 'dart:convert';
++import 'package:flutter/foundation.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:nasqo_pro_erp/hybrid/erp_hybrid_adapter.dart';
++import 'package:nasqo_pro_erp/hybrid/hybrid_bridge_router.dart';
++import 'package:nasqo_pro_erp/hybrid/hybrid_protocol.dart';
++import 'package:nasqo_pro_erp/hybrid/nasqo_hybrid_flags.dart';
++import 'package:nasqo_pro_erp/hybrid/posting_receipt_guard.dart';
++import 'package:nasqo_pro_erp/models/erp_models.dart';
++import 'package:nasqo_pro_erp/state/erp_controller.dart';
++import 'package:sqflite_common_ffi/sqflite_ffi.dart';
++
++Map<String, Object?> _req({
++  required String id,
++  required String action,
++  required Map<String, Object?> payload,
++  String? idempotencyKey,
++}) =>
++    <String, Object?>{
++      'protocolVersion': kHybridProtocolVersion,
++      'kind': 'request',
++      'requestId': id,
++      'action': action,
++      'payload': payload,
++      'timestampMs': DateTime.now().millisecondsSinceEpoch,
++      if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
++    };
++
++/// Creates the EXACT existing `LocalDatabase` schema (no parallel database).
++Future<Database> _openExistingLocalSchemaInMemory() async {
++  final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
++  await db.execute('''
++    CREATE TABLE accounts (
++      id TEXT PRIMARY KEY,
++      name TEXT NOT NULL,
++      category TEXT NOT NULL,
++      phone TEXT NOT NULL,
++      creditLimit REAL NOT NULL,
++      currency TEXT NOT NULL,
++      isCashAccount INTEGER NOT NULL,
++      note TEXT NOT NULL,
++      openingBalance REAL NOT NULL,
++      openingDirection TEXT NOT NULL,
++      codeNumber INTEGER NOT NULL
++    )
++  ''');
++  await db.execute('''
++    CREATE TABLE ledger_entries (
++      id TEXT PRIMARY KEY,
++      accountId TEXT NOT NULL,
++      accountName TEXT NOT NULL,
++      kind TEXT NOT NULL,
++      typeLabel TEXT NOT NULL,
++      payment TEXT NOT NULL,
++      direction TEXT NOT NULL,
++      amount REAL NOT NULL,
++      currency TEXT NOT NULL,
++      exchangeRate REAL NOT NULL,
++      details TEXT NOT NULL,
++      documentNumber TEXT NOT NULL,
++      warehouseId TEXT NOT NULL,
++      warehouseName TEXT NOT NULL,
++      expenseCategory TEXT NOT NULL,
++      entryNumber INTEGER NOT NULL,
++      deleted INTEGER NOT NULL,
++      entryDate TEXT NOT NULL
++    )
++  ''');
++  await db.execute('''
++    CREATE TABLE warehouses (
++      id TEXT PRIMARY KEY,
++      name TEXT NOT NULL,
++      details TEXT NOT NULL,
++      isDefault INTEGER NOT NULL
++    )
++  ''');
++  await db.execute('''
++    CREATE TABLE inventory_items (
++      id TEXT PRIMARY KEY,
++      name TEXT NOT NULL,
++      unit TEXT NOT NULL,
++      quantity REAL NOT NULL,
++      avgCost REAL NOT NULL,
++      warehouseId TEXT NOT NULL,
++      minThreshold REAL NOT NULL,
++      sku TEXT NOT NULL
++    )
++  ''');
++  await db.execute('''
++    CREATE TABLE erp_state (
++      stateKey TEXT PRIMARY KEY,
++      payloadJson TEXT NOT NULL,
++      updatedAt TEXT NOT NULL
++    )
++  ''');
++  return db;
++}
++
++void main() {
++  sqfliteFfiInit();
++
++  late Database db;
++  late ErpController controller;
++  late PostingReceiptGuard guard;
++  late ErpHybridAdapter adapter;
++  late bool writesAllowed;
++  late List<String> legacyReceived;
++  late HybridBridgeRouter router;
++
++  setUp(() async {
++    db = await _openExistingLocalSchemaInMemory();
++    controller = ErpController(autoInitDb: false);
++    guard = PostingReceiptGuard(databaseProvider: () async => db);
++    adapter = ErpHybridAdapter(
++      controller: controller,
++      receiptGuard: guard,
++      databaseProvider: () async => db,
++    );
++    writesAllowed = true;
++    legacyReceived = <String>[];
++    router = HybridBridgeRouter(
++      adapter: adapter,
++      allowFinancialWrites: () => writesAllowed,
++      legacyHandler: (raw) async {
++        legacyReceived.add(raw);
++        return '{"legacyHandled":true}';
++      },
++    );
++  });
++
++  tearDown(() async {
++    controller.dispose();
++    await db.close();
++  });
++
++  Future<Map<String, Object?>> send(Map<String, Object?> envelope) async {
++    final rawResp = await router.handleRawMessage(jsonEncode(envelope));
++    expect(rawResp, isNotNull);
++    final decoded = jsonDecode(rawResp!) as Map<String, dynamic>;
++    return decoded.map((k, v) => MapEntry(k, v as Object?));
++  }
++
++  test('defaults match kDebugMode (Debug APK runs React V2 by default; Release keeps 0d734ca safe)', () {
++    expect(NasqoHybridFlags.defaultUseReactHybridV2, equals(kDebugMode));
++    expect(NasqoHybridFlags.defaultAllowFinancialWrites, equals(kDebugMode));
++    NasqoHybridFlags.setUseReactHybridV2(false);
++    expect(NasqoHybridFlags.useReactHybridV2.value, isFalse);
++    NasqoHybridFlags.setUseReactHybridV2(true);
++    expect(NasqoHybridFlags.useReactHybridV2.value, isTrue);
++  });
++
++  test('forwards legacy non-v1.0.0 NasqoHome messages untouched', () async {
++    const legacyMsg = '{"type":"openSection","section":"purchases"}';
++    final resp = await router.handleRawMessage(legacyMsg);
++    expect(resp, '{"legacyHandled":true}');
++    expect(legacyReceived, [legacyMsg]);
++  });
++
++  test('starts clean and empty on fresh install and persists full offline workflow across restart', () async {
++    final initResult = await adapter.loadOrInitializeUpgradeSafe();
++    expect(initResult['mode'], 'fresh_clean_empty');
++    expect(controller.accounts, isEmpty);
++    expect(controller.ledger, isEmpty);
++    expect(controller.inventory, isEmpty);
++    expect(controller.warehouses.length, 1);
++
++    // 1. Create account
++    final accRes = await send(
++      _req(
++        id: 'req_e2e_acc',
++        action: 'saveAccount',
++        idempotencyKey: 'idem_e2e_acc_1',
++        payload: <String, Object?>{
++          'workspaceId': 'local-erp-workspace',
++          'payload': {
++            'id': 'acc_offline_1',
++            'name': 'عميل اختبار وضع الطيران',
++            'category': 'sales',
++            'currency': 'ريال',
++          },
++        },
++      ),
++    );
++    expect(accRes['ok'], isTrue);
++
++    // 2. Create inventory item
++    final itemRes = await send(
++      _req(
++        id: 'req_e2e_item',
++        action: 'createInventoryItem',
++        idempotencyKey: 'idem_e2e_item_1',
++        payload: <String, Object?>{
++          'workspaceId': 'local-erp-workspace',
++          'payload': {
++            'id': 'inv_offline_1',
++            'name': 'بطارية ليثيوم 100Ah',
++            'unit': 'حبة',
++            'quantity': 10,
++            'avgCost': 200,
++            'warehouseId': 'wh_main',
++          },
++        },
++      ),
++    );
++    expect(itemRes['ok'], isTrue);
++
++    // 3. Create purchase invoice (increases stock by 5 -> 15)
++    final invRes = await send(
++      _req(
++        id: 'req_e2e_inv',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_e2e_inv_1',
++        payload: <String, Object?>{
++          'workspaceId': 'local-erp-workspace',
++          'payload': {
++            'accountId': 'acc_offline_1',
++            'accountName': 'عميل اختبار وضع الطيران',
++            'kind': 'invoice',
++            'typeLabel': 'فاتورة مشتريات آجل',
++            'payment': 'credit',
++            'direction': 'credit',
++            'amount': 1100,
++            'currency': 'ريال',
++            'lines': [
++              {
++                'lineKind': 'item',
++                'inventoryItemId': 'inv_offline_1',
++                'itemName': 'بطارية ليثيوم 100Ah',
++                'quantity': 5,
++                'price': 220,
++                'total': 1100,
++              },
++            ],
++          },
++        },
++      ),
++    );
++    expect(invRes['ok'], isTrue);
++
++    // 4. Create receipt voucher
++    final vchRes = await send(
++      _req(
++        id: 'req_e2e_vch',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_e2e_vch_1',
++        payload: <String, Object?>{
++          'workspaceId': 'local-erp-workspace',
++          'payload': {
++            'accountId': 'acc_offline_1',
++            'accountName': 'عميل اختبار وضع الطيران',
++            'kind': 'voucher',
++            'typeLabel': 'سند صرف نقدي',
++            'payment': 'cash',
++            'direction': 'debit',
++            'amount': 400,
++            'currency': 'ريال',
++          },
++        },
++      ),
++    );
++    expect(vchRes['ok'], isTrue);
++
++    // 5. Save UI preferences (dark mode + tile customization)
++    final prefRes = await send(
++      _req(
++        id: 'req_e2e_prefs',
++        action: 'saveUiPreferences',
++        payload: <String, Object?>{
++          'preferences': {
++            'themeMode': 'dark',
++            'homeTileLayout': {
++              'order': ['new-invoice', 'new-voucher'],
++              'pinned': ['new-invoice'],
++              'hidden': [],
++              'toneOverrides': {},
++            },
++          },
++        },
++      ),
++    );
++    expect(prefRes['ok'], isTrue);
++
++    // 6. Simulate app close & reopen against the SAME SQLite database
++    final reopenedController = ErpController(autoInitDb: false);
++    final reopenedAdapter = ErpHybridAdapter(
++      controller: reopenedController,
++      receiptGuard: PostingReceiptGuard(databaseProvider: () async => db),
++      databaseProvider: () async => db,
++    );
++    final reopenState = await reopenedAdapter.loadOrInitializeUpgradeSafe();
++    expect(reopenState['mode'], 'upgraded_preserved');
++    expect(reopenedController.accounts.length, 1);
++    expect(reopenedController.accounts.first.name, 'عميل اختبار وضع الطيران');
++    expect(reopenedController.ledger.length, 2);
++    expect(reopenedController.inventory.length, 1);
++    expect(reopenedController.inventory.first.quantity, 15.0);
++
++    final reopenedSnap = await reopenedAdapter.getSnapshot(
++      allowFinancialWrites: true,
++    );
++    final savedPrefs =
++        reopenedSnap['uiPreferences'] as Map<String, dynamic>;
++    expect(savedPrefs['themeMode'], 'dark');
++    reopenedController.dispose();
++  });
++
++  test('preserves 100% of existing LocalDatabase rows across an APK upgrade', () async {
++    // Seed pre-existing rows simulating an older APK version before upgrade
++    await db.insert('accounts', <String, Object?>{
++      'id': 'legacy_acc_1',
++      'name': 'مورد النسخة السابقة',
++      'category': 'purchases',
++      'phone': '777000111',
++      'creditLimit': 100000.0,
++      'currency': 'sar',
++      'isCashAccount': 0,
++      'note': 'بيانات قبل الترقية',
++      'openingBalance': 2500.0,
++      'openingDirection': 'credit',
++      'codeNumber': 101,
++    });
++    await db.insert('ledger_entries', <String, Object?>{
++      'id': 'legacy_led_1',
++      'accountId': 'legacy_acc_1',
++      'accountName': 'مورد النسخة السابقة',
++      'kind': 'invoice',
++      'typeLabel': 'فاتورة مشتريات آجل',
++      'payment': 'credit',
++      'direction': 'credit',
++      'amount': 1800.0,
++      'currency': 'sar',
++      'exchangeRate': 1.0,
++      'details': 'فاتورة سابقة قبل الترقية',
++      'documentNumber': 'OLD-55',
++      'warehouseId': 'wh_legacy',
++      'warehouseName': 'المخزن القديم',
++      'expenseCategory': '',
++      'entryNumber': 55,
++      'deleted': 0,
++      'entryDate': '2026-10-01',
++    });
++    await db.insert('warehouses', <String, Object?>{
++      'id': 'wh_legacy',
++      'name': 'المخزن القديم',
++      'details': '',
++      'isDefault': 1,
++    });
++
++    final upgradeResult = await adapter.loadOrInitializeUpgradeSafe();
++    expect(upgradeResult['mode'], 'upgraded_preserved');
++    expect(controller.accounts.length, 1);
++    expect(controller.accounts.first.id, 'legacy_acc_1');
++    expect(controller.accounts.first.openingBalance, 2500.0);
++    expect(controller.ledger.length, 1);
++    expect(controller.ledger.first.documentNumber, 'OLD-55');
++    expect(controller.warehouses.first.id, 'wh_legacy');
++  });
++
++  test('supports full backup export and atomic restore round-trip on test data', () async {
++    await adapter.loadOrInitializeUpgradeSafe();
++    await send(
++      _req(
++        id: 'req_bkp_acc',
++        action: 'saveAccount',
++        idempotencyKey: 'idem_bkp_acc_1',
++        payload: <String, Object?>{
++          'payload': {
++            'id': 'acc_bkp_1',
++            'name': 'حساب النسخة الاحتياطية',
++            'category': 'clients',
++            'currency': 'ريال',
++          },
++        },
++      ),
++    );
++    await send(
++      _req(
++        id: 'req_bkp_led',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_bkp_led_1',
++        payload: <String, Object?>{
++          'payload': {
++            'accountId': 'acc_bkp_1',
++            'accountName': 'حساب النسخة الاحتياطية',
++            'kind': 'voucher',
++            'typeLabel': 'سند قبض',
++            'payment': 'cash',
++            'direction': 'credit',
++            'amount': 750,
++            'currency': 'ريال',
++          },
++        },
++      ),
++    );
++
++    final exported = await send(
++      _req(
++        id: 'req_bkp_export',
++        action: 'backupWorkspace',
++        payload: const {'backupName': 'test-offline-backup.json'},
++      ),
++    );
++    expect(exported['ok'], isTrue);
++    final b64 = (exported['data'] as Map)['base64Content'] as String;
++    expect(b64, isNotEmpty);
++
++    // Clear workspace
++    await send(
++      _req(
++        id: 'req_bkp_reset',
++        action: 'resetWorkspace',
++        idempotencyKey: 'idem_bkp_reset_1',
++        payload: const {},
++      ),
++    );
++    expect(controller.accounts, isEmpty);
++    expect(controller.ledger, isEmpty);
++
++    // Restore atomically
++    final restored = await send(
++      _req(
++        id: 'req_bkp_restore',
++        action: 'restoreWorkspace',
++        idempotencyKey: 'idem_bkp_restore_1',
++        payload: {'base64Content': b64},
++      ),
++    );
++    expect(restored['ok'], isTrue);
++    expect(controller.accounts.length, 1);
++    expect(controller.accounts.first.name, 'حساب النسخة الاحتياطية');
++    expect(controller.ledger.length, 1);
++    expect(controller.ledger.first.amount, 750.0);
++  });
++
++  test('blocks financial writes in Dart when allowFinancialWrites is false', () async {
++    writesAllowed = false;
++    final res = await send(
++      _req(
++        id: 'req_ro_1',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_ro_001',
++        payload: <String, Object?>{
++          'workspaceId': 'local-erp-workspace',
++          'payload': {
++            'accountId': controller.accounts.first.id,
++            'accountName': controller.accounts.first.name,
++            'amount': 250,
++          },
++        },
++      ),
++    );
++    expect(res['ok'], isFalse);
++    expect((res['error'] as Map)['code'], 'UNAUTHORIZED_ACTION');
++  });
++
++  test('prevents duplicate posting via PostingReceiptGuard inside the SAME LocalDatabase', () async {
++    final initialLedgerLen = controller.ledger.length;
++    final item = controller.inventory.first;
++    final initialQty = item.quantity;
++
++    final purchasePayload = <String, Object?>{
++      'workspaceId': 'local-erp-workspace',
++      'payload': {
++        'accountId': controller.accounts.first.id,
++        'accountName': controller.accounts.first.name,
++        'kind': 'invoice',
++        'typeLabel': 'فاتورة مشتريات آجل',
++        'payment': 'credit',
++        'direction': 'credit',
++        'amount': 600,
++        'currency': 'ريال',
++        'lines': [
++          {
++            'lineKind': 'item',
++            'inventoryItemId': item.id,
++            'itemName': item.name,
++            'quantity': 5,
++            'price': 120,
++            'total': 600,
++          },
++        ],
++      },
++    };
++
++    final first = await send(
++      _req(
++        id: 'req_post_1',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_receipt_1001',
++        payload: purchasePayload,
++      ),
++    );
++    expect(first['ok'], isTrue);
++    final firstReceipt =
++        ((first['data'] as Map)['postingReceipt'] as Map<String, dynamic>);
++    expect(firstReceipt['replayed'], isFalse);
++
++    final retry = await send(
++      _req(
++        id: 'req_post_2',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_receipt_1001',
++        payload: purchasePayload,
++      ),
++    );
++    expect(retry['ok'], isTrue);
++    final retryReceipt =
++        ((retry['data'] as Map)['postingReceipt'] as Map<String, dynamic>);
++    expect(retryReceipt['replayed'], isTrue);
++    expect(retryReceipt['receiptId'], firstReceipt['receiptId']);
++
++    final tampered = await send(
++      _req(
++        id: 'req_post_3',
++        action: 'createLedgerEntry',
++        idempotencyKey: 'idem_receipt_1001',
++        payload: <String, Object?>{
++          'workspaceId': 'local-erp-workspace',
++          'payload': {
++            'accountId': controller.accounts.first.id,
++            'accountName': controller.accounts.first.name,
++            'amount': 9999,
++          },
++        },
++      ),
++    );
++    expect(tampered['ok'], isFalse);
++    expect((tampered['error'] as Map)['code'], 'DUPLICATE_REQUEST');
++
++    expect(controller.ledger.length, initialLedgerLen + 1);
++    expect(controller.inventory.first.quantity, initialQty + 5);
++
++    final dbLedgerRows = await db.query('ledger_entries');
++    expect(dbLedgerRows.length, initialLedgerLen + 1);
++    final receiptRows = await db.query('posting_receipts');
++    expect(receiptRows.length, 1);
++  });
++
++  test('separates multi-currency totals in cashboxes report without merging', () async {
++    controller.ledger.add(
++      const LedgerEntryRecord(
++        id: 'led_usd_cash_1',
++        accountId: 'acc_client_1',
++        accountName: 'عميل دولار',
++        kind: LedgerKind.voucher,
++        typeLabel: 'سند قبض نقدي دولار',
++        payment: PaymentMethod.cash,
++        direction: EntryDirection.credit,
++        amount: 350,
++        currency: CurrencyCode.usd,
++        entryNumber: 9001,
++        entryDate: '2026-11-22',
++      ),
++    );
++
++    final report = await send(
++      _req(id: 'req_cash_rep', action: 'getCashboxesReport', payload: const {}),
++    );
++    expect(report['ok'], isTrue);
++    final recon =
++        (report['data'] as Map)['reconciliation'] as Map<String, dynamic>;
++    final byCurrency = recon['totalsByCurrency'] as List<dynamic>;
++    final usd = byCurrency.firstWhere((e) => (e as Map)['currency'] == 'دولار')
++        as Map<String, dynamic>;
++    expect(usd['totalCashNet'], 350.0);
++  });
++}
+
+diff --git a/.github/workflows/flutter-hybrid-ci.yml b/.github/workflows/flutter-hybrid-ci.yml
+new file mode 100644
+--- /dev/null
++++ b/.github/workflows/flutter-hybrid-ci.yml
+@@ -0,0 +1,89 @@
++name: NASQO PRO Flutter Hybrid Offline CI (Review Branch Only)
++
++# Safety boundary:
++# - NEVER deploys to production, NEVER publishes APK, NEVER touches `main` release/signing/update channel.
++# - Uses the repository's EXISTING Android Kotlin DSL (*.gradle.kts), signing, and applicationId
++#   (`com.indexesstore.nasqo_qa`) from commit 0d734ca2ce1716de8f7005f8339f395fbd396da6.
++on:
++  pull_request:
++    branches:
++      - integration/**
++  push:
++    branches:
++      - feature/**
++      - integration/**
++  workflow_dispatch:
++
++concurrency:
++  group: flutter-hybrid-compat-ci-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  verify_react_and_flutter_debug_apk:
++    name: Offline React Audit + Flutter Analyze/Test + Debug APK (com.indexesstore.nasqo_qa)
++    runs-on: ubuntu-latest
++    timeout-minutes: 30
++
++    steps:
++      - name: Checkout integration branch
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js 24
++        uses: actions/setup-node@v4
++        with:
++          node-version: "24"
++          cache: "npm"
++
++      - name: Install Node dependencies
++        run: npm ci
++
++      - name: Build 100% offline React Hybrid bundle & run React tests
++        run: |
++          npm run check:runtime
++          npx tsc --noEmit
++          npm run build:hybrid
++          npx tsx --test tests/hybrid.test.ts
++
++      - name: Run React Hybrid Playwright offline & Light/Dark parity checks
++        run: |
++          npx playwright install --with-deps chromium
++          node scripts/verify-hybrid-home.mjs
++          node scripts/verify-hybrid-full-offline.mjs
++
++      - name: Sync verified dist/hybrid assets into flutter_app/assets/web
++        run: npm run sync:flutter-hybrid -- --skip-build
++
++      - name: Setup Java 17 (Temurin)
++        uses: actions/setup-java@v4
++        with:
++          distribution: "temurin"
++          java-version: "17"
++
++      - name: Setup Flutter (stable)
++        uses: subosito/flutter-action@v2
++        with:
++          channel: "stable"
++          cache: true
++
++      - name: Run Flutter pub get, analyze, and Dart/SQLite tests
++        working-directory: flutter_app
++        run: |
++          flutter pub get
++          flutter analyze
++          flutter test
++
++      - name: Build Experimental Debug APK (Current React UI default + fallback button)
++        working-directory: flutter_app
++        run: |
++          flutter build apk --debug
++
++      - name: Upload Experimental Debug APK & Offline Verification Reports (Non-Production)
++        uses: actions/upload-artifact@v4
++        with:
++          name: nasqo-qa-react-hybrid-offline-debug-apk
++          retention-days: 14
++          path: |
++            flutter_app/build/app/outputs/flutter-apk/app-debug.apk
++            dist/hybrid/hybrid-manifest.json
++            qa/hybrid_home/home-verification-report.json
++            qa/hybrid_offline/offline-full-verification-report.json

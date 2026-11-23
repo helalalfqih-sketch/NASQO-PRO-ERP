@@ -1,0 +1,45 @@
+{
+  "startedAtIso": "2026-11-22T13:19:44.280Z",
+  "airplaneModeStrict": true,
+  "blockedNetworkRequests": [],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "checks": [
+    {
+      "ok": true,
+      "name": "Clean empty first launch in strict Airplane Mode",
+      "details": "RTL=rtl, overflowX=false"
+    },
+    {
+      "ok": true,
+      "name": "Offline E2E accounting + duplicate posting guard + backup/restore round-trip",
+      "details": "accounts=1, ledger=2, stockQty=15"
+    },
+    {
+      "ok": true,
+      "name": "Duplicate invoice blocked & stock integrity verified",
+      "details": "ledger=2 (not 3), qty=15 (not 20)"
+    },
+    {
+      "ok": true,
+      "name": "Reopen persistence (SQLite -> Dark theme + data restored after localStorage clear)",
+      "details": "data-theme=dark"
+    },
+    {
+      "ok": true,
+      "name": "Zero external or /api/* network requests in strict Airplane Mode",
+      "details": "0 blocked requests"
+    },
+    {
+      "ok": true,
+      "name": "Zero console or page runtime errors",
+      "details": "consoleErrors=0, pageErrors=0"
+    }
+  ],
+  "screenshots": [
+    "qa/hybrid_offline/hybrid-offline-light-393.png",
+    "qa/hybrid_offline/hybrid-offline-dark-393.png"
+  ],
+  "completedAtIso": "2026-11-22T13:19:48.117Z",
+  "allPassed": true
+}

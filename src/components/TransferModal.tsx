@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDownIcon, Cross2Icon, PlusIcon } from "@radix-ui/react-icons";
 import { KeyboardInput, useKeyboard } from "../mobile";
 import {
   computeAccountSummary,
@@ -7,7 +6,6 @@ import {
   limitSelectAccounts,
   maxNumericField,
   parseArabicNumber,
-  rankAccountSearchMatches,
 } from "../accounting";
 import { createLedgerEntry } from "../firebase";
 import {
@@ -18,6 +16,7 @@ import {
   type LedgerEntryRecord,
 } from "../types";
 import { triggerHaptic } from "../utils/haptics";
+import { AccountSelectCombobox } from "./AccountSelectCombobox";
 import { OutlinedAmountField } from "./OutlinedAmountField";
 
 interface TransferModalProps {
@@ -59,7 +58,6 @@ export function TransferModal({
 }: TransferModalProps) {
   const keyboard = useKeyboard();
   const [closeAfterSave, setCloseAfterSave] = useState(true);
-  const [search, setSearch] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState(defaultAccountId ?? accounts[0]?.id ?? "");
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<CurrencyCode>("ريال");
@@ -95,25 +93,12 @@ export function TransferModal({
     }
   }, [accounts, cashboxId, cashboxes, defaultAccountId, open, selectedAccountId, sqliteCashboxId, sqliteCashboxes]);
 
-  const filteredAccounts = useMemo(
-    () => (open ? rankAccountSearchMatches(accounts, search) : []),
-    [accounts, open, search],
-  );
-
   const activeAccount =
-    filteredAccounts.find((a) => a.id === selectedAccountId) ??
-    filteredAccounts[0] ??
-    accounts.find((a) => a.id === selectedAccountId) ??
-    accounts[0];
+    accounts.find((a) => a.id === selectedAccountId) ?? accounts[0];
 
   const activeSummary = useMemo(
     () => (open && activeAccount ? computeAccountSummary(activeAccount, ledger) : null),
     [activeAccount, ledger, open],
-  );
-
-  const selectAccountOpts = useMemo(
-    () => limitSelectAccounts(filteredAccounts, activeAccount?.id, 150),
-    [activeAccount?.id, filteredAccounts],
   );
 
   const selectCashboxOpts = useMemo(
@@ -267,70 +252,22 @@ export function TransferModal({
           </span>
         </div>
 
-        <div className="transfer-account-box">
-          <button
-            type="button"
-            className="transfer-plus-btn"
-            aria-label="إضافة حساب جديد"
-            onClick={() => {
-              keyboard.hide();
-              onCreateAccount();
-            }}
-          >
-            <PlusIcon />
-          </button>
-          <KeyboardInput
-            aria-label="بحث عن حساب للحوالة"
-            data-testid="transfer-account-search"
-            placeholder="ابحث عن حساب"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && filteredAccounts.length > 0) {
-                e.preventDefault();
-                setSelectedAccountId(filteredAccounts[0].id);
-                setSearch("");
-                keyboard.hide();
-              }
-            }}
-          />
-          {search ? (
-            <button
-              type="button"
-              className="transfer-search-clear"
-              aria-label="مسح بحث الحوالة"
-              onClick={() => setSearch("")}
-            >
-              <Cross2Icon />
-            </button>
-          ) : null}
-          <select
-            aria-label="اختر حساب الحوالة"
-            value={activeAccount?.id ?? ""}
-            onChange={(e) => {
-              setSelectedAccountId(e.target.value);
-              setSearch("");
-            }}
-          >
-            {filteredAccounts.length === 0 ? (
-              <option value="">لا توجد حسابات مطابقة</option>
-            ) : (
-              <>
-                {selectAccountOpts.options.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </option>
-                ))}
-                {selectAccountOpts.truncatedCount > 0 ? (
-                  <option value="" disabled>
-                    — ابحث أعلاه لعرض باقي الحسابات (+{selectAccountOpts.truncatedCount}) —
-                  </option>
-                ) : null}
-              </>
-            )}
-          </select>
-          <ChevronDownIcon className="transfer-select-chevron" />
-        </div>
+        <AccountSelectCombobox
+          accounts={accounts}
+          value={activeAccount?.id ?? ""}
+          onChange={(nextId) => setSelectedAccountId(nextId)}
+          preferredCategories={["transfers", "clients", "shop"]}
+          placeholder="اختر حساب الحوالة"
+          searchPlaceholder="ابحث عن حساب للحوالة..."
+          ariaLabel="اختر حساب الحوالة"
+          searchAriaLabel="بحث عن حساب للحوالة"
+          triggerTestId="transfer-account-trigger"
+          searchTestId="transfer-account-search"
+          listTestId="transfer-account-list"
+          onAddAccount={onCreateAccount}
+          addAccountAriaLabel="إضافة حساب جديد"
+          compact
+        />
 
 
 

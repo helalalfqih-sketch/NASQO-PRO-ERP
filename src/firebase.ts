@@ -795,6 +795,8 @@ export type InventoryMovementItemRow = {
   unit2: string;
   count2: number | null;
   warehouseId: string;
+  currencyCode?: string;
+  expiryDate?: string;
   openingQty?: number;
   periodNetQty?: number;
   buyQty: number;
@@ -847,6 +849,15 @@ export async function fetchInventoryMovementsReport(
     activeItemsCount: number;
     profitBasis: "avg" | "cost" | "last";
   };
+  totalsByCurrency?: Array<{
+    currency: string;
+    totalSales: number;
+    totalPurchases: number;
+    totalProfit: number;
+    totalRemainingValue: number;
+    totalRemainingQty: number;
+    activeItemsCount: number;
+  }>;
   movements: Array<{
     source: "invoice" | "transfer";
     refId: string;
@@ -855,6 +866,9 @@ export async function fetchInventoryMovementsReport(
     label: string;
     accountName: string;
     warehouseName: string;
+    warehouseId?: string;
+    fromWarehouseId?: string;
+    toWarehouseId?: string;
     quantity: number;
     unit: string;
     unitNum: number;
@@ -862,6 +876,12 @@ export async function fetchInventoryMovementsReport(
     effectQty: number;
     price: number;
     total: number;
+    bonus?: number;
+    currency?: string;
+    documentNumber?: string;
+    details?: string;
+    docType?: number | null;
+    kind?: string;
   }>;
   anomalies: {
     unverifiedItemsCount: number;
@@ -919,6 +939,15 @@ export async function fetchCashboxesReport(
     totalCashNet: number;
     activeCount: number;
     inactiveCount: number;
+    totalsByCurrency?: Array<{
+      currency: string;
+      linkedCashboxesNet: number;
+      unlinkedCashIn: number;
+      unlinkedCashOut: number;
+      unlinkedCashNet: number;
+      unlinkedCashCount: number;
+      totalCashNet: number;
+    }>;
   };
 }> {
   const qs = new URLSearchParams();
@@ -1014,6 +1043,46 @@ export async function createInventoryItem(
       });
     }
     return saved.id;
+  });
+}
+
+export async function importInventoryItemsBatch(
+  uid: string,
+  items: readonly (Partial<InventoryItemRecord> & { name: string; warehouseId?: string })[],
+  options?: { mode?: "upsert" | "skip"; warehouseId?: string },
+): Promise<{ inserted: number; updated: number; skipped: number; total: number }> {
+  return runWithBrandLoader("جاري استيراد الأصناف إلى قاعدة البيانات...", async () => {
+    const res = await dbFetch<{
+      inserted: number;
+      updated: number;
+      skipped: number;
+      total: number;
+      inventory: InventoryItemRecord[];
+    }>(
+      `/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/import`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          items,
+          mode: options?.mode ?? "upsert",
+          warehouseId: options?.warehouseId,
+        }),
+      },
+      60_000,
+    );
+    if (activeBundle) {
+      applyBundle({
+        ...activeBundle,
+        inventory: res.inventory,
+        stats: { ...activeBundle.stats, inventoryCount: res.inventory.length },
+      });
+    }
+    return {
+      inserted: res.inserted,
+      updated: res.updated,
+      skipped: res.skipped,
+      total: res.total,
+    };
   });
 }
 

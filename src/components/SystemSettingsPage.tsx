@@ -47,6 +47,10 @@ interface SystemSettingsPageProps {
   onChangeHaptics: (enabled: boolean) => void;
   lastBackupIso: string | null;
   onOpenBackupModal: () => void;
+  onDownloadSqlite?: () => void;
+  onSyncDatabase?: () => void;
+  onSeedDemoData?: () => void;
+  onResetDatabase?: () => void;
   onOpenGoogleDrive?: () => void;
   onOpenFullSqliteImport?: () => void;
   onRestoreJson: () => void;
@@ -73,6 +77,10 @@ export function SystemSettingsPage({
   onChangeHaptics,
   lastBackupIso,
   onOpenBackupModal,
+  onDownloadSqlite,
+  onSyncDatabase,
+  onSeedDemoData,
+  onResetDatabase,
   onOpenGoogleDrive,
   onOpenFullSqliteImport,
   onRestoreJson,
@@ -90,6 +98,7 @@ export function SystemSettingsPage({
   );
   const [whatsappPhone, setWhatsappPhone] = useState(workspace?.whatsappPhone ?? "771370740");
   const [draft, setDraft] = useState<ExtendedAppSettings>(extended);
+  const [activeTab, setActiveTab] = useState<"company" | "appearance" | "printing" | "database">("company");
   const [faqOpen, setFaqOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -174,14 +183,15 @@ export function SystemSettingsPage({
 
   const handleSaveAll = async () => {
     keyboard.hide();
-    onChangeExtended(draft);
     if (!workspace) {
+      onChangeExtended(draft);
       triggerHaptic("success");
-      onNotify("تم حفظ الإعدادات محليًا");
+      onNotify("تم حفظ الإعدادات");
       return;
     }
     setSaving(true);
     try {
+      onChangeExtended(draft);
       const nextWorkspace: WorkspaceSettings = {
         ...workspace,
         companyName: companyName.trim() || workspace.companyName,
@@ -196,7 +206,10 @@ export function SystemSettingsPage({
         await saveWorkspaceSettings(uid, nextWorkspace);
       }
       triggerHaptic("success");
-      onNotify("تم حفظ جميع إعدادات النظام بنجاح");
+      onNotify("تم حفظ جميع إعدادات النظام في قاعدة البيانات بنجاح");
+    } catch (err) {
+      triggerHaptic("warning");
+      onNotify(err instanceof Error ? err.message : "تعذر حفظ الإعدادات في قاعدة البيانات.");
     } finally {
       setSaving(false);
     }
@@ -205,157 +218,134 @@ export function SystemSettingsPage({
   return (
     <MobileScroll className="app-screen sys-settings-scroll">
       <main className="sys-settings-page page-with-footer" data-testid="system-settings-screen">
-        {/* Top Activation & Version Banner */}
-        <div className="sys-activation-pill">
-          <span>التطبيق مفعل — سنوي</span>
-          <bdi>610870500</bdi>
-        </div>
-
-        <div className="sys-email-bar">
-          <bdi>{userEmail || "مستخدم سحابي"}</bdi>
-        </div>
-
-        {/* Usage & Sync Mode */}
-        <div className="sys-row sys-radio-row">
-          <span className="sys-row-label accent-red">نوع الاستخدام</span>
-          <div className="sys-radios" role="radiogroup" aria-label="نوع الاستخدام">
-            <label>
-              <input
-                type="radio"
-                name="sys-usage-mode"
-                checked={draft.usageMode === "local"}
-                onChange={() => {
-                  triggerHaptic("light");
-                  updateField("usageMode", "local");
-                }}
-              />
-              <span>المحلي</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="sys-usage-mode"
-                checked={draft.usageMode === "sync"}
-                onChange={() => {
-                  triggerHaptic("light");
-                  updateField("usageMode", "sync");
-                }}
-              />
-              <span>المزامنة</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="sys-row sys-radio-row">
-          <span className="sys-row-label accent-red">نوع المزامنة</span>
-          <div className="sys-radios-with-icons">
-            <div className="sys-radios" role="radiogroup" aria-label="نوع المزامنة">
-              <label>
-                <input
-                  type="radio"
-                  name="sys-sync-mode"
-                  checked={draft.syncMode === "auto"}
-                  onChange={() => {
-                    triggerHaptic("light");
-                    updateField("syncMode", "auto");
-                  }}
-                />
-                <span>تلقائية</span>
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="sys-sync-mode"
-                  checked={draft.syncMode === "manual"}
-                  onChange={() => {
-                    triggerHaptic("light");
-                    updateField("syncMode", "manual");
-                  }}
-                />
-              <span>يدوية</span>
-              </label>
+        {/* Top Real Backup Status Card */}
+        <section
+          className={`sys-top-backup-card ${backupStatus.overdue ? "overdue" : "healthy"}`}
+          data-testid="settings-top-backup-card"
+        >
+          <div className="sys-top-backup-info">
+            <strong>
+              {backupStatus.overdue
+                ? backupStatus.daysSince === null
+                  ? "النسخة الاحتياطية: لم يتم إنشاء نسخة بعد"
+                  : `تنبيه: آخر نسخة احتياطية منذ ${backupStatus.daysSince} يومًا`
+                : `النسخة الاحتياطية محدثة (منذ ${backupStatus.daysSince ?? 0} يوم)`}
+            </strong>
+            <div className="sys-top-backup-meta">
+              <span>قاعدة البيانات: SQLite محلي</span>
+              {lastBackupIso ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    آخر نسخة: <bdi>{new Date(lastBackupIso).toLocaleDateString("en-GB")}</bdi>
+                  </span>
+                </>
+              ) : null}
+              {userEmail ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <bdi>{userEmail}</bdi>
+                </>
+              ) : null}
             </div>
           </div>
-        </div>
-
-        <div className="sys-btn-grid" style={{ gridTemplateColumns: "1fr" }}>
-          <button
-            type="button"
-            className="danger"
-            onClick={() => {
-              triggerHaptic("warning");
-              onSignOut();
-            }}
-          >
-            تسجيل الخروج
-          </button>
-        </div>
-
-        <div className="sys-faq-row">
-          <button
-            type="button"
-            className="sys-faq-link"
-            onClick={() => setFaqOpen((prev) => !prev)}
-          >
-            أسئلة شائعة
-          </button>
-        </div>
-        {faqOpen ? (
-          <div className="sys-faq-card">
-            <strong>أبرز الإرشادات:</strong>
-            <p>• يمكنك حفظ نسخة احتياطية كاملة في أي وقت من قسم النسخ الاحتياطي.</p>
-            <p>• يمكنك تخصيص مسمى (الرصيد لكم / عليكم) وملاحظات الفواتير أسفل هذه الصفحة.</p>
-          </div>
-        ) : null}
-
-        {/* Logo & Business Bilingual Fields */}
-        <section className="sys-card">
-          <div className="sys-logo-row">
-            <span className="sys-blue-label">الشعار</span>
+          <div className="sys-top-backup-actions">
             <button
               type="button"
-              className="sys-logo-thumb"
-              onClick={() => logoInputRef.current?.click()}
-              aria-label="تغيير شعار المنشأة"
+              className="sys-quick-btn primary"
+              onClick={() => {
+                triggerHaptic("light");
+                onOpenBackupModal();
+              }}
+              data-testid="settings-top-backup-btn"
             >
-              {draft.logoDataUrl ? (
-                <img src={draft.logoDataUrl} alt="شعار المنشأة" draggable={false} />
-              ) : (
-                <img
-                  src={APP_ICON_URL}
-                  alt="أيقونة التطبيق"
-                  className="app-brand-icon-img"
-                  draggable={false}
-                />
-              )}
+              نسخة احتياطية
             </button>
-            {draft.logoDataUrl ? (
+            {onOpenGoogleDrive ? (
               <button
                 type="button"
-                className="sys-logo-clear"
-                aria-label="إزالة الشعار"
-                onClick={() => updateField("logoDataUrl", "")}
+                className="sys-quick-btn secondary"
+                onClick={() => {
+                  triggerHaptic("light");
+                  onOpenGoogleDrive();
+                }}
+                data-testid="settings-top-drive-btn"
               >
-                <Cross2Icon />
+                Google Drive
               </button>
             ) : null}
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={handleLogoUpload}
-            />
           </div>
+        </section>
 
-          <label className="sys-row sys-check-row">
-            <span className="accent-red">لا أريد ظهور الإعلانات</span>
-            <input
-              type="checkbox"
-              checked={draft.hideAds}
-              onChange={(e) => updateField("hideAds", e.target.checked)}
-            />
-          </label>
+        {/* Organized 4-Tab Navigation Bar */}
+        <nav className="sys-tabs-bar" role="tablist" aria-label="أقسام الإعدادات" data-testid="settings-tabs">
+          {(
+            [
+              ["company", "المنشأة"],
+              ["appearance", "المظهر"],
+              ["printing", "الطباعة"],
+              ["database", "قاعدة البيانات"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              className={`sys-tab-btn ${activeTab === id ? "active" : ""}`}
+              data-testid={`settings-tab-${id}`}
+              onClick={() => {
+                triggerHaptic("light");
+                setActiveTab(id);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {/* TAB 1: المنشأة وبيانات النشاط والإعدادات المحاسبية */}
+        {activeTab === "company" ? (
+          <div className="sys-tab-panel" role="tabpanel" data-testid="settings-panel-company">
+            <section className="sys-card">
+              <div className="sys-card-heading">بيانات المنشأة والهوية</div>
+              <div className="sys-logo-row">
+                <span className="sys-blue-label">الشعار</span>
+                <button
+                  type="button"
+                  className="sys-logo-thumb"
+                  onClick={() => logoInputRef.current?.click()}
+                  aria-label="تغيير شعار المنشأة"
+                >
+                  {draft.logoDataUrl ? (
+                    <img src={draft.logoDataUrl} alt="شعار المنشأة" draggable={false} />
+                  ) : (
+                    <img
+                      src={APP_ICON_URL}
+                      alt="أيقونة التطبيق"
+                      className="app-brand-icon-img"
+                      draggable={false}
+                    />
+                  )}
+                </button>
+                {draft.logoDataUrl ? (
+                  <button
+                    type="button"
+                    className="sys-logo-clear"
+                    aria-label="إزالة الشعار"
+                    onClick={() => updateField("logoDataUrl", "")}
+                  >
+                    <Cross2Icon />
+                  </button>
+                ) : null}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={handleLogoUpload}
+                />
+              </div>
 
           <div className="sys-bilingual-grid">
             <label className="sys-field-box">
@@ -435,13 +425,189 @@ export function SystemSettingsPage({
               </select>
             </label>
           </div>
-        </section>
+            </section>
 
-        {/* Main Home Interface Colors, Shapes, Banner & Layout Controls */}
-        <section
-          className="settings-appearance-box card-ctrl-section"
-          data-testid="home-appearance-settings"
-        >
+            {/* Accounting & Sales Policy inside Company Tab */}
+            <section className="sys-card">
+              <div className="sys-card-heading">إعدادات الحسابات والعملات</div>
+              <div className="sys-row sys-dual-checks">
+                <label className="sys-inline-check">
+                  <span>عرض الرصيد في السند</span>
+                  <input
+                    type="checkbox"
+                    checked={draft.showBalanceInVoucher}
+                    onChange={(e) => updateField("showBalanceInVoucher", e.target.checked)}
+                  />
+                </label>
+                <label className="sys-inline-check">
+                  <span>عرض وقت السند</span>
+                  <input
+                    type="checkbox"
+                    checked={draft.showTimeInVoucher}
+                    onChange={(e) => updateField("showTimeInVoucher", e.target.checked)}
+                  />
+                </label>
+              </div>
+              {(
+                [
+                  ["useReceiptPaymentVoucher", "استخدام سند صرف/قبض"],
+                  ["useTwoDecimals", "استخدام الفاصل العشري .00"],
+                  ["showAllCurrenciesToLocal", "عرض خيار جميع العملات إلى عملة محلية"],
+                  ["hideCashboxesOnHome", "إخفاء إجمالي الصناديق في الشاشة الرئيسية"],
+                  ["hideVoucherSuggestions", "إخفاء اقتراحات تفاصيل السند"],
+                  ["showGeneralEntryOnHome", "إضافة قيد عام إلى الشاشة الرئيسية"],
+                  ["hideAllUsersOption", "عدم عرض خيار جميع المستخدمين"],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="sys-row sys-check-row" key={key}>
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={draft[key]}
+                    onChange={(e) => updateField(key, e.target.checked)}
+                  />
+                </label>
+              ))}
+              <div className="sys-bilingual-grid">
+                <label className="sys-field-box">
+                  <span>مسمى الرصيد لكم</span>
+                  <KeyboardInput
+                    aria-label="مسمى الرصيد لكم"
+                    value={draft.creditBalanceLabel}
+                    onChange={(e) => updateField("creditBalanceLabel", e.target.value)}
+                  />
+                </label>
+                <label className="sys-field-box">
+                  <span>مسمى الرصيد عليكم</span>
+                  <KeyboardInput
+                    aria-label="مسمى الرصيد عليكم"
+                    value={draft.debitBalanceLabel}
+                    onChange={(e) => updateField("debitBalanceLabel", e.target.value)}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="sys-card">
+              <div className="sys-card-heading">سياسات المبيعات والمخزون</div>
+              <div className="sys-row sys-dual-checks">
+                <label className="sys-inline-check">
+                  <span>بيع بسعر أقل من التكلفة</span>
+                  <input
+                    type="checkbox"
+                    checked={draft.sellBelowCost}
+                    onChange={(e) => updateField("sellBelowCost", e.target.checked)}
+                  />
+                </label>
+                <label className="sys-inline-check">
+                  <span>بيع بدون رصيد</span>
+                  <input
+                    type="checkbox"
+                    checked={draft.sellWithoutBalance}
+                    onChange={(e) => updateField("sellWithoutBalance", e.target.checked)}
+                  />
+                </label>
+              </div>
+              {(
+                [
+                  ["useWeightedAverage", "استخدام المتوسط المرجح للتكلفة"],
+                  ["useFreeBonusQty", "استخدام البونص (الكمية المجانية)"],
+                  ["hideItemCost", "عدم إظهار تكلفة الأصناف"],
+                  ["useLargestUnitAsMain", "استخدام أكبر وحدة كـ وحدة رئيسية"],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="sys-row sys-check-row" key={key}>
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={draft[key]}
+                    onChange={(e) => updateField(key, e.target.checked)}
+                  />
+                </label>
+              ))}
+              {draft.useLargestUnitAsMain ? (
+                <p className="sys-important-note">
+                  ملاحظة هامة: يُنصح باستخدام أصغر وحدة (مثل الحبة) كوحدة رئيسية إلا إذا كان كامل تعاملك بأكبر وحدة (مثل الكرتون).
+                </p>
+              ) : null}
+            </section>
+          </div>
+        ) : null}
+
+        {/* TAB 2: المظهر وتخصيص الواجهة والبطاقات */}
+        {activeTab === "appearance" ? (
+          <div className="sys-tab-panel" role="tabpanel" data-testid="settings-panel-appearance">
+            <section className="settings-appearance-box" data-testid="settings-appearance-box">
+              <div className="settings-subhead">المظهر العام ولون العلامة والاهتزاز</div>
+              <div className="exec-segmented" role="group" aria-label="وضع الألوان">
+                {(
+                  [
+                    ["light", "فاتح"],
+                    ["dark", "داكن"],
+                    ["system", "النظام"],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={themeMode === m ? "active" : ""}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onChangeThemeMode(m);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="exec-color-swatches">
+                {BRAND_COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`exec-color-swatch ${brandColor === preset.hex ? "active" : ""}`}
+                    style={{ background: preset.hex }}
+                    aria-label={preset.label}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onChangeBrandColor(preset.hex);
+                    }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  aria-label="لون مخصص للواجهة"
+                  value={brandColor}
+                  onChange={(e) => onChangeBrandColor(e.target.value)}
+                  style={{ width: 28, height: 28, padding: 0, border: 0 }}
+                />
+                <button
+                  type="button"
+                  className="settings-reset-color-btn"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    onResetBrandColor();
+                    onChangeThemeMode("light");
+                  }}
+                >
+                  الافتراضي
+                </button>
+              </div>
+              <label className="exec-haptic-toggle">
+                <input
+                  type="checkbox"
+                  checked={hapticsEnabled}
+                  onChange={(e) => onChangeHaptics(e.target.checked)}
+                />
+                <span>تفعيل ردود الفعل اللمسية (الاهتزاز) عند التفاعل</span>
+              </label>
+            </section>
+
+            {/* Main Home Interface Colors, Shapes, Banner & Layout Controls */}
+            <section
+              className="settings-appearance-box card-ctrl-section"
+              data-testid="home-appearance-settings"
+            >
           <div className="card-ctrl-header">
             <div>
               <div className="settings-subhead">تخصيص الواجهة الرئيسية (الألوان والأشكال والتخطيط)</div>
@@ -1248,475 +1414,414 @@ export function SystemSettingsPage({
             </div>
           </div>
         </section>
+          </div>
+        ) : null}
 
-        {/* Theme, Brand Color, Haptics & Backup Freshness (Preserved Dashboard Controls) */}
-        <section className="settings-appearance-box" data-testid="settings-appearance-box">
-          <div className="settings-subhead">المظهر ولون العلامة والاهتزاز والنسخ الاحتياطي</div>
-          <div className="exec-segmented" role="group" aria-label="وضع الألوان">
-            {(
-              [
-                ["light", "فاتح"],
-                ["dark", "داكن"],
-                ["system", "النظام"],
-              ] as const
-            ).map(([m, label]) => (
-              <button
-                key={m}
-                type="button"
-                className={themeMode === m ? "active" : ""}
-                onClick={() => {
-                  triggerHaptic("light");
-                  onChangeThemeMode(m);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="exec-color-swatches">
-            {BRAND_COLOR_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                className={`exec-color-swatch ${brandColor === preset.hex ? "active" : ""}`}
-                style={{ background: preset.hex }}
-                aria-label={preset.label}
-                onClick={() => {
-                  triggerHaptic("light");
-                  onChangeBrandColor(preset.hex);
-                }}
-              />
-            ))}
-            <input
-              type="color"
-              aria-label="لون مخصص للواجهة"
-              value={brandColor}
-              onChange={(e) => onChangeBrandColor(e.target.value)}
-              style={{ width: 28, height: 28, padding: 0, border: 0 }}
-            />
-            <button
-              type="button"
-              className="settings-reset-color-btn"
-              onClick={() => {
-                triggerHaptic("light");
-                onResetBrandColor();
-                onChangeThemeMode("light");
-              }}
-            >
-              الافتراضي
-            </button>
-          </div>
-          <label className="exec-haptic-toggle">
-            <input
-              type="checkbox"
-              checked={hapticsEnabled}
-              onChange={(e) => onChangeHaptics(e.target.checked)}
-            />
-            <span>تفعيل ردود الفعل اللمسية (الاهتزاز) عند التفاعل</span>
-          </label>
-          <div
-            className={`settings-backup-freshness ${backupStatus.overdue ? "overdue" : "healthy"}`}
-            data-testid="settings-backup-banner"
-          >
-            <strong>
-              {backupStatus.overdue
-                ? backupStatus.daysSince === null
-                  ? "تنبيه: لم يتم أخذ نسخة احتياطية بعد"
-                  : `تنبيه: آخر نسخة احتياطية منذ ${backupStatus.daysSince} يومًا`
-                : `النسخة الاحتياطية محدثة (منذ ${backupStatus.daysSince ?? 0} يوم)`}
-            </strong>
-            {lastBackupIso ? (
-              <div style={{ fontSize: 11, marginTop: 3 }}>
-                آخر تصدير: <bdi>{new Date(lastBackupIso).toLocaleString("en-GB")}</bdi>
+        {/* TAB 3: الطباعة والفواتير وإشعارات الواتساب */}
+        {activeTab === "printing" ? (
+          <div className="sys-tab-panel" role="tabpanel" data-testid="settings-panel-printing">
+            <section className="sys-card">
+              <div className="sys-card-heading">إعدادات الطباعة والتقارير</div>
+              <div className="sys-row sys-radio-row">
+                <span className="sys-blue-label">الطباعة إلى</span>
+                <div className="sys-radios" role="radiogroup" aria-label="الطباعة إلى">
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-print-target"
+                      checked={draft.printTarget === "pdf"}
+                      onChange={() => updateField("printTarget", "pdf")}
+                    />
+                    <span>PDF</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-print-target"
+                      checked={draft.printTarget === "printer"}
+                      onChange={() => updateField("printTarget", "printer")}
+                    />
+                    <span>الطابعة</span>
+                  </label>
+                </div>
               </div>
-            ) : null}
+
+              <div className="sys-row sys-radio-row">
+                <span className="sys-blue-label">نموذج طباعة الفواتير</span>
+                <div className="sys-radios" role="radiogroup" aria-label="نموذج طباعة الفواتير">
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-invoice-tpl"
+                      checked={draft.invoicePrintTemplate === "1"}
+                      onChange={() => updateField("invoicePrintTemplate", "1")}
+                    />
+                    <span>نموذج 1</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-invoice-tpl"
+                      checked={draft.invoicePrintTemplate === "2"}
+                      onChange={() => updateField("invoicePrintTemplate", "2")}
+                    />
+                    <span>نموذج 2</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="sys-row sys-color-bar-row">
+                <input
+                  type="color"
+                  aria-label="تلوين التقارير"
+                  value={draft.reportColor}
+                  onChange={(e) => updateField("reportColor", e.target.value)}
+                  className="sys-color-chip"
+                />
+                <div className="sys-report-color-label">تلوين التقارير</div>
+              </div>
+
+              <div className="sys-row sys-font-row">
+                <div className="sys-stepper">
+                  <button
+                    type="button"
+                    aria-label="تكبير الخط"
+                    onClick={() => updateField("fontSize", Math.min(10, draft.fontSize + 1))}
+                  >
+                    +
+                  </button>
+                  <b>{draft.fontSize}</b>
+                  <button
+                    type="button"
+                    aria-label="تصغير الخط"
+                    onClick={() => updateField("fontSize", Math.max(1, draft.fontSize - 1))}
+                  >
+                    -
+                  </button>
+                </div>
+                <span className="sys-blue-label">مقاس خطوط الطباعة</span>
+                <label className="sys-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.yellowPaper}
+                    onChange={(e) => updateField("yellowPaper", e.target.checked)}
+                  />
+                  <span>ورقة صفراء</span>
+                </label>
+              </div>
+
+              {(
+                [
+                  ["drawSignature", "رسم التوقيع أسفل الفواتير والسندات"],
+                  ["thermalPrintPdf", "طباعة السندات بطابعة حرارية 80mm"],
+                  ["hidePriceIn80mm", "عدم طباعة سعر البيع في فواتير 80mm"],
+                  ["showItemsInInvoiceDetails", "عرض الأصناف في تفاصيل الفاتورة"],
+                  ["hideExpiryInInvoice", "عدم عرض تاريخ الانتهاء في الفاتورة"],
+                  ["hidePrintDateInInvoice", "عدم عرض تاريخ الطباعة في الفاتورة"],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="sys-row sys-check-row" key={key}>
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={draft[key]}
+                    onChange={(e) => updateField(key, e.target.checked)}
+                  />
+                </label>
+              ))}
+
+              <label className="sys-field-box full">
+                <span>ملاحظات أسفل كشف الحساب</span>
+                <KeyboardInput
+                  aria-label="ملاحظات أسفل كشف الحساب"
+                  value={draft.statementFooterNote}
+                  onChange={(e) => updateField("statementFooterNote", e.target.value)}
+                />
+              </label>
+
+              <label className="sys-field-box full">
+                <span>ملاحظات أسفل فواتير المبيعات</span>
+                <KeyboardInput
+                  aria-label="ملاحظات أسفل فواتير المبيعات"
+                  value={draft.salesInvoiceFooterNote}
+                  onChange={(e) => updateField("salesInvoiceFooterNote", e.target.value)}
+                />
+              </label>
+            </section>
+
+            <section className="sys-card">
+              <div className="sys-card-heading">إشعارات الواتساب والرسائل</div>
+              <label className="sys-row sys-check-row">
+                <span>استخدام رسائل الواتساب التلقائية</span>
+                <input
+                  type="checkbox"
+                  checked={draft.autoWhatsapp}
+                  onChange={(e) => updateField("autoWhatsapp", e.target.checked)}
+                />
+              </label>
+
+              <div className="sys-row sys-radio-row">
+                <span className="sys-blue-label">الواتساب المستخدم</span>
+                <div className="sys-radios" role="radiogroup" aria-label="الواتساب المستخدم">
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-wa-variant"
+                      checked={draft.whatsappVariant === "green"}
+                      onChange={() => updateField("whatsappVariant", "green")}
+                    />
+                    <span>الأخضر</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-wa-variant"
+                      checked={draft.whatsappVariant === "business"}
+                      onChange={() => updateField("whatsappVariant", "business")}
+                    />
+                    <span>أعمال</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="sys-wa-variant"
+                      checked={draft.whatsappVariant === "omar"}
+                      onChange={() => updateField("whatsappVariant", "omar")}
+                    />
+                    <span>عمر</span>
+                  </label>
+                </div>
+              </div>
+
+              {(
+                [
+                  ["useNotifMsgInPaymentReq", "استخدام رسالة الإشعارات في طلب السداد"],
+                  ["showDateInSms", "عرض تاريخ الإرسال في الرسائل النصية"],
+                  ["showVoucherNoInSms", "عرض رقم السند في الرسائل النصية"],
+                ] as const
+              ).map(([key, label]) => (
+                <label className="sys-row sys-check-row" key={key}>
+                  <span>{label}</span>
+                  <input
+                    type="checkbox"
+                    checked={draft[key]}
+                    onChange={(e) => updateField(key, e.target.checked)}
+                  />
+                </label>
+              ))}
+
+              <div className="sys-bilingual-grid">
+                <label className="sys-field-box">
+                  <span>مقدمة الرسالة</span>
+                  <KeyboardInput
+                    aria-label="مقدمة الرسالة"
+                    placeholder="مقدمة الرسالة"
+                    value={draft.messageIntro}
+                    onChange={(e) => updateField("messageIntro", e.target.value)}
+                  />
+                </label>
+                <label className="sys-field-box">
+                  <span>ختام الرسالة</span>
+                  <KeyboardInput
+                    aria-label="ختام الرسالة"
+                    placeholder="ختام الرسالة"
+                    value={draft.messageOutro}
+                    onChange={(e) => updateField("messageOutro", e.target.value)}
+                  />
+                </label>
+              </div>
+            </section>
           </div>
-          <div className="sys-backup-btns">
-            <button
-              type="button"
-              className="ref-btn blue"
-              onClick={() => {
-                triggerHaptic("light");
-                onOpenBackupModal();
-              }}
-              data-testid="settings-backup-modal-btn"
-            >
-              حفظ نسخة احتياطية
-            </button>
-            <button
-              type="button"
-              className="ref-btn green"
-              onClick={() => {
-                triggerHaptic("light");
-                onRestoreJson();
-              }}
-            >
-              استعادة نسخة من ملف
-            </button>
-            {onOpenFullSqliteImport ? (
-              <button
-                type="button"
-                className="ref-btn orange"
-                style={{ background: "#ea580c", color: "#ffffff" }}
-                onClick={() => {
-                  triggerHaptic("light");
-                  onOpenFullSqliteImport();
-                }}
-                data-testid="settings-full-sqlite-import-btn"
+        ) : null}
+
+        {/* TAB 4: قاعدة البيانات والنسخ الاحتياطي والأمان */}
+        {activeTab === "database" ? (
+          <div className="sys-tab-panel" role="tabpanel" data-testid="settings-panel-database">
+            <section className="settings-appearance-box" data-testid="settings-database-box">
+              <div className="settings-subhead">النسخ الاحتياطي والاستعادة (SQLite)</div>
+              <div
+                className={`settings-backup-freshness ${backupStatus.overdue ? "overdue" : "healthy"}`}
+                data-testid="settings-backup-banner"
               >
-                إدارة السجلات والنسخ
-              </button>
+                <strong>
+                  {backupStatus.overdue
+                    ? backupStatus.daysSince === null
+                      ? "تنبيه: لم يتم أخذ نسخة احتياطية بعد"
+                      : `تنبيه: آخر نسخة احتياطية منذ ${backupStatus.daysSince} يومًا`
+                    : `النسخة الاحتياطية محدثة (منذ ${backupStatus.daysSince ?? 0} يوم)`}
+                </strong>
+                {lastBackupIso ? (
+                  <div style={{ fontSize: 11, marginTop: 3 }}>
+                    آخر تصدير: <bdi>{new Date(lastBackupIso).toLocaleString("en-GB")}</bdi>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="sys-backup-btns">
+                <button
+                  type="button"
+                  className="ref-btn blue"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    onOpenBackupModal();
+                  }}
+                  data-testid="settings-backup-modal-btn"
+                >
+                  حفظ نسخة احتياطية
+                </button>
+                {onDownloadSqlite ? (
+                  <button
+                    type="button"
+                    className="ref-btn blue"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onDownloadSqlite();
+                    }}
+                    data-testid="settings-download-sqlite-btn"
+                  >
+                    تنزيل قاعدة SQLite
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="ref-btn green"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    onRestoreJson();
+                  }}
+                  data-testid="settings-restore-backup-btn"
+                >
+                  استعادة نسخة من ملف
+                </button>
+                {onSyncDatabase ? (
+                  <button
+                    type="button"
+                    className="ref-btn"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onSyncDatabase();
+                    }}
+                    data-testid="settings-sync-db-btn"
+                  >
+                    تحديث البيانات من القاعدة
+                  </button>
+                ) : null}
+                {onOpenFullSqliteImport ? (
+                  <button
+                    type="button"
+                    className="ref-btn orange"
+                    style={{ background: "#ea580c", color: "#ffffff" }}
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onOpenFullSqliteImport();
+                    }}
+                    data-testid="settings-full-sqlite-import-btn"
+                  >
+                    إدارة السجلات والنسخ
+                  </button>
+                ) : null}
+                {onOpenGoogleDrive ? (
+                  <button
+                    type="button"
+                    className="ref-btn purple"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onOpenGoogleDrive();
+                    }}
+                    data-testid="settings-open-drive-btn"
+                  >
+                    Google Drive السحابي
+                  </button>
+                ) : null}
+              </div>
+
+              <label className="sys-row sys-check-row" style={{ marginTop: 10 }}>
+                <span>التذكير بالنسخ الاحتياطي عند الإغلاق</span>
+                <input
+                  type="checkbox"
+                  checked={draft.backupReminderOnExit}
+                  onChange={(e) => updateField("backupReminderOnExit", e.target.checked)}
+                />
+              </label>
+
+              <label className="sys-row sys-check-row">
+                <span>الحماية بكلمة مرور</span>
+                <input
+                  type="checkbox"
+                  className="account-form-switch"
+                  role="switch"
+                  checked={draft.passwordLock}
+                  onChange={(e) => updateField("passwordLock", e.target.checked)}
+                />
+              </label>
+            </section>
+
+            {onSeedDemoData || onResetDatabase ? (
+              <section className="sys-card sys-danger-card">
+                <div className="sys-card-heading">صيانة وتهيئة قاعدة البيانات</div>
+                <div className="sys-backup-btns">
+                  {onSeedDemoData ? (
+                    <button
+                      type="button"
+                      className="ref-btn"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        onSeedDemoData();
+                      }}
+                      data-testid="settings-seed-demo-btn"
+                    >
+                      تحميل بيانات تجريبية
+                    </button>
+                  ) : null}
+                  {onResetDatabase ? (
+                    <button
+                      type="button"
+                      className="ref-btn"
+                      style={{ background: "#dc2626", color: "#ffffff", borderColor: "#dc2626" }}
+                      onClick={() => {
+                        triggerHaptic("warning");
+                        onResetDatabase();
+                      }}
+                      data-testid="settings-reset-db-btn"
+                    >
+                      تفريغ قاعدة البيانات
+                    </button>
+                  ) : null}
+                </div>
+              </section>
             ) : null}
-            {onOpenGoogleDrive ? (
-              <button
-                type="button"
-                className="ref-btn purple"
-                onClick={() => {
-                  triggerHaptic("light");
-                  onOpenGoogleDrive();
-                }}
-                data-testid="settings-open-drive-btn"
-              >
-                Google Drive السحابي
-              </button>
-            ) : null}
+
+            <section className="sys-card">
+              <div className="sys-card-heading">الجلسة والإرشادات</div>
+              <div className="sys-faq-row" style={{ justifyContent: "space-between", display: "flex", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="sys-faq-link"
+                  onClick={() => setFaqOpen((prev) => !prev)}
+                >
+                  {faqOpen ? "إخفاء الإرشادات" : "إرشادات النسخ الاحتياطي والحفظ"}
+                </button>
+                <button
+                  type="button"
+                  className="sys-signout-btn"
+                  onClick={() => {
+                    triggerHaptic("warning");
+                    onSignOut();
+                  }}
+                >
+                  تسجيل الخروج
+                </button>
+              </div>
+              {faqOpen ? (
+                <div className="sys-faq-card">
+                  <strong>أبرز الإرشادات:</strong>
+                  <p>• جميع الحسابات والفواتير والأصناف والإعدادات تُحفظ مباشرة في قاعدة بيانات SQLite.</p>
+                  <p>• يُنصح بأخذ نسخة احتياطية دورية على الجهاز أو Google Drive قبل أي استعادة أو تفريغ.</p>
+                </div>
+              ) : null}
+            </section>
           </div>
-        </section>
-
-        {/* General & Printing & WhatsApp Toggles */}
-        <label className="sys-row sys-check-row">
-          <span>رسم التوقيع أسفل الفواتير والسندات</span>
-          <input
-            type="checkbox"
-            checked={draft.drawSignature}
-            onChange={(e) => updateField("drawSignature", e.target.checked)}
-          />
-        </label>
-
-        <label className="sys-row sys-check-row">
-          <span>استخدام رسائل الواتساب التلقائية</span>
-          <input
-            type="checkbox"
-            checked={draft.autoWhatsapp}
-            onChange={(e) => updateField("autoWhatsapp", e.target.checked)}
-          />
-        </label>
-
-        <div className="sys-row sys-color-bar-row">
-          <input
-            type="color"
-            aria-label="تلوين التقارير"
-            value={draft.reportColor}
-            onChange={(e) => updateField("reportColor", e.target.value)}
-            className="sys-color-chip"
-          />
-          <div className="sys-report-color-label">تلوين التقارير</div>
-        </div>
-
-        <div className="sys-row sys-font-row">
-          <div className="sys-stepper">
-            <button
-              type="button"
-              aria-label="تكبير الخط"
-              onClick={() => updateField("fontSize", Math.min(10, draft.fontSize + 1))}
-            >
-              +
-            </button>
-            <b>{draft.fontSize}</b>
-            <button
-              type="button"
-              aria-label="تصغير الخط"
-              onClick={() => updateField("fontSize", Math.max(1, draft.fontSize - 1))}
-            >
-              -
-            </button>
-          </div>
-          <span className="sys-blue-label">مقاس الخطوط</span>
-          <label className="sys-inline-check">
-            <input
-              type="checkbox"
-              checked={draft.yellowPaper}
-              onChange={(e) => updateField("yellowPaper", e.target.checked)}
-            />
-            <span>ورقة صفراء</span>
-          </label>
-        </div>
-
-        <div className="sys-row sys-radio-row">
-          <span className="sys-blue-label">الطباعة إلى</span>
-          <div className="sys-radios" role="radiogroup" aria-label="الطباعة إلى">
-            <label>
-              <input
-                type="radio"
-                name="sys-print-target"
-                checked={draft.printTarget === "pdf"}
-                onChange={() => updateField("printTarget", "pdf")}
-              />
-              <span>PDF</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="sys-print-target"
-                checked={draft.printTarget === "printer"}
-                onChange={() => updateField("printTarget", "printer")}
-              />
-              <span>الطابعة</span>
-            </label>
-          </div>
-        </div>
-
-        <label className="sys-row sys-check-row">
-          <span>التذكير بالنسخ الاحتياطي عند الإغلاق</span>
-          <input
-            type="checkbox"
-            checked={draft.backupReminderOnExit}
-            onChange={(e) => updateField("backupReminderOnExit", e.target.checked)}
-          />
-        </label>
-
-        <div className="sys-row sys-radio-row">
-          <span className="sys-blue-label">الواتساب المستخدم</span>
-          <div className="sys-radios" role="radiogroup" aria-label="الواتساب المستخدم">
-            <label>
-              <input
-                type="radio"
-                name="sys-wa-variant"
-                checked={draft.whatsappVariant === "green"}
-                onChange={() => updateField("whatsappVariant", "green")}
-              />
-              <span>الأخضر</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="sys-wa-variant"
-                checked={draft.whatsappVariant === "business"}
-                onChange={() => updateField("whatsappVariant", "business")}
-              />
-              <span>أعمال</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="sys-wa-variant"
-                checked={draft.whatsappVariant === "omar"}
-                onChange={() => updateField("whatsappVariant", "omar")}
-              />
-              <span>عمر</span>
-            </label>
-          </div>
-        </div>
-
-        <label className="sys-row sys-check-row">
-          <span>الحماية بكلمة مرور</span>
-          <input
-            type="checkbox"
-            className="account-form-switch"
-            role="switch"
-            checked={draft.passwordLock}
-            onChange={(e) => updateField("passwordLock", e.target.checked)}
-          />
-        </label>
-
-        {/* Blue Section Banner: Accounts Settings */}
-        <div className="sys-section-banner">اعدادات الحسابات</div>
-
-        <div className="sys-row sys-dual-checks">
-          <label className="sys-inline-check">
-            <span>عرض الرصيد في السند</span>
-            <input
-              type="checkbox"
-              checked={draft.showBalanceInVoucher}
-              onChange={(e) => updateField("showBalanceInVoucher", e.target.checked)}
-            />
-          </label>
-          <label className="sys-inline-check">
-            <span>عرض وقت السند</span>
-            <input
-              type="checkbox"
-              checked={draft.showTimeInVoucher}
-              onChange={(e) => updateField("showTimeInVoucher", e.target.checked)}
-            />
-          </label>
-        </div>
-
-        {(
-          [
-            ["hideCashboxesOnHome", "إخفاء إجمالي الصناديق في الشاشة الرئيسية"],
-            ["hideVoucherSuggestions", "إخفاء اقتراحات تفاصيل السند"],
-            ["useReceiptPaymentVoucher", "استخدام سند صرف/قبض"],
-            ["useTwoDecimals", "استخدام الفاصل العشري .00"],
-            ["showAllCurrenciesToLocal", "عرض خيار جميع العملات إلى عملة محلية"],
-            ["hideAllUsersOption", "عدم عرض خيار جميع المستخدمين"],
-          ] as const
-        ).map(([key, label]) => (
-          <label className="sys-row sys-check-row" key={key}>
-            <span>{label}</span>
-            <input
-              type="checkbox"
-              checked={draft[key]}
-              onChange={(e) => updateField(key, e.target.checked)}
-            />
-          </label>
-        ))}
-
-        <div className="sys-row sys-dual-checks">
-          <label className="sys-inline-check">
-            <span>طباعة السندات بـ طابعة حرارية</span>
-            <input
-              type="checkbox"
-              checked={draft.thermalPrintPdf}
-              onChange={(e) => updateField("thermalPrintPdf", e.target.checked)}
-            />
-          </label>
-          <span className="sys-inline-tag">PDF</span>
-        </div>
-
-        {(
-          [
-            ["showGeneralEntryOnHome", "إضافة قيد عام إلى الشاشة الرئيسية"],
-            ["useNotifMsgInPaymentReq", "استخدام رسالة الإشعارات في طلب السداد"],
-            ["showDateInSms", "عرض تاريخ الإرسال في الرسائل النصية"],
-            ["showVoucherNoInSms", "عرض رقم السند في الرسائل النصية"],
-          ] as const
-        ).map(([key, label]) => (
-          <label className="sys-row sys-check-row" key={key}>
-            <span>{label}</span>
-            <input
-              type="checkbox"
-              checked={draft[key]}
-              onChange={(e) => updateField(key, e.target.checked)}
-            />
-          </label>
-        ))}
-
-        <label className="sys-field-box full">
-          <span>ملاحظات أسفل كشف الحساب</span>
-          <KeyboardInput
-            aria-label="ملاحظات أسفل كشف الحساب"
-            value={draft.statementFooterNote}
-            onChange={(e) => updateField("statementFooterNote", e.target.value)}
-          />
-        </label>
-
-        <div className="sys-bilingual-grid">
-          <label className="sys-field-box">
-            <span>مقدمة الرسالة</span>
-            <KeyboardInput
-              aria-label="مقدمة الرسالة"
-              placeholder="مقدمة الرسالة"
-              value={draft.messageIntro}
-              onChange={(e) => updateField("messageIntro", e.target.value)}
-            />
-          </label>
-          <label className="sys-field-box">
-            <span>ختام الرسالة</span>
-            <KeyboardInput
-              aria-label="ختام الرسالة"
-              placeholder="ختام الرسالة"
-              value={draft.messageOutro}
-              onChange={(e) => updateField("messageOutro", e.target.value)}
-            />
-          </label>
-          <label className="sys-field-box">
-            <span>الرصيد لكم</span>
-            <KeyboardInput
-              aria-label="مسمى الرصيد لكم"
-              value={draft.creditBalanceLabel}
-              onChange={(e) => updateField("creditBalanceLabel", e.target.value)}
-            />
-          </label>
-          <label className="sys-field-box">
-            <span>الرصيد عليكم</span>
-            <KeyboardInput
-              aria-label="مسمى الرصيد عليكم"
-              value={draft.debitBalanceLabel}
-              onChange={(e) => updateField("debitBalanceLabel", e.target.value)}
-            />
-          </label>
-        </div>
-
-        {/* Blue Section Banner: Sales & Purchases Settings */}
-        <div className="sys-section-banner">اعدادات المبيعات والمشتريات</div>
-
-        <label className="sys-field-box full">
-          <span>ملاحظات أسفل فواتير المبيعات</span>
-          <KeyboardInput
-            aria-label="ملاحظات أسفل فواتير المبيعات"
-            value={draft.salesInvoiceFooterNote}
-            onChange={(e) => updateField("salesInvoiceFooterNote", e.target.value)}
-          />
-        </label>
-
-        <div className="sys-row sys-dual-checks">
-          <label className="sys-inline-check">
-            <span>بيع بسعر أقل من التكلفة</span>
-            <input
-              type="checkbox"
-              checked={draft.sellBelowCost}
-              onChange={(e) => updateField("sellBelowCost", e.target.checked)}
-            />
-          </label>
-          <label className="sys-inline-check">
-            <span>بيع بدون رصيد</span>
-            <input
-              type="checkbox"
-              checked={draft.sellWithoutBalance}
-              onChange={(e) => updateField("sellWithoutBalance", e.target.checked)}
-            />
-          </label>
-        </div>
-
-        <div className="sys-row sys-radio-row">
-          <span className="sys-blue-label">نموذج طباعة الفواتير</span>
-          <div className="sys-radios" role="radiogroup" aria-label="نموذج طباعة الفواتير">
-            <label>
-              <input
-                type="radio"
-                name="sys-invoice-tpl"
-                checked={draft.invoicePrintTemplate === "1"}
-                onChange={() => updateField("invoicePrintTemplate", "1")}
-              />
-              <span>1</span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="sys-invoice-tpl"
-                checked={draft.invoicePrintTemplate === "2"}
-                onChange={() => updateField("invoicePrintTemplate", "2")}
-              />
-              <span>2</span>
-            </label>
-          </div>
-        </div>
-
-        {(
-          [
-            ["hidePriceIn80mm", "عدم طباعة سعر البيع في فواتير mm80"],
-            ["useWeightedAverage", "استخدام المتوسط المرجح"],
-            ["hideItemCost", "عدم إظهار تكلفة الأصناف"],
-            ["showItemsInInvoiceDetails", "عرض الأصناف في تفاصيل الفاتورة"],
-            ["hideExpiryInInvoice", "عدم عرض تاريخ الانتهاء في الفاتورة"],
-            ["useFreeBonusQty", "استخدام البونص (الكمية المجانية)"],
-            ["hidePrintDateInInvoice", "عدم عرض تاريخ الطباعة في الفاتورة"],
-            ["useLargestUnitAsMain", "استخدام أكبر وحدة كـ وحدة رئيسية"],
-          ] as const
-        ).map(([key, label]) => (
-          <label className="sys-row sys-check-row" key={key}>
-            <span>{label}</span>
-            <input
-              type="checkbox"
-              checked={draft[key]}
-              onChange={(e) => updateField(key, e.target.checked)}
-            />
-          </label>
-        ))}
-
-        <p className="sys-important-note">
-          ملاحظة هامة جدًا: لا ينصح بتفعيل هذا الخيار، يتم اختيار هذا الإعداد عندما تستخدم أكبر وحدة كـ وحدة رئيسية، مثلًا تستخدم الكرتون كـ وحدة رئيسية وليس الحبة.
-        </p>
+        ) : null}
 
         <div className="sys-save-footer">
           <button

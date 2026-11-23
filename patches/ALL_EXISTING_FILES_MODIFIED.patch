@@ -1,0 +1,773 @@
+--- a/src/Prototype.tsx
++++ b/src/Prototype.tsx
+@@ -243,6 +243,9 @@
+ import { OutlinedAmountField } from "./components/OutlinedAmountField";
+ import { GlobalNasqoBrandLoader, NasqoBrandLoader } from "./components/NasqoBrandLoader";
+ import { runWithBrandLoader } from "./utils/brandLoaderBus";
++import { hybridBridge } from "./hybrid/bridge";
++import { useHybridPresentation } from "./hybrid/presentationAdapter";
++import type { HybridUiPreferences } from "./hybrid/contracts";
+ 
+ type IconComponent = ComponentType<{ className?: string }>;
+ type SheetKind = "filters" | "export" | "notifications" | null;
+@@ -433,6 +436,15 @@
+ }
+ 
+ function triggerPrintWithLoader(label = "جاري تجهيز الطباعة...") {
++  if (typeof window !== "undefined" && window.__nasqoHybridReady) {
++    void runWithBrandLoader(label, async () => {
++      await hybridBridge.invoke("printDocument", {
++        title: label,
++        kind: "report",
++      });
++    });
++    return;
++  }
+   void runWithBrandLoader(
+     label,
+     () => {
+@@ -963,7 +975,7 @@
+   );
+ }
+ 
+-function AuthenticatedWorkspace({
++export function AuthenticatedWorkspace({
+   user,
+   cloudInitializationError,
+   onLocalSignOut,
+@@ -973,7 +985,7 @@
+   setBrandColor,
+   resetBrandColor,
+ }: {
+-  user: User;
++  user: Pick<User, "uid" | "email" | "displayName" | "photoURL">;
+   cloudInitializationError: string;
+   onLocalSignOut: () => void;
+   themeMode: ThemeMode;
+@@ -982,6 +994,7 @@
+   setBrandColor: (hex: string) => void;
+   resetBrandColor: () => void;
+ }) {
++  const hybrid = useHybridPresentation();
+   const [workspace, setWorkspace] = useState<WorkspaceSettings | null>(null);
+   const [currencies, setCurrencies] = useState<CurrencyRecord[]>([]);
+   const [accountGroups, setAccountGroups] = useState<AccountGroupRecord[]>([]);
+@@ -1082,46 +1095,178 @@
+     applyCardAppearanceSettings(extendedSettings);
+   }, [extendedSettings]);
+ 
+-  const setExtendedSettings = useCallback((next: ExtendedAppSettings) => {
+-    writeExtendedSettings(next);
+-    applyCardAppearanceSettings(next);
+-    setExtendedSettingsState(next);
+-  }, []);
+-
+-  const setHapticsEnabled = useCallback((enabled: boolean) => {
+-    writeHapticsEnabled(enabled);
+-    setHapticsEnabledState(enabled);
+-    if (enabled) triggerHaptic("light");
+-  }, []);
+-
+-  const setWidgetOrder = useCallback((order: DashboardWidgetId[]) => {
+-    writeWidgetOrder(order);
+-    setWidgetOrderState(order);
+-  }, []);
+-
+-  const setHomeMetricOrder = useCallback((order: HomeMetricId[]) => {
+-    writeHomeMetricOrder(order);
+-    setHomeMetricOrderState(order);
+-  }, []);
+-
+-  const pinFavorite = useCallback((item: PinnedFavoriteItem) => {
+-    triggerHaptic("pin");
+-    setFavoritesState((prev) => {
+-      if (prev.some((f) => f.id === item.id)) return prev;
+-      const next = [item, ...prev];
+-      writePinnedFavorites(next);
+-      return next;
+-    });
+-  }, []);
+-
+-  const unpinFavorite = useCallback((id: string) => {
+-    triggerHaptic("light");
+-    setFavoritesState((prev) => {
+-      const next = prev.filter((f) => f.id !== id);
+-      writePinnedFavorites(next);
+-      return next;
+-    });
+-  }, []);
++  const setExtendedSettings = useCallback(
++    (next: ExtendedAppSettings) => {
++      writeExtendedSettings(next);
++      applyCardAppearanceSettings(next);
++      setExtendedSettingsState(next);
++      hybrid.syncUiPreferences({ extendedSettings: next });
++    },
++    [hybrid],
++  );
++
++  const setHapticsEnabled = useCallback(
++    (enabled: boolean) => {
++      writeHapticsEnabled(enabled);
++      setHapticsEnabledState(enabled);
++      hybrid.syncUiPreferences({ hapticsEnabled: enabled });
++      if (enabled) triggerHaptic("light");
++    },
++    [hybrid],
++  );
++
++  const setWidgetOrder = useCallback(
++    (order: DashboardWidgetId[]) => {
++      writeWidgetOrder(order);
++      setWidgetOrderState(order);
++      hybrid.syncUiPreferences({ widgetOrder: order });
++    },
++    [hybrid],
++  );
++
++  const setHomeMetricOrder = useCallback(
++    (order: HomeMetricId[]) => {
++      writeHomeMetricOrder(order);
++      setHomeMetricOrderState(order);
++      hybrid.syncUiPreferences({ homeMetricOrder: order });
++    },
++    [hybrid],
++  );
++
++  const pinFavorite = useCallback(
++    (item: PinnedFavoriteItem) => {
++      triggerHaptic("pin");
++      setFavoritesState((prev) => {
++        if (prev.some((f) => f.id === item.id)) return prev;
++        const next = [item, ...prev];
++        writePinnedFavorites(next);
++        hybrid.syncUiPreferences({ favorites: next });
++        return next;
++      });
++    },
++    [hybrid],
++  );
++
++  const unpinFavorite = useCallback(
++    (id: string) => {
++      triggerHaptic("light");
++      setFavoritesState((prev) => {
++        const next = prev.filter((f) => f.id !== id);
++        writePinnedFavorites(next);
++        hybrid.syncUiPreferences({ favorites: next });
++        return next;
++      });
++    },
++    [hybrid],
++  );
++
++  // Sync Flutter host-pushed events (theme, currency, UI preferences, route navigation, errors)
++  useEffect(() => {
++    if (!hybrid.isHybrid) return;
++    const unsubs = [
++      hybridBridge.onHostEvent<{ mode?: ThemeMode; brandColor?: string }>("themeChanged", (payload) => {
++        if (payload?.mode) setThemeMode(payload.mode);
++        if (payload?.brandColor) setBrandColor(payload.brandColor);
++      }),
++      hybridBridge.onHostEvent<{ scope?: string; targetId?: string; currency?: string }>(
++        "currencyChanged",
++        (payload) => {
++          if (!payload?.currency) return;
++          if (payload.scope === "statement" && payload.targetId) {
++            setStatementCurrencies((prev) => ({ ...prev, [payload.targetId!]: payload.currency! }));
++          } else if (payload.scope === "category" && payload.targetId) {
++            setCategoryCurrencies((prev) => ({
++              ...prev,
++              [payload.targetId as AccountCategory]: payload.currency!,
++            }));
++          }
++        },
++      ),
++      hybridBridge.onHostEvent<HybridUiPreferences>("uiPreferencesUpdated", (prefs) => {
++        if (!prefs) return;
++        if (prefs.themeMode) setThemeMode(prefs.themeMode);
++        if (prefs.brandColor) setBrandColor(prefs.brandColor);
++        if (prefs.extendedSettings) {
++          const merged = { ...readExtendedSettings(), ...prefs.extendedSettings };
++          writeExtendedSettings(merged);
++          applyCardAppearanceSettings(merged);
++          setExtendedSettingsState(merged);
++        }
++        if (prefs.homeMetricOrder) {
++          writeHomeMetricOrder(prefs.homeMetricOrder);
++          setHomeMetricOrderState(prefs.homeMetricOrder);
++        }
++        if (prefs.widgetOrder) {
++          writeWidgetOrder(prefs.widgetOrder);
++          setWidgetOrderState(prefs.widgetOrder);
++        }
++        if (prefs.favorites) {
++          writePinnedFavorites(prefs.favorites);
++          setFavoritesState(prefs.favorites);
++        }
++        if (typeof prefs.hapticsEnabled === "boolean") {
++          writeHapticsEnabled(prefs.hapticsEnabled);
++          setHapticsEnabledState(prefs.hapticsEnabled);
++        }
++      }),
++      hybridBridge.onHostEvent<{ route?: string; params?: Record<string, string> }>(
++        "routeChanged",
++        (payload) => {
++          const route = payload?.route;
++          if (!route) return;
++          if (route === "dashboard" || route === "home") {
++            setOverlay(null);
++            setDrawerOpen(false);
++            flowRef.current?.reset(dashboardScreen());
++          } else if (route === "settings") {
++            setOverlay(null);
++            flowRef.current?.push(systemSettingsScreen());
++          } else if (route === "purchases") {
++            setOverlay(null);
++            flowRef.current?.push(purchasesScreen("purchases"));
++          } else if (route === "sales") {
++            setOverlay(null);
++            flowRef.current?.push(purchasesScreen("sales"));
++          } else if (route === "warehouses") {
++            setOverlay(null);
++            flowRef.current?.push(warehousesScreen());
++          } else if (route === "items") {
++            setOverlay(null);
++            flowRef.current?.push(itemsScreen());
++          } else if (route === "inventory-report") {
++            setOverlay(null);
++            flowRef.current?.push(inventoryReportScreen());
++          } else if (route === "daily-journal") {
++            setOverlay(null);
++            flowRef.current?.push(dailyJournalScreen());
++          } else if (route === "simple-entry") {
++            setOverlay(null);
++            flowRef.current?.push(simpleEntryScreen());
++          } else if (route === "currency" || route === "currency-exchange") {
++            setOverlay(null);
++            flowRef.current?.push(currencyScreen());
++          } else if (route === "reports-hub") {
++            setOverlay("reports-hub");
++          } else if (route === "trial-balance") {
++            setOverlay("trial-balance");
++          } else if (route === "cashboxes-report") {
++            setOverlay("cashboxes-report");
++          } else if ((route === "supplier" || route === "account-statement") && payload?.params?.accountId) {
++            setOverlay(null);
++            flowRef.current?.push(supplierScreen(payload.params.accountId));
++          }
++        },
++      ),
++      hybridBridge.onHostEvent<{ message?: string }>("serviceError", (payload) => {
++        if (payload?.message) {
++          setSyncError(payload.message);
++        }
++      }),
++    ];
++    return () => {
++      for (const unsub of unsubs) unsub();
++    };
++  }, [hybrid.isHybrid, setBrandColor, setThemeMode]);
+ 
+   useEffect(() => {
+     setErpData(loadErpWorkspaceData(user.uid));
+@@ -1254,10 +1399,12 @@
+   const openTransaction = useCallback(
+     (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => {
+       dismissKeyboard();
+-      setTransactionTarget({ account: account ?? accounts[0], editingEntry });
++      const targetAccount = account ?? accounts[0];
++      setTransactionTarget({ account: targetAccount, editingEntry });
+       setOverlay("transaction");
++      hybrid.notifyOpenVoucher({ accountId: targetAccount?.id, entryId: editingEntry?.id });
+     },
+-    [accounts, dismissKeyboard],
++    [accounts, dismissKeyboard, hybrid],
+   );
+ 
+   const openAccountCreate = useCallback(
+@@ -1285,24 +1432,35 @@
+         revision: value.revision + 1,
+       }));
+       setOverlay("invoice");
++      hybrid.notifyOpenInvoice({
++        intent,
++        accountId: matchingAccount?.id,
++        kindOverride,
++      });
+     },
+-    [accounts, dismissKeyboard],
++    [accounts, dismissKeyboard, hybrid],
+   );
+ 
+   const openVendorInvoice = useCallback(
+     (account?: AccountRecord, intent: InvoiceIntent = "invoice") => {
+       dismissKeyboard();
+       const targetAccount = account ?? accounts[0];
++      const kindOverride = targetAccount ? (targetAccount.category === "sales" ? "sale" : "purchase") : undefined;
+       setInvoiceSeed((value) => ({
+         account: targetAccount,
+         editingEntry: undefined,
+         intent,
+-        kindOverride: targetAccount ? (targetAccount.category === "sales" ? "sale" : "purchase") : undefined,
++        kindOverride,
+         revision: value.revision + 1,
+       }));
+       setOverlay("invoice");
++      hybrid.notifyOpenInvoice({
++        intent,
++        accountId: targetAccount?.id,
++        kindOverride,
++      });
+     },
+-    [accounts, dismissKeyboard],
++    [accounts, dismissKeyboard, hybrid],
+   );
+ 
+   const openInvoiceEdit = useCallback(
+@@ -1332,9 +1490,15 @@
+         kindOverride,
+         revision: value.revision + 1,
+       }));
++      hybrid.notifyOpenInvoice({
++        intent: entryIntent,
++        accountId: targetAccount?.id,
++        entryId: entry.id,
++        kindOverride,
++      });
+       setOverlay("invoice");
+     },
+-    [accounts, dismissKeyboard],
++    [accounts, dismissKeyboard, hybrid],
+   );
+ 
+   const openDashboardMenu = useCallback(() => {
+@@ -1412,13 +1576,21 @@
+     setOverlay("full-sqlite-import");
+   }, [dismissKeyboard]);
+ 
+-  const setCategoryCurrency = useCallback((category: AccountCategory, currency: string) => {
+-    setCategoryCurrencies((prev) => ({ ...prev, [category]: currency }));
+-  }, []);
+-
+-  const setStatementCurrency = useCallback((accountId: string, currency: string) => {
+-    setStatementCurrencies((prev) => ({ ...prev, [accountId]: currency }));
+-  }, []);
++  const setCategoryCurrency = useCallback(
++    (category: AccountCategory, currency: string) => {
++      setCategoryCurrencies((prev) => ({ ...prev, [category]: currency }));
++      hybrid.notifyCurrencyChanged("category", currency, category);
++    },
++    [hybrid],
++  );
++
++  const setStatementCurrency = useCallback(
++    (accountId: string, currency: string) => {
++      setStatementCurrencies((prev) => ({ ...prev, [accountId]: currency }));
++      hybrid.notifyCurrencyChanged("statement", currency, accountId);
++    },
++    [hybrid],
++  );
+ 
+   const openTransferModal = useCallback(
+     (accountId?: string) => {
+@@ -1587,17 +1759,81 @@
+     openBackupModal();
+   }, [openBackupModal]);
+ 
++  const restoreBackupRef = useRef<((bytes: Uint8Array, fileName: string) => Promise<void>) | null>(null);
++
+   const triggerJsonRestore = useCallback(() => {
++    if (hybrid.isHybrid) {
++      void hybrid
++        .pickFile({
++          purpose: "restore-backup",
++          accept: [".json", ".db", ".sqlite", ".sqlite3", ".sql", ".backup", ".gz"],
++        })
++        .then(async (picked) => {
++          if (!picked || !picked.base64Content) return;
++          const binary = atob(picked.base64Content);
++          const bytes = new Uint8Array(binary.length);
++          for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
++          await restoreBackupRef.current?.(bytes, picked.fileName || "backup.sqlite");
++        })
++        .catch((err) => {
++          showToast(err instanceof Error ? err.message : "تعذر اختيار ملف النسخة الاحتياطية.");
++        });
++      return;
++    }
+     jsonRestoreInputRef.current?.click();
+-  }, []);
++  }, [hybrid, showToast]);
+ 
+   const triggerCsvImport = useCallback(() => {
++    if (hybrid.isHybrid) {
++      void hybrid
++        .pickFile({
++          purpose: "import-accounts-csv",
++          accept: [".csv", ".txt"],
++        })
++        .then((picked) => {
++          if (!picked || !picked.base64Content) return;
++          showToast(`تم اختيار ملف الحسابات: ${picked.fileName}`);
++        })
++        .catch((err) => {
++          showToast(err instanceof Error ? err.message : "تعذر فتح منتقي الملفات.");
++        });
++      return;
++    }
+     csvImportInputRef.current?.click();
+-  }, []);
++  }, [hybrid, showToast]);
+ 
+   const triggerItemsImport = useCallback(() => {
++    if (hybrid.isHybrid) {
++      void hybrid
++        .pickFile({
++          purpose: "import-items",
++          accept: [".xlsx", ".xls", ".csv"],
++        })
++        .then(async (picked) => {
++          if (!picked || !picked.base64Content) return;
++          const binary = atob(picked.base64Content);
++          const bytes = new Uint8Array(binary.length);
++          for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
++          const parsed = parseItemsSpreadsheetBytes(bytes, picked.fileName || "items.xlsx");
++          if (parsed.items.length === 0) {
++            showToast("لم يتم العثور على أصناف صالحة داخل الملف.");
++            return;
++          }
++          const defaultWh = warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id;
++          const result = await importInventoryItemsBatch(user.uid, parsed.items, {
++            mode: "upsert",
++            warehouseId: defaultWh,
++          });
++          triggerHaptic("success");
++          showToast(`تم استيراد ${result.total} صنف بنجاح (جديد: ${result.inserted} • محدّث: ${result.updated})`, 6000);
++        })
++        .catch((err) => {
++          showToast(err instanceof Error ? err.message : "تعذر استيراد ملف الأصناف.");
++        });
++      return;
++    }
+     itemsImportInputRef.current?.click();
+-  }, []);
++  }, [hybrid, showToast, user.uid, warehouses]);
+ 
+   const restoreBackupFromBytes = useCallback(
+     async (bytes: Uint8Array, fileName: string) => {
+@@ -1695,6 +1931,7 @@
+     },
+     [runWithLoader, showToast, user.uid],
+   );
++  restoreBackupRef.current = restoreBackupFromBytes;
+ 
+   const handleJsonFileRestore = async (event: ChangeEvent<HTMLInputElement>) => {
+     const file = event.target.files?.[0];
+@@ -2423,6 +2660,32 @@
+           }
+           onClose={() => setOverlay(null)}
+           onPrintPdf={(allCurrencies) => {
++            if (hybrid.isHybrid) {
++              const title = printContext.account
++                ? `كشف حساب: ${printContext.account.name}`
++                : printContext.kind === "inventory"
++                  ? "تقرير حركة المخزون"
++                  : printContext.kind === "purchases"
++                    ? "تقرير المشتريات والموردين"
++                    : "تقرير نسقو برو";
++              void hybrid
++                .exportPdf({
++                  filename: `nasqo-${printContext.kind}-${new Date().toISOString().slice(0, 10)}.pdf`,
++                  title,
++                  kind: printContext.kind,
++                  accountId: printContext.account?.id,
++                  allCurrencies,
++                })
++                .then((ok) => {
++                  if (ok) {
++                    showToast(allCurrencies ? "تم إرسال PDF لجميع العملات إلى Flutter" : "تم إرسال PDF إلى خدمة الطباعة في Flutter");
++                  }
++                })
++                .catch((err) => {
++                  showToast(err instanceof Error ? err.message : "تعذر تصدير PDF عبر Flutter");
++                });
++              return;
++            }
+             triggerPrintWithLoader(
+               allCurrencies ? "جاري تجهيز طباعة جميع العملات..." : "جاري تجهيز معاينة الطباعة PDF...",
+             );
+@@ -6679,6 +6942,7 @@
+ 
+ function DashboardPage({ flow }: { flow: FlowControls }) {
+   const ctx = useWorkspace();
++  const hybrid = useHybridPresentation();
+   ctx.flowRef.current = flow;
+   const defaultCurr = ctx.workspace?.defaultCurrency ?? "ريال";
+   const [groupCurrencyMap, setGroupCurrencyMap] = useState<Record<number, string>>({});
+@@ -6693,13 +6957,47 @@
+   const didDragMoveRef = useRef(false);
+   const lastSwapTargetRef = useRef<HomeTileId | null>(null);
+ 
+-  const updateTileLayout = useCallback((updater: (prev: HomeTileLayout) => HomeTileLayout) => {
+-    setTileLayout((prev) => {
+-      const next = updater(prev);
++  const tileLayoutRef = useRef<HomeTileLayout>(tileLayout);
++  tileLayoutRef.current = tileLayout;
++
++  const updateTileLayout = useCallback(
++    (updater: (prev: HomeTileLayout) => HomeTileLayout) => {
++      const next = updater(tileLayoutRef.current);
++      tileLayoutRef.current = next;
++      setTileLayout(next);
+       writeHomeTileLayout(next);
+-      return next;
++      hybrid.syncUiPreferences({ homeTileLayout: next });
++    },
++    [hybrid],
++  );
++
++  useEffect(() => {
++    if (!hybrid.isHybrid) return;
++    const unsubPrefs = hybridBridge.onHostEvent<HybridUiPreferences>("uiPreferencesUpdated", (prefs) => {
++      if (prefs?.homeTileLayout) {
++        tileLayoutRef.current = prefs.homeTileLayout;
++        writeHomeTileLayout(prefs.homeTileLayout);
++        setTileLayout(prefs.homeTileLayout);
++      }
+     });
+-  }, []);
++    const unsubCurr = hybridBridge.onHostEvent<{
++      scope?: string;
++      targetId?: string;
++      currency?: string;
++    }>("currencyChanged", (payload) => {
++      if (!payload?.currency) return;
++      if (payload.scope === "dashboard" && payload.targetId) {
++        const numericId = Number(payload.targetId);
++        if (Number.isFinite(numericId)) {
++          setGroupCurrencyMap((prev) => ({ ...prev, [numericId]: payload.currency! }));
++        }
++      }
++    });
++    return () => {
++      unsubPrefs();
++      unsubCurr();
++    };
++  }, [hybrid.isHybrid]);
+ 
+   const clearLongPressTimer = useCallback(() => {
+     if (longPressTimerRef.current !== null) {
+@@ -6873,7 +7171,8 @@
+ 
+   const finishTileEditMode = () => {
+     clearLongPressTimer();
+-    writeHomeTileLayout(tileLayout);
++    writeHomeTileLayout(tileLayoutRef.current);
++    hybrid.syncUiPreferences({ homeTileLayout: tileLayoutRef.current });
+     setTileEditMode(false);
+     setDraggingTileId(null);
+     setSelectedTileId(null);
+@@ -7274,10 +7573,12 @@
+                                 data-testid={`group-currency-select-${row.legacyId}`}
+                                 value={row.currency}
+                                 onChange={(e) => {
++                                  const nextCurrency = e.target.value;
+                                   setGroupCurrencyMap((prev) => ({
+                                     ...prev,
+-                                    [row.id]: e.target.value,
++                                    [row.id]: nextCurrency,
+                                   }));
++                                  hybrid.notifyCurrencyChanged("dashboard", nextCurrency, String(row.id));
+                                 }}
+                               >
+                                 {ctx.currencyCodes.map((c) => (
+
+--- a/src/accounting.ts
++++ b/src/accounting.ts
+@@ -1550,7 +1550,7 @@
+   >();
+ 
+   for (const g of groups) {
+-    const chosenCurrency = currencyByGroupId[g.id] ?? defaultCurrency;
++    const chosenCurrency = currencyByGroupId[g.id] ?? (g.currencyCode || defaultCurrency || "ريال");
+     byGroupId.set(g.id, {
+       group: g,
+       currency: chosenCurrency,
+
+--- a/src/erp.ts
++++ b/src/erp.ts
+@@ -1182,21 +1182,31 @@
+     listener(data);
+   }
+   if (typeof window === "undefined") return;
+-  try {
+-    const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
+-    const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
+-    const ctrl = new AbortController();
+-    const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
+-    void fetch(`${base}local-erp-workspace/erp`, {
+-      method: "PUT",
+-      signal: ctrl.signal,
+-      headers: { "Content-Type": "application/json" },
+-      body: JSON.stringify(data),
+-    })
+-      .catch(() => {})
+-      .finally(() => globalThis.clearTimeout(timer));
+-  } catch {
+-    // Ignore non-browser test environments
++  const win = window as unknown as {
++    __nasqoHybridReady?: boolean;
++    __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
++  };
++  if (import.meta.env.VITE_NASQO_HYBRID === "1" || win.__nasqoHybridReady) {
++    win.__nasqoHybridSaveErp?.(key, data);
++    return;
++  }
++  if (import.meta.env.VITE_NASQO_HYBRID !== "1") {
++    try {
++      const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
++      const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
++      const ctrl = new AbortController();
++      const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
++      void fetch(`${base}local-erp-workspace/erp`, {
++        method: "PUT",
++        signal: ctrl.signal,
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      })
++        .catch(() => {})
++        .finally(() => globalThis.clearTimeout(timer));
++    } catch {
++      // Ignore non-browser test environments
++    }
+   }
+ }
+ 
+
+--- a/src/prototype.css
++++ b/src/prototype.css
+@@ -8032,6 +8032,10 @@
+   border-color: #34527d;
+ }
+ 
++:root.dark .smart-col-bal strong {
++  color: #cbd5e1;
++}
++
+ :root.dark .smart-col-bal.pos strong {
+   color: #60a5fa;
+ }
+@@ -10236,8 +10240,8 @@
+   color: #ffffff;
+ }
+ 
+-/* Custom Home Color Application */
+-:root[data-home-customized="true"] .smart-workbench-scroll {
++/* Custom Home Color Application (light mode surfaces; dark mode preserves dark canvas/plaque contrast) */
++:root[data-home-customized="true"]:not(.dark) .smart-workbench-scroll {
+   background-color: var(--nasqo-home-canvas-bg, var(--nasqo-canvas));
+   background-image: none;
+ }
+@@ -10256,20 +10260,20 @@
+   color: var(--nasqo-home-btn-text, #ffffff);
+ }
+ 
+-:root[data-home-customized="true"]:not([data-home-banner-style="tinted"]) .smart-brand-plaque {
++:root[data-home-customized="true"]:not(.dark):not([data-home-banner-style="tinted"]) .smart-brand-plaque {
+   background: var(--nasqo-home-banner-bg, #eef2ff);
+   border-color: color-mix(in srgb, var(--nasqo-home-banner-ink, #4338ca) 18%, transparent);
+ }
+ 
+-:root[data-home-customized="true"]:not([data-home-banner-style="tinted"]) .smart-brand-copy strong {
++:root[data-home-customized="true"]:not(.dark):not([data-home-banner-style="tinted"]) .smart-brand-copy strong {
+   color: var(--nasqo-home-banner-ink, #4338ca);
+ }
+ 
+-:root[data-home-customized="true"]:not([data-home-banner-style="tinted"]) .smart-brand-copy small {
++:root[data-home-customized="true"]:not(.dark):not([data-home-banner-style="tinted"]) .smart-brand-copy small {
+   color: var(--nasqo-home-banner-sub, #0891b2);
+ }
+ 
+-:root[data-home-customized="true"]:not([data-home-banner-style="tinted"]) .smart-brand-qr {
++:root[data-home-customized="true"]:not(.dark):not([data-home-banner-style="tinted"]) .smart-brand-qr {
+   color: var(--nasqo-home-banner-ink, #4338ca);
+   background: color-mix(in srgb, var(--nasqo-home-banner-ink, #4338ca) 10%, transparent);
+   border-color: color-mix(in srgb, var(--nasqo-home-banner-ink, #4338ca) 22%, transparent);
+@@ -12864,9 +12868,9 @@
+ 
+ .sys-tabs-bar {
+   display: grid;
+-  grid-template-columns: repeat(4, minmax(0, 1fr));
+-  gap: 5px;
+-  padding: 5px;
++  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.42fr);
++  gap: 4px;
++  padding: 4px;
+   border-radius: 13px;
+   background: var(--nasqo-surface);
+   border: 1px solid var(--nasqo-line);
+@@ -12877,12 +12881,12 @@
+ 
+ .sys-tab-btn {
+   min-height: 42px;
+-  padding: 4px 6px;
++  padding: 4px 5px;
+   border-radius: 9px;
+   border: 0;
+   background: transparent;
+   color: var(--nasqo-muted);
+-  font-size: 12px;
++  font-size: 11.5px;
+   font-weight: 800;
+   white-space: nowrap;
+   overflow: hidden;
+
+--- a/src/components/ExpenseCategorySelector.tsx
++++ b/src/components/ExpenseCategorySelector.tsx
+@@ -1,6 +1,7 @@
+ import { useState } from "react";
+ import { MagicWandIcon } from "@radix-ui/react-icons";
+ import { inferExpenseCategory, normalizeExpenseCategory } from "../accounting";
++import { useHybridPresentation } from "../hybrid/presentationAdapter";
+ import { EXPENSE_CATEGORIES, type AccountCategory, type ExpenseCategory } from "../types";
+ import { triggerHaptic } from "../utils/haptics";
+ 
+@@ -25,6 +26,7 @@
+   currency,
+   entryType,
+ }: ExpenseCategorySelectorProps) {
++  const hybrid = useHybridPresentation();
+   const [loading, setLoading] = useState(false);
+   const [aiNote, setAiNote] = useState("");
+   const [aiError, setAiError] = useState("");
+@@ -38,6 +40,16 @@
+     }
+ 
+     triggerHaptic("light");
++    if (import.meta.env.VITE_NASQO_HYBRID === "1" || hybrid.isHybrid) {
++      const localCategory = inferExpenseCategory(description, vendorName, accountCategory);
++      onChange(localCategory);
++      triggerHaptic("success");
++      setAiNote(`تصنيف محاسبي محلي (دون اتصال): ${localCategory}`);
++      return;
++    }
++
++    if (import.meta.env.VITE_NASQO_HYBRID === "1") return;
++
+     setLoading(true);
+     const controller = new AbortController();
+     const timer = globalThis.setTimeout(() => controller.abort(), 12_000);
+
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,8 @@
+     "start": "node server.ts",
+     "lint": "tsc --noEmit",
+     "prebuild": "npm run check:runtime && node scripts/guard-public-backups.mjs",
+-    "build": "tsc && vite build && node scripts/prepare-sites-build.mjs"
++    "build": "tsc && vite build && node scripts/prepare-sites-build.mjs",
++    "build:hybrid": "node scripts/build-hybrid.mjs"
+   },
+   "dependencies": {
+     "@firebase/eslint-plugin-security-rules": "^0.0.2",

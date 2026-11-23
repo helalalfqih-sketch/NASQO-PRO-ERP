@@ -1,0 +1,49 @@
+--- a/src/erp.ts
++++ b/src/erp.ts
+@@ -1182,21 +1182,31 @@
+     listener(data);
+   }
+   if (typeof window === "undefined") return;
+-  try {
+-    const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
+-    const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
+-    const ctrl = new AbortController();
+-    const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
+-    void fetch(`${base}local-erp-workspace/erp`, {
+-      method: "PUT",
+-      signal: ctrl.signal,
+-      headers: { "Content-Type": "application/json" },
+-      body: JSON.stringify(data),
+-    })
+-      .catch(() => {})
+-      .finally(() => globalThis.clearTimeout(timer));
+-  } catch {
+-    // Ignore non-browser test environments
++  const win = window as unknown as {
++    __nasqoHybridReady?: boolean;
++    __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
++  };
++  if (import.meta.env.VITE_NASQO_HYBRID === "1" || win.__nasqoHybridReady) {
++    win.__nasqoHybridSaveErp?.(key, data);
++    return;
++  }
++  if (import.meta.env.VITE_NASQO_HYBRID !== "1") {
++    try {
++      const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
++      const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
++      const ctrl = new AbortController();
++      const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
++      void fetch(`${base}local-erp-workspace/erp`, {
++        method: "PUT",
++        signal: ctrl.signal,
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      })
++        .catch(() => {})
++        .finally(() => globalThis.clearTimeout(timer));
++    } catch {
++      // Ignore non-browser test environments
++    }
+   }
+ }
+ 

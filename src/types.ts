@@ -73,6 +73,8 @@ export type WorkspaceSettings = {
   whatsappProvider: "nasqo" | "external";
   whatsappInstantEnabled: boolean;
   whatsappPhone: string;
+  /** Optional fiscal period lock date (YYYY-MM-DD); posting or reversing on/before this date is rejected */
+  closedUntilDate?: string;
 };
 
 export type AccountGroupRecord = {
@@ -136,6 +138,8 @@ export type InvoiceLineInput = {
   bonus?: number;
   details?: string;
   expiryDate?: string;
+  /** Snapshot of Weighted Average Cost (WAC) per base unit at the time of posting */
+  unitCostAtSale?: number;
   legacyId?: number;
 };
 
@@ -171,6 +175,11 @@ export type LedgerEntryRecord = {
   expenseCategory?: string;
   deliveryDays?: number;
   sourceOrigin?: "native" | "smartpro_sql" | "legacy_sqlite";
+  postingStatus?: "draft" | "posted" | "reversed";
+  idempotencyKey?: string;
+  reversedEntryId?: string;
+  reversalEntryId?: string;
+  paidAmount?: number;
   docType?: number;
   lineCount?: number;
   lines?: InvoiceLineInput[];

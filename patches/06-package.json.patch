@@ -1,0 +1,12 @@
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,8 @@
+     "start": "node server.ts",
+     "lint": "tsc --noEmit",
+     "prebuild": "npm run check:runtime && node scripts/guard-public-backups.mjs",
+-    "build": "tsc && vite build && node scripts/prepare-sites-build.mjs"
++    "build": "tsc && vite build && node scripts/prepare-sites-build.mjs",
++    "build:hybrid": "node scripts/build-hybrid.mjs"
+   },
+   "dependencies": {
+     "@firebase/eslint-plugin-security-rules": "^0.0.2",

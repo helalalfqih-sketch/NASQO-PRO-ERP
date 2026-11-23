@@ -1,12 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRightIcon, Cross2Icon } from "@radix-ui/react-icons";
+import { ArrowRightIcon, ChevronDownIcon, ChevronLeftIcon, Cross2Icon } from "@radix-ui/react-icons";
 import { NasqoBrandLoader } from "./NasqoBrandLoader";
 import {
+  StockItemMovementDetail,
+  type SelectedStockItemSeed,
+} from "./StockItemMovementDetail";
+import { UnifiedSearchFilterBar } from "./UnifiedSearchFilterBar";
+import { DateRangeFields } from "./DateRangeFields";
+import {
+  countActiveFilters,
+  createInitialSearchState,
+  onSearchBlur,
+  onSearchClear,
+  onSearchExit,
+  onSearchFocus,
+  onSearchQueryChange,
+  onTogglePanel,
+} from "../utils/searchFocusState";
+import {
+  buildDateSearchTokens,
+  formatDateRangeLabel,
+  formatDisplayDate,
+  isWithinDateRange,
+} from "../utils/dateUtils";
+import { formatExpiryStatus } from "../utils/itemMovementSummary";
+import {
   computeCategoryTotals,
+  computeCategoryTotalsByCurrency,
+  computeTrialBalanceByCurrency,
   computeTrialBalanceReport,
   formatAmount,
   formatSignedSmartBalance,
   getCategoryTitle,
+  matchesArabicSearch,
+  normalizeArabicSearch,
 } from "../accounting";
 import { fetchInventoryMovementsReport } from "../firebase";
 import {
@@ -57,10 +84,6 @@ const REPORT_TITLES: Record<ReportId, string> = {
 
 const round2 = (n: number) => Math.round((Number.isFinite(n) ? n : 0) * 100) / 100;
 
-function stockQty(item: InventoryItemRecord): number {
-  return item.quantityUnverified ? (item.computedQuantity ?? 0) : item.quantity;
-}
-
 function matchesCurrency(entryCurrency: string, filter: string): boolean {
   return filter === "الكل" || entryCurrency === filter;
 }
@@ -85,19 +108,69 @@ export function ReportsHubModal({
   const [warehouseId, setWarehouseId] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [searchState, setSearchState] = useState(() => createInitialSearchState());
+  const [summaryFiltersOpen, setSummaryFiltersOpen] = useState(false);
+  const [includeZeroStock, setIncludeZeroStock] = useState(false);
+  const searchQuery = searchState.query;
+
   const [profitData, setProfitData] = useState<MovementReport | null>(null);
   const [profitError, setProfitError] = useState("");
+  const [stockReportData, setStockReportData] = useState<MovementReport | null>(null);
+  const [stockReportLoading, setStockReportLoading] = useState(false);
+  const [stockReportError, setStockReportError] = useState("");
 
   const [visibleLimit, setVisibleLimit] = useState(80);
+  const [selectedStockItem, setSelectedStockItem] = useState<SelectedStockItemSeed | null>(null);
 
   useEffect(() => {
-    if (!open) setReport(null);
+    if (!open) {
+      setReport(null);
+      setSelectedStockItem(null);
+      setSearchState(onSearchExit());
+      setSummaryFiltersOpen(false);
+      setIncludeZeroStock(false);
+    }
     setVisibleLimit(80);
   }, [open]);
 
   useEffect(() => {
+    setSelectedStockItem(null);
+    setSearchState(onSearchExit());
+    setSummaryFiltersOpen(false);
+  }, [report]);
+
+  useEffect(() => {
     setVisibleLimit(80);
-  }, [report, currency, warehouseId, fromDate, toDate]);
+  }, [report, currency, warehouseId, fromDate, toDate, searchQuery, includeZeroStock]);
+
+  // Fetch accurate per-warehouse stock directly from SQLite for stock-remaining & stock-expiry
+  useEffect(() => {
+    if (!open || (report !== "stock-remaining" && report !== "stock-expiry")) return;
+    let active = true;
+    setStockReportLoading(true);
+    setStockReportError("");
+    void fetchInventoryMovementsReport(uid, {
+      warehouseId: warehouseId || undefined,
+      // For stock-remaining, pass date range directly to SQLite so balances reflect the period
+      fromDate: report === "stock-remaining" ? fromDate || undefined : undefined,
+      toDate: report === "stock-remaining" ? toDate || undefined : undefined,
+    })
+      .then((res) => {
+        if (active) setStockReportData(res);
+      })
+      .catch(() => {
+        if (active) {
+          setStockReportData(null);
+          setStockReportError("تعذر تحميل رصيد المخزون الفعلي من قاعدة البيانات.");
+        }
+      })
+      .finally(() => {
+        if (active) setStockReportLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, report, uid, warehouseId, fromDate, toDate, inventory.length, ledger.length]);
 
   useEffect(() => {
     if (!open || report !== "invoice-profit") return;
@@ -122,39 +195,100 @@ export function ReportsHubModal({
   }, [open, report, uid, fromDate, toDate, currency, warehouseId]);
 
   const activeLedger = useMemo(
-    () => (open && (report === "services" || report === "tax") ? ledger.filter((e) => !e.deleted) : []),
-    [ledger, open, report],
-  );
-
-  const closing = useMemo(
     () =>
-      open && report === "closing"
-        ? computeTrialBalanceReport(accounts, ledger, inventory, cashboxes, { currency })
-        : null,
-    [accounts, ledger, inventory, cashboxes, currency, open, report],
-  );
-
-  const categoryTotals = useMemo(
-    () => (open && report === "by-category" ? computeCategoryTotals(accounts, ledger, currency) : null),
-    [accounts, ledger, currency, open, report],
-  );
-
-  const stockRows = useMemo(
-    () =>
-      open && (report === "stock-remaining" || report === "stock-expiry")
-        ? inventory
-            .filter((i) => !warehouseId || i.warehouseId === warehouseId)
-            .map((i) => ({ item: i, qty: stockQty(i) }))
-            .filter((r) => Math.abs(r.qty) > 0.0001)
-            .sort((a, b) => a.item.name.localeCompare(b.item.name, "ar"))
+      open && (report === "services" || report === "tax")
+        ? ledger.filter((e) => !e.deleted && isWithinDateRange(e.entryDate, fromDate, toDate))
         : [],
-    [inventory, open, report, warehouseId],
+    [ledger, open, report, fromDate, toDate],
   );
-  const stockTotals = useMemo(
-    () => ({
-      qty: round2(stockRows.reduce((s, r) => s + r.qty, 0)),
-      value: round2(stockRows.reduce((s, r) => s + r.qty * r.item.avgCost, 0)),
-    }),
+
+  // Closing report: single currency OR separate blocks per currency when "الكل" is chosen
+  const closingReports = useMemo(() => {
+    if (!open || report !== "closing") return [];
+    const range = {
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+    };
+    if (currency === "الكل") {
+      return computeTrialBalanceByCurrency(accounts, ledger, inventory, cashboxes, {
+        currencies: currencyCodes,
+        ...range,
+      });
+    }
+    return [
+      computeTrialBalanceReport(accounts, ledger, inventory, cashboxes, {
+        currency,
+        ...range,
+      }),
+    ];
+  }, [accounts, ledger, inventory, cashboxes, currency, currencyCodes, fromDate, toDate, open, report]);
+
+  // By-category report: single currency OR separate tables per currency when "الكل" is chosen
+  const categoryReportBlocks = useMemo(() => {
+    if (!open || report !== "by-category") return [];
+    const range = {
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+    };
+    if (currency === "الكل") {
+      return computeCategoryTotalsByCurrency(accounts, ledger, currencyCodes, range);
+    }
+    return [{ currency, totals: computeCategoryTotals(accounts, ledger, currency, range) }];
+  }, [accounts, ledger, currency, currencyCodes, fromDate, toDate, open, report]);
+
+  const inventoryMetaById = useMemo(() => new Map(inventory.map((i) => [i.id, i])), [inventory]);
+
+  const stockRows = useMemo(() => {
+    if (!open || (report !== "stock-remaining" && report !== "stock-expiry")) return [];
+    const sourceRows = stockReportData?.itemRows ?? [];
+    const q = normalizeArabicSearch(searchQuery);
+    return sourceRows
+      .map((r) => {
+        const meta = inventoryMetaById.get(r.id);
+        const qty = round2(Number(r.availableQty ?? 0));
+        const unitCost = round2(Number(r.unitCost ?? r.avgCost ?? 0));
+        const value = round2(Number(r.remainingValue ?? qty * unitCost));
+        return {
+          id: r.id,
+          code: r.code,
+          name: r.name,
+          sku: r.sku || meta?.sku || "",
+          unit: r.unit || "حبة",
+          qty,
+          unitCost,
+          value,
+          currencyCode: r.currencyCode || meta?.currencyCode || "ريال",
+          expiryDate: r.expiryDate || meta?.expiryDate || "",
+          hasMovement: r.hasMovement,
+        };
+      })
+      .filter((r) => (includeZeroStock ? true : Math.abs(r.qty) > 0.0001))
+      .filter((r) =>
+        q
+          ? matchesArabicSearch(
+              `${r.code ?? ""} ${r.name} ${r.sku} ${r.unit} ${r.expiryDate} ${buildDateSearchTokens(r.expiryDate)}`,
+              q,
+            )
+          : true,
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  }, [open, report, stockReportData, inventoryMetaById, includeZeroStock, searchQuery]);
+
+  const stockTotalsByCurrency = useMemo(() => {
+    const map = new Map<string, { currency: string; qty: number; value: number; count: number }>();
+    for (const r of stockRows) {
+      const curr = r.currencyCode || "ريال";
+      const cur = map.get(curr) ?? { currency: curr, qty: 0, value: 0, count: 0 };
+      cur.qty = round2(cur.qty + r.qty);
+      cur.value = round2(cur.value + r.value);
+      cur.count += 1;
+      map.set(curr, cur);
+    }
+    return [...map.values()];
+  }, [stockRows]);
+
+  const totalStockQty = useMemo(
+    () => round2(stockRows.reduce((s, r) => s + r.qty, 0)),
     [stockRows],
   );
 
@@ -162,22 +296,23 @@ export function ReportsHubModal({
     const t = new Date();
     return Date.UTC(t.getFullYear(), t.getMonth(), t.getDate());
   }, []);
+
   const expiryRows = useMemo(
     () =>
       open && report === "stock-expiry"
         ? stockRows
-            .filter((r) => Boolean(r.item.expiryDate))
+            .filter((r) => Boolean(r.expiryDate))
+            .filter((r) => (fromDate || toDate ? isWithinDateRange(r.expiryDate, fromDate, toDate) : true))
             .map((r) => {
-              const ms = Date.parse(`${r.item.expiryDate}T00:00:00Z`);
-              const days = Number.isFinite(ms) ? Math.round((ms - todayMs) / 86_400_000) : null;
-              return { ...r, days };
+              const info = formatExpiryStatus(r.expiryDate, todayMs);
+              return { ...r, expiryInfo: info, days: info.days };
             })
             .sort((a, b) => (a.days ?? 1e9) - (b.days ?? 1e9))
         : [],
-    [open, report, stockRows, todayMs],
+    [open, report, stockRows, fromDate, toDate, todayMs],
   );
 
-  const profitRows = useMemo(
+  const allProfitRows = useMemo(
     () =>
       open && report === "invoice-profit"
         ? (profitData?.itemRows ?? [])
@@ -187,7 +322,15 @@ export function ReportsHubModal({
     [open, profitData, report],
   );
 
-  const serviceRows = useMemo(
+  const profitRows = useMemo(() => {
+    const q = normalizeArabicSearch(searchQuery);
+    if (!q) return allProfitRows;
+    return allProfitRows.filter((r) =>
+      matchesArabicSearch(`${r.code ?? ""} ${r.name} ${r.sku} ${r.unit} ${r.currencyCode ?? ""}`, q),
+    );
+  }, [allProfitRows, searchQuery]);
+
+  const allServiceRows = useMemo(
     () =>
       open && report === "services"
         ? activeLedger
@@ -199,35 +342,71 @@ export function ReportsHubModal({
         : [],
     [activeLedger, currency, open, report],
   );
-  const serviceTotals = useMemo(() => {
-    let sales = 0;
-    let purchases = 0;
-    for (const e of serviceRows) {
-      if (e.direction === "debit") sales += e.amount;
-      else purchases += e.amount;
-    }
-    return { sales: round2(sales), purchases: round2(purchases) };
-  }, [serviceRows]);
 
-  const tax = useMemo(() => {
-    if (!open || report !== "tax") {
-      return { output: 0, input: 0, net: 0, taxedDocs: 0 };
+  const serviceRows = useMemo(() => {
+    const q = normalizeArabicSearch(searchQuery);
+    if (!q) return allServiceRows;
+    return allServiceRows.filter((e) =>
+      matchesArabicSearch(
+        `${e.entryNumber} ${e.accountName} ${e.typeLabel} ${e.details} ${e.currency} ${e.entryDate} ${buildDateSearchTokens(e.entryDate)}`,
+        q,
+      ),
+    );
+  }, [allServiceRows, searchQuery]);
+
+  const serviceTotalsByCurrency = useMemo(() => {
+    const map = new Map<string, { currency: string; sales: number; purchases: number }>();
+    for (const e of serviceRows) {
+      const curr = e.currency || "ريال";
+      const cur = map.get(curr) ?? { currency: curr, sales: 0, purchases: 0 };
+      const dt = e.docType !== undefined && e.docType !== null ? Number(e.docType) : null;
+      const isSale = dt !== null ? dt === 2 || dt === 7 : e.direction === "debit";
+      if (isSale) cur.sales = round2(cur.sales + e.amount);
+      else cur.purchases = round2(cur.purchases + e.amount);
+      map.set(curr, cur);
     }
-    let output = 0;
-    let input = 0;
-    let taxedDocs = 0;
+    if (map.size === 0 && currency !== "الكل") {
+      map.set(currency, { currency, sales: 0, purchases: 0 });
+    }
+    return [...map.values()];
+  }, [serviceRows, currency]);
+
+  const taxByCurrency = useMemo(() => {
+    if (!open || report !== "tax") return [];
+    const map = new Map<string, { currency: string; output: number; input: number; net: number; taxedDocs: number }>();
     for (const e of activeLedger) {
       if ((e.kind !== "invoice" && e.kind !== "return") || !matchesCurrency(e.currency, currency)) continue;
       const t = Number(e.taxAmount ?? 0);
       if (!(t > 0)) continue;
-      taxedDocs += 1;
-      const isSaleSide = e.kind === "invoice" ? e.direction === "debit" : e.direction === "credit";
+      const curr = e.currency || "ريال";
+      const cur = map.get(curr) ?? { currency: curr, output: 0, input: 0, net: 0, taxedDocs: 0 };
+      cur.taxedDocs += 1;
+      const dt = e.docType !== undefined && e.docType !== null ? Number(e.docType) : null;
+      const isSaleSide =
+        dt !== null
+          ? dt === 2 || dt === 7 || dt === 4
+          : e.kind === "invoice"
+            ? e.direction === "debit"
+            : e.direction === "credit";
       const sign = e.kind === "return" ? -1 : 1;
-      if (isSaleSide) output += sign * t;
-      else input += sign * t;
+      if (isSaleSide) cur.output = round2(cur.output + sign * t);
+      else cur.input = round2(cur.input + sign * t);
+      cur.net = round2(cur.output - cur.input);
+      map.set(curr, cur);
     }
-    return { output: round2(output), input: round2(input), net: round2(output - input), taxedDocs };
-  }, [activeLedger, currency, open, report]);
+    if (map.size === 0) {
+      return [
+        {
+          currency: currency === "الكل" ? defaultCurrency || "ريال" : currency,
+          output: 0,
+          input: 0,
+          net: 0,
+          taxedDocs: 0,
+        },
+      ];
+    }
+    return [...map.values()];
+  }, [activeLedger, currency, defaultCurrency, open, report]);
 
   if (!open) return null;
 
@@ -240,11 +419,11 @@ export function ReportsHubModal({
     [
       { label: "حركة الصندوق", tone: "orange", run: () => openExternal(onOpenCashboxes) },
       { label: "تقرير الحسابات الختامية", tone: "blue", run: () => setReport("closing") },
-      { label: "تقرير اجمالي حسب التصنيف", tone: "orange", run: () => setReport("by-category") },
+      { label: "تقرير إجمالي حسب التصنيف", tone: "orange", run: () => setReport("by-category") },
       { label: "ميزان المراجعة", tone: "blue", run: () => openExternal(onOpenTrialBalance) },
     ],
     [
-      { label: "تقرير حركة المخزون والارباح", tone: "orange", run: () => openExternal(onOpenInventoryMovements) },
+      { label: "تقرير حركة المخزون والأرباح", tone: "orange", run: () => openExternal(onOpenInventoryMovements) },
       { label: "تقرير المخزون المتبقي وتاريخ الانتهاء", tone: "blue", run: () => setReport("stock-expiry") },
       { label: "المخزون المتبقي", tone: "orange", run: () => setReport("stock-remaining") },
       { label: "أرباح الفواتير", tone: "blue", run: () => setReport("invoice-profit") },
@@ -254,12 +433,128 @@ export function ReportsHubModal({
   ];
   const sectionTitles = ["التقارير المالية", "التقارير المخزنية"];
 
-  const usesCurrency = report === "closing" || report === "by-category" || report === "services" || report === "tax" || report === "invoice-profit";
+  const usesCurrency =
+    report === "closing" ||
+    report === "by-category" ||
+    report === "services" ||
+    report === "tax" ||
+    report === "invoice-profit";
   const usesWarehouse = report === "stock-remaining" || report === "stock-expiry" || report === "invoice-profit";
-  const usesDates = report === "invoice-profit";
+  const usesSearchBar =
+    report === "stock-remaining" ||
+    report === "stock-expiry" ||
+    report === "invoice-profit" ||
+    report === "services";
 
-  const row = (label: string, value: string, tone?: "pos" | "neg") => (
-    <div className="trial-balance-row" key={label}>
+  const dateRangeLabel = formatDateRangeLabel(fromDate, toDate);
+  const selectedWarehouseName = warehouseId
+    ? warehouses.find((w) => w.id === warehouseId)?.name || "مخزن محدد"
+    : "جميع المخازن";
+
+  const activeFilterCount = countActiveFilters(
+    {
+      currency: usesCurrency ? currency : defaultCurrency || "ريال",
+      warehouseId: usesWarehouse ? warehouseId : "",
+      fromDate,
+      toDate,
+      includeZeroStock: report === "stock-remaining" || report === "stock-expiry" ? includeZeroStock : false,
+    },
+    {
+      currency: defaultCurrency || "ريال",
+      warehouseId: "",
+      fromDate: "",
+      toDate: "",
+      includeZeroStock: false,
+    },
+  );
+
+  const searchBarConfig =
+    report === "stock-remaining" || report === "stock-expiry"
+      ? {
+          placeholder:
+            report === "stock-expiry"
+              ? "ابحث بالصنف أو الرمز أو تاريخ الانتهاء..."
+              : "ابحث بالاسم أو الرمز أو الوحدة...",
+          ariaLabel: "بحث في أصناف المخزون المتبقي",
+          matchedCount: report === "stock-expiry" ? expiryRows.length : stockRows.length,
+          totalCount: stockReportData?.itemRows?.length,
+          unitLabel: "صنف",
+        }
+      : report === "invoice-profit"
+        ? {
+            placeholder: "ابحث باسم الصنف أو الرمز...",
+            ariaLabel: "بحث في أرباح الفواتير",
+            matchedCount: profitRows.length,
+            totalCount: allProfitRows.length,
+            unitLabel: "صنف",
+          }
+        : {
+            placeholder: "ابحث بالحساب أو الرقم أو التاريخ...",
+            ariaLabel: "بحث في فواتير الخدمات",
+            matchedCount: serviceRows.length,
+            totalCount: allServiceRows.length,
+            unitLabel: "فاتورة",
+          };
+
+  const renderFilterFields = () => (
+    <div className="reports-hub-filters nasqo-modal-filter-grid" data-testid="reports-filters-panel">
+      {usesCurrency ? (
+        <label>
+          <span>العملة</span>
+          <select aria-label="عملة التقرير" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {currencyCodes.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+            <option value="الكل">الكل (منفصل لكل عملة)</option>
+          </select>
+        </label>
+      ) : null}
+      {usesWarehouse ? (
+        <label>
+          <span>المخزن</span>
+          <select
+            aria-label="مخزن التقرير"
+            value={warehouseId}
+            onChange={(e) => setWarehouseId(e.target.value)}
+          >
+            <option value="">جميع المخازن</option>
+            {warehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <DateRangeFields
+        fromDate={fromDate}
+        toDate={toDate}
+        onFromDateChange={setFromDate}
+        onToDateChange={setToDate}
+        fromLabel={report === "stock-expiry" ? "انتهاء من تاريخ" : "من تاريخ"}
+        toLabel={report === "stock-expiry" ? "انتهاء إلى تاريخ" : "إلى تاريخ"}
+        fromTestId="reports-from-date"
+        toTestId="reports-to-date"
+        clearTestId="reports-clear-dates"
+      />
+      {report === "stock-remaining" || report === "stock-expiry" ? (
+        <label className="reports-hub-checkbox">
+          <input
+            type="checkbox"
+            checked={includeZeroStock}
+            onChange={(e) => setIncludeZeroStock(e.target.checked)}
+            data-testid="stock-include-zero-toggle"
+          />
+          <span>إظهار الأصناف ذات الرصيد الصفري</span>
+        </label>
+      ) : null}
+    </div>
+  );
+
+  const row = (key: string, label: string, value: string, tone?: "pos" | "neg") => (
+    <div className="trial-balance-row" key={key}>
       <span className="trial-row-label">{label}</span>
       <strong className={`trial-row-val ${tone ?? ""}`}>
         <bdi>{value}</bdi>
@@ -280,13 +575,23 @@ export function ReportsHubModal({
           <button type="button" className="smart-modal-close" onClick={onClose} aria-label="إغلاق">
             <Cross2Icon />
           </button>
-          <h2 id="reports-hub-title">{report ? REPORT_TITLES[report] : "التقارير"}</h2>
+          <h2 id="reports-hub-title">
+            {selectedStockItem
+              ? "بيانات وحركة الصنف"
+              : report
+                ? REPORT_TITLES[report]
+                : "التقارير"}
+          </h2>
           {report ? (
             <button
               type="button"
               className="smart-modal-close"
-              onClick={() => setReport(null)}
-              aria-label="رجوع إلى قائمة التقارير"
+              onClick={() =>
+                selectedStockItem ? setSelectedStockItem(null) : setReport(null)
+              }
+              aria-label={
+                selectedStockItem ? "رجوع إلى تقرير المخزون" : "رجوع إلى قائمة التقارير"
+              }
               data-testid="reports-back-btn"
             >
               <ArrowRightIcon />
@@ -314,189 +619,360 @@ export function ReportsHubModal({
               </div>
             ))}
           </div>
+        ) : selectedStockItem ? (
+          <div className="reports-hub-detail">
+            <StockItemMovementDetail
+              uid={uid}
+              item={selectedStockItem}
+              catalogMeta={inventoryMetaById.get(selectedStockItem.id)}
+              warehouses={warehouses}
+              initialWarehouseId={warehouseId}
+              initialFromDate={report === "stock-remaining" ? fromDate : ""}
+              initialToDate={report === "stock-remaining" ? toDate : ""}
+            />
+          </div>
         ) : (
           <div className="reports-hub-detail">
-            {usesCurrency || usesWarehouse || usesDates ? (
-              <div className="reports-hub-filters">
-                {usesCurrency ? (
-                  <label>
-                    <span>العملة</span>
-                    <select aria-label="عملة التقرير" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                      {currencyCodes.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                      <option value="الكل">الكل</option>
-                    </select>
-                  </label>
+            {usesSearchBar ? (
+              <UnifiedSearchFilterBar
+                testId="reports-stock-search-bar"
+                inputTestId="reports-stock-search"
+                ariaLabel={searchBarConfig.ariaLabel}
+                placeholder={searchBarConfig.placeholder}
+                query={searchQuery}
+                matchedCount={searchBarConfig.matchedCount}
+                totalCount={searchBarConfig.totalCount}
+                unitLabel={searchBarConfig.unitLabel}
+                isFocused={searchState.isFocused}
+                onFocus={() => setSearchState((prev) => onSearchFocus(prev))}
+                onBlur={() => setSearchState((prev) => onSearchBlur(prev))}
+                onQueryChange={(next) => setSearchState((prev) => onSearchQueryChange(prev, next))}
+                onClear={() => setSearchState((prev) => onSearchClear(prev))}
+                onExitSearch={() => setSearchState(onSearchExit())}
+                panelToggles={[
+                  {
+                    id: "filters",
+                    label: "الفلاتر والتاريخ",
+                    activeCount: activeFilterCount,
+                    expanded: searchState.activePanel === "filters",
+                    testId: "reports-stock-toggle-filters",
+                    onClick: () => setSearchState((prev) => onTogglePanel(prev, "filters")),
+                  },
+                ]}
+                compactSummary={
+                  <div className="nasqo-summary-inline">
+                    {usesWarehouse ? <span>{selectedWarehouseName}</span> : null}
+                    {usesCurrency ? (
+                      <span>
+                        {usesWarehouse ? " · " : ""}
+                        {currency === "الكل" ? "جميع العملات" : currency}
+                      </span>
+                    ) : null}
+                    {dateRangeLabel ? (
+                      <span>
+                        {" "}
+                        · <bdi>{dateRangeLabel}</bdi>
+                      </span>
+                    ) : null}
+                    <span>
+                      {" "}
+                      · <b><bdi>{searchBarConfig.matchedCount}</bdi></b> {searchBarConfig.unitLabel}
+                    </span>
+                    {includeZeroStock && (report === "stock-remaining" || report === "stock-expiry") ? (
+                      <span> · يشمل الصفرية</span>
+                    ) : null}
+                  </div>
+                }
+                expandedPanel={searchState.activePanel === "filters" ? renderFilterFields() : null}
+              />
+            ) : (
+              <section className="nasqo-search-dock nasqo-summary-filter-dock" dir="rtl">
+                <div className="nasqo-search-aux-strip">
+                  <div className="nasqo-search-toggles" role="toolbar" aria-label="خيارات التقرير والتاريخ">
+                    <button
+                      type="button"
+                      data-testid="reports-summary-toggle-filters"
+                      className={`nasqo-aux-toggle${summaryFiltersOpen ? " is-expanded" : ""}`}
+                      aria-expanded={summaryFiltersOpen}
+                      onClick={() => setSummaryFiltersOpen((prev) => !prev)}
+                    >
+                      <span>الفلاتر والتاريخ</span>
+                      {activeFilterCount > 0 ? (
+                        <em className="nasqo-aux-count">{activeFilterCount}</em>
+                      ) : null}
+                      <ChevronDownIcon className="nasqo-aux-chevron" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="nasqo-compact-summary">
+                    <div className="nasqo-summary-inline">
+                      <span>{currency === "الكل" ? "جميع العملات" : currency}</span>
+                      <span>
+                        {" "}
+                        · <bdi>{dateRangeLabel || "كامل السجل"}</bdi>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {summaryFiltersOpen ? (
+                  <div className="nasqo-expanded-panel">{renderFilterFields()}</div>
                 ) : null}
-                {usesWarehouse ? (
-                  <label>
-                    <span>المخزن</span>
-                    <select aria-label="مخزن التقرير" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
-                      <option value="">جميع المخازن</option>
-                      {warehouses.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-                {usesDates ? (
-                  <>
-                    <label>
-                      <span>من تاريخ</span>
-                      <input type="date" dir="ltr" aria-label="من تاريخ" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-                    </label>
-                    <label>
-                      <span>إلى تاريخ</span>
-                      <input type="date" dir="ltr" aria-label="إلى تاريخ" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-                    </label>
-                  </>
-                ) : null}
+              </section>
+            )}
+
+            {report === "closing" ? (
+              <div data-testid="report-closing" className="reports-currency-stack">
+                {closingReports.map((closing) => (
+                  <div key={closing.currency} className="reports-currency-block">
+                    <div className="smart-section-band">الأرصدة — {closing.currency}</div>
+                    <div className="trial-balance-rows">
+                      {row(`${closing.currency}-dr`, "إجمالي المدين (عليهم)", `${formatAmount(closing.totalDebitAccounts)} ${closing.currency}`, "pos")}
+                      {row(`${closing.currency}-cr`, "إجمالي الدائن (لهم)", `${formatAmount(closing.totalCreditAccounts)} ${closing.currency}`, "neg")}
+                      {row(`${closing.currency}-cash`, "إجمالي النقدية", `${formatSignedSmartBalance(closing.cashTotal)} ${closing.currency}`, closing.cashTotal < 0 ? "neg" : "pos")}
+                      {row(`${closing.currency}-net`, "صافي الرصيد", `${formatSignedSmartBalance(closing.netBalance)} ${closing.currency}`, closing.netBalance < 0 ? "neg" : "pos")}
+                    </div>
+                    <div className="smart-section-band">نتيجة النشاط — {closing.currency}</div>
+                    <div className="trial-balance-rows">
+                      {row(`${closing.currency}-sales`, "المبيعات", `${formatAmount(closing.salesTotal)} ${closing.currency}`, "pos")}
+                      {row(`${closing.currency}-purch`, "المشتريات", `${formatAmount(closing.purchasesTotal)} ${closing.currency}`, "neg")}
+                      {row(`${closing.currency}-inv`, "قيمة المخزون", `${formatAmount(closing.inventoryValue)} ${closing.currency}`, "pos")}
+                      {row(`${closing.currency}-prof`, "صافي الربح التقديري", `${formatSignedSmartBalance(closing.netProfit)} ${closing.currency}`, closing.netProfit < 0 ? "neg" : "pos")}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : null}
 
-            {report === "closing" && closing ? (
-              <div data-testid="report-closing">
-                <div className="smart-section-band">الأرصدة</div>
-                <div className="trial-balance-rows">
-                  {row("إجمالي المدين (عليهم)", formatAmount(closing.totalDebitAccounts), "pos")}
-                  {row("إجمالي الدائن (لهم)", formatAmount(closing.totalCreditAccounts), "neg")}
-                  {row("إجمالي النقدية", formatAmount(closing.cashTotal), "pos")}
-                  {row("صافي الرصيد", formatSignedSmartBalance(closing.netBalance), closing.netBalance < 0 ? "neg" : "pos")}
-                </div>
-                <div className="smart-section-band">نتيجة النشاط</div>
-                <div className="trial-balance-rows">
-                  {row("المبيعات", formatAmount(closing.salesTotal), "pos")}
-                  {row("المشتريات", formatAmount(closing.purchasesTotal), "neg")}
-                  {row("قيمة المخزون", formatAmount(closing.inventoryValue), "pos")}
-                  {row("صافي الربح", formatSignedSmartBalance(closing.netProfit), closing.netProfit < 0 ? "neg" : "pos")}
-                </div>
-              </div>
-            ) : null}
-
-            {report === "by-category" && categoryTotals ? (
-              <div className="account-groups-table-wrap" data-testid="report-by-category">
-                <table className="account-groups-table">
-                  <thead>
-                    <tr>
-                      <th>التصنيف</th>
-                      <th>الحسابات</th>
-                      <th>عليه</th>
-                      <th>له</th>
-                      <th>الرصيد</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ACCOUNT_CATEGORIES.map((cat) => {
-                      const b = categoryTotals[cat];
-                      return (
-                        <tr key={cat}>
-                          <td className="ag-name-cell">{getCategoryTitle(cat)}</td>
-                          <td>{b.count}</td>
-                          <td className="coa-debit-cell">{formatAmount(b.debitTotal)}</td>
-                          <td className="coa-credit-cell">{formatAmount(b.creditTotal)}</td>
-                          <td className={b.netSigned < 0 ? "coa-debit-cell" : "coa-credit-cell"}>
-                            {formatAmount(Math.abs(b.netSigned))} {b.netSigned < 0 ? "عليه" : b.netSigned > 0 ? "له" : ""}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            {report === "by-category" ? (
+              <div data-testid="report-by-category" className="reports-currency-stack">
+                {categoryReportBlocks.map((block) => (
+                  <div key={block.currency} className="reports-currency-block">
+                    {categoryReportBlocks.length > 1 ? (
+                      <div className="smart-section-band">تصنيفات الحسابات — {block.currency}</div>
+                    ) : null}
+                    <div className="account-groups-table-wrap">
+                      <table className="account-groups-table">
+                        <thead>
+                          <tr>
+                            <th>التصنيف</th>
+                            <th>الحسابات</th>
+                            <th>عليه</th>
+                            <th>له</th>
+                            <th>الرصيد ({block.currency})</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ACCOUNT_CATEGORIES.map((cat) => {
+                            const b = block.totals[cat];
+                            return (
+                              <tr key={cat}>
+                                <td className="ag-name-cell">{getCategoryTitle(cat)}</td>
+                                <td>{b.count}</td>
+                                <td className="coa-debit-cell">{formatAmount(b.debitTotal)}</td>
+                                <td className="coa-credit-cell">{formatAmount(b.creditTotal)}</td>
+                                <td className={b.netSigned < 0 ? "coa-debit-cell" : "coa-credit-cell"}>
+                                  {formatAmount(Math.abs(b.netSigned))}{" "}
+                                  {b.netSigned < 0 ? "عليه" : b.netSigned > 0 ? "له" : "متزن"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : null}
 
             {report === "stock-remaining" ? (
-              <div className="account-groups-table-wrap" data-testid="report-stock-remaining">
-                <table className="account-groups-table">
-                  <thead>
-                    <tr>
-                      <th>الرقم</th>
-                      <th>اسم الصنف</th>
-                      <th>الوحدة</th>
-                      <th>الكمية</th>
-                      <th>القيمة</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockRows.slice(0, visibleLimit).map(({ item, qty }, idx) => (
-                      <tr key={item.id}>
-                        <td>{item.legacyId ?? idx + 1}</td>
-                        <td className="ag-name-cell">{item.name}</td>
-                        <td>{item.unit || "حبة"}</td>
-                        <td>{formatAmount(qty)}</td>
-                        <td>{formatAmount(qty * item.avgCost)}</td>
-                      </tr>
-                    ))}
-                    {stockRows.length > visibleLimit ? (
-                      <tr>
-                        <td colSpan={5} style={{ textAlign: "center", padding: 8 }}>
-                          <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
-                            عرض المزيد (المعروض {visibleLimit} من {stockRows.length})
-                          </button>
-                        </td>
-                      </tr>
+              <div data-testid="report-stock-remaining">
+                {stockReportError ? <p className="cash-empty">{stockReportError}</p> : null}
+                {stockReportLoading ? (
+                  <NasqoBrandLoader size="sm" label="جاري احتساب الرصيد الفعلي للمخزون..." />
+                ) : (
+                  <>
+                    {stockRows.length > 0 ? (
+                      <div className="stock-drilldown-hint">
+                        انقر على أي صنف لعرض بياناته وحركته (مشتريات، توريد، مبيعات، تحويلات)
+                      </div>
                     ) : null}
-                    {stockRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="coa-empty-cell">
-                          لا توجد أصناف بكميات متبقية.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+                    <div className="account-groups-table-wrap">
+                      <table className="account-groups-table">
+                        <thead>
+                          <tr>
+                            <th>الرقم</th>
+                            <th>اسم الصنف</th>
+                            <th>الوحدة</th>
+                            <th>الكمية</th>
+                            <th>القيمة</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stockRows.slice(0, visibleLimit).map((r, idx) => (
+                            <tr
+                              key={r.id}
+                              className="stock-clickable-row"
+                              onClick={() => setSelectedStockItem(r)}
+                            >
+                              <td>{r.code ?? idx + 1}</td>
+                              <td className="ag-name-cell stock-item-name-cell">
+                                <button
+                                  type="button"
+                                  className="stock-item-link-btn"
+                                  aria-label={`عرض بيانات وحركة الصنف ${r.name}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedStockItem(r);
+                                  }}
+                                >
+                                  <span className="stock-item-link-text">{r.name}</span>
+                                  <ChevronLeftIcon className="stock-item-chevron" aria-hidden="true" />
+                                </button>
+                              </td>
+                              <td>{r.unit}</td>
+                              <td className={r.qty < 0 ? "coa-debit-cell" : ""}>
+                                <bdi>{formatAmount(r.qty)}</bdi>
+                              </td>
+                              <td>
+                                <bdi>
+                                  {formatAmount(r.value)} {r.currencyCode}
+                                </bdi>
+                              </td>
+                            </tr>
+                          ))}
+                          {stockRows.length > visibleLimit ? (
+                            <tr>
+                              <td colSpan={5} style={{ textAlign: "center", padding: 8 }}>
+                                <button
+                                  type="button"
+                                  className="load-more-list-btn"
+                                  onClick={() => setVisibleLimit((v) => v + 100)}
+                                >
+                                  عرض المزيد (المعروض {visibleLimit} من {stockRows.length})
+                                </button>
+                              </td>
+                            </tr>
+                          ) : null}
+                          {stockRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="coa-empty-cell">
+                                {includeZeroStock
+                                  ? "لا توجد أصناف مسجلة تطابق البحث."
+                                  : "لا توجد أصناف بكميات متبقية في هذا النطاق. فعّل خيار إظهار الأصناف الصفرية لعرض كامل الدليل."}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="trial-balance-rows">
+                      {row("stock-count", "عدد الأصناف الظاهرة", String(stockRows.length))}
+                      {row("stock-qty", "إجمالي الكمية المتبقية", formatAmount(totalStockQty), totalStockQty < 0 ? "neg" : "pos")}
+                      {stockTotalsByCurrency.map((ct) =>
+                        row(
+                          `stock-val-${ct.currency}`,
+                          `قيمة المخزون (${ct.currency})`,
+                          `${formatAmount(ct.value)} ${ct.currency}`,
+                          ct.value < 0 ? "neg" : "pos",
+                        ),
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
 
             {report === "stock-expiry" ? (
-              <div className="account-groups-table-wrap" data-testid="report-stock-expiry">
-                <table className="account-groups-table">
-                  <thead>
-                    <tr>
-                      <th>اسم الصنف</th>
-                      <th>الكمية</th>
-                      <th>تاريخ الانتهاء</th>
-                      <th>الحالة</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expiryRows.slice(0, visibleLimit).map(({ item, qty, days }) => (
-                      <tr key={item.id}>
-                        <td className="ag-name-cell">{item.name}</td>
-                        <td>
-                          {formatAmount(qty)} {item.unit || "حبة"}
-                        </td>
-                        <td>
-                          <bdi>{item.expiryDate}</bdi>
-                        </td>
-                        <td className={days !== null && days < 0 ? "coa-debit-cell" : days !== null && days <= 30 ? "coa-cash-tag" : "coa-credit-cell"}>
-                          {days === null ? "—" : days < 0 ? `منتهي منذ ${Math.abs(days)} يوم` : days === 0 ? "ينتهي اليوم" : `متبقي ${days} يوم`}
-                        </td>
-                      </tr>
-                    ))}
-                    {expiryRows.length > visibleLimit ? (
-                      <tr>
-                        <td colSpan={4} style={{ textAlign: "center", padding: 8 }}>
-                          <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
-                            عرض المزيد (المعروض {visibleLimit} من {expiryRows.length})
-                          </button>
-                        </td>
-                      </tr>
+              <div data-testid="report-stock-expiry">
+                {stockReportError ? <p className="cash-empty">{stockReportError}</p> : null}
+                {stockReportLoading ? (
+                  <NasqoBrandLoader size="sm" label="جاري تحميل تواريخ الانتهاء..." />
+                ) : (
+                  <>
+                    {expiryRows.length > 0 ? (
+                      <div className="stock-drilldown-hint">
+                        انقر على أي صنف لعرض بياناته وحركته (مشتريات، توريد، مبيعات، تحويلات)
+                      </div>
                     ) : null}
-                    {expiryRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="coa-empty-cell">
-                          لا توجد أصناف بتاريخ انتهاء مسجل في بطاقات الأصناف.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+                    <div className="account-groups-table-wrap">
+                      <table className="account-groups-table">
+                        <thead>
+                          <tr>
+                            <th>اسم الصنف</th>
+                            <th>الكمية</th>
+                            <th>تاريخ الانتهاء</th>
+                            <th>الحالة</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expiryRows.slice(0, visibleLimit).map((r) => (
+                            <tr
+                              key={r.id}
+                              className="stock-clickable-row"
+                              onClick={() => setSelectedStockItem(r)}
+                            >
+                              <td className="ag-name-cell stock-item-name-cell">
+                                <button
+                                  type="button"
+                                  className="stock-item-link-btn"
+                                  aria-label={`عرض بيانات وحركة الصنف ${r.name}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedStockItem(r);
+                                  }}
+                                >
+                                  <span className="stock-item-link-text">{r.name}</span>
+                                  <ChevronLeftIcon className="stock-item-chevron" aria-hidden="true" />
+                                </button>
+                              </td>
+                              <td>
+                                <bdi>
+                                  {formatAmount(r.qty)} {r.unit}
+                                </bdi>
+                              </td>
+                              <td>
+                                <bdi>{r.expiryInfo.displayDate}</bdi>
+                              </td>
+                              <td
+                                className={
+                                  r.expiryInfo.tone === "expired"
+                                    ? "coa-debit-cell"
+                                    : r.expiryInfo.tone === "soon"
+                                      ? "coa-cash-tag"
+                                      : r.expiryInfo.tone === "ok"
+                                        ? "coa-credit-cell"
+                                        : ""
+                                }
+                              >
+                                {r.expiryInfo.statusLabel || "—"}
+                              </td>
+                            </tr>
+                          ))}
+                          {expiryRows.length > visibleLimit ? (
+                            <tr>
+                              <td colSpan={4} style={{ textAlign: "center", padding: 8 }}>
+                                <button
+                                  type="button"
+                                  className="load-more-list-btn"
+                                  onClick={() => setVisibleLimit((v) => v + 100)}
+                                >
+                                  عرض المزيد (المعروض {visibleLimit} من {expiryRows.length})
+                                </button>
+                              </td>
+                            </tr>
+                          ) : null}
+                          {expiryRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="coa-empty-cell">
+                                لا توجد أصناف بتاريخ انتهاء مسجل في هذا النطاق.
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </div>
             ) : null}
 
@@ -521,7 +997,9 @@ export function ReportsHubModal({
                             <tr key={r.id}>
                               <td className="ag-name-cell">{r.name}</td>
                               <td>{formatAmount(r.sellQty)}</td>
-                              <td>{formatAmount(r.sellTotal)}</td>
+                              <td>
+                                {formatAmount(r.sellTotal)} {r.currencyCode || ""}
+                              </td>
                               <td className={r.profit < 0 ? "coa-debit-cell" : "coa-credit-cell"}>
                                 {formatSignedSmartBalance(r.profit)}
                               </td>
@@ -530,7 +1008,11 @@ export function ReportsHubModal({
                           {profitRows.length > visibleLimit ? (
                             <tr>
                               <td colSpan={4} style={{ textAlign: "center", padding: 8 }}>
-                                <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
+                                <button
+                                  type="button"
+                                  className="load-more-list-btn"
+                                  onClick={() => setVisibleLimit((v) => v + 100)}
+                                >
                                   عرض المزيد (المعروض {visibleLimit} من {profitRows.length})
                                 </button>
                               </td>
@@ -547,11 +1029,33 @@ export function ReportsHubModal({
                       </table>
                     </div>
                     <div className="trial-balance-rows">
-                      {row("إجمالي المبيعات", formatAmount(profitData.totals.totalSales), "pos")}
-                      {row(
-                        "إجمالي الأرباح",
-                        formatSignedSmartBalance(profitData.totals.totalProfit),
-                        profitData.totals.totalProfit < 0 ? "neg" : "pos",
+                      {currency === "الكل" && (profitData.totalsByCurrency?.length ?? 0) > 0 ? (
+                        profitData.totalsByCurrency!.map((ct) => (
+                          <div key={ct.currency} className="reports-currency-subblock">
+                            {row(
+                              `prof-sales-${ct.currency}`,
+                              `إجمالي المبيعات (${ct.currency})`,
+                              `${formatAmount(ct.totalSales)} ${ct.currency}`,
+                              "pos",
+                            )}
+                            {row(
+                              `prof-net-${ct.currency}`,
+                              `إجمالي الأرباح (${ct.currency})`,
+                              `${formatSignedSmartBalance(ct.totalProfit)} ${ct.currency}`,
+                              ct.totalProfit < 0 ? "neg" : "pos",
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <>
+                          {row("prof-sales", "إجمالي المبيعات", formatAmount(profitData.totals.totalSales), "pos")}
+                          {row(
+                            "prof-net",
+                            "إجمالي الأرباح",
+                            formatSignedSmartBalance(profitData.totals.totalProfit),
+                            profitData.totals.totalProfit < 0 ? "neg" : "pos",
+                          )}
+                        </>
                       )}
                     </div>
                   </>
@@ -577,7 +1081,7 @@ export function ReportsHubModal({
                         <tr key={e.id}>
                           <td>{e.entryNumber}</td>
                           <td>
-                            <bdi>{e.entryDate}</bdi>
+                            <bdi>{formatDisplayDate(e.entryDate)}</bdi>
                           </td>
                           <td className="ag-name-cell">{e.accountName}</td>
                           <td>{e.typeLabel}</td>
@@ -589,7 +1093,11 @@ export function ReportsHubModal({
                       {serviceRows.length > visibleLimit ? (
                         <tr>
                           <td colSpan={5} style={{ textAlign: "center", padding: 8 }}>
-                            <button type="button" className="load-more-list-btn" onClick={() => setVisibleLimit((v) => v + 100)}>
+                            <button
+                              type="button"
+                              className="load-more-list-btn"
+                              onClick={() => setVisibleLimit((v) => v + 100)}
+                            >
                               عرض المزيد (المعروض {visibleLimit} من {serviceRows.length})
                             </button>
                           </td>
@@ -598,7 +1106,7 @@ export function ReportsHubModal({
                       {serviceRows.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="coa-empty-cell">
-                            لا توجد فواتير خدمات (فواتير حرة بدون أصناف).
+                            لا توجد فواتير خدمات في هذا النطاق.
                           </td>
                         </tr>
                       ) : null}
@@ -606,32 +1114,42 @@ export function ReportsHubModal({
                   </table>
                 </div>
                 <div className="trial-balance-rows">
-                  {row("إيرادات الخدمات (مبيعات)", formatAmount(serviceTotals.sales), "pos")}
-                  {row("مصروفات الخدمات (مشتريات)", formatAmount(serviceTotals.purchases), "neg")}
-                  {row(
-                    "صافي الخدمات",
-                    formatSignedSmartBalance(serviceTotals.sales - serviceTotals.purchases),
-                    serviceTotals.sales - serviceTotals.purchases < 0 ? "neg" : "pos",
-                  )}
+                  {serviceTotalsByCurrency.map((st) => (
+                    <div key={st.currency} className="reports-currency-subblock">
+                      {row(`srv-s-${st.currency}`, `إيرادات الخدمات (${st.currency})`, `${formatAmount(st.sales)} ${st.currency}`, "pos")}
+                      {row(`srv-p-${st.currency}`, `مصروفات الخدمات (${st.currency})`, `${formatAmount(st.purchases)} ${st.currency}`, "neg")}
+                      {row(
+                        `srv-n-${st.currency}`,
+                        `صافي الخدمات (${st.currency})`,
+                        `${formatSignedSmartBalance(st.sales - st.purchases)} ${st.currency}`,
+                        st.sales - st.purchases < 0 ? "neg" : "pos",
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
 
             {report === "tax" ? (
-              <div data-testid="report-tax">
-                <div className="smart-section-band">ملخص ضريبة القيمة المضافة</div>
-                <div className="trial-balance-rows">
-                  {row("ضريبة المبيعات (مخرجات)", formatAmount(tax.output), "pos")}
-                  {row("ضريبة المشتريات (مدخلات)", formatAmount(tax.input), "neg")}
-                  {row(
-                    tax.net >= 0 ? "الضريبة المستحقة للسداد" : "ضريبة مستردة",
-                    formatAmount(Math.abs(tax.net)),
-                    tax.net >= 0 ? "neg" : "pos",
-                  )}
-                  {row("عدد المستندات الخاضعة للضريبة", String(tax.taxedDocs))}
-                </div>
-                {tax.taxedDocs === 0 ? (
-                  <p className="cash-empty">لا توجد مستندات بضريبة مسجلة في هذه العملة حتى الآن.</p>
+              <div data-testid="report-tax" className="reports-currency-stack">
+                {taxByCurrency.map((t) => (
+                  <div key={t.currency} className="reports-currency-block">
+                    <div className="smart-section-band">ملخص ضريبة القيمة المضافة — {t.currency}</div>
+                    <div className="trial-balance-rows">
+                      {row(`${t.currency}-out`, "ضريبة المبيعات (مخرجات)", `${formatAmount(t.output)} ${t.currency}`, "pos")}
+                      {row(`${t.currency}-in`, "ضريبة المشتريات (مدخلات)", `${formatAmount(t.input)} ${t.currency}`, "neg")}
+                      {row(
+                        `${t.currency}-net`,
+                        t.net >= 0 ? "الضريبة المستحقة للسداد" : "ضريبة مستردة",
+                        `${formatAmount(Math.abs(t.net))} ${t.currency}`,
+                        t.net >= 0 ? "neg" : "pos",
+                      )}
+                      {row(`${t.currency}-docs`, "عدد المستندات الخاضعة للضريبة", String(t.taxedDocs))}
+                    </div>
+                  </div>
+                ))}
+                {taxByCurrency.every((t) => t.taxedDocs === 0) ? (
+                  <p className="cash-empty">لا توجد مستندات بضريبة مسجلة في هذا النطاق حتى الآن.</p>
                 ) : null}
               </div>
             ) : null}
@@ -639,10 +1157,27 @@ export function ReportsHubModal({
         )}
 
         <footer className="account-groups-footer">
-          <span>{report ? REPORT_TITLES[report] : "اختر تقريرًا"}</span>
-          <button type="button" className="ag-btn close" onClick={onClose}>
-            إغلاق
-          </button>
+          <span className="reports-footer-label">
+            {selectedStockItem
+              ? selectedStockItem.name
+              : report
+                ? REPORT_TITLES[report]
+                : "اختر تقريرًا"}
+          </span>
+          <div className="reports-footer-actions">
+            {selectedStockItem ? (
+              <button
+                type="button"
+                className="ag-btn secondary"
+                onClick={() => setSelectedStockItem(null)}
+              >
+                رجوع للقائمة
+              </button>
+            ) : null}
+            <button type="button" className="ag-btn close" onClick={onClose}>
+              إغلاق
+            </button>
+          </div>
         </footer>
       </section>
     </div>
