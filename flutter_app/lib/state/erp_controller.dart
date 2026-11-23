@@ -5,8 +5,10 @@ import '../services/accounting_engine.dart';
 import '../services/local_database.dart';
 
 class ErpController extends ChangeNotifier {
-  ErpController({bool autoInitDb = true}) {
-    _seedInitialData();
+  /// Production starts with an empty local workspace. Sample financial data is opt-in
+  /// for isolated tests/previews only; it must never be written on first app launch.
+  ErpController({bool autoInitDb = true, bool demoData = false}) {
+    if (demoData) _seedInitialData();
     if (autoInitDb) {
       unawaited(initDatabase());
     }
@@ -346,32 +348,31 @@ class ErpController extends ChangeNotifier {
 
   Future<void> initDatabase() async {
     try {
-      final hasData = await LocalDatabase.instance.hasSeededData();
-      if (hasData) {
-        final snap = await LocalDatabase.instance.loadSnapshot();
-        accounts
-          ..clear()
-          ..addAll(snap.accounts);
-        ledger
-          ..clear()
-          ..addAll(snap.ledger);
-        warehouses
-          ..clear()
-          ..addAll(snap.warehouses);
-        inventory
-          ..clear()
-          ..addAll(snap.inventory);
-        if (snap.companyName != null && snap.companyName!.isNotEmpty) {
-          companyName = snap.companyName!;
-        }
-        if (snap.isDarkMode != null) {
-          isDarkMode = snap.isDarkMode!;
-        }
-        if (snap.nextEntryNumber != null) {
-          _nextEntryNumber = snap.nextEntryNumber!;
-        }
-      } else {
-        await _persistToDb();
+      // Always read the persisted snapshot, even if its accounts table is empty.
+      // Using "accounts count > 0" as a database existence check could erase
+      // warehouses, inventory, or ledger data from a partially populated DB.
+      // A clean installation remains empty: do not seed or overwrite on launch.
+      final snap = await LocalDatabase.instance.loadSnapshot();
+      accounts
+        ..clear()
+        ..addAll(snap.accounts);
+      ledger
+        ..clear()
+        ..addAll(snap.ledger);
+      warehouses
+        ..clear()
+        ..addAll(snap.warehouses);
+      inventory
+        ..clear()
+        ..addAll(snap.inventory);
+      if (snap.companyName != null && snap.companyName!.isNotEmpty) {
+        companyName = snap.companyName!;
+      }
+      if (snap.isDarkMode != null) {
+        isDarkMode = snap.isDarkMode!;
+      }
+      if (snap.nextEntryNumber != null) {
+        _nextEntryNumber = snap.nextEntryNumber!;
       }
       dbReady = true;
       notifyListeners();
@@ -413,7 +414,7 @@ class ErpController extends ChangeNotifier {
     productionOrders.clear();
     costCenters.clear();
     _nextEntryNumber = 1200;
-    _seedInitialData();
+    // Explicit reset returns to an empty workspace, not fictitious ledgers.
     await _persistToDb();
     notifyListeners();
   }
