@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 1;
+  static const int dbVersion = 2;
 
   Database? _db;
 
@@ -41,6 +41,9 @@ class LocalDatabase {
     _db = await openDatabase(
       fullPath,
       version: dbVersion,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) await createSyncSchema(db);
+      },
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE accounts (
@@ -110,9 +113,88 @@ class LocalDatabase {
             updatedAt TEXT NOT NULL
           )
         ''');
+        await createSyncSchema(db);
       },
     );
     return _db!;
+  }
+
+  // Additive migration: existing business rows are never rewritten.
+  static Future<void> createSyncSchema(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_outbox (
+        operation_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        server_revision TEXT
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS sync_outbox_pending ON sync_outbox(workspace_id, acknowledged_at, created_at)');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS bridge_idempotency_keys (
+        workspace_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        PRIMARY KEY (workspace_id, operation_id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sync_state (
+        workspace_id TEXT PRIMARY KEY,
+        pull_cursor TEXT,
+        last_success_at TEXT
+      )
+    ''');
+  }
+
+  /// Foundation for future domain commands. The callback must use only txn.
+  /// No network calls or external side effects inside the transaction.
+  Future<Map<String, dynamic>> commitOperation({
+    required String workspaceId,
+    required String operationId,
+    required String operationType,
+    required Map<String, dynamic> payload,
+    required Future<Map<String, dynamic>> Function(Transaction txn) apply,
+  }) async {
+    if (workspaceId.isEmpty || operationId.isEmpty || operationType.isEmpty) {
+      throw ArgumentError('Missing operation identity');
+    }
+    final encoded = jsonEncode(payload);
+    final db = await database;
+    return db.transaction((txn) async {
+      final prior = await txn.query('bridge_idempotency_keys',
+          where: 'workspace_id = ? AND operation_id = ?',
+          whereArgs: [workspaceId, operationId]);
+      if (prior.isNotEmpty) {
+        if (prior.first['operation_type'] != operationType ||
+            prior.first['payload_json'] != encoded) {
+          throw StateError('Operation identity reused with different content');
+        }
+        return jsonDecode(prior.first['result_json'] as String)
+            as Map<String, dynamic>;
+      }
+      final result = await apply(txn);
+      await txn.insert('sync_outbox', {
+        'operation_id': operationId,
+        'workspace_id': workspaceId,
+        'operation_type': operationType,
+        'payload_json': encoded,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      await txn.insert('bridge_idempotency_keys', {
+        'workspace_id': workspaceId,
+        'operation_id': operationId,
+        'operation_type': operationType,
+        'payload_json': encoded,
+        'result_json': jsonEncode(result),
+      });
+      return result;
+    });
   }
 
   Future<bool> hasSeededData() async {
