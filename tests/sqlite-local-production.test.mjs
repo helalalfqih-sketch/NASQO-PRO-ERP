@@ -311,29 +311,24 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     });
     assert.equal(mismatchRes.status, 400);
 
-    // Soft-delete valid sale (3 -> 5), restore (5 -> 3), then hard-delete (3 -> 5).
-    await fetch(`${prefix}/ledger/${savedSale.id}/deleted`, {
+    // Posted financial documents are immutable. They must be reversed, never
+    // soft-deleted or hard-deleted (which would break the audit trail).
+    const illegalSoftDelete = await fetch(`${prefix}/ledger/${savedSale.id}/deleted`, {
       method: "PATCH",
       headers: jsonHeaders,
       body: JSON.stringify({ deleted: true }),
     });
-    wsAfter = await (await fetch(prefix)).json();
-    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 5);
-
-    await fetch(`${prefix}/ledger/${savedSale.id}/deleted`, {
-      method: "PATCH",
-      headers: jsonHeaders,
-      body: JSON.stringify({ deleted: false }),
-    });
+    assert.equal(illegalSoftDelete.status, 400);
     wsAfter = await (await fetch(prefix)).json();
     assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 3);
 
-    await fetch(`${prefix}/ledger/${savedSale.id}`, {
+    const illegalHardDelete = await fetch(`${prefix}/ledger/${savedSale.id}`, {
       method: "DELETE",
       headers: { "X-NASQO-CSRF": "1" },
     });
+    assert.equal(illegalHardDelete.status, 400);
     wsAfter = await (await fetch(prefix)).json();
-    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 5);
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 3);
 
     // Re-create a real invoice with 1 line and verify HTTP JSON export/restore + {} rejection + native SQLite replaceExisting: false rejection
     const liveInvRes = await fetch(prefix + "/ledger", {
@@ -360,6 +355,8 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     });
     assert.equal(liveInvRes.status, 201);
     const { entry: liveEntry } = await liveInvRes.json();
+    wsAfter = await (await fetch(prefix)).json();
+    assert.equal(wsAfter.inventory.find((x) => x.id === item.id).quantity, 0);
 
     const jsonExport = await (await fetch(prefix + "/export/json")).json();
     assert.equal(jsonExport.format, "nasqo-unified-sqlite-export-v2");
@@ -378,7 +375,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
       assert.equal(badRes.status, 400);
       const stillThere = await (await fetch(prefix)).json();
       assert.equal(stillThere.accounts.length, 1);
-      assert.equal(stillThere.ledger.length, 1);
+      assert.equal(stillThere.ledger.length, 2);
     }
 
     // Reset, restore JSON via HTTP -> confirm invoice line survives!
@@ -411,7 +408,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     assert.equal(nativeMergeRes.status, 400);
     const preserved = await (await fetch(prefix)).json();
     assert.equal(preserved.accounts.length, 1);
-    assert.equal(preserved.ledger.length, 1);
+    assert.equal(preserved.ledger.length, 2);
 
     // Malformed JSON request must return JSON error (never Express HTML)
     const malformedRes = await fetch(prefix + "/restore/json", {
@@ -453,7 +450,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     assert.equal(commitRes.status, 200);
     const afterChunked = await commitRes.json();
     assert.equal(afterChunked.bundle.accounts.length, 1);
-    assert.equal(afterChunked.bundle.ledger.length, 1);
+    assert.equal(afterChunked.bundle.ledger.length, 2);
   } finally {
     if (srv) await stopServer(srv.child);
     rmSync(dir, { recursive: true, force: true });
