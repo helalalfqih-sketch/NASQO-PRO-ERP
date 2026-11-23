@@ -41,6 +41,9 @@ class LocalDatabase {
     _db = await openDatabase(
       fullPath,
       version: dbVersion,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await createSyncSchema(db);
         if (oldVersion < 3) await createAccountingSchema(db);
@@ -392,6 +395,10 @@ class LocalDatabase {
   }) async {
     final db = await database;
     await db.transaction((txn) async {
+      final history = await txn.query('bridge_idempotency_keys', limit: 1);
+      if (history.isNotEmpty) {
+        throw StateError('Legacy snapshot writes disabled after transactional operations');
+      }
       await txn.delete('accounts');
       for (final a in accounts) {
         await txn.insert('accounts', _accountToMap(a), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -445,8 +452,18 @@ class LocalDatabase {
   Future<void> clearAll() async {
     final db = await database;
     await db.transaction((txn) async {
-      await txn.delete('accounts');
+      final pending = await txn.query('sync_outbox',
+          where: 'acknowledged_at IS NULL', limit: 1);
+      if (pending.isNotEmpty) throw StateError('Unsynced operations exist');
+      // Do not erase synchronized financial history through the legacy reset.
+      final history = await txn.query('bridge_idempotency_keys', limit: 1);
+      if (history.isNotEmpty) throw StateError('Transactional history exists');
+      await txn.delete('journal_lines');
+      await txn.delete('journal_entries');
+      await txn.delete('invoice_lines');
+      await txn.delete('stock_movements');
       await txn.delete('ledger_entries');
+      await txn.delete('accounts');
       await txn.delete('warehouses');
       await txn.delete('inventory_items');
       await txn.delete('erp_state');
