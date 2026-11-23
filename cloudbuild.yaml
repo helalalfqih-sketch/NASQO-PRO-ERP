@@ -1,0 +1,21 @@
+# Build and publish a container only. Deployment requires separate approval.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    id: Build
+    args:
+      - build
+      - -f
+      - Dockerfile
+      - -t
+      - '${_AR_HOSTNAME}/${_AR_PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - .
+images:
+  - '${_AR_HOSTNAME}/${_AR_PROJECT_ID}/${_AR_REPOSITORY}/${_SERVICE_NAME}:${COMMIT_SHA}'
+substitutions:
+  _AR_HOSTNAME: europe-west1-docker.pkg.dev
+  _AR_PROJECT_ID: gen-lang-client-0457000612
+  _AR_REPOSITORY: cloud-run-source-deploy
+  _SERVICE_NAME: nasqo-pro-erp
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
