@@ -52,6 +52,41 @@ void main() {
     expect(reads, 0);
   });
 
+  test('persists only whitelisted non-financial UI preferences', () async {
+    var saved = <String, dynamic>{};
+    final endpoint = HybridReadOnlyProtocol(
+      readSnapshot: () async => emptySnapshot(),
+      saveUiPreferences: (prefs) async {
+        saved = prefs;
+      },
+    );
+    final response = jsonDecode(await endpoint.handle(jsonEncode(request(
+      'saveUiPreferences',
+      payload: {
+        'preferences': {'themeMode': 'dark', 'hapticsEnabled': false},
+      },
+    )))) as Map<String, dynamic>;
+    expect(response['ok'], isTrue);
+    expect(saved, {'themeMode': 'dark', 'hapticsEnabled': false});
+  });
+
+  test('rejects unknown preference fields and never calls persistence', () async {
+    var called = false;
+    final endpoint = HybridReadOnlyProtocol(
+      readSnapshot: () async => emptySnapshot(),
+      saveUiPreferences: (_) async { called = true; },
+    );
+    final response = jsonDecode(await endpoint.handle(jsonEncode(request(
+      'saveUiPreferences',
+      payload: {
+        'preferences': {'sql': 'DROP TABLE ledger_entries'},
+      },
+    )))) as Map<String, dynamic>;
+    expect(response['ok'], isFalse);
+    expect((response['error'] as Map<String, dynamic>)['code'], 'VALIDATION_ERROR');
+    expect(called, isFalse);
+  });
+
   test('rejects malformed JSON and oversized requests', () async {
     final endpoint = HybridReadOnlyProtocol(readSnapshot: () async => emptySnapshot());
     final malformed = jsonDecode(await endpoint.handle('{bad')) as Map<String, dynamic>;
