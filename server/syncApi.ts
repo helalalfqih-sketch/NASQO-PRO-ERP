@@ -6,6 +6,29 @@ import { getAuth } from "firebase-admin/auth";
 const validId = (v: unknown): v is string =>
   typeof v === "string" && /^[a-zA-Z0-9:_-]{1,180}$/.test(v);
 
+const accountKeys = ["id","name","category","phone","currency","note","openingDirection",
+  "creditLimit","openingBalance","isCashAccount","codeNumber"] as const;
+const editable = new Set<string>(["name","phone","note","creditLimit"]);
+function validAccount(p: any): boolean {
+  return !!p && typeof p === "object" && !Array.isArray(p) &&
+    Object.keys(p).length === accountKeys.length && accountKeys.every(k => Object.hasOwn(p,k)) &&
+    validId(p.id) && typeof p.name === "string" && p.name.trim().length > 0 && p.name.length <= 100 &&
+    ["purchases","sales","clients","employees","transfers","shop"].includes(p.category) &&
+    ["sar","usd","eur","currency2"].includes(p.currency) &&
+    ["credit","debit"].includes(p.openingDirection) &&
+    typeof p.phone === "string" && p.phone.length <= 32 &&
+    typeof p.note === "string" && p.note.length <= 300 &&
+    Number.isFinite(p.creditLimit) && p.creditLimit >= 0 && p.creditLimit <= 1000000000000 &&
+    Number.isFinite(p.openingBalance) && [0,1].includes(p.isCashAccount) &&
+    Number.isSafeInteger(p.codeNumber) && p.codeNumber > 0;
+}
+function validAccountCommand(t: unknown,p: any): boolean {
+  if (t === "account.create") return validAccount(p) && p.openingBalance === 0;
+  return t === "account.update" && p && Object.keys(p).length === 3 &&
+    validAccount(p.before) && validAccount(p.after) && p.id === p.before.id &&
+    p.after.id === p.id && accountKeys.every(k => editable.has(k) || p.before[k] === p.after[k]);
+}
+
 export function mountSyncApi(app: Express) {
   const router = express.Router();
   app.use("/api/sync", router);
@@ -36,10 +59,7 @@ export function mountSyncApi(app: Express) {
   });
   router.post("/push", async (req:Request,res:Response) => {
     const {workspace_id:w,operation_id:id,operation_type:t,payload:p} = req.body ?? {};
-    if (!validId(w) || !validId(id) || t !== "account.create" ||
-        !p || typeof p !== "object" || Array.isArray(p) ||
-        !validId(p.id) || typeof p.name !== "string" || !p.name.trim() ||
-        p.name.length > 250 || p.openingBalance !== 0) {
+    if (!validId(w) || !validId(id) || !validAccountCommand(t,p)) {
       res.status(400).json({error:"UNSUPPORTED_OR_INVALID_OPERATION"}); return;
     }
     const client = await pool.connect().catch(() => null);
@@ -56,8 +76,15 @@ export function mountSyncApi(app: Express) {
         await client.query("COMMIT");
         res.json({workspace_id:w,operation_id:id,server_revision:String(prior.rows[0].revision)}); return;
       }
-      const duplicate = await client.query("SELECT 1 FROM nasqo_sync_operations WHERE workspace_id=$1 AND operation_type='account.create' AND payload->>'id'=$2",[w,p.id]);
-      if (duplicate.rowCount) { await client.query("ROLLBACK"); res.sendStatus(409); return; }
+      // The locked workspace head serializes edits. Compare the full previous
+      // canonical record rather than using last-write-wins.
+      const current = await client.query(
+        "SELECT (CASE WHEN operation_type='account.update' THEN payload->'after' ELSE payload END)=$3::jsonb AS matches FROM nasqo_sync_operations WHERE workspace_id=$1 AND operation_type IN ('account.create','account.update') AND payload->>'id'=$2 ORDER BY revision DESC LIMIT 1",
+        [w,p.id,JSON.stringify(t === "account.update" ? p.before : p)]);
+      if ((t === "account.create" && current.rowCount) ||
+          (t === "account.update" && !current.rows[0]?.matches)) {
+        await client.query("ROLLBACK"); res.sendStatus(409); return;
+      }
       const head = await client.query("UPDATE nasqo_sync_heads SET revision=revision+1 WHERE workspace_id=$1 RETURNING revision",[w]);
       const revision = head.rows[0].revision;
       await client.query("INSERT INTO nasqo_sync_operations(workspace_id,operation_id,revision,operation_type,payload,actor_uid) VALUES($1,$2,$3,$4,$5::jsonb,$6)",[w,id,revision,t,JSON.stringify(p),res.locals.uid]);
