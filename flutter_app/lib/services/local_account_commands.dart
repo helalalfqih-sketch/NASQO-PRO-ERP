@@ -22,13 +22,18 @@ class LocalAccountCommands {
     final currency = input['currency'];
     final cash = input['isCashAccount'] ?? false;
     final opening = input['openingBalance'] ?? 0;
+    final openingDirection = input['openingDirection'] ?? 'credit';
     if (name is! String || name.trim().isEmpty || name.length > 100 ||
         phone is! String || phone.length > 32 ||
         note is! String || note.length > 300 ||
         limit is! num || !limit.isFinite || limit < 0 || limit > 1000000000000 ||
         cash is! bool || !AccountCategory.values.any((v) => v.name == category) ||
         !CurrencyCode.values.any((v) => v != CurrencyCode.currency2 && v.label == currency) ||
-        opening is! num || !opening.isFinite || input['groupId'] != null) {
+        opening is! num || !opening.isFinite || input['groupId'] != null ||
+        !['credit','debit'].contains(openingDirection) ||
+        (input['settlement'] ?? false) != false || (input['documentNumberRequired'] ?? false) != false ||
+        (input['accountImage'] ?? '1') != '1' || (input['sendMode'] ?? 'never') != 'never' ||
+        (input['messageMethod'] ?? 'sms') != 'sms') {
       throw ArgumentError('Unsupported account fields');
     }
     final currencyCode = CurrencyCode.values.firstWhere((v) => v.label == currency).name;
@@ -38,7 +43,7 @@ class LocalAccountCommands {
       'id': id, 'name': name.trim(), 'phone': phone, 'note': note,
       'creditLimit': limit.toDouble(), 'category': category,
       'currency': currencyCode, 'isCashAccount': cash ? 1 : 0,
-      'openingBalance': opening.toDouble(),
+      'openingBalance': opening.toDouble(), 'openingDirection': openingDirection,
     };
     final isNew = accountId == null;
     final result = await local.commitOperation(
@@ -59,14 +64,14 @@ class LocalAccountCommands {
         if (isNew) {
           if (opening != 0) throw ArgumentError('Opening balance must be posted separately');
           final max = (await txn.rawQuery('SELECT COALESCE(MAX(codeNumber),0) AS n FROM accounts')).single['n'] as int;
-          final row = <String,dynamic>{...request,'openingDirection':'credit','codeNumber':max+1};
+          final row = <String,dynamic>{...request,'codeNumber':max+1};
           await txn.insert('accounts',row);
           return {'id':id,'sync':row};
         }
         final rows = await txn.query('accounts',where:'id = ?',whereArgs:[id]);
         if (rows.length != 1) throw ArgumentError('Account does not exist');
         final before = Map<String,dynamic>.from(rows.single);
-        for (final field in ['category','currency','isCashAccount','openingBalance']) {
+        for (final field in ['category','currency','isCashAccount','openingBalance','openingDirection']) {
           if (before[field] != request[field]) throw ArgumentError('Financial attributes are immutable');
         }
         final after = <String,dynamic>{...before,
