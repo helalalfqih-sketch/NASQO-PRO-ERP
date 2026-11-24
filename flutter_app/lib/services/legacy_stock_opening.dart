@@ -22,7 +22,9 @@ class LegacyStockOpening {
     final data=await db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
       if(!await LocalDatabase.hasLegacyOperational(t))throw StateError('Imported workspace required');
-      final source=(await t.query('legacy_operational_source',columns:['sha'],limit:1)).single['sha'] as String;
+      final sourceRow=(await t.query('legacy_operational_source',columns:['sha','meta_json'],limit:1)).single;
+      final source=sourceRow['sha'] as String;
+      final meta=LocalBackupRestore.object(jsonDecode(sourceRow['meta_json'] as String));
       final items=(await t.query('legacy_operational_rows',where:'collection = ?',whereArgs:['inventory']))
         .map((r)=>LocalBackupRestore.object(jsonDecode(r['row_json'] as String))).toList()
         ..sort((a,b)=>a['name'].toString().compareTo(b['name'].toString()));
@@ -30,7 +32,7 @@ class LegacyStockOpening {
         .map((r)=>LocalBackupRestore.object(jsonDecode(r['row_json'] as String)));
       LegacyStockProjection.attach(items,ledger);
       return {
-        'products':items,'sourceSha':source,
+        'products':items,'sourceSha':source,'transferEvidence':meta['unifiedSource']!=true||meta['unifiedTransferEvidence']==true,
         'warehouses':await t.query('warehouses',orderBy:'name'),
         'accounts':await t.query('accounts',where:'currency = ? AND isCashAccount = 0',whereArgs:['sar'],orderBy:'name'),
         'openings':await t.query('legacy_stock_openings'),
@@ -44,11 +46,11 @@ class LegacyStockOpening {
     final affected=report['affectedItemIds'] as List;
     for(final p in products){
       p['legacyTransferNetByWarehouse']=nets[p['id']]??<String,num>{};
-      p['legacyTransferIncomplete']=affected.contains(p['id']);
+      p['legacyTransferIncomplete']=data['transferEvidence']!=true||affected.contains(p['id']);
     }
     final source=await db.query('legacy_operational_source',columns:['sha'],limit:1);
     if(source.length!=1||source.single['sha']!=data['sourceSha'])throw StateError('Imported workspace changed');
-    return {...data,'unresolvedTransfers':report['unresolvedIds']};
+    return {...data,'products':products.where((p)=>p['quantityUnverified']!=false).toList(),'unresolvedTransfers':report['unresolvedIds']};
   }
 
   static Future<void> requireSource(Transaction t,String? sha)async{
@@ -113,7 +115,8 @@ class LegacyStockOpening {
         final stores=await t.query('warehouses',where:'id = ?',whereArgs:[wh]);
         if(archive.length!=1||master.length!=1||stores.length!=1)throw StateError('Imported product or warehouse missing');
         final historical=LocalBackupRestore.object(jsonDecode(archive.single['row_json'] as String));
-        if(historical['currencyCode']!='ريال')throw StateError('Only base-currency imported stock can be approved');
+        if(historical['currencyCode']!='ريال'||historical['quantityUnverified']==false)
+          throw StateError('Only unverified base-currency imported stock can be approved');
         final a=await StockInvoiceCommands.account(t,asset,'sar');
         final b=await StockInvoiceCommands.account(t,offset,'sar');
         final latest=(await t.rawQuery('SELECT MAX(entryDate) AS last_date FROM ledger_entries')).single['last_date'];

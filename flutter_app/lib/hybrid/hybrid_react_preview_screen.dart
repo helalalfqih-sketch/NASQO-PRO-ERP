@@ -158,14 +158,14 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
         .map((e)=>'${labels[e.key]}: ${e.value}').join('\n');
       final accept=await showDialog<String>(context:context,builder:(context)=>AlertDialog(
-        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.legacy?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
+        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.operational?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
         content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
           (candidate.native?'تُستعاد السجلات والقيود وطابور العمليات محليًا. إذا كانت هناك بيانات حالية، يجب حفظ نسخة متحقق منها وتأكيد الاستبدال أولًا.':
-          candidate.legacy?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. المخزون يحتاج اعتمادًا مستقلًا. يمكنك اختيار المراجعة فقط.':
+          candidate.operational?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. المخزون غير المعتمد يحتاج مطابقة. يمكنك اختيار المراجعة فقط.':
           'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
         actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
-          if(candidate.legacy)OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
-          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.legacy?'live':'review'),child:Text(candidate.native?'استعادة':candidate.legacy?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
+          if(candidate.operational&&!candidate.native)OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
+          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.operational?'live':'review'),child:Text(candidate.native?'استعادة':candidate.operational?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
       if(accept==null||!mounted)return null;
       if(accept=='live'||candidate.native){
         if(accept=='live'&&!await _confirmActivation(candidate))return null;
@@ -201,7 +201,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       content:SingleChildScrollView(child:Text('ستُنقل الحسابات والحركات الأصلية وبنود الفواتير دون إعادة ترحيل القيود القديمة. إن وُجدت بيانات عمل حالية فستحتاج إلى نسخة أمان وتأكيد منفصل.\n'
         'عملات غير معرّفة: ${candidate.meta['unknownCurrencies']??0}. تبقى خارج الأرصدة.\n'
         'ستُسجّل السندات الجديدة بقيود مزدوجة. أرصدة الصناديق والتكاليف التاريخية ليست قيودًا مزدوجة مؤكدة.\n'
-        'لا يمكن البيع أو الشراء من الأصناف المستوردة قبل اعتماد الجرد والتكلفة. لن ترفع البيانات للسحابة.')),
+        'الأصناف التي تحمل كمية وتكلفة معتمدتين في النسخة الموحدة تُستعاد كما هي. المخزون غير المعتمد يحتاج مطابقة.\n'
+        'وحدات ERP غير المدعومة تبقى في الملف الأصلي المحفوظ، ولا تُرحّل إلى دفتر العمل. لن ترفع البيانات للسحابة.')),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('تفعيل الحسابات'))]))==true;
   }
@@ -218,7 +219,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       temp=File('$cache/nasqo-activate-${DateTime.now().microsecondsSinceEpoch}.back');
       await temp.writeAsBytes(bytes,flush:true);
       final candidate=await _backups.inspect(temp,'legacy-original.back');
-      if(!candidate.legacy)throw StateError('هذه الصيغة تحتاج مسار ترحيل آخر');
+      if(!candidate.operational||candidate.native)throw StateError('هذه الصيغة تحتاج مسار ترحيل آخر');
       if(!await _confirmActivation(candidate))return;
       final protection=await _protectExistingData();
       if(!protection.proceed)return;

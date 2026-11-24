@@ -7,9 +7,10 @@ import 'local_database.dart';
 import 'legacy_stock_projection.dart';
 import 'legacy_history_reports.dart';
 import 'local_invoice_roles.dart';
+import 'stock_quantity.dart';
 
-/// Explicit migration of the legacy single-sided account register. Never
-/// manufactures counterpart accounts, opening stock quantities or cost legs.
+/// Explicit restoration of legacy registers and unified web workspaces.
+/// Never invents counterpart accounts, quantities or accounting legs.
 /// Full original bytes and invoice details accompany every native export.
 class LegacyOperationalRestore {
   LegacyOperationalRestore(this.local);
@@ -20,8 +21,9 @@ class LegacyOperationalRestore {
   static String? currency(Object? x)=>const {'ريال':'sar','دولار':'usd','يورو':'eur'}[x];
 
   Future<void> activate(BackupCandidate candidate,{String? replacementSha}) async {
-    if(!candidate.legacy||candidate.native||
-      sha256.convert(candidate.bytes).toString()!=candidate.sha)throw const FormatException('Not an intact legacy SQLite backup');
+    if(!candidate.operational||candidate.native||
+      sha256.convert(candidate.bytes).toString()!=candidate.sha)throw const FormatException('Not an intact supported workspace backup');
+    final unified=candidate.unified;
     if((candidate.meta['missingReferences']??0)!=0||(candidate.meta['orphanDetailBills']??0)!=0)
       throw const FormatException('Unresolved account or invoice references');
     final d=candidate.collections;
@@ -32,8 +34,10 @@ class LegacyOperationalRestore {
       if(result.length!=rows.length)throw const FormatException('Duplicate identity');
       return result;
     }
-    final accountIds=ids(accounts),warehouseIds=ids(warehouses);
-    ids(items);ids(ledger);
+    final accountIds=ids(accounts),warehouseIds=ids(warehouses),itemIds=ids(items);
+    ids(ledger);
+    final accountCurrencies={for(final a in accounts)s(a['id']):currency(a['currency'])};
+    final warehouseNames={for(final w in warehouses)s(w['id']):s(w['name'])};
     final db=await local.database;
     await db.transaction((t) async {
       final review=await t.query('backup_review_active',limit:1);
@@ -44,6 +48,11 @@ class LegacyOperationalRestore {
       // settings for previous account IDs into the imported business.
       await t.delete('erp_state',where:'stateKey = ?',whereArgs:[LocalInvoiceRoles.stateKey]);
       final batch=t.batch();
+      if(unified){
+        final ws=LocalBackupRestore.object(candidate.meta['workspace']);
+        batch.insert('erp_state',{'stateKey':'settings','payloadJson':jsonEncode({'companyName':s(ws['companyName'])}),
+          'updatedAt':DateTime.now().toUtc().toIso8601String()},conflictAlgorithm:ConflictAlgorithm.replace);
+      }
       batch.insert('legacy_operational_source',{'singleton':1,'sha':candidate.sha,'file_name':candidate.name,'meta_json':jsonEncode(candidate.meta)});
       for(var offset=0;offset<candidate.bytes.length;offset+=49152){
         final end=offset+49152<candidate.bytes.length?offset+49152:candidate.bytes.length;
@@ -51,7 +60,9 @@ class LegacyOperationalRestore {
       }
       for(final a in accounts){
         final c=currency(a['currency']);
-        if(c==null||s(a['name']).trim().isEmpty||n(a['creditLimit'])<0)throw const FormatException('Invalid account or unsupported account currency');
+        if(c==null||s(a['name']).trim().isEmpty||n(a['creditLimit'])<0||
+            n(a['openingBalance'])<0||!['debit','credit'].contains(s(a['openingDirection'],'debit')))
+          throw const FormatException('Invalid account or unsupported account currency');
         batch.insert('accounts',{'id':s(a['id']),'name':s(a['name']),'category':s(a['category']),
           'phone':s(a['phone']),'creditLimit':n(a['creditLimit']),'currency':c,
           'isCashAccount':a['isCashAccount']==true?1:0,'note':s(a['note']),
@@ -63,9 +74,14 @@ class LegacyOperationalRestore {
       for(final item in items){
         final id=s(item['id']),wh=s(item['warehouseId']);
         if(!warehouseIds.contains(wh))throw const FormatException('Unresolved catalog warehouse');
+        final verified=unified&&item['quantityUnverified']==false;
+        final q=verified?StockQuantity.normalized(n(item['quantity'])):0;
+        final cost=verified?n(item['avgCost']):0;
+        if(verified&&(item['currencyCode']!='ريال'||cost<0||(q==0&&cost!=0)||q*cost*100>1000000000000))
+          throw const FormatException('Invalid verified stock');
         batch.insert('inventory_items',{'id':id,'name':s(item['name']),'unit':s(item['unit'],'حبة'),
-          'quantity':0,'avgCost':0,'warehouseId':wh,'minThreshold':0,'sku':s(item['sku'])});
-        batch.insert('legacy_unverified_stock',{'item_id':id});
+          'quantity':q,'avgCost':cost,'warehouseId':wh,'minThreshold':unified?n(item['minThreshold']):0,'sku':s(item['sku'])});
+        if(!verified)batch.insert('legacy_unverified_stock',{'item_id':id});
         final units=<String,dynamic>{};
         for(final k in ['unit2','count2','sprice2','unit3','count3','sprice3','defaultUnit','sellingPrice']){
           if(item[k]!=null)units[k]=item[k];
@@ -73,21 +89,57 @@ class LegacyOperationalRestore {
         batch.insert('inventory_unit_settings',{'item_id':id,'settings_json':jsonEncode(units)});
       }
       for(final e in ledger){
-        final aid=s(e['accountId']),c=currency(e['currency']),d=n(e['rawDain']),m=n(e['rawMadin']);
-        if(!accountIds.contains(aid)||d<0||m<0)throw const FormatException('Invalid historical account or sides');
-        // The original register has explicit debit and credit values. Both
-        // sides are retained even when unequal; no counterpart is invented.
-        // Unknown currency amounts remain outside the operational register.
-        final supported=c!=null&&[1,2,3,4,5,7,9].contains(e['docType'])&&n(e['exchangeRate'],1)>0;
-        final kind=s(e['kind']);
-        batch.insert('ledger_entries',{'id':s(e['id']),'accountId':aid,'accountName':s(e['accountName']),
-          'counterpartAccountId':'','counterpartAccountName':'','kind':kind=='return'?'returnEntry':kind,
-          'typeLabel':s(e['typeLabel']),'payment':s(e['payment']),'direction':s(e['direction']),
-          'amount':n(e['amount']),'currency':c??'currency2','exchangeRate':n(e['exchangeRate'],1),
+        final id=s(e['id']),aid=s(e['accountId']),c=currency(e['currency']),d=n(e['rawDain']),m=n(e['rawMadin']);
+        final counter=unified?s(e['counterpartAccountId']):'';
+        final kind=s(e['kind']),rate=n(e['exchangeRate'],1),amount=n(e['amount']);
+        final sourceStatus=s(e['postingStatus'],'posted');
+        final payment=s(e['payment'],'credit'),direction=s(e['direction'],'debit');
+        final content=s(e['invoiceContent'],'none');
+        if(!accountIds.contains(aid)||d<0||m<0||amount<0||
+            (counter.isNotEmpty&&!accountIds.contains(counter)))throw const FormatException('Invalid historical account or sides');
+        if(!['voucher','invoice','return','quote','order','transfer','currency','simple-entry','opening'].contains(kind)||
+            !['cash','credit','balance'].contains(payment)||!['debit','credit'].contains(direction)||
+            !['none','items','free'].contains(content)||
+            (unified&&!['posted','draft','reversed','historical_unposted'].contains(sourceStatus)))
+          throw const FormatException('Unsupported document classification');
+        // Legacy raw sides and explicit web journal legs remain evidence,
+        // not newly posted operations. Keep draft/deleted/reversed status.
+        final supported=c!=null&&rate>0&&(unified||[1,2,3,4,5,7,9].contains(e['docType']));
+        final status=supported?(unified?sourceStatus:'posted'):'historical_unposted';
+        final wh=s(e['warehouseId']);
+        batch.insert('ledger_entries',{'id':id,'accountId':aid,'accountName':s(e['accountName']),
+          'counterpartAccountId':counter,'counterpartAccountName':unified?s(e['counterpartAccountName']):'',
+          'kind':kind=='return'?'returnEntry':kind=='simple-entry'?'simpleEntry':kind,
+          'typeLabel':s(e['typeLabel']),'payment':payment,'direction':direction,
+          'amount':amount,'currency':c??'currency2','exchangeRate':rate,
           'details':s(e['details']),'documentNumber':s(e['documentNumber']),
-          'warehouseId':s(e['warehouseId']),'warehouseName':s(e['warehouseName']),'expenseCategory':'',
-          'entryNumber':i(e['entryNumber']),'deleted':0,'entryDate':s(e['entryDate']),
-          'invoiceContent':s(e['invoiceContent'],'none'),'postingStatus':supported?'posted':'historical_unposted'});
+          'warehouseId':wh,'warehouseName':s(e['warehouseName'],warehouseNames[wh]??''),
+          'expenseCategory':unified?s(e['expenseCategory']):'',
+          'entryNumber':i(e['entryNumber']),'deleted':unified&&LocalBackupRestore.flag(e['deleted'])?1:0,'entryDate':s(e['entryDate']),
+          'invoiceContent':content,'postingStatus':status});
+        if(unified){
+          for(final line in LocalBackupRestore.rows(e['lines']??[])){
+            final item=s(line['inventoryItemId']),lineWh=s(line['warehouseId']);
+            if(item.isNotEmpty&&!itemIds.contains(item)||lineWh.isNotEmpty&&!warehouseIds.contains(lineWh))
+              throw const FormatException('Unresolved invoice item or warehouse');
+          }
+          final legs=LocalBackupRestore.rows(e['journalLines']??[]);
+          if(legs.isNotEmpty){
+            if(!supported||legs.length<2||!['posted','reversed'].contains(status))throw const FormatException('Unsupported source journal');
+            var debit=0,credit=0;
+            batch.insert('journal_entries',{'id':id,'currency':c!,'created_at':s(e['entryDate'])});
+            for(var j=0;j<legs.length;j++){
+              final leg=legs[j],account=s(leg['accountId']),dm=i(leg['debitMinor']),cm=i(leg['creditMinor']);
+              if(!accountIds.contains(account)||accountCurrencies[account]!=c||
+                  !((dm>0&&cm==0)||(cm>0&&dm==0))||dm>1000000000000||cm>1000000000000)
+                throw const FormatException('Invalid source journal leg');
+              debit+=dm;credit+=cm;
+              batch.insert('journal_lines',{'id':'$id:source:$j','journal_id':id,'account_id':account,
+                'debit_minor':dm,'credit_minor':cm});
+            }
+            if(debit<=0||debit!=credit)throw const FormatException('Unbalanced source journal');
+          }
+        }
       }
       for(final collection in d.entries){
         for(final row in collection.value){
@@ -140,10 +192,19 @@ class LegacyOperationalRestore {
     final sourceLedger=(byCollection['ledger']??{}).values;
     final projected=LegacyStockProjection.invoiceQuantities(sourceItems,sourceLedger);
     final metaRow=(await db.query('legacy_operational_source',columns:['meta_json'],limit:1)).single;
-    final counts=LocalBackupRestore.object(jsonDecode(metaRow['meta_json'] as String))['sourceExtraCounts'];
+    final meta=LocalBackupRestore.object(jsonDecode(metaRow['meta_json'] as String));
+    final counts=meta['sourceExtraCounts'],unified=meta['unifiedSource']==true;
+    if(unified){
+      final ws=LocalBackupRestore.object(meta['workspace']);
+      final workspace=data['workspace'] as Map<String,dynamic>;
+      workspace['companyName']=s(ws['companyName']);
+      workspace['defaultCurrency']=s(ws['defaultCurrency'],'ريال');
+      data['activeCurrency']=workspace['defaultCurrency'];
+    }
     final headers=(byCollection['source_store_trans']??{}).values;
     final transferLines=(byCollection['source_trans_details']??{}).values;
-    final transferComplete=counts is Map&&counts['store_trans']==headers.length&&counts['trans_details']==transferLines.length;
+    final transferComplete=counts is Map&&counts['store_trans']==headers.length&&counts['trans_details']==transferLines.length&&
+      (!unified||meta['unifiedTransferEvidence']==true);
     final transferReport=LegacyHistoryReports.transfers(sourceItems,(byCollection['warehouses']??{}).values,headers,transferLines);
     final transferNets=transferReport['netByItem'] as Map;
     final incomplete=(transferReport['affectedItemIds'] as List).toSet();
@@ -160,9 +221,13 @@ class LegacyOperationalRestore {
         final old=byCollection[c]?[opening?['source_item_id']??row['id']];
         if(old==null)continue;
         if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
-        final keys=c=='accounts'?['groupId','sortOrder']:c=='warehouses'?['codeNumber']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate']:['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId'];
+        final keys=c=='accounts'?['groupId','sortOrder','accountImage','settlement','documentNumberRequired','messageMethod','sendMode','legacyRef']:
+          c=='warehouses'?['codeNumber','legacyRef']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate','legacyRef']:
+          ['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId','taxAmount','dueDate','paidAmount','deliveryDays','legacyRef'];
         for(final key in keys){if(old[key]!=null)row[key]=old[key];}
-        if(c=='inventory'&&(opening==null||opening['source_item_id']==row['id'])){
+        if(c=='ledger')row['importedRegister']=true;
+        if(c=='inventory'&&unified&&old['quantityUnverified']==false)row['quantityUnverified']=false;
+        if(c=='inventory'&&old['quantityUnverified']!=false&&(opening==null||opening['source_item_id']==row['id'])){
           final sourceId=row['id'];
           final invoices=projected[sourceId]??<String,num>{};
           final transfers=transferComplete?(transferNets[sourceId] as Map<String,num>? ??<String,num>{}):<String,num>{};
@@ -178,6 +243,7 @@ class LegacyOperationalRestore {
         if(c=='inventory'&&unverified.contains(row['id'])){
           row['quantityUnverified']=true;
           row['legacyCatalogCost']=old['avgCost'];
+          if(unified)row['legacyStoredQuantity']=old['quantity'];
           final quantities=projected[row['id']]??<String,num>{};
           final approved=approvedWarehouses[row['id']]??<String>{};
           final remaining={for(final e in quantities.entries)if(!approved.contains(e.key))e.key:e.value};
