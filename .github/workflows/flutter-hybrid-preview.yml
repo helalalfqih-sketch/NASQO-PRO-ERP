@@ -37,6 +37,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Reuse resolved Gradle distributions and dependencies on the review branch.
+      # Never cache the temporary signing keystore or enable configuration-cache secrets.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/dev/offline-first-android-phase2' || github.event_name == 'pull_request' }}
+
       # ubuntu-latest already provides ANDROID_HOME and SDK tooling.
       # setup-android@v3 currently fails while requesting the retired
       # sdkmanager "tools" package; use the preinstalled SDK instead.
@@ -76,7 +82,7 @@ jobs:
           NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
           NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
         run: |
-          flutter build apk --debug \
+          bash ../scripts/build-android-with-retry.sh flutter build apk --debug \
             --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
             --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
 
@@ -109,7 +115,7 @@ jobs:
           printf '%s' "$NASQO_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$NASQO_ANDROID_KEYSTORE_PATH"
           node ../scripts/configure-android-signing.mjs
           CODE=$((1000 + GITHUB_RUN_NUMBER))
-          flutter build apk --release \
+          bash ../scripts/build-android-with-retry.sh flutter build apk --release \
             --build-name="1.0.$GITHUB_RUN_NUMBER" --build-number="$CODE" \
             --dart-define=NASQO_ANDROID_PREVIEW=true \
             --dart-define=NASQO_ANDROID_BUILD_NUMBER="$CODE" \
