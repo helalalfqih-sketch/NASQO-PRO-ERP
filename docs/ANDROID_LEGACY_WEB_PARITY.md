@@ -1,6 +1,6 @@
 # Legacy import parity: raw register and historical quantities
 
-The web restore dispatch invokes the SQLite importer in replaceExisting mode. Android does not delete an existing workspace implicitly. It activates the imported source only into an empty, unenrolled workspace.
+The web restore dispatch invokes the SQLite importer in replaceExisting mode. Android activates into an empty workspace by default. A populated, never-synchronized local workspace can be replaced only after exporting a verified safety copy, a separate confirmation and an in-transaction fingerprint match. Synced workspaces are excluded.
 
 - Historical debit and credit are the original register, not reconstructed journal legs. Account statements, groups, category summaries and trial balances use the raw sides of imported posted entries, including a documented mixed-side row. New journals keep their explicit double-entry legs.
 - Unknown-currency rows retain the source currency reference and stay historical_unposted; do not use the web fallback that silently maps them to the base currency.

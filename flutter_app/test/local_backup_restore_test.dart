@@ -32,7 +32,7 @@ void main(){
       final liveCandidate=await backup.inspect(liveFile,'live.back');
       expect(liveCandidate.counts['accounts'],1);
       await expectLater(backup.restoreNative(liveCandidate),throwsStateError);
-      // Test-only empty destination simulation. The production restore never deletes these rows.
+      // Empty-destination restore is still supported without a replacement lease.
       await db.transaction((t)async{
         await t.delete('bridge_idempotency_keys');
         await t.delete('sync_outbox');

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:nasqo_pro_erp/services/local_database.dart';
@@ -55,6 +56,12 @@ void main(){
       await src.insert('bill_details',{'id':2,'bill_id':2,'prod_id':1,'store_id':2,'amount':1,'price':7,'total':7,'unitnum':3,'bonus':0});
       await src.close();
       final candidate=await backup.inspect(file,'fixture.back');
+      final compressed=await File('${dir.path}/fixture.back.gz').writeAsBytes(gzip.encode(candidate.bytes));
+      final unpacked=await backup.inspect(compressed,'fixture.back.gz');
+      expect(unpacked.sha,candidate.sha);
+      expect(unpacked.bytes,orderedEquals(candidate.bytes));
+      expect(unpacked.counts,candidate.counts);
+      expect(await backup.replacementBackup(),isNull);
       expect(candidate.meta['unknownCurrencies'],1);
       expect(candidate.collections['inventory']!.single['computedQuantity'],-55);
       expect(candidate.collections['inventory']!.single['legacyInvoiceQtyByWarehouse'],{'legacy-wh-1':-31,'legacy-wh-2':-24});
@@ -140,11 +147,40 @@ void main(){
       expect(restored.counts['legacy_operational_source'],1);
       expect(restored.counts['legacy_unverified_stock'],0);
       expect(restored.counts['legacy_stock_openings'],2);
-      // Test-only simulation of an empty destination; no production erase path.
-      await db.transaction((t)async{
-        for(final table in LocalBackupRestore.tables.reversed){await t.delete(table);}
-      });
-      await backup.restoreNative(restored);
+      final replacement=(await backup.replacementBackup())!;
+      expect(replacement,orderedEquals(export));
+      final proof=sha256.convert(replacement).toString();
+      // A stale lease cannot remove changes made after the saved copy.
+      await db.update('accounts',{'note':'newer note'},where:'id = ?',whereArgs:['legacy-acc-1']);
+      await expectLater(migrate.activate(candidate,replacementSha:proof),throwsStateError);
+      expect((await db.query('accounts',where:'id = ?',whereArgs:['legacy-acc-1'])).single['note'],'newer note');
+      expect(await db.query('ledger_entries'),hasLength(10));
+      final newer=(await backup.replacementBackup())!;
+      final newerProof=sha256.convert(newer).toString();
+      // Force validation to fail after destination deletion has begun.
+      final damaged=BackupCandidate(candidate.name,candidate.format,candidate.bytes,candidate.sha,
+        {...candidate.collections,'accounts':[for(final a in candidate.collections['accounts']!)
+          {...a,'creditLimit':-1}]},candidate.meta,null);
+      await expectLater(migrate.activate(damaged,replacementSha:newerProof),throwsFormatException);
+      expect(await backup.replacementBackup(),orderedEquals(newer));
+      // Remote enrollment must never be displaced by the local restore.
+      await db.insert('erp_state',{'stateKey':'sync_workspace_binding','payloadJson':'{}','updatedAt':'2026-11-24'});
+      await expectLater(backup.replacementBackup(),throwsStateError);
+      await expectLater(migrate.activate(candidate,replacementSha:newerProof),throwsStateError);
+      await db.delete('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding']);
+      expect(await backup.replacementBackup(),orderedEquals(newer));
+      // Activate the historical file on a nonempty database only with the
+      // exact exported lease. No duplicate rows or historical replay.
+      await backup.openReview(candidate);
+      expect(await backup.replacementBackup(),orderedEquals(newer));
+      await migrate.activate(candidate,replacementSha:newerProof);
+      expect(await backup.isReview(),false);
+      expect(await db.query('ledger_entries'),hasLength(5));
+      expect(await db.query('journal_entries'),isEmpty);
+      expect(await db.query('sync_outbox'),isEmpty);
+      // Restore the saved native safety copy, also with an explicit lease.
+      final activated=(await backup.replacementBackup())!;
+      await backup.restoreNative(restored,replacementSha:sha256.convert(activated).toString());
       expect(await LegacyOperationalRestore.original(db),orderedEquals(candidate.bytes));
       expect((await db.query('ledger_entries')),hasLength(10));
       expect((await db.query('journal_lines')),hasLength(12));

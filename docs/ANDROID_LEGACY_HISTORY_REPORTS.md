@@ -1,6 +1,6 @@
 # Historical restore follow-up
 
-The primary action for a SmartPro SQLite backup is now operational account restore, with review-only still available. It remains explicitly confirmed and restricted to an empty local working database; no existing working data is overwritten.
+The primary action for a SmartPro SQLite backup is now operational account restore, with review-only still available. It remains explicitly confirmed. A populated local working database may be replaced only by the verified safety-copy workflow, with a separate user confirmation and in-transaction rollback protection.
 
 The native history screen makes transfer headers and lines, offers and their lines, deleted-document archives and alerts available from the persisted original source. Older archives without the structured collections can reconstruct these views in an app-private temporary file after SHA-256 verification, without modifying the working database.
 
