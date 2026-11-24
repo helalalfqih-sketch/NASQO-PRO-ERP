@@ -145,13 +145,16 @@ class NativeCloudSession {
           final parent=args['parentId']==null?null:fileId(args['parentId']);
           if(!await confirm('حفظ نسخة في Google Drive','ستُرفع نسخة كاملة غير مشفّرة من قاعدة العمل إلى حساب '+_drive!.email+
               (existing==null?'':' مع استبدال الملف المحدد.')))return {'cancelled':true};
+          final confirmedAccount=_requireDrive();
           final bytes=await exportWorkspace();
-          _requireDrive();
+          if(!identical(confirmedAccount,_requireDrive()))throw const NativeCloudException('تغير الحساب بعد تأكيد النسخ الاحتياطي.',code:'UNAUTHORIZED_ACTION');
           return await _upload(bytes,name,'application/octet-stream',parent:parent,existing:existing);
         case 'uploadLocal':
           validateKeys(args,{'parentId'});
           final parent=args['parentId']==null?null:fileId(args['parentId']);
+          final confirmedAccount=_requireDrive();
           final picked=await pickFile();
+          if(!identical(confirmedAccount,_requireDrive()))throw const NativeCloudException('تغير الحساب أثناء اختيار الملف.',code:'UNAUTHORIZED_ACTION');
           if(picked==null)return {'cancelled':true};
           final name=fileName(picked.name);
           if(!await confirm('رفع ملف إلى Drive','رفع الملف '+name+' إلى حساب '+_drive!.email+'؟'))return {'cancelled':true};
