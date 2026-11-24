@@ -199,6 +199,7 @@ export function GoogleDriveModal({
   };
 
   const handleUploadLocalFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    if(import.meta.env.VITE_NASQO_HYBRID === "1"){e.target.value="";onNotify("رفع الملفات غير مفعّل بعد.");return;}
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !accessToken) return;
@@ -226,6 +227,7 @@ export function GoogleDriveModal({
   };
 
   const handleBackupWorkspaceNow = async () => {
+    if(import.meta.env.VITE_NASQO_HYBRID === "1"){onNotify("رفع النسخ من SQLite إلى Drive لم يُفعّل بعد. استخدم النسخ المحلي.");return;}
     keyboard.hide();
     if (!accessToken) {
       await handleAuthorizeDrive();

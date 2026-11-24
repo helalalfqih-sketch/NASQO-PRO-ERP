@@ -132,23 +132,16 @@ export async function connectGoogleDrive(): Promise<{ user: User; accessToken: s
   return runWithBrandLoader("جاري الاتصال بخدمة Google Drive عبر Flutter...", async () => {
     const res = await hybridBridge.invoke<
       "googleDriveAction",
-      { connected?: boolean; email?: string; displayName?: string; accessToken?: string }
-    >("googleDriveAction", { operation: "connect" });
+      { connected?: boolean; email?: string; displayName?: string }
+    >("googleDriveAction", { operation: "connect" }, {timeoutMs:180000});
 
-    if (res?.email) {
-      cachedHybridUser = {
-        ...cachedHybridUser,
-        email: res.email,
-        displayName: res.displayName ?? cachedHybridUser.displayName,
-      };
-    }
-    const token = res?.accessToken || (res?.connected ? "flutter-managed-drive-session" : "");
+    const token = res?.connected ? "flutter-managed-drive-session" : "";
     if (!token) {
       throw new Error("خدمة Google Drive غير مفعّلة في تطبيق Flutter حاليًا.");
     }
     cachedGoogleAccessToken = token;
     notifyGoogleTokenListeners();
-    return { user: cachedHybridUser, accessToken: token };
+    return { user: {...cachedHybridUser,email:res.email??null,displayName:res.displayName??null}, accessToken: token };
   });
 }
 

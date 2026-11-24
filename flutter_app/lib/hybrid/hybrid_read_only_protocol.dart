@@ -28,6 +28,7 @@ class HybridReadOnlyProtocol {
     this.pickBackup,
     this.openInvoiceRoles,
     this.cloudIdentity,
+    this.googleDrive,
     this.openStockReconciliation,
     this.exportBackup,
   });
@@ -50,6 +51,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
   final Future<Map<String,dynamic>> Function(String)? cloudIdentity;
+  final Future<dynamic> Function(String,Map<String,dynamic>)? googleDrive;
   final Future<bool> Function(String?,String?)? openStockReconciliation;
   final Future<bool> Function()? exportBackup;
   static const String version = '1.0.0';
@@ -80,6 +82,17 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='googleDriveAction'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.keys.any((k)=>!['operation','args'].contains(k))||
+          !['connect','disconnect','getAbout','listFiles'].contains(p['operation'])||
+          (p['args']!=null&&p['args'] is! Map<String,dynamic>)||googleDrive==null)
+        return _error(id,actionName,'VALIDATION_ERROR','عملية Drive غير مدعومة في هذه النسخة.');
+      try{
+        final result=await googleDrive!(p['operation'] as String,(p['args'] as Map<String,dynamic>?)??{});
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تنفيذ طلب Drive. تحقق من الاتصال والصلاحيات.');}
     }
     if(actionName=='cloudIdentity'){
       final p=request['payload'];

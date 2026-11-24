@@ -6,6 +6,7 @@ import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
 import '../services/firebase_sync_auth.dart';
+import '../services/local_google_drive.dart';
 import '../screens/legacy_stock_opening_screen.dart';
 import '../screens/legacy_history_screen.dart';
 import '../screens/local_invoice_roles_screen.dart';
@@ -59,6 +60,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     pickBackup: _restoreBackup,
     openInvoiceRoles: _openInvoiceRoles,
     cloudIdentity: FirebaseSyncAuth.identity,
+    googleDrive: LocalGoogleDrive.handle,
     openStockReconciliation: _openStockReconciliation,
     exportBackup: _exportBackup,
   );
