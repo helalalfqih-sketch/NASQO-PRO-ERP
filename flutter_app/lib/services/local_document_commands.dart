@@ -1,5 +1,6 @@
 import 'local_database.dart';
 import '../models/erp_models.dart';
+import 'local_invoice_roles.dart';
 
 /// Restricted local document posting. Only explicit two-account, single-currency
 /// operations are accepted. Stock invoices, tax, discounts, FX and reversals
@@ -37,6 +38,8 @@ class LocalDocumentCommands {
     final currency = input['currency'];
     final content = input['invoiceContent'] ?? 'none';
     final rawLines = input['lines'];
+    final box=input['cashboxId'],settlement=input['cashSettlementAccountId'];
+    final isCashInvoice=kind=='invoice'&&payment=='cash';
     if (!_id.hasMatch(workspace) || !_id.hasMatch(key) ||
         id is! String || !_id.hasMatch(id) ||
         account is! String || !_id.hasMatch(account) ||
@@ -46,11 +49,13 @@ class LocalDocumentCommands {
         !CurrencyCode.values.any((v) => v != CurrencyCode.currency2 && v.label == currency) ||
         input['deleted'] == true || (input['exchangeRate'] ?? 1) != 1 ||
         (rawLines != null && (rawLines is! List || rawLines.isNotEmpty)) ||
-        input['cashboxId'] != null || input['settledOnReceipt'] == true ||
+        (box!=null&&payment!='cash') || (input['settledOnReceipt']==true&&!isCashInvoice) ||
+        (settlement!=null&&(!isCashInvoice||settlement is! String||!_id.hasMatch(settlement)||settlement==account||settlement==counterpart)) ||
+        (isCashInvoice&&settlement==null) ||
         (input['taxAmount'] ?? 0) != 0 || (input['discount'] ?? 0) != 0 ||
         (input['paidAmount'] ?? 0) != 0 ||
         input['reversedEntryId'] != null || input['reversalEntryId'] != null ||
-        (kind == 'invoice' && (content != 'free' || payment != 'credit')) ||
+        (kind == 'invoice' && (content != 'free' || !['credit','cash'].contains(payment))) ||
         (kind == 'voucher' && (!['cash','balance'].contains(payment) || content != 'none')) ||
         (kind == 'simple-entry' && (payment != 'balance' || content != 'none'))) {
       throw ArgumentError('Unsupported or incomplete document');
@@ -74,6 +79,7 @@ class LocalDocumentCommands {
       'entryDate':date,'typeLabel':field(input,'typeLabel',60),
       'documentNumber':field(input,'documentNumber',64),
       'details':field(input,'details',600),'expenseCategory':field(input,'expenseCategory',60),
+      if(box!=null)'cashboxId':box,if(settlement!=null)'cashSettlementAccountId':settlement,
     };
     await local.commitOperation(workspaceId:workspace,operationId:key,
       operationType:'document.post',payload:request,apply:(txn) async {
@@ -88,6 +94,10 @@ class LocalDocumentCommands {
             primary.single['currency'] != currencyCode || other.single['currency'] != currencyCode) {
           throw StateError('Account missing or currency mismatch');
         }
+        if(isCashInvoice&&await LocalInvoiceRoles.cashAccount(txn,currencyCode,box)!=settlement)
+          throw StateError('Cashbox configuration changed');
+        if(kind=='voucher'&&payment=='cash'&&box!=null&&await LocalInvoiceRoles.cashAccount(txn,currencyCode,box)!=counterpart)
+          throw StateError('Cashbox configuration changed');
         if (kind == 'voucher' && payment == 'cash' && other.single['isCashAccount'] != 1) {
           throw ArgumentError('Select a cash account as counterpart');
         }
@@ -121,6 +131,13 @@ class LocalDocumentCommands {
           'id':'$id:1','journal_id':id,'account_id':counterpart,
           'debit_minor':primaryDebit?0:amount,'credit_minor':primaryDebit?amount:0,
         });
+        if(isCashInvoice){
+          await txn.insert('journal_lines',{'id':'$id:2','journal_id':id,'account_id':account,
+            'debit_minor':primaryDebit?0:amount,'credit_minor':primaryDebit?amount:0});
+          await txn.insert('journal_lines',{'id':'$id:3','journal_id':id,'account_id':settlement,
+            'debit_minor':primaryDebit?amount:0,'credit_minor':primaryDebit?0:amount});
+        }
+        await LocalInvoiceRoles.recordCashbox(txn,id,box);
         return {'id':id};
       });
     return id;

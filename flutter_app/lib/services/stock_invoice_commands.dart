@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'local_document_commands.dart';
 import 'stock_quantity.dart';
+import 'local_invoice_roles.dart';
 
 /// Cash/credit stock invoice engine. Money is integer minor units; stock uses
 /// integer thousandths internally. Linked returns use original prices and costs.
@@ -94,10 +95,12 @@ class StockInvoiceCommands {
     final warehouse=identity(input['warehouseId']);
     final sale=input['direction']=='debit';
     final cash=input['payment']=='cash';
+    final box=input['cashboxId'];
+    final settlement=input['cashSettlementAccountId']==null?null:identity(input['cashSettlementAccountId']);
     if(input['kind']!='invoice' || !['credit','debit'].contains(input['direction']) ||
         !['cash','credit'].contains(input['payment']) || input['invoiceContent']!='items' ||
         input['currency']!='ريال' || (input['exchangeRate']??1)!=1 ||
-        input['cashboxId']!=null || (!cash && input['settledOnReceipt']==true) ||
+        (box!=null&&settlement==null) || (!cash && (input['settledOnReceipt']==true||settlement!=null)) ||
         input['deleted']==true || (input['paidAmount']??0)!=0 ||
         (input['discount']??0)!=0 || original!=null ||
         input['reversedEntryId']!=null || input['reversalEntryId']!=null) {
@@ -110,7 +113,7 @@ class StockInvoiceCommands {
     final taxAccount=tax>0?identity(input['taxAccountId']):null;
     final rate=input['taxRateBps'];
     if(rate!=null&&(rate is! int||rate<0||rate>10000)) throw ArgumentError('Invalid tax rate');
-    final ids=[primary,counterpart,if(sale)inventoryAccount,if(costAccount!=null)costAccount,if(taxAccount!=null)taxAccount];
+    final ids=[primary,counterpart,if(sale)inventoryAccount,if(costAccount!=null)costAccount,if(taxAccount!=null)taxAccount,if(settlement!=null)settlement];
     if(ids.toSet().length!=ids.length) throw ArgumentError('Accounting roles must use distinct accounts');
     final raw=input['lines'];
     if(raw is! List || raw.isEmpty || raw.length>100) throw ArgumentError('Invalid stock lines');
@@ -143,12 +146,14 @@ class StockInvoiceCommands {
       'totalMinor':total,'entryNumber':entryNumber,'entryDate':entryDate,
       'typeLabel':LocalDocumentCommands.field(input,'typeLabel',60),
       'documentNumber':LocalDocumentCommands.field(input,'documentNumber',64),
-      'details':LocalDocumentCommands.field(input,'details',600),'lines':lines};
+      'details':LocalDocumentCommands.field(input,'details',600),'lines':lines,
+      if(settlement!=null)'cashSettlementAccountId':settlement,if(box!=null)'cashboxId':box};
     await local.commitOperation(workspaceId:w,operationId:key,operationType:'stock.invoice.post',
       payload:request,apply:(t)async{
         await workspace(t,w);await numberAvailable(t,entryNumber);
         final accounts=<String,Map<String,Object?>>{};
-        for(final a in ids){accounts[a]=await account(t,a,currency,cash:cash&&a==primary);}
+        for(final a in ids){accounts[a]=await account(t,a,currency,cash:a==settlement||(cash&&settlement==null&&a==primary));}
+        if(settlement!=null&&await LocalInvoiceRoles.cashAccount(t,currency,box)!=settlement)throw StateError('Cashbox configuration changed');
         final wh=await t.query('warehouses',where:'id = ?',whereArgs:[warehouse]);
         if(wh.length!=1) throw StateError('Warehouse missing');
         await t.insert('ledger_entries',{'id':id,'accountId':primary,'accountName':accounts[primary]!['name'],
@@ -193,8 +198,10 @@ class StockInvoiceCommands {
         final legs=<Map<String,dynamic>>[leg(primary,total,sale),leg(counterpart,net,!sale),
           if(taxAccount!=null)leg(taxAccount,tax,!sale),
           if(sale&&costTotal>0)leg(costAccount!,costTotal,true),
-          if(sale&&costTotal>0)leg(inventoryAccount,costTotal,false)];
+          if(sale&&costTotal>0)leg(inventoryAccount,costTotal,false),
+          if(settlement!=null)leg(primary,total,!sale),if(settlement!=null)leg(settlement,total,sale)];
         await journal(t,id,currency,legs);
+        await LocalInvoiceRoles.recordCashbox(t,id,box);
         return {'id':id};
       });
     return id;
@@ -277,9 +284,12 @@ class StockInvoiceCommands {
         final total=bounded(net+tax);
         final primary=identity(details['accountId']),counter=identity(details['counterpartAccountId']);
         final cash=entry['payment']=='cash';
-        await account(t,primary,entry['currency'] as String,cash:cash);
+        final settlement=details['cashSettlementAccountId'] as String?;
+        await account(t,primary,entry['currency'] as String,cash:cash&&settlement==null);
+        if(settlement!=null)await account(t,settlement,entry['currency'] as String,cash:true);
         await account(t,counter,entry['currency'] as String);
-        final legs=<Map<String,dynamic>>[leg(primary,total,!sale),if(net>0)leg(counter,net,sale)];
+        final legs=<Map<String,dynamic>>[leg(primary,total,!sale),if(net>0)leg(counter,net,sale),
+          if(settlement!=null)leg(primary,total,sale),if(settlement!=null)leg(settlement,total,!sale)];
         if(tax>0){final a=identity(details['taxAccountId']);await account(t,a,entry['currency'] as String);legs.add(leg(a,tax,sale));}
         if(sale&&cost>0){
           final a=identity(details['costAccountId']),b=identity(details['inventoryAccountId']);
@@ -304,6 +314,7 @@ class StockInvoiceCommands {
           await t.insert('stock_movements',{'id':lineId,'item_id':item,'quantity_delta':StockQuantity.units(after-before),'operation_id':key});
         }
         await journal(t,id,entry['currency'] as String,legs);
+        await LocalInvoiceRoles.recordCashbox(t,id,details['cashboxId']);
         return {'id':id};
       });
     return id;

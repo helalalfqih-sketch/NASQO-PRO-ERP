@@ -67,8 +67,8 @@ class LegacyHistoryReports {
     var excludedCurrency=0,currencyMismatch=0;
     for(final raw in snapshot['ledger'] as List){
       final e=Map<String,dynamic>.from(raw as Map);
-      // The legacy source register is the sole scope of this report.
-      if((e['importedRegister']!=true&&(e['rawDain']==null||e['rawMadin']==null))||e['deleted']==true||
+      // Only explicitly linked modern cashbox postings join the historical register.
+      if((e['localCashboxPosting']!=true&&e['importedRegister']!=true&&(e['rawDain']==null||e['rawMadin']==null))||e['deleted']==true||
           e['postingStatus']=='draft'||(!review&&e['postingStatus']!='posted'&&e['postingStatus']!='reversed'))continue;
       if(e['settledOnReceipt']!=true&&e['payment']!='cash')continue;
       final kind=s(e['kind']),date=s(e['entryDate']);
@@ -110,7 +110,7 @@ class LegacyHistoryReports {
     // The scalar totals are meaningful only in one currency; the UI uses the
     // per-currency breakdown when multiple currencies are selected.
     final single=rec.length==1?rec.values.single:<String,dynamic>{};
-    return {'cashboxes':filtered,'historicalRegisterOnly':true,
+    return {'cashboxes':filtered,'historicalRegisterOnly':!(snapshot['ledger'] as List).any((e)=>e['localCashboxPosting']==true),
       'reconciliation':{'currencyFilter':currency.isEmpty?'الكل':currency,'fromDate':from.isEmpty?null:from,'toDate':to.isEmpty?null:to,
         for(final k in ['linkedCashboxesNet','unlinkedCashIn','unlinkedCashOut','unlinkedCashNet','totalCashNet','unlinkedCashCount'])k:single[k]??0,
         'activeCount':active,'inactiveCount':filtered.length-active,'totalsByCurrency':rec.values.toList(),

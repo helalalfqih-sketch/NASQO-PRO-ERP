@@ -11,8 +11,9 @@ class LocalInvoiceRolesScreen extends StatefulWidget {
 class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
   final service=LocalInvoiceRoles(LocalDatabase.instance);
   static const labels={'revenue':'إيراد المبيعات','inventory':'أصل المخزون','cost':'تكلفة البضاعة المباعة',
-    'expense':'مصروف المشتريات الحرة','outputTax':'ضريبة المبيعات المستحقة','inputTax':'ضريبة المشتريات القابلة للاسترداد'};
-  List<Map<String,dynamic>> accounts=[];
+    'expense':'مصروف المشتريات الحرة','outputTax':'ضريبة المبيعات المستحقة','inputTax':'ضريبة المشتريات القابلة للاسترداد',
+    'cash':'حساب النقدية الافتراضي (عند عدم وجود صندوق محدد)','balanceVoucher':'حساب تسوية سندات الرصيد'};
+  List<Map<String,dynamic>> accounts=[],cashboxes=[];
   Map<String,dynamic> all={};
   Map<String,String> selected={};
   String currency='sar';
@@ -28,6 +29,7 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
       setState((){
         accounts=(data['accounts'] as List).map((r)=>Map<String,dynamic>.from(r as Map)).toList();
         all=Map<String,dynamic>.from(data['roles'] as Map);
+        cashboxes=(data['cashboxes'] as List).map((r)=>Map<String,dynamic>.from(r as Map)).toList();
         _selectCurrency(currency);busy=false;
       });
     }catch(_){if(mounted)setState((){busy=false;message='تعذر تحميل إعدادات الترحيل. أغلق وضع المراجعة أولًا.';});}
@@ -37,7 +39,9 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
     final stored=all[currency],ids=accounts.where((a)=>a['currency']==currency).map((a)=>a['id']).toSet();
     selected={};
     if(stored is Map){
-      for(final key in LocalInvoiceRoles.keys){final id=stored[key];if(id is String&&ids.contains(id))selected[key]=id;}
+      for(final key in stored.keys.whereType<String>().where(LocalInvoiceRoles.isKnownRole)){
+        final id=stored[key];if(id is String&&ids.contains(id))selected[key]=id;
+      }
     }
   }
   Future<void> _save()async{
@@ -51,11 +55,12 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
   @override
   Widget build(BuildContext context){
     final list=accounts.where((a)=>a['currency']==currency).toList();
-    final roles=currency=='sar'?LocalInvoiceRoles.keys:['revenue','expense'];
+    final boxes=cashboxes.where((b)=>b['currencyCode']==LocalInvoiceRoles.currencyNames[currency]).toList();
+    final roles=[...(currency=='sar'?LocalInvoiceRoles.keys:['revenue','expense','cash','balanceVoucher']),for(final b in boxes)'cashbox:${b['id']}'];
     return Directionality(textDirection:TextDirection.rtl,child:Scaffold(
       appBar:AppBar(title:const Text('حسابات الترحيل التلقائي')),
       body:ListView(padding:const EdgeInsets.all(16),children:[
-        const Text('اضبط الحسابات مرة واحدة من دليل الحسابات الموجود. لا ينشئ النظام حسابات أو يغير تصنيفها. تُستخدم إعدادات الجرد المعتمد لحساب أصل المخزون عند توفرها.'),
+        const Text('اضبط الحسابات والصناديق مرة واحدة من دليل الحسابات الموجود. لا ينشئ النظام حسابات أو يغير تصنيفها. تُستخدم إعدادات الجرد المعتمد لحساب أصل المخزون عند توفرها.'),
         if(busy)const LinearProgressIndicator(),
         const SizedBox(height:12),
         DropdownButtonFormField<String>(value:currency,isExpanded:true,
@@ -65,9 +70,9 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
         const SizedBox(height:12),
         for(final key in roles)...[
           DropdownButtonFormField<String>(value:selected[key]??'',isExpanded:true,
-            decoration:InputDecoration(labelText:labels[key],border:const OutlineInputBorder()),
+            decoration:InputDecoration(labelText:labels[key]??'حساب الصندوق: ${boxes.firstWhere((b)=>"cashbox:${b['id']}"==key)['name']}',border:const OutlineInputBorder()),
             items:[const DropdownMenuItem(value:'',child:Text('غير محدد')),
-              for(final a in list)DropdownMenuItem(value:a['id'] as String,child:Text(a['name'].toString(),overflow:TextOverflow.ellipsis))],
+              for(final a in list.where((a)=>(a['isCashAccount']==1)==LocalInvoiceRoles.isCashRole(key)))DropdownMenuItem(value:a['id'] as String,child:Text(a['name'].toString(),overflow:TextOverflow.ellipsis))],
             onChanged:busy?null:(v)=>setState((){selected[key]=v??'';message=null;})),
           const SizedBox(height:12),
         ],
