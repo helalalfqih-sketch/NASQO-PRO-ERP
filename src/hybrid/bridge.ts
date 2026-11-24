@@ -244,7 +244,7 @@ export class NasqoHybridBridge {
 
     const timeoutMs =
       options.timeoutMs ??
-      (action === "restoreWorkspace" || action === "backupWorkspace" || action === "pickFile" || action === "importInventoryItems"
+      (action === "restoreWorkspace" || action === "restoreLocalBackup" || action === "openInvoiceRoles" || action === "backupWorkspace" || action === "pickFile" || action === "importInventoryItems"
         ? HEAVY_OPERATION_TIMEOUT_MS
         : DEFAULT_TIMEOUT_MS);
 

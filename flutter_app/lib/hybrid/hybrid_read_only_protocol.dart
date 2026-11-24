@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../services/legacy_history_reports.dart';
+import '../services/local_invoice_roles.dart';
 
 /// Minimal, fail-closed protocol endpoint for the offline React -> Flutter
 /// bridge. It never accepts raw SQL, filesystem, or financial write commands.
@@ -17,6 +18,7 @@ class HybridReadOnlyProtocol {
     this.createStockRecord,
     this.readInvoiceDetail,
     this.pickBackup,
+    this.openInvoiceRoles,
     this.exportBackup,
   });
 
@@ -28,6 +30,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
+  final Future<void> Function()? openInvoiceRoles;
   final Future<bool> Function()? exportBackup;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
@@ -57,6 +60,23 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='restoreLocalBackup'||actionName=='openInvoiceRoles'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.length!=1||p['workspaceId']!='local-erp-workspace')
+        return _error(id,actionName,'VALIDATION_ERROR','معرف قاعدة العمل غير صالح.');
+      try{
+        if(actionName=='restoreLocalBackup'&&pickBackup!=null){
+          final result=await pickBackup!();
+          return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
+            'ok':true,'data':result??{'cancelled':true}});
+        }
+        if(actionName=='openInvoiceRoles'&&openInvoiceRoles!=null){
+          await openInvoiceRoles!();
+          return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':{}});
+        }
+        return _error(id,actionName,'UNAUTHORIZED_ACTION','الخدمة المحلية غير متاحة.');
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر إكمال العملية المحلية.');}
     }
     if(actionName=='getCashboxesReport'){
       final p=request['payload'];
@@ -210,6 +230,8 @@ class HybridReadOnlyProtocol {
         final result = await postDocument!(key,params['payload'] as Map<String,dynamic>);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,
           'action':actionName,'ok':true,'data':result});
+      } on InvoicePostingSetupRequired catch(e){
+        return _error(id,actionName,'VALIDATION_ERROR',e.message);
       } on ArgumentError {
         return _error(id,actionName,'VALIDATION_ERROR','تحقق من الحسابات والعملة والكمية وإجمالي الفاتورة والضرائب والخصومات والمرتجع المرتبط.');
       } catch (_) {

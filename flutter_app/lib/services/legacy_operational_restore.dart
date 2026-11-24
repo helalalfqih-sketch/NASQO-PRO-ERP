@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'local_backup_restore.dart';
 import 'local_database.dart';
 import 'legacy_stock_projection.dart';
+import 'local_invoice_roles.dart';
 
 /// Explicit migration of the legacy single-sided account register. Never
 /// manufactures counterpart accounts, opening stock quantities or cost legs.
@@ -38,6 +39,9 @@ class LegacyOperationalRestore {
       if(review.isNotEmpty&&review.single['sha']!=candidate.sha&&replacementSha==null)
         throw StateError('Different review is active');
       await LocalBackupRestore.prepareRestoreDestination(t,replacementSha:replacementSha);
+      // A legacy file has no reliable GL role configuration. Never carry
+      // settings for previous account IDs into the imported business.
+      await t.delete('erp_state',where:'stateKey = ?',whereArgs:[LocalInvoiceRoles.stateKey]);
       final batch=t.batch();
       batch.insert('legacy_operational_source',{'singleton':1,'sha':candidate.sha,'file_name':candidate.name,'meta_json':jsonEncode(candidate.meta)});
       for(var offset=0;offset<candidate.bytes.length;offset+=49152){

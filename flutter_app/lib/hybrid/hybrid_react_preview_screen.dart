@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import '../screens/cloud_identity_screen.dart';
 import '../screens/legacy_stock_opening_screen.dart';
 import '../screens/legacy_history_screen.dart';
+import '../screens/local_invoice_roles_screen.dart';
+import '../services/local_invoice_roles.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -40,6 +42,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     createStockRecord: _createStockRecord,
     readInvoiceDetail: _readInvoiceDetail,
     pickBackup: _restoreBackup,
+    openInvoiceRoles: _openInvoiceRoles,
     exportBackup: _exportBackup,
   );
 
@@ -55,10 +58,11 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
 
   static Future<Map<String,dynamic>> _postDocument(String key,Map<String,dynamic> payload) async {
     final local=LocalDatabase.instance;
-    final isStock=payload['invoiceContent']=='items'||payload['kind']=='return';
+    final resolved=await LocalInvoiceRoles(local).resolve(payload);
+    final isStock=resolved['invoiceContent']=='items'||resolved['kind']=='return';
     final id=isStock
-      ? await StockInvoiceCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,payload)
-      : await LocalDocumentCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,payload);
+      ? await StockInvoiceCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved)
+      : await LocalDocumentCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved);
     final snapshot = await HybridLocalSnapshotAdapter.readFromDevice();
     final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
         .firstWhere((e) => e['id'] == id);
@@ -119,6 +123,11 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       title:const Text('النسخ الاحتياطية المحلية'),content:Text(message),
       actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('موافق'))]));
   }
+  Future<void> _openInvoiceRoles()async{
+    if(!mounted||_backupBusy||_review)throw StateError('Local working database required');
+    await Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const LocalInvoiceRolesScreen()));
+  }
+
   Future<Map<String,dynamic>?> _restoreBackup({bool refreshView=false})async{
     if(_backupBusy)return null;
     setState(()=>_backupBusy=true);
@@ -156,9 +165,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final legacy=await LocalDatabase.hasLegacyOperational(await LocalDatabase.instance.database);
       if(!mounted)return null;
       setState((){_review=accept=='review';_legacyOperational=legacy;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
-      await _message(accept=='live'?'تم تفعيل الحسابات والسجل التاريخي. المخزون المستورد يحتاج جردًا وتقييمًا؛ العملات المفقودة خارج الأرصدة.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من شريط التطبيق.');
+      await _message(accept=='live'?'تمت استعادة الحسابات والحركات في قاعدة العمل المحلية. إعداد حسابات الترحيل مرة واحدة من الإعدادات؛ المخزون المستورد يحتاج اعتمادًا، والعملات المفقودة خارج الأرصدة.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من شريط التطبيق.');
       return {'fileName':name,'mimeType':'application/octet-stream','sizeBytes':candidate.bytes.length,
-        'base64Content':'','nativeRestored':true};
+        'base64Content':'','nativeRestored':true,'restoreMode':accept=='review'?'review':'operational','counts':candidate.counts};
     }on FormatException catch(e){
       await _message('رُفضت النسخة دون تعديل البيانات: ${e.message}');return null;
     }on StateError catch(e){
