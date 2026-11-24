@@ -169,6 +169,63 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     }catch(_){await _message('تعذر تصدير النسخة المحلية.');return false;}
     finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
   }
+  Future<void> _showRestoreReadiness() async {
+    if(_backupBusy)return;
+    setState(()=>_backupBusy=true);
+    try{
+      final report=await _backups.reviewReadiness();
+      if(!mounted)return;
+      final counts=Map<String,dynamic>.from(report['counts'] as Map);
+      final issues=Map<String,dynamic>.from(report['issues'] as Map);
+      final live=Map<String,dynamic>.from(report['liveCounts'] as Map);
+      const labels={
+        'invalidIdentifiers':'معرّفات مفقودة أو مكررة',
+        'missingGroup':'مراجع مجموعات غير موجودة',
+        'unknownCurrency':'مراجع عملات غير معرّفة',
+        'invalidOpening':'بيانات أرصدة افتتاحية غير صالحة',
+        'missingWarehouse':'مراجع مخازن غير موجودة',
+        'unverifiedInventory':'أصناف بكميات غير معتمدة',
+        'invalidInventory':'قيم مخزون تحتاج مراجعة',
+        'missingAccount':'حركات بمراجع حسابات مفقودة',
+        'missingCashbox':'مراجع صناديق غير موجودة',
+        'invalidFinancialValue':'قيم مالية أو أسعار صرف غير صالحة',
+        'ambiguousSides':'حركات مدين ودائن تحتاج تفسيرًا',
+        'missingInvoiceLines':'فواتير تحتاج تفاصيلها',
+        'missingItem':'مراجع أصناف غير موجودة',
+        'invalidLine':'بنود فواتير تحتاج مراجعة',
+      };
+      final hasLive=live.values.any((v)=>v is num&&v>0);
+      final text=[
+        'نوع النسخة: ${report['format']}',
+        'الحسابات: ${counts['accounts']}',
+        'الحركات: ${counts['ledger']}',
+        'بنود الفواتير: ${report['invoiceLines']}',
+        'الأصناف: ${counts['inventory']}',
+        'المخازن: ${counts['warehouses']}',
+        '',
+        if(issues.isEmpty)'لم تُكتشف مشكلات في الفحوص البنيوية الحالية.'
+        else for(final e in issues.entries)'${labels[e.key]??e.key}: ${e.value}',
+        '',
+        if(hasLive)'قاعدة العمل تحتوي بيانات؛ لا يُسمح باستبدالها تلقائيًا.',
+        'القيود والأرصدة التاريخية لم تُطابق بعد مع مصدر محاسبي معتمد.',
+        'النتيجة: المراجعة فقط حتى اعتماد الترحيل. لا تُعاد ترحيل الحركات القديمة.',
+      ].join('\n');
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('تقرير جاهزية الاستعادة'),
+        content:SingleChildScrollView(child:SelectableText(text)),
+        actions:[
+          TextButton(onPressed:() async {
+            // Report contains only format and aggregate counts, no names or
+            // record identifiers, to make sharing diagnostics safer.
+            await Clipboard.setData(ClipboardData(text:text));
+            if(ctx.mounted)Navigator.pop(ctx);
+          },child:const Text('نسخ التقرير')),
+          TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق')),
+        ]));
+    }catch(_){await _message('تعذر فحص النسخة الحالية. ملف المصدر والبيانات لم يتغيرا.');}
+    finally{if(mounted)setState(()=>_backupBusy=false);}
+  }
+
   Future<void> _leaveReview()async{
     if(_backupBusy)return;
     await _backups.closeReview();
@@ -229,6 +286,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
           IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
             onPressed:_backupBusy?null:_exportBackup),
+          if(_review) IconButton(tooltip:'تقرير جاهزية الاستعادة',icon:const Icon(Icons.fact_check_outlined),
+            onPressed:_backupBusy?null:_showRestoreReadiness),
           if(_review) TextButton(onPressed:_backupBusy?null:_leaveReview,child:const Text('العودة للبيانات الحالية')),
           if (widget.onShowNative != null && !_review && _backupStateLoaded && !_backupBusy)
             TextButton(
@@ -244,7 +303,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.all(10),
             child: Text(
-              _review?'مراجعة نسخة احتياطية تاريخية — القراءة فقط؛ لا تعتمد الأرصدة أو الكميات التاريخية قبل التسوية.':
+              _review?'نسخة تاريخية مستوردة — للقراءة فقط. اضغط أيقونة تقرير جاهزية الاستعادة لمعرفة ما يحتاج إلى تسوية.':
               'نسقو المحلي: استيراد وتصدير النسخ الاحتياطية من شريط التطبيق؛ المزامنة قيد التطوير.',
               textAlign: TextAlign.center,
             ),

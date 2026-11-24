@@ -70,6 +70,16 @@ void main(){
       await backup.openReview(legacy);
       expect(await db.query('backup_review_sources'),hasLength(1));
       expect(await backup.exportReviewSource(),orderedEquals(original));
+      final readiness=await backup.reviewReadiness();
+      expect(readiness['counts']['accounts'],1);
+      expect(readiness['counts']['ledger'],1);
+      expect(readiness['invoiceLines'],1);
+      expect(readiness['issues']['unverifiedInventory'],1);
+      expect(readiness['issues']['ambiguousSides'],1);
+      expect(readiness['liveCounts']['accounts'],1);
+      expect(readiness['readyForActivation'],false);
+      expect(readiness['journalReconciled'],false);
+      expect(await backup.exportReviewSource(),orderedEquals(original));
       final snap=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((snap['accounts'] as List).single['name'],'Archived client');
       expect((snap['ledger'] as List).single['rawDain'],10);

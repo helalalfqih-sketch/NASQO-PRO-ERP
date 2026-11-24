@@ -363,6 +363,104 @@ class LocalBackupRestore {
       await txn.insert('backup_review_active',{'singleton':1,'sha':candidate.sha},conflictAlgorithm:ConflictAlgorithm.replace);
     });
   }
+  /// On-device diagnostics for the selected source, not an accounting
+  /// certification. Never modify records or infer opening balances here.
+  Future<Map<String,dynamic>> reviewReadiness() async {
+    final db=await local.database;
+    return db.transaction((txn) async {
+      final active=await txn.query('backup_review_active',limit:1);
+      if(active.length!=1)throw StateError('No selected backup');
+      final hash=active.single['sha'] as String;
+      final source=(await txn.query('backup_review_sources',where:'sha = ?',whereArgs:[hash])).single;
+      final meta=object(jsonDecode(source['meta_json'] as String));
+      final data=<String,List<Map<String,dynamic>>>{};
+      for(final key in collections){
+        final stored=await txn.query('backup_review_rows',columns:['row_json'],
+          where:'sha = ? AND collection = ?',whereArgs:[hash,key],orderBy:'ordinal');
+        data[key]=stored.map((r)=>object(jsonDecode(r['row_json'] as String))).toList();
+      }
+      final counts=data.map((k,v)=>MapEntry(k,v.length));
+      final issues=<String,int>{};
+      void add(String key,[int count=1]){if(count>0)issues[key]=(issues[key]??0)+count;}
+      Set<String> identifiers(String collection){
+        final ids=<String>{};
+        for(final row in data[collection]!){
+          final value=str(row['id']);
+          if(value.isEmpty||!ids.add(value))add('invalidIdentifiers');
+        }
+        return ids;
+      }
+      final accounts=identifiers('accounts');
+      final warehouses=identifiers('warehouses');
+      final inventory=identifiers('inventory');
+      final groups=identifiers('accountGroups');
+      final cashboxes=identifiers('cashboxes');
+      identifiers('ledger');
+      identifiers('currencies');
+      final currencies=<String>{
+        for(final row in data['currencies']!) if(str(row['name']).isNotEmpty)str(row['name']),
+        for(final row in data['currencies']!) if(str(row['code']).isNotEmpty)str(row['code']),
+      };
+      bool knownCurrency(Object? value)=>currencies.contains(str(value));
+      bool finite(Object? value){
+        if(value is num)return value.isFinite&&value.abs()<=9007199254740991;
+        return false;
+      }
+      bool missing(Object? value,Set<String> ids)=>str(value).isNotEmpty&&!ids.contains(str(value));
+      for(final row in data['accounts']!){
+        if(missing(row['groupId'],groups))add('missingGroup');
+        if(!knownCurrency(row['currency']))add('unknownCurrency');
+        if(!finite(row['openingBalance'])||!finite(row['creditLimit'])||
+          !['debit','credit'].contains(row['openingDirection']))add('invalidOpening');
+      }
+      for(final row in data['inventory']!){
+        if(str(row['warehouseId']).isEmpty||missing(row['warehouseId'],warehouses))add('missingWarehouse');
+        if(flag(row['quantityUnverified']))add('unverifiedInventory');
+        if(!finite(row['quantity'])||!finite(row['avgCost'])||
+            (row['quantity'] is num&&(row['quantity'] as num)<0)||
+            (row['avgCost'] is num&&(row['avgCost'] as num)<0))add('invalidInventory');
+        if(row['currencyCode']!=null&&!knownCurrency(row['currencyCode']))add('unknownCurrency');
+      }
+      var invoiceLines=0,financialMoves=0;
+      for(final row in data['ledger']!){
+        if(!accounts.contains(str(row['accountId']))||missing(row['counterpartAccountId'],accounts))add('missingAccount');
+        if(missing(row['cashboxId'],cashboxes))add('missingCashbox');
+        if(missing(row['warehouseId'],warehouses))add('missingWarehouse');
+        if(!knownCurrency(row['currency']))add('unknownCurrency');
+        if(!finite(row['amount'])||!finite(row['exchangeRate'])||
+            (row['exchangeRate'] is num&&(row['exchangeRate'] as num)<=0))add('invalidFinancialValue');
+        final d=row['rawDain'],m=row['rawMadin'];
+        if(d is num&&m is num&&d>0&&m>0&&!flag(row['settledOnReceipt']))add('ambiguousSides');
+        final lines=rows(row['lines']??[]);
+        invoiceLines+=lines.length;
+        if((row['lineCount'] is num&&row['lineCount']!=lines.length)||
+            (str(row['invoiceContent'])=='items'&&lines.isEmpty))add('missingInvoiceLines');
+        for(final line in lines){
+          if(missing(line['inventoryItemId'],inventory))add('missingItem');
+          if(missing(line['warehouseId'],warehouses))add('missingWarehouse');
+          if(!finite(line['quantity'])||!finite(line['price'])||!finite(line['total']))add('invalidLine');
+        }
+        if(!flag(row['deleted'])&&str(row['postingStatus'])!='draft'&&
+          !['quote','order'].contains(row['kind'])){
+          financialMoves++;
+        }
+      }
+      // Even a clean projection is not evidence that a historical double-entry
+      // journal, stock valuation, and the web balances have been reconciled.
+      final liveCounts=<String,int>{};
+      for(final table in ['accounts','warehouses','inventory_items','ledger_entries','journal_entries','sync_outbox']){
+        liveCounts[table]=Sqflite.firstIntValue(await txn.rawQuery('SELECT COUNT(*) FROM "$table"'))??0;
+      }
+      final rawMeta=meta['extraCollections'];
+      final extra=rawMeta is Map?Map<String,dynamic>.from(rawMeta):<String,dynamic>{};
+      return {'format':source['source_format'],'counts':counts,'invoiceLines':invoiceLines,
+        'financialMoves':financialMoves,'issues':issues,'liveCounts':liveCounts,
+        'extraCollections':extra,'sourceMissingReferences':integer(meta['missingReferences']),
+        'sourceAmbiguousMoves':integer(meta['ambiguousMoves']),
+        'journalReconciled':false,'readyForActivation':false};
+    });
+  }
+
   Future<bool> isReview()async{
     final db=await local.database;
     return (await db.query('backup_review_active',limit:1)).isNotEmpty;
