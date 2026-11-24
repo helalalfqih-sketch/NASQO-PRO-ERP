@@ -134,14 +134,14 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
         .map((e)=>'${labels[e.key]}: ${e.value}').join('\n');
       final accept=await showDialog<String>(context:context,builder:(context)=>AlertDialog(
-        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.format=='legacy-sqlite'?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
+        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.legacy?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
         content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
           (candidate.native?'تُستعاد السجلات والقيود وطابور العمليات محليًا. إذا كانت هناك بيانات حالية، يجب حفظ نسخة متحقق منها وتأكيد الاستبدال أولًا.':
-          candidate.format=='legacy-sqlite'?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. المخزون يحتاج اعتمادًا مستقلًا. يمكنك اختيار المراجعة فقط.':
+          candidate.legacy?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. المخزون يحتاج اعتمادًا مستقلًا. يمكنك اختيار المراجعة فقط.':
           'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
         actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
-          if(candidate.format=='legacy-sqlite')OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
-          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.format=='legacy-sqlite'?'live':'review'),child:Text(candidate.native?'استعادة':candidate.format=='legacy-sqlite'?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
+          if(candidate.legacy)OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
+          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.legacy?'live':'review'),child:Text(candidate.native?'استعادة':candidate.legacy?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
       if(accept==null||!mounted)return null;
       if(accept=='live'||candidate.native){
         if(accept=='live'&&!await _confirmActivation(candidate))return null;
@@ -194,7 +194,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       temp=File('$cache/nasqo-activate-${DateTime.now().microsecondsSinceEpoch}.back');
       await temp.writeAsBytes(bytes,flush:true);
       final candidate=await _backups.inspect(temp,'legacy-original.back');
-      if(candidate.format!='legacy-sqlite')throw StateError('هذه الصيغة تحتاج مسار ترحيل آخر');
+      if(!candidate.legacy)throw StateError('هذه الصيغة تحتاج مسار ترحيل آخر');
       if(!await _confirmActivation(candidate))return;
       final protection=await _protectExistingData();
       if(!protection.proceed)return;

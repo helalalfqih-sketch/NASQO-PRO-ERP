@@ -18,7 +18,7 @@ class LegacyOperationalRestore {
   static String? currency(Object? x)=>const {'ريال':'sar','دولار':'usd','يورو':'eur'}[x];
 
   Future<void> activate(BackupCandidate candidate,{String? replacementSha}) async {
-    if(candidate.format!='legacy-sqlite'||candidate.native||
+    if(!candidate.legacy||candidate.native||
       sha256.convert(candidate.bytes).toString()!=candidate.sha)throw const FormatException('Not an intact legacy SQLite backup');
     if((candidate.meta['missingReferences']??0)!=0||(candidate.meta['orphanDetailBills']??0)!=0)
       throw const FormatException('Unresolved account or invoice references');

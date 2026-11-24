@@ -1810,7 +1810,7 @@ export function AuthenticatedWorkspace({
       void hybrid
         .pickFile({
           purpose: "restore-backup",
-          accept: [".back", ".json", ".db", ".sqlite", ".sqlite3", ".backup", ".gz"],
+          accept: [".back", ".json", ".db", ".sqlite", ".sqlite3", ".backup", ".gz", ".sql"],
         })
         .then(async (picked) => {
           if (picked?.nativeRestored) {

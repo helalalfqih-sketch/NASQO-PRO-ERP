@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'legacy_stock_projection.dart';
+import 'legacy_sql_dump.dart';
 
 /// Native backups restore all operational tables. Older web/SmartPro backups
 /// are imported into isolated, persistent, read-only SQLite review tables.
@@ -17,6 +18,7 @@ class BackupCandidate {
   final Map<String,dynamic> meta;
   final Map<String,List<Map<String,dynamic>>>? nativeTables;
   bool get native => nativeTables!=null;
+  bool get legacy => format=='legacy-sqlite'||format=='legacy-sql';
   Map<String,int> get counts => (nativeTables??collections).map((k,v)=>MapEntry(k,v.length));
 }
 
@@ -207,6 +209,9 @@ class LocalBackupRestore {
       }finally{await source.close();}
     }
     final decoded=utf8.decode(bytes).replaceFirst('\uFEFF','');
+    if(LegacySqlDump.looksLike(decoded,name)){
+      return _legacy(name,bytes,hash,LegacySqlDump.parse(decoded),format:'legacy-sql');
+    }
     final root=object(jsonDecode(decoded));
     if(root['format']==nativeFormat){
       final payload=root['payload'];
@@ -305,7 +310,7 @@ class LocalBackupRestore {
     });
   }
 
-  BackupCandidate _legacy(String name,Uint8List bytes,String hash,Map<String,List<Map<String,dynamic>>> t){
+  BackupCandidate _legacy(String name,Uint8List bytes,String hash,Map<String,List<Map<String,dynamic>>> t,{String format='legacy-sqlite'}){
     final cur={for(final r in t['currencies']!)integer(r['id']):str(r['name'],'ريال')};
     final cashIds=t['cboxes']!.map((r)=>integer(r['id'])).toSet();
     String getCurrency(Object? id)=>cur[integer(id,1)]??'عملة غير معرّفة (${str(id)})';
@@ -322,9 +327,9 @@ class LocalBackupRestore {
     final groups={for(final r in t['boxes']!)integer(r['id']):r};
     final accounts=<Map<String,dynamic>>[];
     for(final r in t['customers']!){
-      final id=integer(r['id']),type=integer(r['type'],1),group=groups[type];
+      final id=integer(r['id']),type=integer(r['box_id']??r['type'],1),group=groups[type];
       accounts.add({'id':'legacy-acc-$id','name':str(r['name'],'حساب $id'),'category':category(str(group?['name']),type),
-        'phone':str(r['phone']).isEmpty?str(r['phon']):str(r['phone']),'creditLimit':numValue(r['lim']),'currency':getCurrency(group?['cur']??1),
+        'phone':str(r['phone']).isEmpty?str(r['phon']):str(r['phone']),'creditLimit':numValue(r['lim']),'currency':getCurrency(group?['cur']??group?['cur_id']??1),
         'isCashAccount':str(r['name']).contains('نقد')||str(r['name']).contains('صندوق'),'openingBalance':0,'openingDirection':'debit',
         'note':str(r['details']),'codeNumber':id,'sortOrder':id,if(group!=null)'groupId':type});
     }
@@ -406,9 +411,9 @@ class LocalBackupRestore {
     LegacyStockProjection.attach(inventory,ledger);
     final data=<String,List<Map<String,dynamic>>>{
       'accounts':accounts,'warehouses':warehouses,'inventory':inventory,'ledger':ledger,
-      'currencies':t['currencies']!.map((r)=><String,dynamic>{'id':r['id'],'code':r['name'],'name':r['name'],'symbol':r['sympol'],'ratePrimary':numValue(r['amount'],1),'rateSecondary':numValue(r['amount2'],1),'nameSecondary':str(r['name2'])}).toList(),
-      'accountGroups':groups.entries.map((e)=><String,dynamic>{'id':e.key,'name':str(e.value['name']),'category':category(str(e.value['name']),e.key),'currencyCode':getCurrency(e.value['cur']),'sortOrder':integer(e.value['ord'],e.key),'hasBill':flag(e.value['hasbill']),'isEmployee':flag(e.value['isemp']),'legacyId':e.key}).toList(),
-      'cashboxes':t['cboxes']!.map((r)=><String,dynamic>{'id':r['id'],'name':str(r['name']),'details':str(r['details']),'currencyCode':getCurrency(r['cur']),'isActive':integer(r['state'],1)==1,'state':integer(r['state'],1),'boxType':integer(r['type'],1),'sortOrder':integer(r['ord']),'legacyId':r['id']}).toList(),
+      'currencies':t['currencies']!.map((r)=><String,dynamic>{'id':integer(r['id']),'code':r['name'],'name':r['name'],'symbol':r['sympol'],'ratePrimary':numValue(r['amount'],1),'rateSecondary':numValue(r['amount2'],1),'nameSecondary':str(r['name2'])}).toList(),
+      'accountGroups':groups.entries.map((e)=><String,dynamic>{'id':e.key,'name':str(e.value['name']),'category':category(str(e.value['name']),e.key),'currencyCode':getCurrency(e.value['cur']??e.value['cur_id']),'sortOrder':integer(e.value['ord'],e.key),'hasBill':flag(e.value['hasbill']??e.value['has_bill']),'isEmployee':flag(e.value['isemp']??e.value['is_emp']),'legacyId':e.key}).toList(),
+      'cashboxes':t['cboxes']!.map((r)=><String,dynamic>{'id':integer(r['id']),'name':str(r['name']),'details':str(r['details']),'currencyCode':getCurrency(r['cur']),'isActive':integer(r['state'],1)==1,'state':integer(r['state'],1),'boxType':integer(r['type'],1),'sortOrder':integer(r['ord']),'legacyId':r['id']}).toList(),
     };
     // Preserve the source tables as structured historical records too. No raw
     // SQL is executed, and binary/unknown fields remain in the exact source file.
@@ -417,7 +422,7 @@ class LocalBackupRestore {
         for(final e in row.entries)if(e.value==null||e.value is String||e.value is num)e.key:e.value,
       }];
     }
-    return BackupCandidate(name,'legacy-sqlite',bytes,hash,data,{
+    return BackupCandidate(name,format,bytes,hash,data,{
       'workspace':{'companyName':'مراجعة النسخة القديمة','defaultCurrency':cur.values.isEmpty?'ريال':cur.values.first},
       'invoiceLines':detail.values.fold<int>(0,(s,l)=>s+l.length),'ambiguousMoves':ambiguous,'missingReferences':missing,
       'unknownCurrencies':unknownCurrencies,'orphanDetailBills':detail.keys.where((id)=>!seenMoves.contains(id)).length,
@@ -664,7 +669,7 @@ class LocalBackupRestore {
         return row;
       }).toList();
     }
-    if(source['source_format']=='legacy-sqlite'){
+    if(['legacy-sqlite','legacy-sql'].contains(source['source_format'])){
       // Also repair review archives created before stock projection was added.
       final raw=await txn.query('backup_review_rows',where:'sha = ? AND collection = ?',whereArgs:[hash,'ledger']);
       LegacyStockProjection.attach((data['inventory'] as List).cast<Map<String,dynamic>>(),raw.map((r)=>object(jsonDecode(r['row_json'] as String))));
