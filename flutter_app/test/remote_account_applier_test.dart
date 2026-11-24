@@ -11,8 +11,8 @@ void main() {
       final op = <String,dynamic>{
         'workspace_id':'w1','operation_type':'account.create',
         'payload': <String,dynamic>{
-          'id':'a1','name':'Account','category':'customer','phone':'',
-          'currency':'YER','note':'','openingDirection':'debit',
+          'id':'a1','name':'Account','category':'clients','phone':'',
+          'currency':'sar','note':'','openingDirection':'debit',
           'creditLimit':0,'openingBalance':0,'isCashAccount':0,'codeNumber':1,
         },
       };
