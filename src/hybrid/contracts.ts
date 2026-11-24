@@ -161,6 +161,7 @@ export interface HybridCapabilities {
   localAccountCreation?: boolean;
   localDocumentPosting?: boolean;
   localStockPosting?: boolean;
+  localCatalogEditing?: boolean;
 }
 
 export interface HybridWorkspaceSnapshot {

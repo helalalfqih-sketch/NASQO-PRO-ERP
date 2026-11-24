@@ -82,6 +82,7 @@ export class NasqoHybridBridge {
   private localAccountCreation = false;
   private localDocumentPosting = false;
   private localStockPosting = false;
+  private localCatalogEditing = false;
 
   constructor() {
     this.bindGlobalReceiver();
@@ -126,6 +127,10 @@ export class NasqoHybridBridge {
 
   setLocalStockPosting(enabled: boolean): void {
     this.localStockPosting = enabled;
+  }
+
+  setLocalCatalogEditing(enabled: boolean): void {
+    this.localCatalogEditing = enabled;
   }
 
   isReadOnlyFinancialMode(): boolean {
@@ -197,7 +202,9 @@ export class NasqoHybridBridge {
     }
 
     const isFinancial = isFinancialMutationCommand(action);
-    if (isFinancial && this.readOnlyFinancialMode && !(action === "saveAccount" && this.localAccountCreation) && !(action === "createLedgerEntry" && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
+    const catalogAction = this.localCatalogEditing && ["saveAccountGroup","saveCurrency","deleteCurrency","deleteAccount",
+      "updateInventoryItem","deleteInventoryItem","importInventoryItems","batchUpdateInventoryItems","saveWarehouse"].includes(action);
+    if (isFinancial && this.readOnlyFinancialMode && !catalogAction && !(action === "saveAccount" && this.localAccountCreation) && !(action === "createLedgerEntry" && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
         "في هذه الدفعة تبقى العمليات المالية للقراءة والعرض فقط؛ الترحيل يتم حصريًا عبر Flutter وSQLite.",
@@ -372,6 +379,7 @@ export class NasqoHybridBridge {
     this.localAccountCreation = false;
     this.localDocumentPosting = false;
     this.localStockPosting = false;
+    this.localCatalogEditing = false;
   }
 }
 

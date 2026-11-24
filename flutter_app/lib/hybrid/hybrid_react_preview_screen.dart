@@ -10,6 +10,7 @@ import '../screens/legacy_history_screen.dart';
 import '../screens/local_invoice_roles_screen.dart';
 import '../services/local_invoice_roles.dart';
 import '../services/local_workspace_settings.dart';
+import '../services/local_master_catalog.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -42,6 +43,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     updateAccount: (key,id,payload) => _saveAccount(key,payload,accountId:id),
     postDocument: _postDocument,
     createStockRecord: _createStockRecord,
+    manageCatalog: _manageCatalog,
     readInvoiceDetail: _readInvoiceDetail,
     pickBackup: _restoreBackup,
     openInvoiceRoles: _openInvoiceRoles,
@@ -76,6 +78,50 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
         .firstWhere((e) => e['id'] == id);
     return {'entry':entry,'snapshot':snapshot};
+  }
+
+  static Future<Map<String,dynamic>> _manageCatalog(String action,String key,Map<String,dynamic> p)async{
+    const workspace=HybridLocalSnapshotAdapter.workspaceId;
+    final master=LocalMasterCatalog(LocalDatabase.instance),stock=LocalStockCatalog(LocalDatabase.instance);
+    final result=<String,dynamic>{};
+    String? itemId,warehouseId;
+    switch(action){
+      case 'saveAccountGroup':
+        result['group']=await master.saveGroup(workspace,key,p['payload'] as Map<String,dynamic>);
+        break;
+      case 'saveCurrency':
+        await master.saveCurrency(workspace,key,p['payload'] as Map<String,dynamic>);
+        break;
+      case 'deleteCurrency':
+        await master.deleteCurrency(workspace,key,p['currencyId'] as int);
+        break;
+      case 'deleteAccount':
+        await master.deleteAccount(workspace,key,StockInvoiceCommands.identity(p['accountId']));
+        break;
+      case 'saveWarehouse':
+        warehouseId=await stock.createWarehouse(workspace,key,p['payload'] as Map<String,dynamic>,existingId:p['warehouseId'] as String);
+        break;
+      case 'updateInventoryItem':
+        itemId=StockInvoiceCommands.identity(p['itemId']);
+        await stock.updateItem(workspace,key,itemId,p['updates'] as Map<String,dynamic>);
+        break;
+      case 'deleteInventoryItem':
+        await stock.deleteItem(workspace,key,StockInvoiceCommands.identity(p['itemId']));
+        break;
+      case 'importInventoryItems':
+        result.addAll(await stock.importItems(workspace,key,p['items'] as List<dynamic>,p['mode'] as String));
+        break;
+      case 'batchUpdateInventoryItems':
+        await stock.batchUpdate(workspace,key,p['updates'] as List<dynamic>);
+        break;
+      default:throw ArgumentError('Unsupported catalog command');
+    }
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    result['snapshot']=snapshot;
+    if(action=='saveCurrency'||action=='deleteCurrency')result['currencies']=snapshot['currencies'];
+    if(warehouseId!=null)result['warehouse']=(snapshot['warehouses'] as List).firstWhere((r)=>r['id']==warehouseId);
+    if(itemId!=null)result['item']=(snapshot['inventory'] as List).firstWhere((r)=>r['id']==itemId);
+    return result;
   }
 
   static Future<Map<String,dynamic>> _createStockRecord(String action,String key,Map<String,dynamic> payload)async{

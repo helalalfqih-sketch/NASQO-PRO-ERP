@@ -17,6 +17,7 @@ class HybridReadOnlyProtocol {
     this.updateAccount,
     this.postDocument,
     this.createStockRecord,
+    this.manageCatalog,
     this.readInvoiceDetail,
     this.pickBackup,
     this.openInvoiceRoles,
@@ -31,6 +32,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
+  final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? manageCatalog;
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
@@ -216,6 +218,38 @@ class HybridReadOnlyProtocol {
       }
     }
 
+    const catalogActions={'saveAccountGroup','saveCurrency','deleteCurrency','deleteAccount',
+      'updateInventoryItem','deleteInventoryItem','importInventoryItems','batchUpdateInventoryItems','saveWarehouse'};
+    final rawCatalog=request['payload'];
+    final warehouseEdit=actionName=='saveWarehouse'&&rawCatalog is Map&&rawCatalog['warehouseId']!=null;
+    if(manageCatalog!=null&&catalogActions.contains(actionName)&&(actionName!='saveWarehouse'||warehouseEdit)){
+      final key=request['idempotencyKey'],p=rawCatalog;
+      if(key is! String||key.isEmpty||key.length>120||p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace')
+        return _error(id,actionName,'VALIDATION_ERROR','طلب إدارة البيانات غير صالح.');
+      final fields=switch(actionName){
+        'saveAccountGroup'||'saveCurrency'=>{'workspaceId','payload'},
+        'deleteCurrency'=>{'workspaceId','currencyId'},
+        'deleteAccount'=>{'workspaceId','accountId'},
+        'updateInventoryItem'=>{'workspaceId','itemId','updates'},
+        'deleteInventoryItem'=>{'workspaceId','itemId'},
+        'importInventoryItems'=>{'workspaceId','items','mode'},
+        'batchUpdateInventoryItems'=>{'workspaceId','updates'},
+        'saveWarehouse'=>{'workspaceId','payload','warehouseId'},
+        _=><String>{},
+      };
+      if(p.keys.any((k)=>!fields.contains(k))||!p.keys.toSet().containsAll(fields))
+        return _error(id,actionName,'VALIDATION_ERROR','حقول الطلب غير صالحة.');
+      try{
+        final result=await manageCatalog!(actionName!,key,p);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }on ArgumentError{
+        return _error(id,actionName,'VALIDATION_ERROR','تحقق من بيانات الحساب أو العملة أو الصنف.');
+      }on StateError catch(e){
+        return _error(id,actionName,'VALIDATION_ERROR',e.message.toString());
+      }catch(_){
+        return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تأكيد حفظ البيانات المحلية.');
+      }
+    }
     if ((actionName=='saveWarehouse'||actionName=='createInventoryItem') && createStockRecord!=null) {
       final params=request['payload'],key=request['idempotencyKey'];
       if(key is! String||key.isEmpty||key.length>120||params is! Map<String,dynamic>||

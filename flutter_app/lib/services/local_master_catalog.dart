@@ -49,7 +49,9 @@ class LocalMasterCatalog {
   static Future<void> requireLocal(Transaction t,String workspace)async{
     if(workspace!='local-erp-workspace')throw ArgumentError('Workspace mismatch');
     await LocalDatabase.requireLiveWorkspace(t);
-    if((await t.query('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding'])).isNotEmpty)
+    if((await t.query('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding'])).isNotEmpty||
+       (await t.query('sync_outbox',where:'acknowledged_at IS NOT NULL OR server_revision IS NOT NULL',limit:1)).isNotEmpty||
+       (await t.query('sync_state',limit:1)).isNotEmpty)
       throw StateError('Catalog changes require a local-only workspace');
   }
 

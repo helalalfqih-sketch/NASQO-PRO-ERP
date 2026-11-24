@@ -49,8 +49,8 @@ class LocalWorkspaceSettings {
   }
   static Future<void> attach(DatabaseExecutor db,Map<String,dynamic> snapshot)async{
     final saved=await read(db);
-    final ws=snapshot['workspace'] as Map<String,dynamic>;
-    ws.addAll(saved);
+    final ws=<String,dynamic>{...Map<String,dynamic>.from(snapshot['workspace'] as Map),...saved};
+    snapshot['workspace']=ws;
     snapshot['activeCurrency']=ws['defaultCurrency'];
   }
 }

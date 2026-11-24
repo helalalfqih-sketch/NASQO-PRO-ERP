@@ -130,6 +130,7 @@ function HybridRootApp() {
     hybridBridge.setLocalAccountCreation(snap.capabilities?.localAccountCreation === true);
     hybridBridge.setLocalDocumentPosting(snap.capabilities?.localDocumentPosting === true);
     hybridBridge.setLocalStockPosting(snap.capabilities?.localStockPosting === true);
+    hybridBridge.setLocalCatalogEditing(snap.capabilities?.localCatalogEditing === true);
     if (snap.uiPreferences) {
       hydrateUiPreferencesFromHost(snap.uiPreferences);
       if (snap.uiPreferences.themeMode) {

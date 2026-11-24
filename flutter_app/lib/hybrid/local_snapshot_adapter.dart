@@ -159,6 +159,7 @@ class HybridLocalSnapshotAdapter {
         'localAccountCreation': true,
         'localDocumentPosting': true,
         'localStockPosting': true,
+        'localCatalogEditing': true,
       },
       'activeRoute': 'dashboard',
       'activeCurrency': currencyLabel,
