@@ -205,7 +205,7 @@ class NativeCloudSession {
           validateKeys(args,{'uploadId'});
           final upload=_uploads.remove(args['uploadId']);
           if(upload==null||upload.bytes.length!=upload.size)throw ArgumentError('Incomplete upload');
-          if(!await confirm('رفع ملف إلى Drive','رفع '+upload.name+' إلى '+_drive!.email+'؟'))return {'cancelled':true};
+          if(!await confirm('رفع ملف إلى Drive','رفع '+upload.name+' إلى '+_drive!.email+(upload.existing==null?'؟':' مع استبدال الملف المحدد؟')))return {'cancelled':true};
           return await _upload(upload.bytes.takeBytes(),upload.name,upload.mime,parent:upload.parent,existing:upload.existing);
         default:
           throw const NativeCloudException('هذا الإجراء غير مفعّل في Drive المحلي.',code:'VALIDATION_ERROR');
