@@ -1,7 +1,9 @@
 FROM node:24.12-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# The checked-in lock currently lacks transitive entries; reconcile it in the build stage.
+# Restore npm ci after a reviewed, regenerated package-lock.json is committed.
+RUN npm install --include=dev --no-audit --no-fund
 COPY . .
 RUN npm run build
 RUN npm prune --omit=dev --no-audit --no-fund
