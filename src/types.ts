@@ -180,6 +180,7 @@ export type LedgerEntryRecord = {
   journalLines?: {accountId:string;debitMinor:number;creditMinor:number}[];
   stockPosting?: boolean;
   stockSale?: boolean;
+  stockCostMinor?: number;
   netBeforeTax?: number;
   originalInvoiceId?: string;
   returnedById?: string;

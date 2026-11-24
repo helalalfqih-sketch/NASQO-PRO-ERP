@@ -63,7 +63,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       :await catalog.createItem(HybridLocalSnapshotAdapter.workspaceId,key,payload);
     final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
     final row=(snapshot[warehouse?'warehouses':'inventory'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
-    return {warehouse?'warehouse':'item':row,'snapshot':snapshot};
+    return {(warehouse?'warehouse':'item'):row,'snapshot':snapshot};
   }
   static Future<Map<String,dynamic>> _readInvoiceDetail(String id)async{
     final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();

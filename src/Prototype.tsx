@@ -6043,6 +6043,11 @@ function InvoiceModal({
 
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
   const [localCounterpartId,setLocalCounterpartId] = useState(editingEntry?.counterpartAccountId ?? "");
+  const [localInventoryAccountId,setLocalInventoryAccountId] = useState("");
+  const [localCostAccountId,setLocalCostAccountId] = useState("");
+  const [localTaxAccountId,setLocalTaxAccountId] = useState("");
+  const [localTaxAmount,setLocalTaxAmount] = useState("");
+  const [localOriginalId,setLocalOriginalId] = useState("");
   const [content, setContent] = useState<"items" | "free">(initialContent);
   const [payment, setPayment] = useState<"cash" | "credit">(initialPayment);
   const [kind, setKind] = useState<"purchase" | "sale">(initialKind);
@@ -6114,6 +6119,7 @@ function InvoiceModal({
   useEffect(() => {
     if (!open) {
       setFormError(null);
+      draftNewEntryIdRef.current = "";
       return;
     }
     setFormError(null);
@@ -6265,7 +6271,11 @@ function InvoiceModal({
   const computedItemsTotal = validLines.reduce((sum, l) => sum + l.total, 0);
   const computedItemsDiscount = validLines.reduce((sum, l) => sum + (l.discount ?? 0), 0);
   const computedItemsQty = validLines.reduce((sum, l) => sum + l.quantity, 0);
-  const effectiveAmount = content === "items" && validLines.length > 0 ? computedItemsTotal : parseArabicNumber(amount);
+  const taxTotal = hybridLocal && content === "items" && !isReturn ? Math.max(0,parseArabicNumber(localTaxAmount)) : 0;
+  const effectiveAmount = content === "items" && validLines.length > 0
+    ? Math.round((computedItemsTotal + taxTotal)*100)/100 : parseArabicNumber(amount);
+  const eligibleLocalReturns = ctx.ledger.filter(e=>e.kind==="invoice" && e.stockPosting &&
+    !e.deleted && !e.returnedById && e.stockSale === (kind === "sale"));
 
   const applyParsedLegacyRows = () => {
     if (parsedLegacyRows.length === 0) return;
@@ -6424,6 +6434,21 @@ function InvoiceModal({
       }
     };
 
+    if (hybridLocal && isReturn && !editingEntry) {
+      const original=eligibleLocalReturns.find(e=>e.id===localOriginalId);
+      if(!original){focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر الفاتورة المخزنية الأصلية للمرتجع."});return;}
+      setSaving(true);setFormError(null);keyboard.hide();
+      try{
+        if(!draftNewEntryIdRef.current) draftNewEntryIdRef.current = "ret_"+Date.now()+"_"+Math.random().toString(36).slice(2,9);
+        const nextNum=maxNumericField(ctx.ledger,(e)=>e.entryNumber,1000)+1;
+        await createLedgerEntry(ctx.uid,{id:draftNewEntryIdRef.current,kind:"return",
+          originalInvoiceId:original.id,accountId:original.accountId,accountName:original.accountName,
+          entryNumber:nextNum,entryDate:entryDate.trim()||new Date().toISOString().slice(0,10)});
+        triggerHaptic("success");ctx.showToast("تم ترحيل المرتجع الكامل وعكس قيده ومخزونه");onClose();
+      }catch(err){setFormError({field:"submit",message:err instanceof Error?err.message:"تعذر حفظ المرتجع"});}
+      finally{setSaving(false);}
+      return;
+    }
     if (!selectedAccount) {
       focusInvalid(accountSelectRef.current, {
         field: "account",
@@ -6432,14 +6457,25 @@ function InvoiceModal({
       return;
     }
 
-    if (hybridLocal && (editingEntry || content !== "free" || payment !== "credit" ||
+    if (hybridLocal && (editingEntry || payment !== "credit" ||
         isReturn || intent === "quote" || intent === "order" ||
         !ctx.accounts.some(a => a.id === localCounterpartId && a.id !== selectedAccount.id &&
           a.currency === currency && !a.isCashAccount))) {
       focusInvalid(accountSelectRef.current, {
-        field:"submit",message:"الوضع المحلي يدعم حاليًا الفاتورة الحرة الآجلة الجديدة بحساب مقابل محدد.",
+        field:"submit",message:"الوضع المحلي يدعم الفواتير الآجلة الجديدة بحساب مقابل محدد.",
       });
       return;
+    }
+    if(hybridLocal && content==="items"){
+      const roleIds=[selectedAccount.id,localCounterpartId,
+        ...(kind==="sale"?[localInventoryAccountId,localCostAccountId]:[]),
+        ...(taxTotal>0?[localTaxAccountId]:[])];
+      if(currency!=="ريال" || !selectedWarehouse || roleIds.some(id=>!id) ||
+        new Set(roleIds).size!==roleIds.length || !validLines.length ||
+        validLines.some(l=>!l.inventoryItemId || !Number.isInteger(l.quantity) || l.unitNum!==1)){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن والحسابات المختلفة والأصناف بوحدتها الأساسية وكمية صحيحة؛ العملة المحلية ريال."});
+        return;
+      }
     }
     if (content === "free") {
       if (parseArabicNumber(amount) <= 0) {
@@ -6539,6 +6575,9 @@ function InvoiceModal({
         payment,
         direction,
         amount: effectiveAmount,
+        ...(hybridLocal && content==="items" ? {taxAmount:taxTotal,
+          ...(taxTotal>0?{taxAccountId:localTaxAccountId}:{}),
+          ...(kind==="sale"?{inventoryAccountId:localInventoryAccountId,costAccountId:localCostAccountId}:{})}:{}),
         settledOnReceipt: payment === "cash",
         currency,
         exchangeRate: parseArabicNumber(exchangeRate) || 1,
@@ -6798,8 +6837,8 @@ function InvoiceModal({
               addAccountAriaLabel="إضافة حساب للفاتورة"
               triggerRef={accountSelectRef}
             />
-            {hybridLocal && !editingEntry && <label className="invoice-field-box">
-              <span>الحساب المقابل (إيراد أو مصروف الخدمة)</span>
+            {hybridLocal && !editingEntry && !isReturn && <label className="invoice-field-box">
+              <span>{content==="items"?(kind==="sale"?"حساب إيراد المبيعات":"حساب أصل المخزون"):"الحساب المقابل (إيراد أو مصروف الخدمة)"}</span>
               <select aria-label="الحساب المقابل للفاتورة" value={localCounterpartId}
                 onChange={e=>setLocalCounterpartId(e.target.value)}>
                 <option value="">اختر الحساب المقابل</option>
@@ -6808,6 +6847,40 @@ function InvoiceModal({
               </select>
             </label>}
 
+            {hybridLocal && !editingEntry && isReturn && <label className="invoice-field-box">
+              <span>الفاتورة المخزنية الأصلية (مرتجع كامل)</span>
+              <select aria-label="الفاتورة الأصلية للمرتجع" value={localOriginalId} onChange={e=>setLocalOriginalId(e.target.value)}>
+                <option value="">اختر الفاتورة الأصلية</option>
+                {eligibleLocalReturns.map(e=><option key={e.id} value={e.id}>#{e.entryNumber} — {e.accountName} — {formatAmount(e.amount)}</option>)}
+              </select>
+              <small>يعكس المرتجع المحلي كامل القيد والكميات والضريبة الأصلية، دون الاعتماد على بقية حقول هذه الشاشة. يتطلب عدم وجود حركة لاحقة على الأصناف.</small>
+            </label>}
+            {hybridLocal && !editingEntry && !isReturn && content==="items" && <>
+              {kind==="sale" && <>
+                <label className="invoice-field-box"><span>حساب أصل المخزون</span>
+                  <select aria-label="حساب أصل المخزون" value={localInventoryAccountId} onChange={e=>setLocalInventoryAccountId(e.target.value)}>
+                    <option value="">اختر الحساب</option>
+                    {ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </label>
+                <label className="invoice-field-box"><span>حساب تكلفة البضاعة المباعة</span>
+                  <select aria-label="حساب تكلفة البضاعة المباعة" value={localCostAccountId} onChange={e=>setLocalCostAccountId(e.target.value)}>
+                    <option value="">اختر الحساب</option>
+                    {ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </label>
+              </>}
+              <label className="invoice-field-box"><span>قيمة الضريبة (اختياري)</span>
+                <KeyboardInput aria-label="قيمة ضريبة الفاتورة" value={localTaxAmount} onChange={e=>setLocalTaxAmount(e.target.value)} inputMode="decimal"/>
+              </label>
+              {taxTotal>0 && <label className="invoice-field-box"><span>{kind==="sale"?"حساب الضريبة المستحقة":"حساب الضريبة القابلة للاسترداد"}</span>
+                <select aria-label="حساب الضريبة" value={localTaxAccountId} onChange={e=>setLocalTaxAccountId(e.target.value)}>
+                  <option value="">اختر الحساب</option>
+                  {ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </label>}
+              <small>صافي الأصناف بعد الخصم + الضريبة = {formatAmount(effectiveAmount)} {currency}. يدعم البيع والشراء الآجل بوحدة أساسية كاملة.</small>
+            </>}
             {formError?.field === "account" ? (
               <div className="field-inline-error" role="alert" data-testid="invoice-account-error">
                 {formError.message}

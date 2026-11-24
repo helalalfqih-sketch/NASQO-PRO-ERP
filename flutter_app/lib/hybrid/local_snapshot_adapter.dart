@@ -35,7 +35,14 @@ class HybridLocalSnapshotAdapter {
         }
       }
       for(final item in originals.entries){
-        byId[item.key]?['returnedById']=item.value;
+        final original=byId[item.key];
+        if(original!=null) original['returnedById']=item.value;
+      }
+      for(final row in await txn.query('stock_posting_lines')){
+        final entry=byId[row['document_id']];
+        if(entry==null) continue;
+        final line=jsonDecode(row['line_json'] as String) as Map<String,dynamic>;
+        entry['stockCostMinor']=((entry['stockCostMinor'] as int?)??0)+(line['cost_minor'] as int);
       }
       return data;
     });

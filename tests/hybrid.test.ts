@@ -27,7 +27,7 @@ import {
   LOCAL_WORKSPACE_UID,
   refreshWorkspaceFromServer,
 } from "../src/hybrid/serviceAdapter";
-import { computeAccountGroupsSummary } from "../src/accounting";
+import { computeAccountGroupsSummary, computeAccountSummary, computeCategoryTotals, computeStatementRows, computeTrialBalanceReport } from "../src/accounting";
 import {
   DEFAULT_HOME_TILE_LAYOUT,
   isDefaultHomeTileLayout,
@@ -789,3 +789,31 @@ describe("Stage 2 Home Screen Batch 1 Requirements", () => {
   });
 });
 
+
+it("uses explicit journal legs for stock cost, tax and account reports",()=>{
+  const fixture=createSampleSnapshot();
+  const customer={...fixture.accounts[1],openingBalance:0};
+  const revenue={...fixture.accounts[0],id:"revenue",category:"sales" as const};
+  const tax={...revenue,id:"tax",category:"shop" as const};
+  const inventory={...revenue,id:"inventory",category:"shop" as const};
+  const cost={...revenue,id:"cost",category:"shop" as const};
+  const e={...fixture.ledger[0],id:"stock-sale",kind:"invoice" as const,
+    accountId:customer.id,counterpartAccountId:revenue.id,amount:31,direction:"debit" as const,
+    payment:"credit" as const,settledOnReceipt:false,deleted:false,stockPosting:true,stockSale:true,
+    netBeforeTax:28,stockCostMinor:1200,journalLines:[
+      {accountId:customer.id,debitMinor:3100,creditMinor:0},
+      {accountId:revenue.id,debitMinor:0,creditMinor:2800},
+      {accountId:tax.id,debitMinor:0,creditMinor:300},
+      {accountId:cost.id,debitMinor:1200,creditMinor:0},
+      {accountId:inventory.id,debitMinor:0,creditMinor:1200},
+    ]};
+  const accounts=[customer,revenue,tax,inventory,cost];
+  assert.equal(computeAccountSummary(revenue,[e]).creditTotal,28);
+  assert.equal(computeAccountSummary(tax,[e]).creditTotal,3);
+  assert.equal(computeStatementRows(cost,[e]).debitTotal,12);
+  assert.equal(computeCategoryTotals(accounts,[e]).shop.creditTotal,15);
+  const trial=computeTrialBalanceReport(accounts,[e],[]);
+  assert.equal(trial.netBalance,0);
+  assert.equal(trial.salesTotal,28);
+  assert.equal(trial.netProfit,16);
+});
