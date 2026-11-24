@@ -24,6 +24,21 @@ Map<String, dynamic> emptySnapshot() => {
 };
 
 void main() {
+  test('stock reconciliation opens only scoped local product and warehouse references',()async{
+    String? warehouse,product;
+    var calls=0;
+    final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),
+      openStockReconciliation:(w,p)async{warehouse=w;product=p;calls++;return true;});
+    Future<Map<String,dynamic>> invoke(Map<String,dynamic> payload)async=>
+      jsonDecode(await endpoint.handle(jsonEncode(request('openStockReconciliation',payload:payload)))) as Map<String,dynamic>;
+    expect((await invoke({'workspaceId':'other'}))['ok'],false);
+    expect((await invoke({'workspaceId':'local-erp-workspace','productId':7}))['ok'],false);
+    expect(calls,0);
+    final result=await invoke({'workspaceId':'local-erp-workspace','warehouseId':'legacy-wh-1','productId':'legacy-prod-2'});
+    expect(result['data']['changed'],true);
+    expect(warehouse,'legacy-wh-1');expect(product,'legacy-prod-2');
+  });
+
   test('native restore action accepts only workspace, no SQL or base64',()async{
     var picked=0,settings=0;
     final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),

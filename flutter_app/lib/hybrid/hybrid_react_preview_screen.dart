@@ -130,8 +130,11 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       throw StateError('Local imported workspace required');
     _stockReconciliationOpen=true;
     try{
-      return await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockOpeningScreen(
-        initialWarehouseId:warehouse,initialProductId:product)))==true;
+      await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockOpeningScreen(
+        initialWarehouseId:warehouse,initialProductId:product)));
+      // A system back gesture can return null even after a saved count.
+      // Always refresh the snapshot; no changes are inferred from navigation.
+      return true;
     }finally{_stockReconciliationOpen=false;}
   }
 

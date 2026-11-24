@@ -162,7 +162,7 @@ class LegacyOperationalRestore {
         if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
         final keys=c=='accounts'?['groupId','sortOrder']:c=='warehouses'?['codeNumber']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate']:['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId'];
         for(final key in keys){if(old[key]!=null)row[key]=old[key];}
-        if(c=='inventory'&&opening==null||c=='inventory'&&opening?['source_item_id']==row['id']){
+        if(c=='inventory'&&(opening==null||opening['source_item_id']==row['id'])){
           final sourceId=row['id'];
           final invoices=projected[sourceId]??<String,num>{};
           final transfers=transferComplete?(transferNets[sourceId] as Map<String,num>? ??<String,num>{}):<String,num>{};

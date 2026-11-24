@@ -6317,7 +6317,7 @@ function InvoiceModal({
       void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{
         workspaceId:ctx.uid,warehouseId,productId:item.legacySourceItemId ?? item.id,
       }).then(async result=>{
-        if(result?.changed){await refreshWorkspaceFromServer(ctx.uid);ctx.showToast("تم تحديث المخزون؛ اختر الصنف المعتمد");}
+        if(result?.changed){await refreshWorkspaceFromServer(ctx.uid);ctx.showToast("تم تحديث قائمة الأصناف؛ اختر الرصيد المعتمد إن وجد");}
       }).catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون"));
       return;
     }

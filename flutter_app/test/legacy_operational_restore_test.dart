@@ -102,7 +102,12 @@ void main(){
       expect(archive['source_trans_details'],hasLength(1));
       final opening=LegacyStockOpening(local);
       final counted=await opening.load();
+      expect(counted['sourceSha'],candidate.sha);
       expect((counted['products'] as List).single['legacyTransferNetByWarehouse'],{'legacy-wh-1':-18,'legacy-wh-2':18});
+      final initialStock=(view['inventory'] as List).single;
+      expect(initialStock['legacyHistoricalQtyByWarehouse'],{'legacy-wh-1':-49,'legacy-wh-2':-6});
+      expect(initialStock['quantity'],0);
+      expect(initialStock['legacyStockPending'],true);
       // Simulate an older activated archive that has the original source but
       // no structured transfer rows. Recovery is read-only.
       await db.delete('legacy_operational_rows',where:'collection = ?',whereArgs:['source_trans_details']);
@@ -117,10 +122,12 @@ void main(){
         'offsetAccountId':b,'quantity':10,'totalValue':30,'entryDate':'2026-11-24','evidence':'Synthetic count','confirmed':true};
       final secondReq=<String,dynamic>{...req,'warehouseId':'legacy-wh-2','quantity':4.5,'totalValue':22.5};
       final beforeBatch=await backup.exportNative();
+      await expectLater(opening.approveBatch(w,[req],expectedSourceSha:'stale-source'),throwsStateError);
+      expect(await backup.exportNative(),orderedEquals(beforeBatch));
       await expectLater(opening.approveBatch(w,[req,{...secondReq,'totalValue':0}]),throwsArgumentError);
       expect(await backup.exportNative(),orderedEquals(beforeBatch));
       await expectLater(opening.approveBatch(w,[req,req]),throwsArgumentError);
-      final batchIds=await opening.approveBatch(w,[req,secondReq]);
+      final batchIds=await opening.approveBatch(w,[req,secondReq],expectedSourceSha:candidate.sha);
       expect(batchIds,hasLength(2));
       expect(batchIds.first,'legacy-prod-1');
       final second=batchIds.last;
@@ -212,6 +219,9 @@ void main(){
       expect(((await roles.load())['roles'] as Map)['sar']['revenue'],'legacy-acc-2');
       final snap=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((snap['inventory'] as List).firstWhere((e)=>e['id']==second)['legacySourceItemId'],'legacy-prod-1');
+      final master=(snap['inventory'] as List).firstWhere((e)=>e['id']=='legacy-prod-1');
+      expect(master['legacyStockPending'],false);
+      expect(master['legacyHistoricalQtyByWarehouse'],isEmpty);
 
       final sql=await File('${dir.path}/legacy.sql').writeAsString("""
 INSERT INTO currencies(id,name,amount) VALUES(1,'ريال',1);
