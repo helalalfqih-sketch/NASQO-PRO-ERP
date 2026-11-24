@@ -73,7 +73,7 @@ void main(){
       expect(row['documentNumber'],'NEW');
       expect(await db.query('stock_movements'),isEmpty);
     }finally{
-      await local.close();
+      await db.close();
       await dir.delete(recursive:true);
     }
   });
