@@ -79,6 +79,7 @@ export class NasqoHybridBridge {
   private boundToWindow = false;
   private boundNasqoHomeRef: Window["NasqoHome"] | null = null;
   private readOnlyFinancialMode = false;
+  private localAccountCreation = false;
 
   constructor() {
     this.bindGlobalReceiver();
@@ -111,6 +112,10 @@ export class NasqoHybridBridge {
    */
   setReadOnlyFinancialMode(enabled: boolean): void {
     this.readOnlyFinancialMode = enabled;
+  }
+
+  setLocalAccountCreation(enabled: boolean): void {
+    this.localAccountCreation = enabled;
   }
 
   isReadOnlyFinancialMode(): boolean {
@@ -182,7 +187,7 @@ export class NasqoHybridBridge {
     }
 
     const isFinancial = isFinancialMutationCommand(action);
-    if (isFinancial && this.readOnlyFinancialMode) {
+    if (isFinancial && this.readOnlyFinancialMode && !(action === "saveAccount" && this.localAccountCreation && !(payload as HybridCommandPayloadMap["saveAccount"]).accountId)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
         "في هذه الدفعة تبقى العمليات المالية للقراءة والعرض فقط؛ الترحيل يتم حصريًا عبر Flutter وSQLite.",
@@ -354,6 +359,7 @@ export class NasqoHybridBridge {
     this.eventListeners.clear();
     this.customTransport = null;
     this.readOnlyFinancialMode = false;
+    this.localAccountCreation = false;
   }
 }
 
