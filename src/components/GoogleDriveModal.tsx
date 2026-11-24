@@ -50,6 +50,8 @@ import { formatNasqoBackupFilename } from "../utils/backupFormat";
 import { describeGoogleDriveConnectError } from "../utils/googleDriveAuthError";
 import { triggerHaptic } from "../utils/haptics";
 import { GoogleSignInButton } from "./GoogleSignInButton";
+import { connectNativeDrive, nativeDriveMarker, nativeDriveCall, refreshNativeDrive, disconnectNativeDrive } from "../hybrid/cloudSession";
+const nativeDrive=import.meta.env.VITE_NASQO_HYBRID === "1";
 
 interface GoogleDriveModalProps {
   open: boolean;
@@ -164,11 +166,17 @@ export function GoogleDriveModal({
 
   useEffect(() => {
     if (!open) return;
-    const token = getGoogleAccessToken();
-    setAccessToken(token);
-    if (token) {
-      void loadDriveContents(token, currentFolder.id);
-    }
+    let active=true;
+    const refresh=async()=>{
+      try{
+        const token=nativeDrive?await refreshNativeDrive():getGoogleAccessToken();
+        if(!active)return;
+        setAccessToken(token);
+        if(token)await loadDriveContents(token,currentFolder.id);
+      }catch(err){if(active)setErrorMsg(err instanceof Error?err.message:"تعذر قراءة جلسة Drive.");}
+    };
+    void refresh();
+    return ()=>{active=false;};
   }, [open, currentFolder.id, loadDriveContents]);
 
   const handleClose = () => {
@@ -178,17 +186,20 @@ export function GoogleDriveModal({
     onClose();
   };
 
-  const handleAuthorizeDrive = async () => {
+  const handleAuthorizeDrive = async (chooseAccount=false) => {
     keyboard.hide();
     setBusyAction("auth");
     setErrorMsg(null);
     try {
       await runWithBrandLoader("جاري ربط حساب Google Drive...", async () => {
-        const { accessToken: freshToken } = await connectGoogleDrive();
+        const freshToken = nativeDrive
+          ? (await connectNativeDrive(chooseAccount),nativeDriveMarker()!)
+          : (await connectGoogleDrive()).accessToken;
         setAccessToken(freshToken);
+        if(chooseAccount)setBreadcrumbs([{id:null,name:"ملفات نسق برو (Drive)"}]);
         triggerHaptic("success");
         onNotify("تم ربط حساب Google Drive بنجاح");
-        await loadDriveContents(freshToken, currentFolder.id);
+        await loadDriveContents(freshToken, chooseAccount?null:currentFolder.id);
       });
     } catch (err) {
       triggerHaptic("warning");
@@ -238,17 +249,19 @@ export function GoogleDriveModal({
         const filename = formatNasqoBackupFilename();
         const targetParentId =
           currentFolder.id ?? (await findOrCreateDriveFolder(accessToken, "NASQO Pro Backups")).id;
-        const jsonContent = buildBackupPayloadJson(filename);
-        await uploadFileToDrive(accessToken, {
-          name: filename,
-          content: jsonContent,
-          mimeType: "application/json",
-          parentId: targetParentId,
-          description: "نسخة احتياطية كاملة لبيانات نسقو برو ERP",
-        });
-        onBackupUploaded?.(filename);
+        let savedName=filename;
+        if(nativeDrive){
+          const saved=await nativeDriveCall<{id?:string;name?:string;cancelled?:boolean}>("backupNative",{name:filename,parentId:targetParentId});
+          if(saved.cancelled)return;
+          if(!saved.id)throw new Error("لم يتأكد رفع النسخة الاحتياطية.");
+          savedName=saved.name??filename;
+        }else{
+          const jsonContent=buildBackupPayloadJson(filename);
+          await uploadFileToDrive(accessToken,{name:filename,content:jsonContent,mimeType:"application/json",parentId:targetParentId,description:"نسخة احتياطية كاملة لبيانات نسقو برو ERP"});
+        }
+        onBackupUploaded?.(savedName);
         triggerHaptic("success");
-        onNotify(`تم حفظ النسخة الاحتياطية في Google Drive: ${filename}`);
+        onNotify(`تم حفظ النسخة الاحتياطية في Google Drive: ${savedName}`);
         await loadDriveContents(accessToken, currentFolder.id);
       });
     } catch (err) {
@@ -285,6 +298,18 @@ export function GoogleDriveModal({
     }
   };
 
+  const handleNativeUpload=async()=>{
+    if(!accessToken||busyAction!==null)return;
+    setBusyAction("upload");setErrorMsg(null);
+    try{
+      const result=await nativeDriveCall<{id?:string;name?:string;cancelled?:boolean}>("uploadLocal",{parentId:currentFolder.id});
+      if(result.cancelled)return;
+      if(!result.id)throw new Error("لم يتأكد رفع الملف.");
+      onNotify("تم رفع الملف إلى Google Drive");
+      await loadDriveContents(accessToken,currentFolder.id);
+    }catch(err){setErrorMsg(err instanceof Error?err.message:"تعذر رفع الملف.");}
+    finally{setBusyAction(null);}
+  };
   const handleDownloadFile = async (file: DriveFileRecord) => {
     if (!accessToken) return;
     keyboard.hide();
@@ -292,6 +317,11 @@ export function GoogleDriveModal({
     setErrorMsg(null);
     try {
       await runWithBrandLoader(`جاري تنزيل «${file.name}» من Google Drive...`, async () => {
+        if(nativeDrive){
+          const result=await nativeDriveCall<{completed:boolean;name:string}>("saveFile",{fileId:file.id});
+          if(result.completed)onNotify("تم حفظ "+result.name);
+          return;
+        }
         const { bytes, downloadName, mimeType } = await downloadDriveFileBytes(accessToken, file);
         triggerBrowserBytesDownload(downloadName, bytes, mimeType);
         triggerHaptic("success");
@@ -325,10 +355,26 @@ export function GoogleDriveModal({
     try {
       await runWithBrandLoader(actionLabel, async () => {
         if (action.kind === "restore") {
+          if(nativeDrive){
+            const result=await nativeDriveCall<{completed:boolean}>("restoreNative",{fileId:action.file.id});
+            setPendingConfirm(null);
+            if(result.completed)window.location.reload();
+            return;
+          }
           const { bytes } = await downloadDriveFileBytes(accessToken, action.file);
           await onRestoreBackupBytes(bytes, action.file.name);
           setPendingConfirm(null);
         } else if (action.kind === "overwrite") {
+          if(nativeDrive){
+            const result=await nativeDriveCall<{id?:string;name?:string;cancelled?:boolean}>("overwriteNative",{fileId:action.file.id,name:action.file.name});
+            if(result.cancelled){setPendingConfirm(null);return;}
+            if(!result.id)throw new Error("لم يتأكد تحديث النسخة.");
+            onBackupUploaded?.(result.name??action.file.name);
+            setPendingConfirm(null);
+            onNotify("تم تحديث نسخة Drive");
+            await loadDriveContents(accessToken,currentFolder.id);
+            return;
+          }
           const updatedJson = buildBackupPayloadJson(action.file.name);
           await updateDriveFileContent(accessToken, action.file.id, {
             name: action.file.name,
@@ -342,7 +388,10 @@ export function GoogleDriveModal({
           setPendingConfirm(null);
           await loadDriveContents(accessToken, currentFolder.id);
         } else if (action.kind === "trash") {
-          await trashDriveFile(accessToken, action.file.id);
+          if(nativeDrive){
+            const result=await nativeDriveCall<{completed?:boolean;cancelled?:boolean}>("trashFile",{fileId:action.file.id});
+            if(!result.completed){setPendingConfirm(null);return;}
+          }else await trashDriveFile(accessToken, action.file.id);
           triggerHaptic("warning");
           onNotify(`تم نقل «${action.file.name}» إلى سلة مهملات Drive`);
           setPendingConfirm(null);
@@ -485,17 +534,22 @@ export function GoogleDriveModal({
                 <button
                   type="button"
                   className="gdrive-chip-action"
-                  onClick={() => void handleAuthorizeDrive()}
-                  disabled={busyAction === "auth"}
+                  onClick={() => void handleAuthorizeDrive(true)}
+                  disabled={busyAction !== null || loading}
                 >
                   تبديل الحساب
                 </button>
                 <button
                   type="button"
                   className="gdrive-chip-action danger"
+                  disabled={busyAction !== null || loading}
                   onClick={() => {
-                    clearGoogleAccessToken();
-                    onNotify("تم فصل جلسة Google Drive");
+                    if(nativeDrive){
+                      void disconnectNativeDrive().then(()=>onNotify("تم فصل جلسة Google Drive")).catch(e=>setErrorMsg(e instanceof Error?e.message:"تعذر فصل Drive."));
+                    }else{
+                      clearGoogleAccessToken();
+                      onNotify("تم فصل جلسة Google Drive");
+                    }
                   }}
                 >
                   فصل
@@ -518,7 +572,7 @@ export function GoogleDriveModal({
                 type="button"
                 className="gdrive-action-btn"
                 disabled={busyAction !== null}
-                onClick={() => uploadInputRef.current?.click()}
+                onClick={() => nativeDrive ? void handleNativeUpload() : uploadInputRef.current?.click()}
                 data-testid="gdrive-upload-file-btn"
               >
                 <PlusIcon />
@@ -709,7 +763,7 @@ export function GoogleDriveModal({
                             </>
                           ) : null}
 
-                          {file.webViewLink ? (
+                          {!nativeDrive && file.webViewLink ? (
                             <a
                               className="gdrive-row-btn"
                               href={file.webViewLink}
@@ -758,7 +812,7 @@ export function GoogleDriveModal({
               </div>
               <p>
                 {pendingConfirm.kind === "restore"
-                  ? `سيتم تنزيل «${pendingConfirm.file.name}» من Google Drive ودمج بياناتها في مساحة عمل نسقو برو الحالية.`
+                  ? nativeDrive ? `سيتم تنزيل «${pendingConfirm.file.name}» ثم فحصها واستعادتها محليًا بعد تأكيدك وحفظ نسخة أمان من قاعدة العمل.` : `سيتم تنزيل «${pendingConfirm.file.name}» من Google Drive ودمج بياناتها في مساحة عمل نسقو برو الحالية.`
                   : pendingConfirm.kind === "overwrite"
                     ? `سيتم استبدال محتوى الملف «${pendingConfirm.file.name}» على Google Drive بأحدث بيانات قاعدة البيانات الحالية.`
                     : pendingConfirm.kind === "delete"
@@ -774,7 +828,7 @@ export function GoogleDriveModal({
                 >
                   إلغاء
                 </button>
-                {pendingConfirm.kind === "trash" ? (
+                {!nativeDrive && pendingConfirm.kind === "trash" ? (
                   <button
                     type="button"
                     className="ref-btn orange"

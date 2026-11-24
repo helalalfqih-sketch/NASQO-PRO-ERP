@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent } from "react";
+import { HybridCloudAccount, HybridLocalTools } from "./HybridCloudAccount";
 import {
   FilePlusIcon,
   FileTextIcon,
@@ -1805,6 +1806,10 @@ export function SystemSettingsPage({
               </section>
             ) : null}
 
+            {import.meta.env.VITE_NASQO_HYBRID === "1" ? <>
+              <HybridCloudAccount onNotify={onNotify} onOpenGoogleDrive={onOpenGoogleDrive}/>
+              <HybridLocalTools uid={uid} onNotify={onNotify}/>
+            </> : null}
             <section className="sys-card">
               <div className="sys-card-heading">الجلسة والإرشادات</div>
               <div className="sys-faq-row" style={{ justifyContent: "space-between", display: "flex", alignItems: "center" }}>
@@ -1823,7 +1828,7 @@ export function SystemSettingsPage({
                     onSignOut();
                   }}
                 >
-                  تسجيل الخروج
+                  {import.meta.env.VITE_NASQO_HYBRID === "1" ? "تسجيل الخروج من Google" : "تسجيل الخروج"}
                 </button>
               </div>
               {faqOpen ? (

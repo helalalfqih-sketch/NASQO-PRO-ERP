@@ -268,6 +268,7 @@ import { OutlinedAmountField } from "./components/OutlinedAmountField";
 import { GlobalNasqoBrandLoader, NasqoBrandLoader } from "./components/NasqoBrandLoader";
 import { runWithBrandLoader } from "./utils/brandLoaderBus";
 import { hybridBridge } from "./hybrid/bridge";
+import { nativeDriveCall } from "./hybrid/cloudSession";
 import { outputNativeDocument, shareNativeText, usesNativeDocumentOutput } from "./hybrid/documentOutput";
 import { useHybridPresentation } from "./hybrid/presentationAdapter";
 import type { HybridUiPreferences } from "./hybrid/contracts";
@@ -1757,6 +1758,16 @@ export function AuthenticatedWorkspace({
       await runWithLoader("جاري رفع النسخة الاحتياطية إلى Google Drive...", async () => {
         const exportedAtIso = new Date().toISOString();
         const fileName = buildLocalBackupDownloadName(backupName);
+        if (hybrid.isHybrid) {
+          const token=getGoogleAccessToken()??(await connectGoogleDrive()).accessToken;
+          const folder=await findOrCreateDriveFolder(token,"NASQO Pro Backups");
+          const saved=await nativeDriveCall<{id?:string;name?:string;cancelled?:boolean}>("backupNative",{name:fileName,parentId:folder.id});
+          if(saved.cancelled)return;
+          if(!saved.id)throw new Error("لم يتأكد حفظ نسخة Drive.");
+          const iso=recordLastBackupNow(exportedAtIso);setLastBackupIso(iso);
+          showToast(`تم حفظ النسخة في Google Drive: ${saved.name??fileName}`);
+          return;
+        }
         let token = getGoogleAccessToken();
         if (!token) {
           const authResult = await connectGoogleDrive();
@@ -1813,6 +1824,7 @@ export function AuthenticatedWorkspace({
       showToast,
       user.uid,
       warehouses.length,
+      hybrid.isHybrid,
     ],
   );
 
@@ -2068,12 +2080,17 @@ export function AuthenticatedWorkspace({
 
   const handleSignOut = useCallback(async () => {
     setDrawerOpen(false);
+    if(hybrid.isHybrid){
+      try{await signOutUser();showToast("تم تسجيل الخروج من Google؛ قاعدة العمل المحلية محفوظة.");}
+      catch(err){showToast(err instanceof Error?err.message:"تعذر تسجيل الخروج.");}
+      return;
+    }
     if (user.uid === LOCAL_WORKSPACE_UID) {
       onLocalSignOut();
       return;
     }
     await signOutUser();
-  }, [onLocalSignOut, user.uid]);
+  }, [onLocalSignOut, user.uid,hybrid.isHybrid,showToast]);
 
   const syncing = !(syncFlags.accounts && syncFlags.ledger && syncFlags.inventory);
 
@@ -2798,6 +2815,7 @@ export function AuthenticatedWorkspace({
           onBackupUploaded={(fileName) => {
             const savedIso = recordLastBackupNow();
             setLastBackupIso(savedIso);
+            if(hybrid.isHybrid)return;
             void createCloudBackupRecord(user.uid, {
               name: fileName,
               accountsCount: accounts.length,
