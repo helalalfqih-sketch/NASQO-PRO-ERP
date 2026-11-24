@@ -2,6 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nasqo_pro_erp/services/native_cloud_session.dart';
 
 void main(){
+  test('cloud input validation rejects malformed and oversized identifiers',(){
+    for(final value in [null, 123, '', '   ', 'a\n b', List.filled(65,'a').join()]){
+      expect(()=>NativeCloudSession.boundedText(value,max:64),throwsA(isA<NativeCloudException>()));
+    }
+    expect(NativeCloudSession.boundedText(' session-123 ',max:64),'session-123');
+    expect(()=>NativeCloudSession.validateKeys({'unexpected':true},{'uploadId'}),throwsA(isA<NativeCloudException>()));
+    expect(()=>NativeCloudSession.validateKeys({'uploadId':'session-123'},{'uploadId'}),returnsNormally);
+  });
+
   test('native Drive sessions fail closed without user authorization',()async{
     var actions=0;
     final session=NativeCloudSession(
