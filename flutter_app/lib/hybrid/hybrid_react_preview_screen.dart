@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -12,6 +13,7 @@ import '../services/local_invoice_roles.dart';
 import '../services/local_workspace_settings.dart';
 import '../services/local_master_catalog.dart';
 import '../services/local_inventory_reports.dart';
+import '../services/local_document_output.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -36,6 +38,7 @@ class HybridReactPreviewScreen extends StatefulWidget {
 }
 
 class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
+  final _documentOutput=LocalDocumentOutput();
   late final HybridReadOnlyProtocol _protocol = HybridReadOnlyProtocol(
     readSnapshot: HybridLocalSnapshotAdapter.readFromDevice,
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
@@ -48,6 +51,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     readInventoryReport: _readInventoryReport,
     readProductPriceStats: _readProductPriceStats,
     readInvoiceDetail: _readInvoiceDetail,
+    documentOutput: _documentOutput.handle,
+    printCurrentPage: _printCurrentPage,
+    shareText: _shareText,
     pickBackup: _restoreBackup,
     openInvoiceRoles: _openInvoiceRoles,
     openStockReconciliation: _openStockReconciliation,
@@ -409,6 +415,19 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     if(mounted)setState((){_review=false;_viewGeneration++;});
   }
 
+  Future<bool> _printCurrentPage(String title)async{
+    final channel=_channel;
+    if(!mounted||channel==null||_backupBusy)throw StateError('Print unavailable');
+    return await channel.invokeMethod<bool>('printCurrentPage',title)==true;
+  }
+
+  static Future<Map<String,dynamic>> _shareText(Map<String,dynamic> p)async{
+    final result=await const MethodChannel('nasqo/document_output').invokeMapMethod<String,dynamic>('shareText',{
+      'title':p['title'],'text':p['text'],if(p['phone']!=null)'phone':p['phone']});
+    if(result==null||result['opened']!=true)throw StateError('Share unavailable');
+    return result;
+  }
+
   MethodChannel? _channel;
   String? _error;
 
@@ -441,6 +460,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   @override
   void dispose() {
     _channel?.setMethodCallHandler(null);
+    unawaited(_documentOutput.dispose());
     super.dispose();
   }
 

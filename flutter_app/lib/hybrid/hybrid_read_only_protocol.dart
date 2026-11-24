@@ -21,6 +21,9 @@ class HybridReadOnlyProtocol {
     this.readInventoryReport,
     this.readProductPriceStats,
     this.readInvoiceDetail,
+    this.documentOutput,
+    this.printCurrentPage,
+    this.shareText,
     this.pickBackup,
     this.openInvoiceRoles,
     this.openStockReconciliation,
@@ -38,6 +41,9 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? readInventoryReport;
   final Future<Map<String,dynamic>> Function(String)? readProductPriceStats;
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
+  final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? documentOutput;
+  final Future<bool> Function(String)? printCurrentPage;
+  final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? shareText;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
   final Future<bool> Function(String?,String?)? openStockReconciliation;
@@ -70,6 +76,40 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    const outputActions=['beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport'];
+    if(actionName!=null&&outputActions.contains(actionName)&&documentOutput!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>)return _error(id,actionName,'VALIDATION_ERROR','بيانات المستند غير صالحة.');
+      try{
+        final result=await documentOutput!(actionName,p);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'VALIDATION_ERROR','تعذر تجهيز المستند المحلي أو حفظه. تحقق من المساحة والصيغة.');}
+    }
+    if((actionName=='printDocument'||actionName=='exportPdf')&&printCurrentPage!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.keys.any((k)=>!['title','kind','filename','accountId','entryId','allCurrencies'].contains(k))||
+          p['title'] is! String||(p['title'] as String).isEmpty||(p['title'] as String).length>160||
+          !['statement','invoice','inventory','purchases','trial-balance','report'].contains(p['kind'])||
+          (p['allCurrencies']!=null&&p['allCurrencies'] is! bool))
+        return _error(id,actionName,'VALIDATION_ERROR','طلب الطباعة غير صالح.');
+      try{
+        final opened=await printCurrentPage!(p['title'] as String);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
+          'ok':true,'data':{'opened':opened,'visiblePageOnly':true}});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح معاينة طباعة Android.');}
+    }
+    if(actionName=='shareText'&&shareText!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.keys.any((k)=>!['workspaceId','title','text','phone'].contains(k))||
+          p['workspaceId']!='local-erp-workspace'||p['title'] is! String||(p['title'] as String).length>200||
+          p['text'] is! String||(p['text'] as String).isEmpty||(p['text'] as String).length>12000||
+          (p['phone']!=null&&(p['phone'] is! String||!RegExp(r'^[0-9]{7,15}$').hasMatch(p['phone'] as String))))
+        return _error(id,actionName,'VALIDATION_ERROR','بيانات المشاركة غير صالحة.');
+      try{
+        final result=await shareText!(p);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح المشاركة على الهاتف.');}
     }
     if(actionName=='openStockReconciliation'&&openStockReconciliation!=null){
       final p=request['payload'];

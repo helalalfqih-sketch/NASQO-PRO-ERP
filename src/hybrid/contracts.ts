@@ -41,6 +41,11 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "openAccountStatement",
   "printDocument",
   "exportPdf",
+  "beginDocumentExport",
+  "appendDocumentExport",
+  "finishDocumentExport",
+  "abortDocumentExport",
+  "shareText",
   "pickFile",
   "restoreLocalBackup",
   "openInvoiceRoles",
@@ -232,6 +237,11 @@ export interface HybridCommandPayloadMap {
   openAccountStatement: { accountId: string; currency?: string };
   printDocument: HybridPrintPayload;
   exportPdf: HybridExportPdfPayload;
+  beginDocumentExport: { workspaceId: string; fileName: string; mimeType: string; sizeBytes: number; mode: 'save' | 'share' };
+  appendDocumentExport: { workspaceId: string; exportId: string; offset: number; base64: string };
+  finishDocumentExport: { workspaceId: string; exportId: string };
+  abortDocumentExport: { workspaceId: string; exportId: string };
+  shareText: { workspaceId: string; title: string; text: string; phone?: string };
   pickFile: HybridPickFileRequest;
   restoreLocalBackup: { workspaceId: string };
   openInvoiceRoles: { workspaceId: string };

@@ -798,7 +798,7 @@ class LocalBackupRestore {
       'workspace':{'id':'local-erp-workspace','ownerId':'local-erp-workspace','companyName':str(ws['companyName']),
         'defaultCurrency':str(ws['defaultCurrency'],'ريال'),'whatsappProvider':'nasqo','whatsappInstantEnabled':false,'whatsappPhone':''},
       'capabilities':{'offlineReady':true,'readOnlyFinancial':true,'filePickerSupported':true,
-        'printingSupported':false,'pdfExportSupported':false,'googleDriveConfigured':false,'whatsappShareSupported':false},
+        'printingSupported':true,'pdfExportSupported':true,'googleDriveConfigured':false,'whatsappShareSupported':true},
       'snapshotVersion':1,'activeCurrency':str(ws['defaultCurrency'],'ريال'),'backupReview':true};
   }
   static Future<Map<String,dynamic>?> reviewInvoice(DatabaseExecutor txn,String id)async{

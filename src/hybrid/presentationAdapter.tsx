@@ -100,13 +100,13 @@ export function createFlutterPresentationAdapter(
     },
     printDocument: async (payload) => {
       if (!hybridBridge.hasNativeTransport()) return false;
-      await hybridBridge.invoke("printDocument", payload);
-      return true;
+      const result=await hybridBridge.invoke<"printDocument",{opened:boolean}>("printDocument", payload);
+      return result.opened===true;
     },
     exportPdf: async (payload) => {
       if (!hybridBridge.hasNativeTransport()) return false;
-      await hybridBridge.invoke("exportPdf", payload);
-      return true;
+      const result=await hybridBridge.invoke<"exportPdf",{opened:boolean}>("exportPdf", payload);
+      return result.opened===true;
     },
     exportLocalBackup: async (name) => {
       const result=await hybridBridge.invoke<"backupWorkspace",{saved:boolean}>("backupWorkspace",
