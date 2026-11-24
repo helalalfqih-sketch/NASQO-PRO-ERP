@@ -216,6 +216,7 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
           Text('المحدد: ${selected.length} • القيمة: ${total.toStringAsFixed(2)} ريال'),
           if(error!=null)Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error)),
           FilledButton(onPressed:busy||selected.isEmpty?null:()async{
+            setState(()=>confirmed=false);
             final proceed=await showModalBottomSheet<bool>(context:context,isScrollControlled:true,builder:(ctx)=>StatefulBuilder(
               builder:(context,setSheet)=>Directionality(textDirection:TextDirection.rtl,child:SafeArea(child:Padding(
                 padding:EdgeInsets.fromLTRB(16,16,16,16+MediaQuery.of(context).viewInsets.bottom),

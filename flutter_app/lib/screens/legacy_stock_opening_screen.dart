@@ -21,6 +21,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
   String? error;
   int unresolvedTransfers=0;
   String? sourceSha;
+  bool _initialSelectionApplied=false;
 
   @override
   void initState(){super.initState();_load();}
@@ -35,8 +36,11 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
         products=rows(data['products']);warehouses=rows(data['warehouses']);accounts=rows(data['accounts']);openings=rows(data['openings']);
         unresolvedTransfers=(data['unresolvedTransfers'] as List).length;
         sourceSha=data['sourceSha'] as String;
-        if(product==null&&products.any((p)=>p['id']==widget.initialProductId))product=widget.initialProductId;
-        if(warehouse==null&&warehouses.any((w)=>w['id']==widget.initialWarehouseId))warehouse=widget.initialWarehouseId;
+        if(!_initialSelectionApplied){
+          if(product==null&&products.any((p)=>p['id']==widget.initialProductId))product=widget.initialProductId;
+          if(warehouse==null&&warehouses.any((w)=>w['id']==widget.initialWarehouseId))warehouse=widget.initialWarehouseId;
+          _initialSelectionApplied=true;
+        }
         if(!warehouses.any((w)=>w['id']==warehouse))warehouse=null;
         if(!accounts.any((a)=>a['id']==asset))asset=null;
         if(!accounts.any((a)=>a['id']==offset))offset=null;

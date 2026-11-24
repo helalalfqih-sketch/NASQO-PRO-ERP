@@ -10,12 +10,12 @@ void main(){
       {'id':'legacy-prod-4','currencyCode':'ريال','avgCost':2,'legacyInvoiceQtyByWarehouse':{'wh':4},'legacyTransferIncomplete':true},
       {'id':'legacy-prod-5','currencyCode':'ريال','avgCost':2,'legacyInvoiceQtyByWarehouse':{'wh':4}},
     ];
-    final review=LegacyStockBatch.reviewRows(products,[{'source_item_id':'legacy-prod-5','warehouse_id':'wh'}],'wh');
+    final review=LegacyStockBatch.reviewRows(products,[{'source_item_id':'legacy-prod-5','warehouse_id':'wh','quantity':4,'value_minor':800}],'wh');
     expect(review.map((r)=>r['reason']).toList(),['suggested','negative','suggested','transfer','approved']);
     expect(review[1]['quantity'],isNull);
     expect(review[3]['quantity'],isNull);
     expect(review[0]['historicalQuantity'],5);
-    final draft=LegacyStockBatch.suggestions(products,[{'source_item_id':'legacy-prod-5','warehouse_id':'wh'}],'wh');
+    final draft=LegacyStockBatch.suggestions(products,[{'source_item_id':'legacy-prod-5','warehouse_id':'wh','quantity':4,'value_minor':800}],'wh');
     expect(draft.draft,'legacy-prod-1\t5\t10.00\nlegacy-prod-3\t2.5\t5.00');
     expect(draft.skipped,2);
     final rows=LegacyStockBatch.parse(draft.draft,products,'wh',{'confirmed':true});
