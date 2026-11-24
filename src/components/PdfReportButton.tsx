@@ -39,11 +39,12 @@ export function PdfReportButton({
             },
             mode,
           );
+          if(result==="cancelled"){onNotify("تم إلغاء حفظ التقرير");return;}
           triggerHaptic("success");
           onNotify(
             result === "shared"
-              ? "تمت مشاركة تقرير PDF المالي ونواقص المخزون بنجاح"
-              : "تم تنزيل التقرير المالي وتنبيهات المخزون بصيغة PDF",
+              ? "تم فتح مشاركة تقرير PDF المالي ونواقص المخزون"
+              : "تم حفظ التقرير المالي وتنبيهات المخزون بصيغة PDF",
           );
         },
         { minDurationMs: 420 },

@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { outputNativeDocument, usesNativeDocumentOutput } from "../hybrid/documentOutput";
 import { formatAmount, type DashboardSummary } from "../accounting";
 import type { CurrencyCode, LedgerEntryRecord } from "../types";
 
@@ -94,6 +95,16 @@ export function buildInvoicePdfSummaryData(
     }
   }
 
+  if (entry.lines?.length) {
+    itemLines.splice(0,itemLines.length,...entry.lines.map(line=>({
+      description:line.itemName || line.details || "بند",
+      unit:line.unit || "حبة",
+      quantity:formatAmount(line.quantity),
+      unitPrice:formatAmount(line.price),
+      lineTotal:formatAmount(line.total),
+    })));
+  }
+  if (typeof entry.taxAmount==="number"&&entry.taxAmount>0) vatLine="الضريبة: "+formatAmount(entry.taxAmount)+" "+entry.currency;
   if (itemLines.length === 0) {
     itemLines.push({
       description: entry.typeLabel,
@@ -117,7 +128,7 @@ export function buildInvoicePdfSummaryData(
     dueDate: entry.dueDate,
     paymentLabel: PAYMENT_LABELS[entry.payment] ?? entry.payment,
     directionLabel: entry.direction === "debit" ? "مدين (عليه)" : "دائن (له)",
-    statusLabel: entry.deleted ? "ملغى" : "معتمد",
+    statusLabel: entry.deleted ? "ملغى" : entry.postingStatus==="draft" ? "مسودة" : entry.postingStatus==="historical_unposted" ? "تاريخي غير مرحّل" : entry.postingStatus==="reversed" ? "معكوس" : "معتمد",
     currency: entry.currency,
     exchangeRate: entry.exchangeRate || 1,
     amount: entry.amount,
@@ -543,8 +554,12 @@ export async function buildInvoiceSummaryPdfBytes(
 export async function generateInvoiceSummaryPdf(
   summary: InvoicePdfSummaryData,
   mode: "download" | "share" = "download",
-): Promise<{ result: "downloaded" | "shared"; filename: string }> {
+): Promise<{ result: "downloaded" | "shared" | "cancelled"; filename: string }> {
   const { pdf, filename } = createInvoiceSummaryPdfDoc(summary);
+  if(usesNativeDocumentOutput()){
+    const ok=await outputNativeDocument(new Uint8Array(pdf.output("arraybuffer")),filename,"application/pdf",mode==="share"?"share":"save");
+    return {result:ok?(mode==="share"?"shared":"downloaded"):"cancelled",filename};
+  }
 
   if (mode === "share" && typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
@@ -579,15 +594,18 @@ export async function generatePrintableInvoicePdfFromDatabase(
 ): Promise<{
   entry: LedgerEntryRecord;
   summary: InvoicePdfSummaryData;
-  result: "downloaded" | "shared";
+  result: "downloaded" | "shared" | "cancelled";
   filename: string;
 }> {
-  const { fetchInvoiceFromDatabase } = await import("../firebase");
-  const dbEntry = await fetchInvoiceFromDatabase(uid, entryId);
+  const { fetchInvoiceDetailWithLines } = await import("../firebase");
+  const detail = await fetchInvoiceDetailWithLines(uid, entryId).catch(()=>null);
+  const dbEntry = detail ? {...detail.entry,lines:detail.lines.map(l=>({...l,inventoryItemId:l.inventoryItemId??undefined}))} : null;
   const resolvedEntry = dbEntry ?? options?.fallbackEntry ?? null;
   if (!resolvedEntry) {
     throw new Error("Invoice not found in database");
   }
+  if(usesNativeDocumentOutput()&&resolvedEntry.invoiceContent==="items"&&!resolvedEntry.lines?.length)
+    throw new Error("تفاصيل الأصناف غير متاحة؛ لم يُنشأ مستند ناقص.");
   const summary = buildInvoicePdfSummaryData(resolvedEntry, {
     companyName: options?.companyName,
     footerNote: options?.footerNote,
@@ -604,7 +622,7 @@ export async function generatePrintableInvoicePdfFromDatabase(
 export async function exportDashboardSummaryPdf(
   payload: DashboardPdfPayload,
   mode: "download" | "share" = "download",
-): Promise<"downloaded" | "shared"> {
+): Promise<"downloaded" | "shared" | "cancelled"> {
   const canvas = drawSummaryCanvas(payload);
   const imgData = canvas.toDataURL("image/png");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -615,6 +633,10 @@ export async function exportDashboardSummaryPdf(
   pdf.addImage(imgData, "PNG", 0, 0, pageWidth, fitHeight, undefined, "FAST");
 
   const filename = `nasqo-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
+  if(usesNativeDocumentOutput()){
+    const ok=await outputNativeDocument(new Uint8Array(pdf.output("arraybuffer")),filename,"application/pdf",mode==="share"?"share":"save");
+    return ok?(mode==="share"?"shared":"downloaded"):"cancelled";
+  }
 
   if (mode === "share" && typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {

@@ -1,7 +1,7 @@
 import { hybridBridge } from "./bridge";
 
 export function usesNativeDocumentOutput(): boolean {
-  return import.meta.env.VITE_NASQO_HYBRID === "1" ||
+  return import.meta.env?.VITE_NASQO_HYBRID === "1" ||
     (typeof window !== "undefined" && Boolean(window.__nasqoHybridReady));
 }
 
