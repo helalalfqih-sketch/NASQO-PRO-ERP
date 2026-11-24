@@ -155,6 +155,7 @@ export interface HybridCapabilities {
   whatsappShareSupported: boolean;
   /** When true (Batch 1 Home delivery), financial write commands from JS are blocked. */
   readOnlyFinancial?: boolean;
+  localAccountCreation?: boolean;
 }
 
 export interface HybridWorkspaceSnapshot {
