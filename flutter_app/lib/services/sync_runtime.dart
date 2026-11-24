@@ -39,7 +39,10 @@ class SyncRuntime {
         return FirebaseSyncAuth.token();
       });
       final remote = SqliteRemoteChangeStore(local, applyRemoteAccount);
-      await SyncEngine(local, transport, remote).synchronize(workspaceId);
+      // Only the server-supported account operations may leave the device.
+      // Other financial operations remain pending until their server handlers are implemented.
+      await SyncEngine(local, transport, remote,
+        allowedOperationTypes: const {'account.create','account.update'}).synchronize(workspaceId);
     } finally {
       _running = false;
     }
