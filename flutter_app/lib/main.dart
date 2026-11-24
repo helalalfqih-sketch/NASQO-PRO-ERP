@@ -65,7 +65,7 @@ class _NasqoProErpAppState extends State<NasqoProErpApp> {
           ),
           home: AndroidUpdateNotice(child: Directionality(
             textDirection: TextDirection.rtl,
-            child: defaultTargetPlatform == TargetPlatform.android
+            child: defaultTargetPlatform == TargetPlatform.android && !kIsWeb
                 ? const HybridReactPreviewScreen()
                 : NasqoMainShell(controller: _controller),
           )),

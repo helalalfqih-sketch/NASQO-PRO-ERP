@@ -22,6 +22,7 @@ import {
   type HybridWorkspaceSnapshot,
 } from "./contracts";
 import type { User } from "./firebaseAuthStub";
+import { nativeDriveMarker, nativeDriveProfile, clearNativeDriveMarker, subscribeNativeDrive, connectNativeDrive, nativeIdentity } from "./cloudSession";
 
 export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
 
@@ -76,81 +77,28 @@ export const auth = {
   },
 };
 
-let cachedGoogleAccessToken: string | null = null;
-const googleTokenListeners = new Set<(token: string | null) => void>();
-
-function notifyGoogleTokenListeners() {
-  for (const listener of googleTokenListeners) {
-    listener(cachedGoogleAccessToken);
-  }
+export const getGoogleAccessToken = nativeDriveMarker;
+export function hasGoogleAccessToken(): boolean { return nativeDriveMarker() !== null; }
+export const clearGoogleAccessToken = clearNativeDriveMarker;
+export const subscribeGoogleAccessToken = subscribeNativeDrive;
+export function getConnectedGoogleAccountInfo() {
+  const p=nativeDriveProfile();
+  return {email:p.email??null,displayName:p.displayName??null,photoURL:null};
 }
-
-export function getGoogleAccessToken(): string | null {
-  return cachedGoogleAccessToken;
-}
-
-export function hasGoogleAccessToken(): boolean {
-  return Boolean(cachedGoogleAccessToken);
-}
-
-export function clearGoogleAccessToken(): void {
-  if (cachedGoogleAccessToken !== null) {
-    cachedGoogleAccessToken = null;
-    notifyGoogleTokenListeners();
-  }
-}
-
-export function subscribeGoogleAccessToken(
-  listener: (token: string | null) => void,
-): () => void {
-  googleTokenListeners.add(listener);
-  listener(cachedGoogleAccessToken);
-  return () => {
-    googleTokenListeners.delete(listener);
-  };
-}
-
-export function getConnectedGoogleAccountInfo(): {
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-} {
-  return {
-    email: cachedHybridUser.email ?? null,
-    displayName: cachedHybridUser.displayName ?? null,
-    photoURL: cachedHybridUser.photoURL ?? null,
-  };
-}
-
 export async function signInWithGoogle(): Promise<User> {
-  const result = await hybridBridge.invoke<"cloudIdentity", {connected: boolean; email?: string; displayName?: string}>("cloudIdentity",{operation:"connect"},{timeoutMs:180000});
-  if (!result.connected) throw new Error("لم يكتمل تسجيل الدخول.");
-  return {...cachedHybridUser,email:result.email ?? null,displayName:result.displayName ?? null};
+  const result=await nativeIdentity("signIn");
+  if(result.cancelled||!result.signedIn)throw new Error("لم يكتمل تسجيل الدخول.");
+  // Never change the local workspace identifier to the Firebase UID.
+  return {...cachedHybridUser,email:result.email??null,displayName:result.displayName??null};
 }
-
-export async function connectGoogleDrive(): Promise<{ user: User; accessToken: string }> {
-  return runWithBrandLoader("جاري الاتصال بخدمة Google Drive عبر Flutter...", async () => {
-    const res = await hybridBridge.invoke<
-      "googleDriveAction",
-      { connected?: boolean; email?: string; displayName?: string }
-    >("googleDriveAction", { operation: "connect" }, {timeoutMs:180000});
-
-    const token = res?.connected ? "flutter-managed-drive-session" : "";
-    if (!token) {
-      throw new Error("خدمة Google Drive غير مفعّلة في تطبيق Flutter حاليًا.");
-    }
-    cachedGoogleAccessToken = token;
-    notifyGoogleTokenListeners();
-    return { user: {...cachedHybridUser,email:res.email??null,displayName:res.displayName??null}, accessToken: token };
+export async function connectGoogleDrive(): Promise<{user:User;accessToken:string}> {
+  return runWithBrandLoader("جاري ربط Google Drive...",async()=>{
+    const profile=await connectNativeDrive();
+    return {user:{...cachedHybridUser,email:profile.email??null,displayName:profile.displayName??null},accessToken:nativeDriveMarker()!};
   });
 }
-
 export async function signOutUser(): Promise<void> {
-  if (hybridBridge.hasNativeTransport()) {
-    await hybridBridge.invoke("googleDriveAction", { operation: "disconnect" });
-    clearGoogleAccessToken();
-    await hybridBridge.invoke("cloudIdentity", {operation:"disconnect"});
-  }
+  await nativeIdentity("signOut");
 }
 
 export function isLocalWorkspaceSession(): boolean {

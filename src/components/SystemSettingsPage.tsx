@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent } from "react";
+import { HybridCloudAccount, HybridLocalTools } from "./HybridCloudAccount";
 import {
   FilePlusIcon,
   FileTextIcon,
@@ -58,7 +59,6 @@ interface SystemSettingsPageProps {
   onOpenStockReconciliation?: () => void;
   onOpenTrash?: () => void;
   onSignOut: () => void;
-  onCloudIdentity?: () => void;
   onNotify: (msg: string) => void;
   onBack: () => void;
   onSaveWorkspaceSettings?: (next: WorkspaceSettings) => Promise<void>;
@@ -90,7 +90,6 @@ export function SystemSettingsPage({
   onOpenInvoiceRoles,
   onOpenStockReconciliation,
   onSignOut,
-  onCloudIdentity,
   onNotify,
   onBack,
   onSaveWorkspaceSettings,
@@ -247,7 +246,7 @@ export function SystemSettingsPage({
                   </span>
                 </>
               ) : null}
-              {userEmail ? (
+              {userEmail && !(import.meta.env.VITE_NASQO_HYBRID === "1" && userEmail === "offline@nasqo.local") ? (
                 <>
                   <span aria-hidden="true">·</span>
                   <bdi>{userEmail}</bdi>
@@ -1807,9 +1806,12 @@ export function SystemSettingsPage({
               </section>
             ) : null}
 
+            {import.meta.env.VITE_NASQO_HYBRID === "1" ? <>
+              <HybridCloudAccount onNotify={onNotify} onOpenGoogleDrive={onOpenGoogleDrive}/>
+              <HybridLocalTools uid={uid} onNotify={onNotify}/>
+            </> : null}
             <section className="sys-card">
               <div className="sys-card-heading">الجلسة والإرشادات</div>
-              {onCloudIdentity && <button type="button" className="ref-btn" onClick={onCloudIdentity}>حساب Google</button>}
               <div className="sys-faq-row" style={{ justifyContent: "space-between", display: "flex", alignItems: "center" }}>
                 <button
                   type="button"
@@ -1818,7 +1820,7 @@ export function SystemSettingsPage({
                 >
                   {faqOpen ? "إخفاء الإرشادات" : "إرشادات النسخ الاحتياطي والحفظ"}
                 </button>
-                <button
+                {import.meta.env.VITE_NASQO_HYBRID !== "1" ? <button
                   type="button"
                   className="sys-signout-btn"
                   onClick={() => {
@@ -1827,7 +1829,7 @@ export function SystemSettingsPage({
                   }}
                 >
                   تسجيل الخروج
-                </button>
+                </button> : null}
               </div>
               {faqOpen ? (
                 <div className="sys-faq-card">

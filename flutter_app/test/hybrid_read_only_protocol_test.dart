@@ -24,6 +24,27 @@ Map<String, dynamic> emptySnapshot() => {
 };
 
 void main() {
+  test('native cloud bridge restricts identity, Drive actions and local tools',()async{
+    final called=<String>[];
+    final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),
+      cloudAction:(action,operation,args)async{
+        called.add('$action:$operation');
+        return {'configured':true,'connected':false,'signedIn':false};
+      },
+      localToolsAction:(operation)async=>{'review':operation=='status','imported':true});
+    Future<Map<String,dynamic>> invoke(String action,Map<String,dynamic> p)async=>
+      jsonDecode(await endpoint.handle(jsonEncode(request(action,payload:p)))) as Map<String,dynamic>;
+    expect((await invoke('cloudIdentityAction',{'operation':'status'}))['ok'],true);
+    expect((await invoke('googleDriveAction',{'operation':'connect','args':{'chooseAccount':true}}))['ok'],true);
+    expect((await invoke('googleDriveAction',{'operation':'deleteFilePermanently'}))['ok'],false);
+    expect((await invoke('googleDriveAction',{'operation':'connect','args':{'accessToken':'never accepted'}}))['ok'],false);
+    expect((await invoke('cloudIdentityAction',{'operation':'signIn','args':{'url':'https://example.invalid'}}))['ok'],false);
+    expect((await invoke('googleDriveAction',{'operation':'status','args':[] }))['ok'],false);
+    expect(called,['cloudIdentityAction:status','googleDriveAction:connect']);
+    expect((await invoke('localToolsAction',{'workspaceId':'other','operation':'status'}))['ok'],false);
+    expect((await invoke('localToolsAction',{'workspaceId':'local-erp-workspace','operation':'status'}))['data']['review'],true);
+  });
+
   test('native print and share commands reject HTML, arbitrary URLs and foreign workspace',()async{
     var prints=0,shares=0;
     final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),

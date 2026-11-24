@@ -78,6 +78,7 @@ function HybridRootApp() {
 
   const [bootState, setBootState] = useState<"loading" | "ready" | "error">("loading");
   const [bootError, setBootError] = useState<string>("");
+  const [review,setReview]=useState(false);
   const [capabilities, setCapabilities] = useState<Partial<HybridCapabilities> | undefined>(
     undefined,
   );
@@ -126,6 +127,7 @@ function HybridRootApp() {
       throw new Error(checked.reason);
     }
     const snap: HybridWorkspaceSnapshot = checked.value;
+    setReview((snap as HybridWorkspaceSnapshot & {backupReview?:boolean}).backupReview===true);
     hybridBridge.setReadOnlyFinancialMode(Boolean(snap.capabilities?.readOnlyFinancial));
     hybridBridge.setLocalAccountCreation(snap.capabilities?.localAccountCreation === true);
     hybridBridge.setLocalDocumentPosting(snap.capabilities?.localDocumentPosting === true);
@@ -235,6 +237,7 @@ function HybridRootApp() {
   return (
     <HybridPresentationProvider adapter={adapter}>
       <PhoneFrame>
+        {review?<div className="hybrid-review-notice" role="status">مراجعة نسخة تاريخية — القراءة فقط. أدوات الاستعادة في إعدادات قاعدة البيانات.</div>:null}
         <KeyboardProvider>
           <AuthenticatedWorkspace
             user={hybridUser}

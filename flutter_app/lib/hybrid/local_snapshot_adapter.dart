@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
 import '../services/local_database.dart';
+import '../services/firebase_sync_auth.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import '../services/stock_quantity.dart';
@@ -158,7 +159,7 @@ class HybridLocalSnapshotAdapter {
         'printingSupported': true,
         'pdfExportSupported': true,
         'filePickerSupported': true,
-        'googleDriveConfigured': false,
+        'googleDriveConfigured': FirebaseSyncAuth.configured,
         'whatsappShareSupported': true,
         'readOnlyFinancial': true,
         'localAccountCreation': true,

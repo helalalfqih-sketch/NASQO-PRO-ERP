@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../services/legacy_history_reports.dart';
 import '../services/local_invoice_roles.dart';
+import '../services/native_cloud_session.dart';
 
 /// Minimal, fail-closed protocol endpoint for the offline React -> Flutter
 /// bridge. It never accepts raw SQL, filesystem, or financial write commands.
@@ -27,10 +28,10 @@ class HybridReadOnlyProtocol {
     this.shareText,
     this.pickBackup,
     this.openInvoiceRoles,
-    this.cloudIdentity,
-    this.googleDrive,
     this.openStockReconciliation,
     this.exportBackup,
+    this.cloudAction,
+    this.localToolsAction,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
@@ -50,10 +51,10 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? shareText;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
-  final Future<Map<String,dynamic>> Function(String)? cloudIdentity;
-  final Future<dynamic> Function(String,Map<String,dynamic>)? googleDrive;
   final Future<bool> Function(String?,String?)? openStockReconciliation;
   final Future<bool> Function()? exportBackup;
+  final Future<dynamic> Function(String,String,Map<String,dynamic>)? cloudAction;
+  final Future<Map<String,dynamic>> Function(String)? localToolsAction;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -83,25 +84,37 @@ class HybridReadOnlyProtocol {
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
     }
-    if(actionName=='googleDriveAction'){
+    if(actionName=='cloudIdentityAction'||actionName=='googleDriveAction'){
       final p=request['payload'];
       if(p is! Map<String,dynamic>||p.keys.any((k)=>!['operation','args'].contains(k))||
-          !['connect','disconnect','getAbout','listFiles'].contains(p['operation'])||
-          (p['args']!=null&&p['args'] is! Map<String,dynamic>)||googleDrive==null)
-        return _error(id,actionName,'VALIDATION_ERROR','عملية Drive غير مدعومة في هذه النسخة.');
+        p['operation'] is! String||(p['operation'] as String).length>50||
+        (p['args']!=null&&p['args'] is! Map<String,dynamic>))
+        return _error(id,actionName,'VALIDATION_ERROR','طلب Google غير صالح.');
+      const identityOps={'status','signIn','signOut'};
+      const driveOps={'status','connect','disconnect','getAbout','listFiles','createFolder','findOrCreateFolder',
+        'backupNative','overwriteNative','uploadLocal','restoreNative','saveFile','trashFile',
+        'beginUpload','appendUpload','finishUpload','abortUpload'};
+      if(!(actionName=='cloudIdentityAction'?identityOps:driveOps).contains(p['operation']))
+        return _error(id,actionName,'VALIDATION_ERROR','إجراء Google غير مسموح.');
+      final args=p['args'] as Map<String,dynamic>? ??{};
+      if(args.keys.any((k)=>['accessToken','idToken','refreshToken','url','path','headers','password','clientSecret'].contains(k)))
+        return _error(id,actionName,'VALIDATION_ERROR','لا يسمح بإرسال بيانات اعتماد أو مسارات عبر الجسر.');
+      if(cloudAction==null)return _error(id,actionName,'UNAUTHORIZED_ACTION','خدمة Google غير متاحة.');
       try{
-        final result=await googleDrive!(p['operation'] as String,(p['args'] as Map<String,dynamic>?)??{});
+        final result=await cloudAction!(actionName!,p['operation'] as String,args);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
-      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تنفيذ طلب Drive. تحقق من الاتصال والصلاحيات.');}
+      }on NativeCloudException catch(e){return _error(id,actionName,e.code,e.message);}
+      catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر إكمال طلب Google.');}
     }
-    if(actionName=='cloudIdentity'){
+    if(actionName=='localToolsAction'){
       final p=request['payload'];
-      if(p is! Map<String,dynamic>||p.length!=1||!['connect','disconnect','status'].contains(p['operation'])||cloudIdentity==null)
-        return _error(id,actionName,'VALIDATION_ERROR','طلب الحساب غير صالح.');
+      if(p is! Map<String,dynamic>||p.length!=2||p['workspaceId']!='local-erp-workspace'||
+        !['status','history','readiness','activate','leaveReview'].contains(p['operation'])||localToolsAction==null)
+        return _error(id,actionName,'VALIDATION_ERROR','طلب أدوات البيانات غير صالح.');
       try{
-        final result=await cloudIdentity!(p['operation'] as String);
+        final result=await localToolsAction!(p['operation'] as String);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
-      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر الاتصال بحساب Google. تحقق من الإنترنت وإعدادات Firebase.');}
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح أدوات البيانات.');}
     }
     const outputActions=['beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport'];
     if(actionName!=null&&outputActions.contains(actionName)&&documentOutput!=null){

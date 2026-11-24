@@ -17,8 +17,9 @@ class FirebaseSyncAuth {
 
   /// User-initiated native Google chooser. No tokens are passed to React,
   /// no Drive permissions are requested, and no financial data is uploaded.
-  static Future<UserCredential?> signInWithGoogle() async {
+  static Future<UserCredential?> signInWithGoogle({bool chooseAccount=false}) async {
     await initialize();
+    if(chooseAccount)await _google.signOut();
     final selected = await _google.signIn();
     if (selected == null) return null;
     final googleAuth = await selected.authentication;
@@ -36,19 +37,14 @@ class FirebaseSyncAuth {
     return result;
   }
 
-  static Future<Map<String,dynamic>> identity(String operation) async {
-    if(!configured&&operation!='connect')return {'connected':false};
-    if(!configured)throw StateError('Firebase configuration required');
-    if(operation=='connect')await signInWithGoogle();
-    else if(operation=='disconnect')await signOut();
-    else if(operation!='status')throw ArgumentError('Unsupported identity operation');
-    await initialize();
-    final user=FirebaseAuth.instance.currentUser;
-    return {'connected':user!=null,'email':user?.email,'displayName':user?.displayName};
+  static Future<void>? _initializing;
+  static Future<void> initialize() async {
+    if(Firebase.apps.isNotEmpty)return;
+    final pending=_initializing??=_initialize();
+    try{await pending;}finally{if(identical(_initializing,pending))_initializing=null;}
   }
 
-  static Future<void> initialize() async {
-    if (Firebase.apps.isNotEmpty) return;
+  static Future<void> _initialize() async {
     const apiKey = String.fromEnvironment('NASQO_FIREBASE_API_KEY');
     const appId = String.fromEnvironment('NASQO_FIREBASE_APP_ID', defaultValue: '1:944118860365:android:af6a1eb1ff4217b0802a04');
     const sender = String.fromEnvironment('NASQO_FIREBASE_SENDER_ID', defaultValue: '944118860365');
@@ -62,6 +58,27 @@ class FirebaseSyncAuth {
     await Firebase.initializeApp(options: const FirebaseOptions(
       apiKey: apiKey, appId: appId, messagingSenderId: sender, projectId: project,
     ));
+  }
+
+  static const driveScope='https://www.googleapis.com/auth/drive.file';
+
+  /// Request Drive consent only after a user explicitly chooses to connect.
+  /// The same Google account must back the verified Firebase identity.
+  static Future<GoogleSignInAccount?> authorizeDrive({bool chooseAccount=false})async{
+    final result=await signInWithGoogle(chooseAccount:chooseAccount);
+    if(result==null)return null;
+    final account=_google.currentUser,user=result.user;
+    if(account==null||user==null||!user.providerData.any((p)=>p.providerId=='google.com'&&p.uid==account.id))
+      throw StateError('Google identity mismatch');
+    if(!await _google.requestScopes(const [driveScope]))return null;
+    if(_google.currentUser?.id!=account.id)throw StateError('Google account changed');
+    return account;
+  }
+
+  static bool matchesDriveAccount(GoogleSignInAccount account){
+    if(Firebase.apps.isEmpty||_google.currentUser?.id!=account.id)return false;
+    final user=FirebaseAuth.instance.currentUser;
+    return user!=null&&user.emailVerified&&user.providerData.any((p)=>p.providerId=='google.com'&&p.uid==account.id);
   }
 
   static Future<UserCredential> signIn(String email, String password) async {
