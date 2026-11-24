@@ -13,12 +13,12 @@ void main() {
     final db = await store.database;
     try {
       await db.execute('CREATE TABLE test_effect (id TEXT PRIMARY KEY)');
-      Future<Map<String, dynamic>> commit(String id, {bool fail = false}) =>
+      Future<Map<String, dynamic>> commit(String id, {bool fail = false, int amount = 8000}) =>
           store.commitOperation(
             workspaceId: 'test',
             operationId: id,
             operationType: 'test',
-            payload: {'id': id},
+            payload: {'id': id, 'amount': amount},
             apply: (txn) async {
               await txn.insert('test_effect', {'id': id});
               if (fail) throw StateError('rollback');
@@ -32,6 +32,14 @@ void main() {
       await expectLater(commit('two', fail: true), throwsStateError);
       expect(await db.query('test_effect'), hasLength(1));
       expect(await store.pendingOperations('test'), hasLength(1));
+      await expectLater(commit('one', amount: 9000), throwsStateError);
+      expect(await db.query('test_effect'), hasLength(1));
+      expect(await store.pendingOperations('test'), hasLength(1));
+      expect(await commit('two'), {'id': 'two'});
+      expect(await commit('two'), {'id': 'two'});
+      expect(await db.query('test_effect'), hasLength(2));
+      expect(await store.pendingOperations('test'), hasLength(2));
+      await store.acknowledgeOperation('test', 'two', 'rev2');
       await store.acknowledgeOperation('test', 'one', 'rev1');
       await store.acknowledgeOperation('test', 'one', 'rev1');
       expect(await store.pendingOperations('test'), isEmpty);
