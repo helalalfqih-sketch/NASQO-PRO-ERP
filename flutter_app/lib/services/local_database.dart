@@ -287,12 +287,15 @@ class LocalDatabase {
   }
 
   Future<List<Map<String, Object?>>> pendingOperations(String workspaceId,
-      {int limit = 100}) async {
+      {int limit = 100, Set<String>? operationTypes}) async {
     if (limit < 1 || limit > 500) throw ArgumentError('Invalid batch size');
     final db = await database;
+    if (operationTypes != null && operationTypes.isEmpty) return [];
+    final types = operationTypes?.toList() ?? <String>[];
+    final filter = types.isEmpty ? '' : ' AND operation_type IN (${types.map((_) => '?').join(',')})';
     return db.query('sync_outbox',
-        where: 'workspace_id = ? AND acknowledged_at IS NULL',
-        whereArgs: [workspaceId], orderBy: 'created_at, operation_id',
+        where: 'workspace_id = ? AND acknowledged_at IS NULL$filter',
+        whereArgs: [workspaceId,...types], orderBy: 'rowid ASC',
         limit: limit);
   }
 
