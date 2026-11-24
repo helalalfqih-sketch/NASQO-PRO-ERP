@@ -8,6 +8,15 @@ class BackupEncryption {
   static final _cipher = AesGcm.with256bits();
   static final _aad = utf8.encode('NASQO-DRIVE-BACKUP-V1');
   static const maxPlaintext = 32 * 1024 * 1024;
+  static int get maxEnvelope => maxPlaintext + _aad.length + 28;
+
+  static bool hasEnvelopeHeader(Uint8List bytes) {
+    if (bytes.length < _aad.length) return false;
+    for (var i = 0; i < _aad.length; i++) {
+      if (bytes[i] != _aad[i]) return false;
+    }
+    return true;
+  }
 
   static Future<SecretKey> newRecoveryKey() => _cipher.newSecretKey();
 
