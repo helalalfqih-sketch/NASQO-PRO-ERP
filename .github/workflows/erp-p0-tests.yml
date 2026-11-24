@@ -36,4 +36,5 @@ jobs:
       - name: Run hybrid bridge regression tests
         run: |
           npm install --no-audit --no-fund
+          npm run build:hybrid
           npx tsx --test tests/hybrid.test.ts
