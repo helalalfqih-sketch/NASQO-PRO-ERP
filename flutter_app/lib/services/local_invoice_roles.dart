@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
 import 'local_database.dart';
+import 'local_master_catalog.dart';
 
 /// A business chooses posting accounts once. Imported customer/supplier
 /// categories are not sufficient evidence of a GL role.
@@ -62,8 +63,7 @@ class LocalInvoiceRoles {
   }
 
   static Future<List<Map<String,dynamic>>> cashboxes(DatabaseExecutor t)async{
-    final rows=await t.query('legacy_operational_rows',columns:['row_json'],where:'collection = ?',whereArgs:['cashboxes']);
-    return rows.map((r)=>jsonDecode(r['row_json'] as String) as Map<String,dynamic>).toList();
+    return LocalMasterCatalog.read(t,'cashboxes');
   }
 
   static Future<String> cashAccount(DatabaseExecutor t,String currency,Object? cashboxId)async{

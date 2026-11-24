@@ -1,4 +1,5 @@
 import 'local_database.dart';
+import 'local_master_catalog.dart';
 import '../models/erp_models.dart';
 
 class LocalAccountCommands {
@@ -29,11 +30,8 @@ class LocalAccountCommands {
         limit is! num || !limit.isFinite || limit < 0 || limit > 1000000000000 ||
         cash is! bool || !AccountCategory.values.any((v) => v.name == category) ||
         !CurrencyCode.values.any((v) => v != CurrencyCode.currency2 && v.label == currency) ||
-        opening is! num || !opening.isFinite || input['groupId'] != null ||
-        !['credit','debit'].contains(openingDirection) ||
-        (input['settlement'] ?? false) != false || (input['documentNumberRequired'] ?? false) != false ||
-        (input['accountImage'] ?? '1') != '1' || (input['sendMode'] ?? 'never') != 'never' ||
-        (input['messageMethod'] ?? 'sms') != 'sms') {
+        opening is! num || !opening.isFinite ||
+        !['credit','debit'].contains(openingDirection)) {
       throw ArgumentError('Unsupported account fields');
     }
     final currencyCode = CurrencyCode.values.firstWhere((v) => v.label == currency).name;
@@ -49,7 +47,8 @@ class LocalAccountCommands {
     final result = await local.commitOperation(
       workspaceId: workspace, operationId: key,
       operationType: isNew ? 'account.create' : 'account.update',
-      payload: request,
+      payload: {...request,for(final k in ['groupId','sortOrder','accountImage','settlement','documentNumberRequired','messageMethod','sendMode'])
+        if(input.containsKey(k))k:input[k]},
       syncPayload: (result) => Map<String,dynamic>.from(result['sync'] as Map),
       apply: (txn) async {
         final binding = await txn.query('erp_state', where:'stateKey = ?',
@@ -66,6 +65,7 @@ class LocalAccountCommands {
           final max = (await txn.rawQuery('SELECT COALESCE(MAX(codeNumber),0) AS n FROM accounts')).single['n'] as int;
           final row = <String,dynamic>{...request,'codeNumber':max+1};
           await txn.insert('accounts',row);
+          await LocalMasterCatalog.saveAccountMeta(txn,id,input,category as String,currency as String);
           return {'id':id,'sync':row};
         }
         final rows = await txn.query('accounts',where:'id = ?',whereArgs:[id]);
@@ -77,6 +77,7 @@ class LocalAccountCommands {
         final after = <String,dynamic>{...before,
           for(final field in ['name','phone','note','creditLimit']) field:request[field]};
         await txn.update('accounts',after,where:'id = ?',whereArgs:[id]);
+        await LocalMasterCatalog.saveAccountMeta(txn,id,input,category as String,currency as String);
         return {'id':id,'sync':{'id':id,'before':before,'after':after}};
       },
     );

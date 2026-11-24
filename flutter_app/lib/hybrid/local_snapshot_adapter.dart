@@ -6,6 +6,7 @@ import '../services/legacy_operational_restore.dart';
 import '../services/stock_quantity.dart';
 import '../services/local_workspace_settings.dart';
 import '../services/local_invoice_roles.dart';
+import '../services/local_master_catalog.dart';
 
 /// Adapts the existing on-device SQLite schema to the React Hybrid snapshot.
 /// No network calls, no automatic import, no fabricated customer/invoice rows.
@@ -85,6 +86,8 @@ class HybridLocalSnapshotAdapter {
         if(item!=null) item.addAll(jsonDecode(row['settings_json'] as String) as Map<String,dynamic>);
       }
       await LegacyOperationalRestore.merge(txn,data);
+      await LocalMasterCatalog.attach(txn,data);
+      await LocalMasterCatalog.attachAccountMeta(txn,data);
       await LocalWorkspaceSettings.attach(txn,data);
       await LocalInvoiceRoles.attachCashboxes(txn,data);
       return data;

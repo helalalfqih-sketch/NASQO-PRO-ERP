@@ -11085,8 +11085,7 @@ function AccountCreateModal({
       ctx.showToast("أدخل اسم الحساب أولًا");
       return;
     }
-    if (hybridLocal && (settlement || documentNumber || accountImage !== "1" ||
-        sendMode !== "never" || messageMethod !== "sms" ||
+    if (hybridLocal && ((settlement && !initialAccount?.settlement) || (documentNumber && !initialAccount?.documentNumberRequired) ||
         (!initialAccount && openingBalance && parseArabicNumber(openingAmount) !== 0))) {
       ctx.showToast("بعض الإعدادات أو الرصيد الافتتاحي غير مدعومة في الإصدار المحلي بعد.");
       return;
@@ -11140,7 +11139,7 @@ function AccountCreateModal({
         {hybridLocal && <div className="account-check-row">
           <label><input type="checkbox" checked={localCashAccount} disabled={Boolean(initialAccount)}
             onChange={e=>setLocalCashAccount(e.target.checked)}/> حساب صندوق نقدي</label>
-          <small>محليًا: الاسم والهاتف والملاحظات وحد الائتمان قابلة للتعديل. باقي الإعدادات غير معتمدة بعد.</small>
+          <small>محليًا: بيانات الحساب والصورة والترتيب وتفضيلات الرسائل قابلة للحفظ. الرصيد الافتتاحي والسياسات المحاسبية تحتاج قيدًا معتمدًا.</small>
         </div>}
         {mode === "compact" ? (
           <>

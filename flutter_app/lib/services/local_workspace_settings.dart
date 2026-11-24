@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
+import 'local_master_catalog.dart';
 
 /// Mutable workspace settings are independent of immutable import evidence.
 class LocalWorkspaceSettings {
@@ -36,9 +37,7 @@ class LocalWorkspaceSettings {
           if(k=='companyName'&&value.trim().isEmpty)throw ArgumentError('Company name required');
           if(k=='whatsappProvider'&&!['nasqo','external'].contains(value))throw ArgumentError('Invalid provider');
           if(k=='defaultCurrency'){
-            final imported=await t.query('legacy_operational_rows',columns:['row_json'],where:'collection = ?',whereArgs:['currencies']);
-            final allowed=<String>{'ريال',for(final row in imported)
-              (jsonDecode(row['row_json'] as String) as Map)['name'].toString()};
+            final allowed=(await LocalMasterCatalog.read(t,'currencies')).map((r)=>r['name']).toSet();
             if(!allowed.contains(value))throw ArgumentError('Currency not in the workspace');
           }
         }
