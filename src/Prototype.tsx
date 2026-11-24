@@ -2069,6 +2069,13 @@ export function AuthenticatedWorkspace({
   const handleSignOut = useCallback(async () => {
     setDrawerOpen(false);
     if (user.uid === LOCAL_WORKSPACE_UID) {
+      if(import.meta.env.VITE_NASQO_HYBRID === "1"){
+        try{
+          await signOutUser();
+          showToast("تم فصل الحساب السحابي؛ البيانات المحلية محفوظة.");
+        }catch(err){showToast(err instanceof Error?err.message:"تعذر فصل الحساب");}
+        return;
+      }
       onLocalSignOut();
       return;
     }

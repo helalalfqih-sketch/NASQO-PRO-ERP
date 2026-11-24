@@ -37,6 +37,7 @@ class FirebaseSyncAuth {
   }
 
   static Future<Map<String,dynamic>> identity(String operation) async {
+    if(!configured&&operation!='connect')return {'connected':false};
     if(!configured)throw StateError('Firebase configuration required');
     if(operation=='connect')await signInWithGoogle();
     else if(operation=='disconnect')await signOut();

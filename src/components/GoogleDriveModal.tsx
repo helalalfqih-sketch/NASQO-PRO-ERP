@@ -49,6 +49,7 @@ import {
 import { formatNasqoBackupFilename } from "../utils/backupFormat";
 import { describeGoogleDriveConnectError } from "../utils/googleDriveAuthError";
 import { triggerHaptic } from "../utils/haptics";
+import { hybridBridge } from "../hybrid/bridge";
 import { GoogleSignInButton } from "./GoogleSignInButton";
 
 interface GoogleDriveModalProps {
@@ -495,9 +496,12 @@ export function GoogleDriveModal({
                 <button
                   type="button"
                   className="gdrive-chip-action danger"
-                  onClick={() => {
-                    clearGoogleAccessToken();
-                    onNotify("تم فصل جلسة Google Drive");
+                  onClick={async () => {
+                    try {
+                      if(import.meta.env.VITE_NASQO_HYBRID === "1")await hybridBridge.invoke("googleDriveAction",{operation:"disconnect"});
+                      clearGoogleAccessToken();
+                      onNotify("تم فصل جلسة Google Drive");
+                    } catch(err){setErrorMsg(err instanceof Error?err.message:"تعذر فصل الحساب");}
                   }}
                 >
                   فصل

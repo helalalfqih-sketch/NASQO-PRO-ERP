@@ -146,11 +146,10 @@ export async function connectGoogleDrive(): Promise<{ user: User; accessToken: s
 }
 
 export async function signOutUser(): Promise<void> {
-  clearGoogleAccessToken();
   if (hybridBridge.hasNativeTransport()) {
-    await hybridBridge
-      .invoke("googleDriveAction", { operation: "disconnect" })
-      .catch(() => undefined);
+    await hybridBridge.invoke("googleDriveAction", { operation: "disconnect" });
+    clearGoogleAccessToken();
+    await hybridBridge.invoke("cloudIdentity", {operation:"disconnect"});
   }
 }
 
