@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'hybrid_read_only_protocol.dart';
 import '../services/local_account_commands.dart';
+import '../services/local_document_commands.dart';
 import 'local_snapshot_adapter.dart';
 import '../services/local_database.dart';
 
@@ -25,6 +26,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
     createAccount: (key,payload) => _saveAccount(key,payload),
     updateAccount: (key,id,payload) => _saveAccount(key,payload,accountId:id),
+    postDocument: _postDocument,
   );
 
   static Future<Map<String,dynamic>> _saveAccount(
@@ -35,6 +37,15 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     final account = (snapshot['accounts'] as List).cast<Map<String,dynamic>>()
       .firstWhere((a) => a['id'] == id);
     return {'account':account,'snapshot':snapshot};
+  }
+
+  static Future<Map<String,dynamic>> _postDocument(String key,Map<String,dynamic> payload) async {
+    final id = await LocalDocumentCommands(LocalDatabase.instance).post(
+      HybridLocalSnapshotAdapter.workspaceId,key,payload);
+    final snapshot = await HybridLocalSnapshotAdapter.readFromDevice();
+    final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
+        .firstWhere((e) => e['id'] == id);
+    return {'entry':entry,'snapshot':snapshot};
   }
 
   MethodChannel? _channel;
@@ -93,7 +104,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             padding: const EdgeInsets.all(10),
             child: const Text(
               'وضع محلي تجريبي: إنشاء الحسابات وتعديل بياناتها متاحان. '
-              'الترحيل المالي الكامل والمزامنة قيد التطوير.',
+              'السندات والقيود البسيطة والفواتير الحرة الآجلة مدعومة؛ المزامنة والفواتير المخزنية قيد التطوير.',
               textAlign: TextAlign.center,
             ),
           ),
