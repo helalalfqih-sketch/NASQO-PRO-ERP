@@ -36,30 +36,50 @@ class LegacyStockBatch {
     return rows;
   }
 
-  static ({String draft,int skipped}) suggestions(Iterable<Map<String,dynamic>> products,
+  /// One row per original product and warehouse. Missing evidence never
+  /// becomes an assumed zero. The suggestion remains an editable draft.
+  static List<Map<String,dynamic>> reviewRows(Iterable<Map<String,dynamic>> products,
       Iterable<Map<String,dynamic>> openings,String warehouse){
-    final existing=openings.where((o)=>o['warehouse_id']==warehouse).map((o)=>o['source_item_id']).toSet();
-    final output=<String>[];
-    var skipped=0;
+    final existing={for(final o in openings)
+      if(o['warehouse_id']==warehouse)o['source_item_id']:o};
+    final result=<Map<String,dynamic>>[];
     for(final p in products){
-      if(existing.contains(p['id']))continue;
       final invoices=p['legacyInvoiceQtyByWarehouse'],transfers=p['legacyTransferNetByWarehouse'];
       final present=(invoices is Map&&invoices.containsKey(warehouse))||(transfers is Map&&transfers.containsKey(warehouse));
-      if(!present||p['legacyTransferIncomplete']==true||p['currencyCode']!='ريال'){
-        skipped++;continue;
+      final historical=present?(invoices is Map?(invoices[warehouse] as num? ??0):0)+(transfers is Map?(transfers[warehouse] as num? ??0):0):null;
+      final opened=existing[p['id']];
+      String reason='';
+      num? quantity,value;
+      if(opened!=null){
+        reason='approved';quantity=opened['quantity'] as num;value=(opened['value_minor'] as num)/100;
+      }else if(p['currencyCode']!='ريال'){reason='currency';}
+      else if(p['legacyTransferIncomplete']==true){reason='transfer';}
+      else if(historical==null){reason='no_history';}
+      else if(!historical.isFinite||historical<0){reason='negative';}
+      else{
+        try{
+          quantity=StockQuantity.normalized(historical);
+          final cost=p['avgCost'];
+          if(quantity>0&&(cost is! num||!cost.isFinite||cost<=0)){reason='cost';quantity=null;}
+          else{
+            final minor=quantity==0?0:StockInvoiceCommands.money((quantity*(cost as num)*100).round()/100);
+            if(quantity>0&&minor<=0){reason='cost';quantity=null;}
+            else{value=minor/100;reason='suggested';}
+          }
+        }catch(_){reason='precision';quantity=null;value=null;}
       }
-      final q=(invoices is Map?(invoices[warehouse] as num? ??0):0)+(transfers is Map?(transfers[warehouse] as num? ??0):0);
-      final cost=p['avgCost'];
-      if(!q.isFinite||q<0||q>10000000||(q>0&&(cost is! num||!cost.isFinite||cost<=0))){
-        skipped++;continue;
-      }
-      try{
-        final normalized=StockQuantity.normalized(q);
-        final total=q==0?0:StockInvoiceCommands.money((q*(cost as num)*100).round()/100);
-        if(q>0&&total<=0){skipped++;continue;}
-        output.add("${p['id']}\t$normalized\t${(total/100).toStringAsFixed(2)}");
-      }catch(_){skipped++;}
+      result.add({'sourceItemId':p['id'],'warehouseId':warehouse,'name':p['name'],'sku':p['sku'],
+        'unit':p['unit'],'historicalQuantity':historical,'quantity':quantity,'totalValue':value,
+        'reason':reason,'relevant':present||p['warehouseId']==warehouse||opened!=null});
     }
-    return (draft:output.join('\n'),skipped:skipped);
+    return result;
+  }
+
+  static ({String draft,int skipped}) suggestions(Iterable<Map<String,dynamic>> products,
+      Iterable<Map<String,dynamic>> openings,String warehouse){
+    final rows=reviewRows(products,openings,warehouse);
+    return (draft:rows.where((r)=>r['reason']=='suggested').map((r)=>
+      "${r['sourceItemId']}\t${r['quantity']}\t${(r['totalValue'] as num).toStringAsFixed(2)}").join('\n'),
+      skipped:rows.where((r)=>r['reason']!='suggested'&&r['reason']!='approved').length);
   }
 }

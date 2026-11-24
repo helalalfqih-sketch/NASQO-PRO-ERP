@@ -5,7 +5,8 @@ import '../services/stock_quantity.dart';
 import 'legacy_stock_batch_screen.dart';
 
 class LegacyStockOpeningScreen extends StatefulWidget {
-  const LegacyStockOpeningScreen({super.key});
+  const LegacyStockOpeningScreen({super.key,this.initialWarehouseId,this.initialProductId});
+  final String? initialWarehouseId,initialProductId;
   @override
   State<LegacyStockOpeningScreen> createState()=>_LegacyStockOpeningScreenState();
 }
@@ -19,6 +20,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
   bool busy=true,confirmed=false,changed=false;
   String? error;
   int unresolvedTransfers=0;
+  String? sourceSha;
 
   @override
   void initState(){super.initState();_load();}
@@ -32,6 +34,9 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       setState((){
         products=rows(data['products']);warehouses=rows(data['warehouses']);accounts=rows(data['accounts']);openings=rows(data['openings']);
         unresolvedTransfers=(data['unresolvedTransfers'] as List).length;
+        sourceSha=data['sourceSha'] as String;
+        if(product==null&&products.any((p)=>p['id']==widget.initialProductId))product=widget.initialProductId;
+        if(warehouse==null&&warehouses.any((w)=>w['id']==widget.initialWarehouseId))warehouse=widget.initialWarehouseId;
         if(!warehouses.any((w)=>w['id']==warehouse))warehouse=null;
         if(!accounts.any((a)=>a['id']==asset))asset=null;
         if(!accounts.any((a)=>a['id']==offset))offset=null;
@@ -77,7 +82,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     setState((){busy=true;error=null;});
     try{
       await service.approve('local-erp-workspace',{'sourceItemId':product,'warehouseId':warehouse,'inventoryAccountId':asset,'offsetAccountId':offset,
-        'quantity':q,'totalValue':v,'entryDate':date,'evidence':evidence.text.trim(),'confirmed':true});
+        'quantity':q,'totalValue':v,'entryDate':date,'evidence':evidence.text.trim(),'confirmed':true},expectedSourceSha:sourceSha);
       if(!mounted)return;
       changed=true;clearCount();await _load();
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('تم اعتماد الجرد لهذا الصنف والمخزن.')));
@@ -109,9 +114,9 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       appBar:AppBar(title:const Text('اعتماد جرد المخازن'),actions:[IconButton(tooltip:'تم',onPressed:busy?null:()=>Navigator.pop(context,changed),icon:const Icon(Icons.check))]),
       body:ListView(padding:const EdgeInsets.all(16),children:[
         Text('اعتمادات المخازن المسجلة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
-        FilledButton.icon(onPressed:busy||products.isEmpty?null:()async{
+        FilledButton.icon(onPressed:busy||products.isEmpty||sourceSha==null?null:()async{
           final result=await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockBatchScreen(
-            products:products,warehouses:warehouses,accounts:accounts,openings:openings)));
+            products:products,warehouses:warehouses,accounts:accounts,openings:openings,sourceSha:sourceSha!,initialWarehouseId:warehouse)));
           if(result==true&&mounted){changed=true;setState(()=>busy=true);await _load();}
         },icon:const Icon(Icons.playlist_add_check),label:const Text('اعتماد جرد جماعي')),
         const Text('أدخل الكمية الفعلية والتكلفة الإجمالية بعد الجرد. كل صنف ومخزن يُعتمد مستقلًا. التاريخ السابق محفوظ، وليس جردًا مؤكدًا.'),

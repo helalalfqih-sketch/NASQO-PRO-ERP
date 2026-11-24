@@ -22,6 +22,7 @@ class LegacyStockOpening {
     final data=await db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
       if(!await LocalDatabase.hasLegacyOperational(t))throw StateError('Imported workspace required');
+      final source=(await t.query('legacy_operational_source',columns:['sha'],limit:1)).single['sha'] as String;
       final items=(await t.query('legacy_operational_rows',where:'collection = ?',whereArgs:['inventory']))
         .map((r)=>LocalBackupRestore.object(jsonDecode(r['row_json'] as String))).toList()
         ..sort((a,b)=>a['name'].toString().compareTo(b['name'].toString()));
@@ -29,7 +30,7 @@ class LegacyStockOpening {
         .map((r)=>LocalBackupRestore.object(jsonDecode(r['row_json'] as String)));
       LegacyStockProjection.attach(items,ledger);
       return {
-        'products':items,
+        'products':items,'sourceSha':source,
         'warehouses':await t.query('warehouses',orderBy:'name'),
         'accounts':await t.query('accounts',where:'currency = ? AND isCashAccount = 0',whereArgs:['sar'],orderBy:'name'),
         'openings':await t.query('legacy_stock_openings'),
@@ -45,18 +46,29 @@ class LegacyStockOpening {
       p['legacyTransferNetByWarehouse']=nets[p['id']]??<String,num>{};
       p['legacyTransferIncomplete']=affected.contains(p['id']);
     }
+    final source=await db.query('legacy_operational_source',columns:['sha'],limit:1);
+    if(source.length!=1||source.single['sha']!=data['sourceSha'])throw StateError('Imported workspace changed');
     return {...data,'unresolvedTransfers':report['unresolvedIds']};
   }
 
-  Future<String> approve(String workspace,Map<String,dynamic> input)async{
+  static Future<void> requireSource(Transaction t,String? sha)async{
+    if(sha==null)return; // compatibility for existing internal callers
+    final source=await t.query('legacy_operational_source',columns:['sha'],limit:1);
+    if(source.length!=1||source.single['sha']!=sha)throw StateError('تغيرت النسخة المستوردة؛ أعد تحميل مسودة الجرد');
+  }
+
+  Future<String> approve(String workspace,Map<String,dynamic> input,{String? expectedSourceSha})async{
     final db=await local.database;
-    return db.transaction((t)=>_approve(t,workspace,input));
+    return db.transaction((t)async{
+      await requireSource(t,expectedSourceSha);
+      return _approve(t,workspace,input);
+    });
   }
 
   /// Every row uses the existing individual opening idempotency key and
   /// balanced posting rules. A failure rolls back every row in the batch.
-  Future<List<String>> approveBatch(String workspace,List<Map<String,dynamic>> inputs)async{
-    if(workspace!='local-erp-workspace'||inputs.isEmpty||inputs.length>2000)
+  Future<List<String>> approveBatch(String workspace,List<Map<String,dynamic>> inputs,{String? expectedSourceSha})async{
+    if(workspace!='local-erp-workspace'||inputs.isEmpty||inputs.length>10000)
       throw ArgumentError('Invalid stock count batch');
     final seen=<String>{};
     for(final row in inputs){
@@ -66,6 +78,7 @@ class LegacyStockOpening {
     }
     final db=await local.database;
     return db.transaction((t)async{
+      await requireSource(t,expectedSourceSha);
       final ids=<String>[];
       for(final row in inputs){ids.add(await _approve(t,workspace,row));}
       return ids;
