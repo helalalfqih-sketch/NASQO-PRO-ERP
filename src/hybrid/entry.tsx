@@ -127,6 +127,7 @@ function HybridRootApp() {
     }
     const snap: HybridWorkspaceSnapshot = checked.value;
     hybridBridge.setReadOnlyFinancialMode(Boolean(snap.capabilities?.readOnlyFinancial));
+    hybridBridge.setLocalAccountCreation(snap.capabilities?.localAccountCreation === true);
     if (snap.uiPreferences) {
       hydrateUiPreferencesFromHost(snap.uiPreferences);
       if (snap.uiPreferences.themeMode) {
