@@ -75,9 +75,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final d=jsonDecode(stored[i]['line_json'] as String) as Map<String,dynamic>;
       lines.add({'id':i+1,'lineKind':'item','inventoryItemId':d['item_id'],
         'itemName':d['itemName'],'sku':'','warehouseName':entry['warehouseName'],
-        'price':(d['price_minor'] as int)/100,'quantity':d['quantity'],
+        'price':(d['price_minor'] as int)/100,'quantity':d['sold_quantity']??d['quantity'],
         'total':(d['net_minor'] as int)/100,'discount':(d['discount_minor'] as int)/100,
-        'bonus':0,'unit':d['unit'],'unitNum':1,'details':'','expiryDate':''});
+        'bonus':0,'unit':d['unit'],'unitNum':d['unit_num']??1,'details':'','expiryDate':''});
     }
     if(entry['stockPosting']!=true&&entry['invoiceContent']=='items') throw StateError('Historical stock lines unavailable');
     return {'entry':entry,'lines':lines};

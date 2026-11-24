@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 5;
+  static const int dbVersion = 6;
 
   Database? _db;
 
@@ -49,6 +49,7 @@ class LocalDatabase {
         if (oldVersion < 3) await createAccountingSchema(db);
         if (oldVersion < 4) await createDocumentSchema(db);
         if (oldVersion < 5) await createStockPostingSchema(db);
+        if (oldVersion < 6) await createStockUnitsAndReturnsSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -123,6 +124,7 @@ class LocalDatabase {
         await createAccountingSchema(db);
         await createDocumentSchema(db);
         await createStockPostingSchema(db);
+        await createStockUnitsAndReturnsSchema(db);
       },
     );
     return _db!;
@@ -181,6 +183,12 @@ class LocalDatabase {
     await db.execute('CREATE TABLE stock_posting_documents (id TEXT PRIMARY KEY REFERENCES ledger_entries(id), original_id TEXT UNIQUE REFERENCES stock_posting_documents(id), document_json TEXT NOT NULL)');
     await db.execute('CREATE TABLE stock_posting_lines (id TEXT PRIMARY KEY REFERENCES invoice_lines(id), document_id TEXT NOT NULL REFERENCES stock_posting_documents(id), item_id TEXT NOT NULL REFERENCES inventory_items(id), quantity INTEGER NOT NULL CHECK(quantity > 0), before_quantity INTEGER NOT NULL, after_quantity INTEGER NOT NULL, before_value INTEGER NOT NULL, after_value INTEGER NOT NULL, line_json TEXT NOT NULL)');
     await db.execute('CREATE INDEX stock_posting_item ON stock_posting_lines(item_id)');
+  }
+
+  static Future<void> createStockUnitsAndReturnsSchema(DatabaseExecutor db) async {
+    await db.execute('ALTER TABLE stock_posting_documents ADD COLUMN return_original_id TEXT REFERENCES stock_posting_documents(id)');
+    await db.execute('CREATE INDEX stock_return_original ON stock_posting_documents(return_original_id)');
+    await db.execute('CREATE TABLE inventory_unit_settings (item_id TEXT PRIMARY KEY REFERENCES inventory_items(id), settings_json TEXT NOT NULL)');
   }
 
   Future<Map<String, dynamic>> createAccountAtomic(
@@ -435,6 +443,7 @@ class LocalDatabase {
         await txn.insert('warehouses', _warehouseToMap(w), conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
+      await txn.delete('inventory_unit_settings');
       await txn.delete('inventory_items');
       for (final i in inventory) {
         await txn.insert('inventory_items', _inventoryToMap(i), conflictAlgorithm: ConflictAlgorithm.replace);

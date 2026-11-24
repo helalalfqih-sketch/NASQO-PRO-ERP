@@ -181,6 +181,9 @@ export type LedgerEntryRecord = {
   stockPosting?: boolean;
   stockSale?: boolean;
   stockCostMinor?: number;
+  returnableLines?: {itemId:string;itemName:string;unit:string;quantity:number}[];
+  returnLines?: {itemId:string;quantity:number}[];
+  taxRateBps?: number;
   netBeforeTax?: number;
   originalInvoiceId?: string;
   returnedById?: string;

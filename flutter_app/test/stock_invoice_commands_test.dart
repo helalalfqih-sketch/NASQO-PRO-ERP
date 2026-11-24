@@ -4,6 +4,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:nasqo_pro_erp/services/local_database.dart';
 import 'package:nasqo_pro_erp/services/local_account_commands.dart';
 import 'package:nasqo_pro_erp/services/stock_invoice_commands.dart';
+import 'package:nasqo_pro_erp/services/local_stock_catalog.dart';
 
 void main(){
   test('stock purchase, sale, discount, tax and full linked reversal are atomic',()async{
@@ -43,20 +44,41 @@ void main(){
       await expectLater(s.post(w,'bad-total',{...invoice('bad2',3,true,1,10,0,0),'amount':99}),throwsArgumentError);
       expect(await db.query('ledger_entries'),hasLength(2));
       await expectLater(s.post(w,'early-return',{'id':'early','kind':'return','originalInvoiceId':'buy','entryNumber':3,'entryDate':'2026-11-24'}),throwsStateError);
-      final ret={'id':'ret','kind':'return','originalInvoiceId':'sell','entryNumber':3,'entryDate':'2026-11-24'};
+      final ret={'id':'ret','kind':'return','originalInvoiceId':'sell','entryNumber':3,'entryDate':'2026-11-24','returnLines':[{'itemId':'item','quantity':1}]};
       await s.post(w,'return-op',ret);
       await s.post(w,'return-op',ret);
+      expect((await stock())['quantity'],8);
+      await expectLater(s.post(w,'over-return',{...ret,'id':'ret2','entryNumber':4,'returnLines':[{'itemId':'item','quantity':3}]}),throwsStateError);
+      await s.post(w,'remaining-return',{...ret,'id':'ret3','entryNumber':4,'returnLines':[{'itemId':'item','quantity':2}]});
       expect((await stock())['quantity'],10);
-      await expectLater(s.post(w,'duplicate-return',{...ret,'id':'ret2','entryNumber':4}),throwsStateError);
+      await expectLater(s.post(w,'duplicate-return',{...ret,'id':'ret2','entryNumber':5}),throwsStateError);
       final sums=await db.rawQuery('SELECT journal_id,SUM(debit_minor) AS d,SUM(credit_minor) AS c FROM journal_lines GROUP BY journal_id');
-      expect(sums,hasLength(3));
+      expect(sums,hasLength(4));
       for(final row in sums){expect(row['d'],row['c']);}
       final saleLegs=await db.query('journal_lines',where:'journal_id = ?',whereArgs:['sell']);
       expect(saleLegs,hasLength(5));
       expect(saleLegs.firstWhere((l)=>l['account_id']==cost)['debit_minor'],1200);
       expect(saleLegs.firstWhere((l)=>l['account_id']==tax)['credit_minor'],300);
-      expect(await db.query('stock_movements'),hasLength(3));
-      expect(await local.pendingOperations(w),hasLength(9));
+      expect(await db.query('stock_movements'),hasLength(4));
+      expect(await local.pendingOperations(w),hasLength(10));
+      final cash=await a.save(w,'Cash',{'name':'Cash','category':'transfers','currency':'ريال','isCashAccount':true});
+      final catalog=LocalStockCatalog(local);
+      final carton=await catalog.createItem(w,'carton-op',{'name':'Carton item','warehouseId':'wh','unit':'piece','unit2':'carton','count2':12,'defaultUnit':2});
+      final cashBuy={...invoice('cash-buy',5,false,2,30,0,3),'accountId':cash,'payment':'cash','settledOnReceipt':true,'taxRateBps':500,
+        'lines':[{'inventoryItemId':carton,'quantity':2,'unitNum':2,'price':30,'discount':0,'total':60}]};
+      await s.post(w,'cash-buy-op',cashBuy);
+      final box=(await db.query('inventory_items',where:'id = ?',whereArgs:[carton])).single;
+      expect(box['quantity'],24);
+      expect(box['avgCost'],2.5);
+      final cashLeg=(await db.query('journal_lines',where:'journal_id = ? AND account_id = ?',whereArgs:['cash-buy',cash])).single;
+      expect(cashLeg['credit_minor'],6300);
+      final cashSale={...invoice('cash-sale',6,true,1,40,0,2),'accountId':cash,'payment':'cash','taxRateBps':500,
+        'lines':[{'inventoryItemId':carton,'quantity':1,'unitNum':2,'price':40,'discount':0,'total':40}]};
+      await s.post(w,'cash-sale-op',cashSale);
+      expect((await db.query('inventory_items',where:'id = ?',whereArgs:[carton])).single['quantity'],12);
+      await s.post(w,'carton-return',{'id':'carton-ret','kind':'return','originalInvoiceId':'cash-sale','entryNumber':7,'entryDate':'2026-11-24',
+        'returnLines':[{'itemId':carton,'quantity':1}]});
+      expect((await db.query('inventory_items',where:'id = ?',whereArgs:[carton])).single['quantity'],24);
     }finally{await db.close();await dir.delete(recursive:true);}
   });
 }

@@ -21,6 +21,8 @@ class HybridLocalSnapshotAdapter {
         lines.add({'accountId':row['account_id'],'debitMinor':row['debit_minor'],'creditMinor':row['credit_minor']});
       }
       final originals=<String,String>{};
+      final returned=<String,Map<String,int>>{};
+      final originalLines=<String,List<Map<String,dynamic>>>{};
       for(final row in await txn.query('stock_posting_documents')){
         final entry=byId[row['id']];
         if(entry==null) continue;
@@ -29,9 +31,10 @@ class HybridLocalSnapshotAdapter {
         entry['taxAmount']=(info['taxMinor'] as int)/100;
         entry['netBeforeTax']=(info['netMinor'] as int)/100;
         entry['stockSale']=info['sale']==true;
-        if(row['original_id'] is String){
-          entry['originalInvoiceId']=row['original_id'];
-          originals[row['original_id'] as String]=row['id'] as String;
+        final original=row['original_id']??row['return_original_id'];
+        if(original is String){
+          entry['originalInvoiceId']=original;
+          if(row['original_id']!=null) originals[original]=row['id'] as String;
         }
       }
       for(final item in originals.entries){
@@ -43,6 +46,35 @@ class HybridLocalSnapshotAdapter {
         if(entry==null) continue;
         final line=jsonDecode(row['line_json'] as String) as Map<String,dynamic>;
         entry['stockCostMinor']=((entry['stockCostMinor'] as int?)??0)+(line['cost_minor'] as int);
+        final original=entry['originalInvoiceId'];
+        final item=row['item_id'] as String;
+        final q=(row['quantity'] as num).toInt();
+        if(original is String){
+          final perItem=returned.putIfAbsent(original,()=> <String,int>{});
+          perItem[item]=(perItem[item]??0)+q;
+        }else{
+          originalLines.putIfAbsent(entry['id'] as String,()=> <Map<String,dynamic>>[]).add(line);
+        }
+      }
+      for(final item in originalLines.entries){
+        final entry=byId[item.key]!;
+        final lines=<Map<String,dynamic>>[];
+        for(final line in item.value){
+          final id=line['item_id'] as String;
+          final factor=(line['unit_factor'] as int?)??1;
+          final original=line['quantity'] as int;
+          final used=originals.containsKey(item.key)?original:(returned[item.key]?[id]??0);
+          final remaining=(original-used)~/factor;
+          if(remaining>0) lines.add({'itemId':id,'itemName':line['itemName'],'unit':line['unit'],'quantity':remaining});
+        }
+        entry['returnableLines']=lines;
+        if(lines.isEmpty) entry['returnedById']=originals[item.key]??'complete';
+      }
+      final inventory=(data['inventory'] as List).cast<Map<String,dynamic>>();
+      final items={for(final row in inventory)row['id']:row};
+      for(final row in await txn.query('inventory_unit_settings')){
+        final item=items[row['item_id']];
+        if(item!=null) item.addAll(jsonDecode(row['settings_json'] as String) as Map<String,dynamic>);
       }
       return data;
     });
