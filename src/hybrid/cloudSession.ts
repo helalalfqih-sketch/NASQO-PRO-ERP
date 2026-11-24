@@ -11,7 +11,9 @@ let identityProfile:NativeCloudProfile|null=null;
 const identityListeners=new Set<(profile:NativeCloudProfile|null)=>void>();
 function setIdentity(profile:NativeCloudProfile){
   identityProfile=profile;
-  for(const listener of identityListeners)listener(profile);
+  for(const listener of identityListeners) {
+    try { listener(profile); } catch (error) { console.error("Native identity listener failed", error); }
+  }
 }
 export function subscribeNativeIdentity(listener:(profile:NativeCloudProfile|null)=>void){
   identityListeners.add(listener);listener(identityProfile);
@@ -31,7 +33,9 @@ export const nativeDriveMarker = () => driveProfile.connected === true ? NATIVE_
 export const nativeDriveProfile = () => ({ ...driveProfile });
 function setDriveProfile(profile: NativeCloudProfile) {
   driveProfile = profile;
-  for (const listener of listeners) listener(nativeDriveMarker());
+  for (const listener of listeners) {
+    try { listener(nativeDriveMarker()); } catch (error) { console.error("Native Drive listener failed", error); }
+  }
 }
 export function clearNativeDriveMarker() { setDriveProfile({connected:false}); }
 export function subscribeNativeDrive(listener: (marker: string | null) => void) {
@@ -77,7 +81,13 @@ export async function disconnectNativeDrive() {
 }
 export function nativeIdentity(operation: "status"|"signIn"|"signOut",chooseAccount=false): Promise<NativeCloudProfile> {
   return enqueue(async () => {
-    if(operation!=="status")clearNativeDriveMarker();
+    if(operation!=="status") {
+      clearNativeDriveMarker();
+      identityProfile=null;
+      for(const listener of identityListeners) {
+        try { listener(null); } catch (error) { console.error("Native identity listener failed", error); }
+      }
+    }
     const result=await hybridBridge.invoke<"cloudIdentityAction", NativeCloudProfile>("cloudIdentityAction",
       {operation,args:operation==="signIn"?{chooseAccount}:{}},{timeoutMs:180_000});
     setIdentity(result);return result;
