@@ -156,6 +156,7 @@ export interface HybridCapabilities {
   /** When true (Batch 1 Home delivery), financial write commands from JS are blocked. */
   readOnlyFinancial?: boolean;
   localAccountCreation?: boolean;
+  localDocumentPosting?: boolean;
 }
 
 export interface HybridWorkspaceSnapshot {
