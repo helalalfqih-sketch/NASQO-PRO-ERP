@@ -38,6 +38,7 @@ class HybridLocalSnapshotAdapter {
         entry['taxAmount']=(info['taxMinor'] as int)/100;
         entry['netBeforeTax']=(info['netMinor'] as int)/100;
         entry['stockSale']=info['sale']==true;
+        if(info['cashSettlementAccountId']!=null)entry['settledOnReceipt']=true;
         final original=row['original_id']??row['return_original_id'];
         if(original is String){
           entry['originalInvoiceId']=original;

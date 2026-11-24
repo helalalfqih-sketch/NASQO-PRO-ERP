@@ -76,7 +76,7 @@ class LocalInvoiceRoles {
     }
     final id=roles is Map?roles[key]:null;
     if(id is! String||id.isEmpty||
-        (await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[id,code])).length!=1)
+        (await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[id,currency])).length!=1)
       throw const InvoicePostingSetupRequired('حدد حساب الصندوق مرة واحدة من الإعدادات ← حسابات الترحيل التلقائي.');
     return id;
   }
@@ -154,7 +154,7 @@ class LocalInvoiceRoles {
       if(roles.contains(primary)||roles.toSet().length!=roles.length)
         throw const InvoicePostingSetupRequired('حسابات الترحيل لهذه الفاتورة متداخلة. راجع إعدادات الحسابات التلقائية.');
       for(final id in roles){
-        if((await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 0',whereArgs:[id,currency])).length!=1)
+        if((await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 0',whereArgs:[id,code])).length!=1)
           throw const InvoicePostingSetupRequired('أحد حسابات الترحيل غير موجود أو عملته غير مطابقة. راجع الإعدادات.');
       }
       final settlement=cash?await cashAccount(t,code,input['cashboxId']):null;
