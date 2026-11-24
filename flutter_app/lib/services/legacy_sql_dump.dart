@@ -156,6 +156,25 @@ class LegacySqlDump {
     }
     if(!['customers','stores','products','input_move'].every(data.containsKey))
       throw const FormatException('Not a recognized SmartPro SQL backup');
+    const required=<String,List<List<String>>>{
+      'customers':[['id'],['name']],
+      'stores':[['id'],['name']],
+      'products':[['id'],['name']],
+      'currencies':[['id'],['name']],
+      'boxes':[['id'],['name']],
+      'cboxes':[['id'],['name']],
+      'input_move':[['id'],['per_id','acc_id'],['dain'],['madin'],['bill_type','doc_type'],['cur','cur_id']],
+      'bill_details':[['id'],['bill_id'],['prod_id'],['amount'],['price'],['total']],
+      'bill_details2':[['id'],['bill_id'],['amount'],['price'],['total']],
+      'store_trans':[['id'],['store_id1'],['store_id2']],
+      'trans_details':[['id'],['bill_id'],['prod_id'],['amount']],
+    };
+    for(final e in required.entries){
+      for(final row in data[e.key]??<Map<String,dynamic>>[]){
+        if(e.value.any((alternatives)=>!alternatives.any((key)=>row[key]!=null)))
+          throw FormatException('Required SQL field missing in '+e.key);
+      }
+    }
     return {for(final table in tables)table:data[table]??<Map<String,dynamic>>[]};
   }
 }

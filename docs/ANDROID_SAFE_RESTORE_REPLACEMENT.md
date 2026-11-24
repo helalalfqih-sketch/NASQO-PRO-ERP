@@ -1,6 +1,6 @@
 # Local restore replacement
 
-The native Android file picker performs SQLite or recognized native JSON restore without moving large base64 messages across the WebView. A SmartPro SQLite (.back) source can be restored into the working account register; review remains optional. One gzip compression layer is decoded into a private temporary file with a 32 MiB expanded-size limit. The decoded payload is the archived source. ZIP and SQL dump execution are not enabled.
+The native Android file picker performs SQLite or recognized native JSON restore without moving large base64 messages across the WebView. A SmartPro SQLite (.back) source can be restored into the working account register; review remains optional. One gzip compression layer is decoded into a private temporary file with a 32 MiB expanded-size limit. The decoded payload is the archived source. ZIP and arbitrary SQL execution are not enabled. Recognized SmartPro SQL literal dumps use the separate data-only parser.
 
 When the working database contains rows, a local replacement requires:
 1. Export all native working tables, including unsynchronized operations and the original archive, independently of any selected historical review.

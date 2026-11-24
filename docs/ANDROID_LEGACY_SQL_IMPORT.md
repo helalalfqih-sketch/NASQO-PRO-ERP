@@ -1,0 +1,5 @@
+# SmartPro SQL text restore
+
+The Android native file picker accepts recognized SmartPro-style SQL dumps and one gzip compression layer. It parses column definitions and literal INSERT INTO ... VALUES rows into the existing legacy collection mapping. The source is never executed by SQLite. Common dump metadata and unsupported non-business table content remain in the original archived bytes; data expressions, UPDATE/DELETE/ATTACH, unsupported statements, conflicting aliases, incomplete tuples, missing required fields and oversized imports fail closed. The SQL parser supports MySQL-style backslash escaping and doubled quotes, not arbitrary dialects or stored procedures. Source bytes and SHA-256 are retained, and the same explicit restore/safety-copy path is used. Tests cover aliases, quoted data, fractional values and end-to-end activation. Real-world SQL export compatibility remains subject to a real-file test.
+
+Historical balances continue to use their original sides. Unknown currencies, unverified stock and cloud-connected replacement protections are unchanged.

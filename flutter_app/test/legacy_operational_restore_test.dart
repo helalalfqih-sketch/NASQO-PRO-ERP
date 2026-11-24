@@ -195,6 +195,32 @@ void main(){
       expect(await db.query('legacy_stock_openings'),hasLength(2));
       final snap=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((snap['inventory'] as List).firstWhere((e)=>e['id']==second)['legacySourceItemId'],'legacy-prod-1');
+
+      final sql=await File('${dir.path}/legacy.sql').writeAsString("""
+INSERT INTO currencies(id,name,amount) VALUES(1,'ريال',1);
+INSERT INTO boxes(id,name,cur) VALUES(1,'العملاء',1);
+INSERT INTO cboxes(id,name,cur,state) VALUES(1,'Cashbox',1,1);
+INSERT INTO accounts(id,name,box_id,lim) VALUES(1,'اسم العميل',1,0);
+INSERT INTO stores(id,name) VALUES(1,'Main');
+INSERT INTO products(id,name,unit,price,price2,cur) VALUES(1,'Item','piece',8,3,1);
+INSERT INTO bounds(id,acc_id,dain,madin,cur_id,doc_type,date,cboxid)
+ VALUES(1,1,10,0,1,2,'2026-11-08',0),(2,1,6,6,1,1,'2026-11-08',1);
+INSERT INTO bill_details(id,bill_id,prod_id,store_id,amount,price,total)
+ VALUES(1,1,1,1,2.5,4,10);
+""");
+      final parsed=await backup.inspect(sql,'legacy.sql');
+      expect(parsed.format,'legacy-sql');
+      expect(parsed.legacy,true);
+      expect(parsed.counts['ledger'],2);
+      expect(parsed.collections['accounts']!.single['groupId'],1);
+      expect(parsed.collections['ledger']!.last['direction'],'debit');
+      final beforeSql=(await backup.replacementBackup())!;
+      await migrate.activate(parsed,replacementSha:sha256.convert(beforeSql).toString());
+      expect(await LegacyOperationalRestore.original(db),orderedEquals(await sql.readAsBytes()));
+      expect((await db.query('ledger_entries')),hasLength(2));
+      expect((await db.query('journal_entries')),isEmpty);
+      final sqlDetail=await LegacyOperationalRestore.invoice(db,'legacy-ent-1');
+      expect((sqlDetail!['lines'] as List).single['quantity'],2.5);
     }finally{await db.close();await dir.delete(recursive:true);}
   });
 }

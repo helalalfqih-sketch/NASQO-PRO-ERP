@@ -58,7 +58,7 @@ class LocalBackupRestore {
     if(n!=n.round()||n.abs()>9007199254740991)throw const FormatException('Invalid integer');
     return n.toInt();
   }
-  static bool flag(Object? v)=>v==true||v==1;
+  static bool flag(Object? v)=>v==true||v==1||v=='1';
   static String ident(Object? v){
     final id=str(v);
     if(id.isEmpty||id.length>256)throw const FormatException('Missing or long record identity');
@@ -371,8 +371,14 @@ class LocalBackupRestore {
       if(!names.containsKey(aid))missing++;
       final doc=integer(r['bill_type']??r['doc_type'],1);
       final kind=[2,3,7,9].contains(doc)?'invoice':[4,5].contains(doc)?'return':'voucher';
-      final typeLabel=const {2:'فاتورة بيع',3:'فاتورة شراء',4:'مردود مبيعات',5:'مردود مشتريات',7:'فاتورة بيع حرة',9:'فاتورة شراء حرة'}[doc]??'سند تاريخي';
       final settled=d>0&&c>0&&(d-c).abs()<0.01;
+      final typeLabel=<int,String>{
+        2:settled?'فاتورة بيع نقدي':'فاتورة بيع آجل',
+        3:settled?'ف.ش.نقدي':'فاتورة شراء آجلة',
+        4:'مردود مبيعات',5:'مردود مشتريات',
+        7:settled?'فاتورة بيع حر نقدي':'فاتورة بيع حرة',
+        9:settled?'فاتورة شراء حر نقدي':'فاتورة شراء حرة',
+      }[doc]??(doc==1?(d>0?'عليه (سند)':'له (سند)'):'سند تاريخي');
       final cb=integer(r['cboxid']);
       final billLines=detail[id]??<Map<String,dynamic>>[];
       String wh='';
@@ -391,7 +397,7 @@ class LocalBackupRestore {
       if(date.isEmpty&&RegExp(r'^[0-9]{8}$').hasMatch(nd)&&nd!='00000000')date='${nd.substring(0,4)}-${nd.substring(4,6)}-${nd.substring(6,8)}';
       ledger.add({'id':'legacy-ent-$id','accountId':aid,'accountName':names[aid]??'حساب غير مرتبط',
         'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':d==0&&c==0?'balance':settled||(doc==1&&cb>0&&(d==0||c==0))?'cash':'credit',if(cashIds.contains(cb))'cashboxId':cb,
-        'direction':settled?([2,5,7].contains(doc)?'debit':'credit'):(d>=c?'debit':'credit'),
+        'direction':settled?([1,2,5,7].contains(doc)?'debit':'credit'):(d>=c?'debit':'credit'),
         'amount':settled?d:d>=c?d:c,'rawDain':d,'rawMadin':c,'settledOnReceipt':settled,'currency':getCurrency(r['cur']??r['cur_id']),
         'legacyCurrencyId':integer(r['cur']??r['cur_id'],1),'discount':numValue(r['discount']),'bonus':numValue(r['bonus']),
         'sender':str(r['sender']),'receiver':str(r['recever']),'companyName':str(r['comp']),'legacyId':id,
