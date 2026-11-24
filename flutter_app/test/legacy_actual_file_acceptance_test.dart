@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:nasqo_pro_erp/services/local_database.dart';
@@ -19,7 +20,7 @@ void main(){
     final local=LocalDatabase.instance,db=await local.database;
     try{
       final file=await File(path!).copy('${dir.path}/private-source.back');
-      final source=await databaseFactoryFfi.openDatabase(file.path,readOnly:true,singleInstance:false);
+      final source=await databaseFactoryFfi.openDatabase(file.path,options:OpenDatabaseOptions(readOnly:true,singleInstance:false));
       final originalCounts=<String,int>{};
       final rawLedger=<String,Map<String,Object?>>{};
       try{
@@ -52,17 +53,23 @@ void main(){
       expect(await db.query('journal_entries'),isEmpty);
       expect(await db.query('sync_outbox'),isEmpty);
       final exact=await LegacyOperationalRestore.original(db);
-      expect(exact!=null&&exact.length==candidate.bytes.length,true);
+      expect(exact!=null&&sha256.convert(exact).toString()==candidate.sha,true);
       final loaded=await LegacyStockOpening(local).load();
       final products=(loaded['products'] as List).cast<Map<String,dynamic>>();
       final warehouses=(loaded['warehouses'] as List).cast<Map<String,dynamic>>();
-      var suggestions=0;
+      var invalidSuggestions=0;
       for(final w in warehouses){
-        final draft=LegacyStockBatch.reviewRows(products,[],w['id'] as String);
-        suggestions+=draft.where((r)=>r['reason']=='suggested').length;
+        final warehouse=w['id'] as String;
+        final draft=LegacyStockBatch.reviewRows(products,[],warehouse);
+        expect(draft.length,products.length);
+        for(final row in draft.where((r)=>r['reason']=='suggested')){
+          final q=row['quantity'],v=row['totalValue'];
+          if(row['warehouseId']!=warehouse||q is! num||v is! num||
+              q<0||v<0||(q==0&&v!=0)||(q>0&&v<=0))invalidSuggestions++;
+        }
       }
       expect(products.length,originalCounts['products']);
-      expect(suggestions>=0,true);
+      expect(invalidSuggestions,0);
       expect(await db.query('legacy_stock_openings'),isEmpty);
     }finally{await db.close();await dir.delete(recursive:true);}
   },skip:path==null?'Set NASQO_PRIVATE_LEGACY_BACKUP to a local SQLite backup; no private file is committed.':false);

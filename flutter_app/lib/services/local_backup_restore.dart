@@ -345,21 +345,33 @@ class LocalBackupRestore {
     }).toList();
     final names={for(final a in accounts)a['id']:a['name']};
     final prodNames={for(final a in inventory)a['id']:a['name']};
+    final prodSkus={for(final a in inventory)a['id']:a['sku']};
+    final whNames={for(final w in warehouses)w['id']:w['name']};
     final detail=<int,List<Map<String,dynamic>>>{};
+    final billSummaries=<int,List<String>>{};
     for(final n in ['bill_details','bill_details2']){
       for(final r in t[n]!){
         final bill=integer(r['bill_id']),pid='legacy-prod-${integer(r['prod_id'])}';
-        detail.putIfAbsent(bill,()=>[]).add({'lineKind':n=='bill_details'?'item':'free',
-          if(n=='bill_details')'inventoryItemId':pid,'itemName':prodNames[pid]??str(r['details']),
-          if(n=='bill_details')'warehouseId':'legacy-wh-${integer(r['store_id'])}','price':numValue(r['price']),
+        final isItem=n=='bill_details';
+        final wh='legacy-wh-${integer(r['store_id'])}';
+        final rawDescription=str(r['details']).trim();
+        final name=isItem?(prodNames[pid]??rawDescription):rawDescription.isEmpty?'بند حر':rawDescription;
+        if(isItem&&prodNames.containsKey(pid)){
+          final summary=billSummaries.putIfAbsent(bill,()=> <String>[]);
+          final qty=str(r['amount']).trim(),unit=str(r['unit']).trim();
+          if(summary.length<8)summary.add("${prodNames[pid]} (${qty.isEmpty?'1':qty}${unit.isEmpty?'':' $unit'})");
+        }
+        detail.putIfAbsent(bill,()=>[]).add({'lineKind':isItem?'item':'free',
+          if(isItem)'inventoryItemId':pid,'itemName':name,
+          if(isItem)'warehouseId':wh,if(isItem)'warehouseName':whNames[wh]??'',
+          if(isItem)'sku':prodSkus[pid]??'','price':numValue(r['price']),
           'quantity':numValue(r['amount']),'total':numValue(r['total']),'discount':numValue(r['discount']),
-          'bonus':numValue(r['bonus']),'unit':str(r['unit']),'unitNum':integer(r['unitnum'],1),'details':str(r['details']),'expiryDate':str(r['exdate']),'legacyId':r['id']});
+          'bonus':numValue(r['bonus']),'unit':str(r['unit']),'unitNum':isItem?integer(r['unitnum'],1):1,'details':str(r['details']),'expiryDate':isItem?str(r['exdate']):'','legacyId':r['id']});
       }
     }
     final ledger=<Map<String,dynamic>>[];
     var ambiguous=0,missing=0,unknownCurrencies=0;
     final seenMoves=<int>{};
-    final whNames={for(final w in warehouses)w['id']:w['name']};
     final votes=<String,Map<String,int>>{};
     final moves=t['input_move']!.isNotEmpty?t['input_move']!:t['bounds']!;
     for(final r in moves){
@@ -395,15 +407,19 @@ class LocalBackupRestore {
       }
       final nd=str(r['ndate']);
       if(date.isEmpty&&RegExp(r'^[0-9]{8}$').hasMatch(nd)&&nd!='00000000')date='${nd.substring(0,4)}-${nd.substring(4,6)}-${nd.substring(6,8)}';
+      final rawDetails=str(r['details']).trim();
+      final preview=rawDetails.isNotEmpty?rawDetails:(billSummaries[id]??<String>[]).join('\n');
+      final displayDetails=preview.length>600?preview.substring(0,600):preview;
+      final stamp=DateTime.tryParse('${date}T00:00:00Z');
       ledger.add({'id':'legacy-ent-$id','accountId':aid,'accountName':names[aid]??'حساب غير مرتبط',
         'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':d==0&&c==0?'balance':settled||(doc==1&&cb>0&&(d==0||c==0))?'cash':'credit',if(cashIds.contains(cb))'cashboxId':cb,
         'direction':settled?([1,2,5,7].contains(doc)?'debit':'credit'):(d>=c?'debit':'credit'),
         'amount':settled?d:d>=c?d:c,'rawDain':d,'rawMadin':c,'settledOnReceipt':settled,'currency':getCurrency(r['cur']??r['cur_id']),
         'legacyCurrencyId':integer(r['cur']??r['cur_id'],1),'discount':numValue(r['discount']),'bonus':numValue(r['bonus']),
         'sender':str(r['sender']),'receiver':str(r['recever']),'companyName':str(r['comp']),'legacyId':id,
-        'exchangeRate':numValue(r['curprice'],1)==0?1:numValue(r['curprice'],1),'details':str(r['details']),'documentNumber':str(r['bill']),
+        'exchangeRate':numValue(r['curprice'],1)==0?1:numValue(r['curprice'],1),'details':displayDetails,'documentNumber':str(r['bill']),
         'warehouseId':wh,'warehouseName':whNames[wh]??'','invoiceContent':[7,9].contains(doc)?'free':kind=='voucher'?'none':'items',
-        'entryNumber':id,'entryDate':date,'createdAtMs':DateTime.tryParse(date)?.millisecondsSinceEpoch??0,
+        'entryNumber':id,'entryDate':date,'createdAtMs':stamp==null?0:stamp.millisecondsSinceEpoch+id,
         'deleted':false,'docType':doc,'sourceOrigin':'legacy_sqlite','postingStatus':'historical_unposted','lineCount':billLines.length,'lines':billLines});
     }
     for(final item in inventory){

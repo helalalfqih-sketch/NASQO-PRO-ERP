@@ -64,6 +64,10 @@ void main(){
       expect(unpacked.counts,candidate.counts);
       expect(await backup.replacementBackup(),isNull);
       expect(candidate.meta['unknownCurrencies'],1);
+      final restoredFirst=candidate.collections['ledger']!.firstWhere((r)=>r['id']=='legacy-ent-1');
+      expect(restoredFirst['details'],'Product (2.5)');
+      expect(restoredFirst['createdAtMs'],DateTime.utc(2026,11,8).millisecondsSinceEpoch+1);
+      expect((restoredFirst['lines'] as List).single['warehouseName'],'Main');
       expect(candidate.collections['inventory']!.single['computedQuantity'],-55);
       expect(candidate.collections['inventory']!.single['legacyInvoiceQtyByWarehouse'],{'legacy-wh-1':-31,'legacy-wh-2':-24});
       expect(candidate.collections['source_store_trans'],hasLength(1));
