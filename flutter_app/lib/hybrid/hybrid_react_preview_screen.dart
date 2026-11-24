@@ -9,6 +9,7 @@ import '../screens/legacy_stock_opening_screen.dart';
 import '../screens/legacy_history_screen.dart';
 import '../screens/local_invoice_roles_screen.dart';
 import '../services/local_invoice_roles.dart';
+import '../services/local_workspace_settings.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -36,6 +37,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   late final HybridReadOnlyProtocol _protocol = HybridReadOnlyProtocol(
     readSnapshot: HybridLocalSnapshotAdapter.readFromDevice,
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
+    saveWorkspaceSettings: _saveWorkspaceSettings,
     createAccount: (key,payload) => _saveAccount(key,payload),
     updateAccount: (key,id,payload) => _saveAccount(key,payload,accountId:id),
     postDocument: _postDocument,
@@ -55,6 +57,12 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     final account = (snapshot['accounts'] as List).cast<Map<String,dynamic>>()
       .firstWhere((a) => a['id'] == id);
     return {'account':account,'snapshot':snapshot};
+  }
+
+  static Future<Map<String,dynamic>> _saveWorkspaceSettings(Map<String,dynamic> input)async{
+    await LocalWorkspaceSettings(LocalDatabase.instance).save(HybridLocalSnapshotAdapter.workspaceId,input);
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    return {'workspace':snapshot['workspace'],'snapshot':snapshot};
   }
 
   static Future<Map<String,dynamic>> _postDocument(String key,Map<String,dynamic> payload) async {

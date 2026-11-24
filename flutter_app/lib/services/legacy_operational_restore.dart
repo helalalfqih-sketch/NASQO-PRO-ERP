@@ -127,7 +127,7 @@ class LegacyOperationalRestore {
           if(legs.isNotEmpty){
             if(!supported||legs.length<2||!['posted','reversed'].contains(status))throw const FormatException('Unsupported source journal');
             var debit=0,credit=0;
-            batch.insert('journal_entries',{'id':id,'currency':c!,'created_at':s(e['entryDate'])});
+            batch.insert('journal_entries',{'id':id,'currency':c,'created_at':s(e['entryDate'])});
             for(var j=0;j<legs.length;j++){
               final leg=legs[j],account=s(leg['accountId']),dm=i(leg['debitMinor']),cm=i(leg['creditMinor']);
               if(!accountIds.contains(account)||accountCurrencies[account]!=c||

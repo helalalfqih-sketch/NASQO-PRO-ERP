@@ -12,6 +12,7 @@ class HybridReadOnlyProtocol {
   HybridReadOnlyProtocol({
     required this.readSnapshot,
     this.saveUiPreferences,
+    this.saveWorkspaceSettings,
     this.createAccount,
     this.updateAccount,
     this.postDocument,
@@ -25,6 +26,7 @@ class HybridReadOnlyProtocol {
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
   final Future<void> Function(Map<String, dynamic>)? saveUiPreferences;
+  final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? saveWorkspaceSettings;
   final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
   final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
@@ -130,6 +132,15 @@ class HybridReadOnlyProtocol {
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
           'ok':true,'data':result??{'cancelled':true,'fileName':'','mimeType':'','sizeBytes':0,'base64Content':''}});
       }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح أو استعادة النسخة المحلية.');}
+    }
+    if(actionName=='saveWorkspaceSettings'&&saveWorkspaceSettings!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.length!=2||p['workspaceId']!='local-erp-workspace'||p['updates'] is! Map<String,dynamic>)
+        return _error(id,actionName,'VALIDATION_ERROR','إعدادات المنشأة غير صالحة.');
+      try{
+        final result=await saveWorkspaceSettings!(p['updates'] as Map<String,dynamic>);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'VALIDATION_ERROR','لم تحفظ إعدادات المنشأة. تحقق من الاسم والعملة والإعدادات المدعومة.');}
     }
     if (actionName == 'saveUiPreferences') {
       final params = request['payload'];
