@@ -85,6 +85,32 @@ void main(){
       final current=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((current['accounts'] as List).single['name'],'Live account');
       expect(await local.pendingOperations(w),hasLength(1));
+      final webPath='${dir.path}/unified.sqlite';
+      final web=await databaseFactoryFfi.openDatabase(webPath);
+      await web.execute('CREATE TABLE workspaces(id TEXT PRIMARY KEY,company_name TEXT,default_currency TEXT)');
+      await web.execute('CREATE TABLE accounts(id TEXT PRIMARY KEY,workspace_id TEXT,name TEXT,category TEXT,opening_balance REAL,credit_limit REAL)');
+      await web.execute('CREATE TABLE warehouses(id TEXT PRIMARY KEY,workspace_id TEXT,name TEXT)');
+      await web.execute('CREATE TABLE inventory_items(id TEXT PRIMARY KEY,workspace_id TEXT,name TEXT,quantity REAL,avg_cost REAL,quantity_unverified INTEGER,count2 REAL,count3 REAL,warehouse_id TEXT,unit TEXT)');
+      await web.execute('CREATE TABLE ledger_entries(id TEXT PRIMARY KEY,workspace_id TEXT,account_id TEXT,kind TEXT,direction TEXT,doc_type INTEGER,deleted INTEGER,posting_status TEXT,amount REAL)');
+      await web.execute('CREATE TABLE invoice_lines(id INTEGER PRIMARY KEY,workspace_id TEXT,entry_id TEXT,inventory_item_id TEXT,line_kind TEXT,quantity REAL,price REAL,total REAL,unit_num INTEGER,bonus REAL)');
+      await web.insert('workspaces',{'id':'ws','company_name':'Web backup','default_currency':'ريال'});
+      await web.insert('accounts',{'id':'a','workspace_id':'ws','name':'Client','category':'clients','opening_balance':5,'credit_limit':0});
+      await web.insert('warehouses',{'id':'wh','workspace_id':'ws','name':'Main'});
+      await web.insert('inventory_items',{'id':'i','workspace_id':'ws','name':'Item','quantity':999,'avg_cost':2,'quantity_unverified':1,'count2':12,'count3':2,'warehouse_id':'wh','unit':'piece'});
+      await web.insert('ledger_entries',{'id':'purchase','workspace_id':'ws','account_id':'a','kind':'invoice','direction':'credit','doc_type':3,'deleted':0,'posting_status':'posted','amount':24});
+      await web.insert('ledger_entries',{'id':'sale','workspace_id':'ws','account_id':'a','kind':'invoice','direction':'debit','doc_type':2,'deleted':0,'posting_status':'posted','amount':10});
+      await web.insert('invoice_lines',{'id':1,'workspace_id':'ws','entry_id':'purchase','inventory_item_id':'i','line_kind':'item','quantity':2,'price':12,'total':24,'unit_num':2,'bonus':1});
+      await web.insert('invoice_lines',{'id':2,'workspace_id':'ws','entry_id':'sale','inventory_item_id':'i','line_kind':'item','quantity':1,'price':10,'total':10,'unit_num':2,'bonus':0});
+      await web.close();
+      final unified=await backup.inspect(File(webPath),'unified.sqlite');
+      final product=unified.collections['inventory']!.single;
+      expect(product['quantity'],999);
+      expect(product['computedQuantity'],13);
+      expect(unified.meta['invoiceLines'],2);
+      await backup.openReview(unified);
+      final view=await HybridLocalSnapshotAdapter.readFromDevice();
+      expect((view['inventory'] as List).single['computedQuantity'],13);
+      await backup.closeReview();
     }finally{await db.close();await dir.delete(recursive:true);}
   });
 }

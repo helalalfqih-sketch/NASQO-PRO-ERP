@@ -180,24 +180,44 @@ class LocalBackupRestore {
 
   BackupCandidate _serverSqlite(String name,Uint8List bytes,String hash,Map<String,dynamic> ws,Map<String,List<Map<String,dynamic>>> t){
     final ls=<String,List<Map<String,dynamic>>>{};
+    final entries={for(final e in t['ledger_entries']!)str(e['id']):e};
+    final items={for(final i in t['inventory_items']!)str(i['id']):i};
+    final computed=<String,num>{};
+    // Match the web's getFullWorkspaceBundle movement projection. Do not
+    // replace static quantity or certify historically unverified stock.
+    for(final l in t['invoice_lines']!){
+      final itemId=str(l['inventory_item_id']),e=entries[str(l['entry_id'])];
+      if(itemId.isEmpty||e==null||flag(e['deleted'])||str(e['posting_status'])=='draft'||
+          str(l['line_kind'])!='item')continue;
+      final item=items[itemId];
+      final doc=e['doc_type'];
+      final kind=str(e['kind']),direction=str(e['direction']);
+      final inbound=[3,9,4].contains(doc)||(doc==null&&((kind=='invoice'&&direction=='credit')||(kind=='return'&&direction=='credit')));
+      final outbound=[2,7,5].contains(doc)||(doc==null&&((kind=='invoice'&&direction=='debit')||(kind=='return'&&direction=='debit')));
+      final c2=numValue(item?['count2'],1),c3=numValue(item?['count3'],1);
+      final f2=c2==0?1:c2,f3=c3==0?1:c3;
+      final unit=integer(l['unit_num'],1),factor=unit==2?f2:unit==3?f2*f3:1;
+      final quantity=numValue(l['quantity'])*factor+numValue(l['bonus']);
+      computed[itemId]=(computed[itemId]??0)+(inbound?quantity:outbound?-quantity:0);
+    }
     for(final row in t['invoice_lines']!){
       ls.putIfAbsent(str(row['entry_id']),()=>[]).add({
         'lineKind':row['line_kind'],'inventoryItemId':row['inventory_item_id'],'warehouseId':row['warehouse_id'],
         'itemName':row['item_name'],'price':row['price'],'quantity':row['quantity'],'total':row['total'],
         'discount':row['discount'],'bonus':row['bonus'],'unit':row['unit'],'unitNum':row['unit_num'],
-        'details':row['details'],'expiryDate':row['expiry_date'],
+        'details':row['details'],'expiryDate':row['expiry_date'],'unitCostAtSale':row['unit_cost_at_sale'],'legacyId':row['legacy_id'],
       });
     }
     return _web(name,bytes,hash,{
       'format':'nasqo-unified-sqlite-export-v2','version':2,
       'workspace':{'companyName':str(ws['company_name'],'نسقو برو'),'defaultCurrency':currency(ws['default_currency'])},
       'currencies':t['currencies']!.map((r)=>{'id':r['id'],'name':r['name'],'code':r['code'],'symbol':r['symbol'],'ratePrimary':r['rate_primary'],'rateSecondary':r['rate_secondary'],'nameSecondary':r['name_secondary']}).toList(),
-      'accountGroups':t['account_groups']!.map((r)=>{'id':r['id'],'name':r['name'],'category':r['category'],'currencyCode':r['currency_code'],'sortOrder':r['sort_order']}).toList(),
-      'cashboxes':t['cashboxes']!.map((r)=>{'id':r['id'],'name':r['name'],'details':r['details'],'currencyCode':r['currency_code'],'isActive':flag(r['state']),'state':r['state']}).toList(),
-      'accounts':t['accounts']!.map((r)=>{'id':r['id'],'name':r['name'],'groupId':r['group_id'],'category':r['category'],'phone':r['phone'],'creditLimit':r['credit_limit'],'currency':currency(r['currency']),'isCashAccount':flag(r['is_cash_account']),'openingBalance':r['opening_balance'],'openingDirection':r['opening_direction'],'note':r['note'],'codeNumber':r['code_number'],'sortOrder':r['sort_order']}).toList(),
-      'warehouses':t['warehouses']!.map((r)=>{'id':r['id'],'name':r['name'],'details':r['details'],'isDefault':flag(r['is_default']),'codeNumber':r['code_number']}).toList(),
-      'inventory':t['inventory_items']!.map((r)=>{'id':r['id'],'name':r['name'],'unit':r['unit'],'quantity':r['quantity'],'avgCost':r['avg_cost'],'sellingPrice':r['selling_price'],'sku':r['sku'],'minThreshold':r['min_threshold'],'warehouseId':r['warehouse_id'],'currencyCode':r['currency_code'],'quantityUnverified':flag(r['quantity_unverified']),'unit2':r['unit2'],'count2':r['count2'],'sprice2':r['sprice2'],'unit3':r['unit3'],'count3':r['count3'],'sprice3':r['sprice3'],'defaultUnit':r['default_unit']}).toList(),
-      'ledger':t['ledger_entries']!.map((r)=>{'id':r['id'],'accountId':r['account_id'],'accountName':r['account_name'],'counterpartAccountId':r['counterpart_account_id'],'counterpartAccountName':r['counterpart_account_name'],'cashboxId':r['cashbox_id'],'kind':r['kind'],'typeLabel':r['type_label'],'payment':r['payment'],'direction':r['direction'],'amount':r['amount'],'rawDain':r['raw_dain'],'rawMadin':r['raw_madin'],'settledOnReceipt':flag(r['settled_on_receipt']),'currency':currency(r['currency']),'exchangeRate':r['exchange_rate'],'details':r['details'],'documentNumber':r['document_number'],'warehouseId':r['warehouse_id'],'warehouseName':r['warehouse_name'],'invoiceContent':r['invoice_content'],'entryNumber':r['entry_number'],'deleted':flag(r['deleted']),'entryDate':r['entry_date'],'createdAtMs':r['created_at_ms'],'postingStatus':r['posting_status'],'taxAmount':r['tax_amount'],'discount':r['discount'],'docType':r['doc_type'],'lines':ls[str(r['id'])]??[]}).toList(),
+      'accountGroups':t['account_groups']!.map((r)=>{'id':r['id'],'name':r['name'],'category':r['category'],'currencyCode':r['currency_code'],'sortOrder':r['sort_order'],'hasBill':flag(r['has_bill']),'isEmployee':flag(r['is_employee']),'legacyId':r['legacy_id']}).toList(),
+      'cashboxes':t['cashboxes']!.map((r)=>{'id':r['id'],'name':r['name'],'details':r['details'],'currencyCode':r['currency_code'],'isActive':flag(r['state']),'state':r['state'],'boxType':r['box_type'],'sortOrder':r['sort_order'],'legacyId':r['legacy_id']}).toList(),
+      'accounts':t['accounts']!.map((r)=>{'id':r['id'],'name':r['name'],'groupId':r['group_id'],'category':r['category'],'phone':r['phone'],'creditLimit':r['credit_limit'],'currency':currency(r['currency']),'isCashAccount':flag(r['is_cash_account']),'openingBalance':r['opening_balance'],'openingDirection':r['opening_direction'],'note':r['note'],'codeNumber':r['code_number'],'sortOrder':r['sort_order'],'accountImage':r['account_image'],'settlement':flag(r['settlement']),'documentNumberRequired':flag(r['document_number_required']),'messageMethod':r['message_method'],'sendMode':r['send_mode'],'legacyRef':r['legacy_ref']}).toList(),
+      'warehouses':t['warehouses']!.map((r)=>{'id':r['id'],'name':r['name'],'details':r['details'],'isDefault':flag(r['is_default']),'codeNumber':r['code_number'],'legacyRef':r['legacy_ref']}).toList(),
+      'inventory':t['inventory_items']!.map((r)=>{'id':r['id'],'name':r['name'],'unit':r['unit'],'quantity':r['quantity'],'avgCost':r['avg_cost'],'sellingPrice':r['selling_price'],'sku':r['sku'],'minThreshold':r['min_threshold'],'warehouseId':r['warehouse_id'],'currencyCode':r['currency_code'],'quantityUnverified':flag(r['quantity_unverified']),'unit2':r['unit2'],'count2':r['count2'],'sprice2':r['sprice2'],'unit3':r['unit3'],'count3':r['count3'],'sprice3':r['sprice3'],'defaultUnit':r['default_unit'],'isActive':r['bstate']!=0,'expiryDate':r['expiry_date'],'legacyId':r['legacy_id'],'legacyRef':r['legacy_ref'],if(flag(r['quantity_unverified'])&&computed.containsKey(str(r['id'])))'computedQuantity':computed[str(r['id'])]}).toList(),
+      'ledger':t['ledger_entries']!.map((r)=>{'id':r['id'],'accountId':r['account_id'],'accountName':r['account_name'],'counterpartAccountId':r['counterpart_account_id'],'counterpartAccountName':r['counterpart_account_name'],'cashboxId':r['cashbox_id'],'kind':r['kind'],'typeLabel':r['type_label'],'payment':r['payment'],'direction':r['direction'],'amount':r['amount'],'rawDain':r['raw_dain'],'rawMadin':r['raw_madin'],'settledOnReceipt':flag(r['settled_on_receipt']),'currency':currency(r['currency']),'exchangeRate':r['exchange_rate'],'details':r['details'],'documentNumber':r['document_number'],'warehouseId':r['warehouse_id'],'warehouseName':r['warehouse_name'],'invoiceContent':r['invoice_content'],'entryNumber':r['entry_number'],'deleted':flag(r['deleted']),'entryDate':r['entry_date'],'createdAtMs':r['created_at_ms'],'postingStatus':r['posting_status'],'taxAmount':r['tax_amount'],'discount':r['discount'],'docType':r['doc_type'],'sourceOrigin':r['source_origin'],'dueDate':r['due_date'],'expenseCategory':r['expense_category'],'paidAmount':r['paid_amount'],'legacyRef':r['legacy_ref'],'lineCount':(ls[str(r['id'])]??[]).length,'lines':ls[str(r['id'])]??[]}).toList(),
     });
   }
 
