@@ -720,7 +720,7 @@ export async function createLedgerEntry(
         "createLedgerEntry",
         { workspaceId: uid || LOCAL_WORKSPACE_UID, payload: entry },
         {
-          idempotencyKey: createIdempotencyKey("createLedgerEntry", entry.accountId),
+          idempotencyKey: entry.id ? `document_${entry.id}` : createIdempotencyKey("createLedgerEntry", entry.accountId),
           dedupeKey: `createLedgerEntry:${fingerprint}`,
         },
       );
