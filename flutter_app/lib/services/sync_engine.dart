@@ -33,18 +33,30 @@ class SyncEngine {
     if (_running) throw StateError('Synchronization already running');
     _running = true;
     try {
-      final pending = await local.pendingOperations(workspaceId,operationTypes:allowedOperationTypes);
-      for (final row in pending) {
-        final id = row['operation_id'] as String;
-        final revision = await transport.push(workspaceId, id,
-            row['operation_type'] as String,
-            jsonDecode(row['payload_json'] as String) as Map<String, dynamic>);
-        await local.acknowledgeOperation(workspaceId, id, revision);
+      // Bound one synchronization cycle so a continuous stream cannot
+      // monopolize the background worker. Unsent rows remain durable.
+      const pageSize=100,maxPages=10;
+      for(var batch=0;batch<maxPages;batch++){
+        final pending=await local.pendingOperations(workspaceId,limit:pageSize,operationTypes:allowedOperationTypes);
+        for(final row in pending){
+          final id=row['operation_id'] as String;
+          final revision=await transport.push(workspaceId,id,row['operation_type'] as String,
+            jsonDecode(row['payload_json'] as String) as Map<String,dynamic>);
+          await local.acknowledgeOperation(workspaceId,id,revision);
+        }
+        if(pending.length<pageSize)break;
       }
-      final cursor = await remote.cursor(workspaceId);
-      final page = await transport.pull(workspaceId, cursor);
-      if (page.nextCursor.isEmpty) throw StateError('Invalid remote cursor');
-      await remote.applyPage(workspaceId, cursor, page);
+      var cursor=await remote.cursor(workspaceId);
+      for(var batch=0;batch<maxPages;batch++){
+        final page=await transport.pull(workspaceId,cursor);
+        if(page.nextCursor.isEmpty||page.operations.length>pageSize||
+           (page.operations.isNotEmpty&&page.nextCursor==cursor)){
+          throw StateError('Invalid or nonadvancing remote page');
+        }
+        await remote.applyPage(workspaceId,cursor,page);
+        cursor=page.nextCursor;
+        if(page.operations.length<pageSize)break;
+      }
     } finally {
       _running = false;
     }

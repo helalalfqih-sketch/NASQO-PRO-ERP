@@ -37,7 +37,7 @@ class _Server implements SyncTransport {
   Future<SyncPage> pull(String workspaceId, String? cursor) async {
     final after = int.parse(cursor ?? '0');
     final page = operations.where((o) => o['workspace_id'] == workspaceId &&
-        int.parse(o['server_revision'] as String) > after).toList();
+        int.parse(o['server_revision'] as String) > after).take(100).toList();
     return SyncPage(page.isEmpty ? '$after' : page.last['server_revision'] as String, page);
   }
 }
@@ -96,6 +96,22 @@ void main() {
     expect(await db.query('accounts', where:'id = ?',whereArgs:['must-rollback']), isEmpty);
     expect(await db.query('sync_inbox', where:'workspace_id = ?',
         whereArgs:[workspace]), hasLength(2));
+  });
+
+  test('a synchronization cycle drains more than one server page',()async{
+    const workspace='test-pages';
+    final server=_Server()..loseNextAck=false;
+    final remote=SqliteRemoteChangeStore(local,applyRemoteAccount);
+    for(var i=1;i<=105;i++){
+      await server.push(workspace,'paged-op-$i','account.create',{
+        'id':'paged-account-$i','name':'Paged account $i','category':'clients','phone':'',
+        'currency':'sar','note':'','openingDirection':'credit','creditLimit':0,
+        'openingBalance':0,'isCashAccount':0,'codeNumber':1000+i,
+      });
+    }
+    await SyncEngine(local,server,remote).synchronize(workspace);
+    expect(await remote.cursor(workspace),'105');
+    expect(await db.query('accounts',where:"id LIKE 'paged-account-%'"),hasLength(105));
   });
 
   test('local sale replay does not reduce stock twice; insufficient second line rolls back all effects', () async {

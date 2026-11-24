@@ -14,6 +14,34 @@ class HttpSyncTransport implements SyncTransport {
   final Uri baseUri;
   final Future<String> Function() getIdToken;
 
+  static BigInt revision(Object? value){
+    if(value is! String||!RegExp(r'^(0|[1-9][0-9]{0,17})$').hasMatch(value)){
+      throw const FormatException('Invalid server revision');
+    }
+    return BigInt.parse(value);
+  }
+
+  /// A workspace head allocates a contiguous revision per committed
+  /// operation. Refuse gaps, duplicate revisions or a forged next cursor.
+  static SyncPage validatePage(String workspace,String? cursor,Map<String,dynamic> result){
+    final operations=result['operations'],next=result['next_cursor'];
+    if(result['workspace_id']!=workspace||operations is! List||operations.length>100)
+      throw const FormatException('Invalid sync page');
+    var expected=revision(cursor??'0');
+    final rows=<Map<String,dynamic>>[],ids=<String>{};
+    for(final item in operations){
+      if(item is! Map<String,dynamic>||item['workspace_id']!=workspace||
+          item['operation_id'] is! String||(item['operation_id'] as String).isEmpty||
+          !ids.add(item['operation_id'] as String)||item['operation_type'] is! String||
+          item['payload'] is! Map<String,dynamic>)throw const FormatException('Invalid remote operation');
+      expected+=BigInt.one;
+      if(revision(item['server_revision'])!=expected)throw const FormatException('Noncontiguous server revision');
+      rows.add(item);
+    }
+    if(revision(next)!=expected)throw const FormatException('Remote cursor mismatch');
+    return SyncPage(next as String,rows);
+  }
+
   Future<Map<String, dynamic>> _request(String path,
       Map<String, dynamic> payload) async {
     final token = await getIdToken();
@@ -57,7 +85,7 @@ class HttpSyncTransport implements SyncTransport {
     final revision = result['server_revision'];
     if (result['operation_id'] != operationId ||
         result['workspace_id'] != workspaceId ||
-        revision is! String || revision.isEmpty) {
+        revision is! String || HttpSyncTransport.revision(revision)<=BigInt.zero) {
       throw const FormatException('Invalid acknowledgement');
     }
     return revision;
@@ -68,17 +96,6 @@ class HttpSyncTransport implements SyncTransport {
     final result = await _request('/api/sync/pull', {
       'workspace_id': workspaceId, 'cursor': cursor,
     });
-    final next = result['next_cursor'];
-    final operations = result['operations'];
-    if (result['workspace_id'] != workspaceId ||
-        next is! String || next.isEmpty || operations is! List) {
-      throw const FormatException('Invalid sync page');
-    }
-    return SyncPage(next, operations.map((item) {
-      if (item is! Map<String, dynamic>) {
-        throw const FormatException('Invalid remote operation');
-      }
-      return item;
-    }).toList());
+    return validatePage(workspaceId,cursor,result);
   }
 }
