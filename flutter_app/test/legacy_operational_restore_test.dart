@@ -7,6 +7,7 @@ import 'package:nasqo_pro_erp/services/legacy_operational_restore.dart';
 import 'package:nasqo_pro_erp/services/local_account_commands.dart';
 import 'package:nasqo_pro_erp/services/local_document_commands.dart';
 import 'package:nasqo_pro_erp/services/legacy_stock_opening.dart';
+import 'package:nasqo_pro_erp/services/legacy_history_archive.dart';
 import 'package:nasqo_pro_erp/services/stock_invoice_commands.dart';
 import 'package:nasqo_pro_erp/hybrid/local_snapshot_adapter.dart';
 
@@ -39,6 +40,8 @@ void main(){
       await src.insert('products',{'id':1,'name':'Product','unit':'piece','price':5,'price2':3,'cur':1,'count2':12,'count3':2});
       await src.execute('CREATE TABLE store_trans(id INTEGER PRIMARY KEY,store_id1 INTEGER,store_id2 INTEGER,type INTEGER)');
       await src.insert('store_trans',{'id':1,'store_id1':1,'store_id2':2,'type':1});
+      await src.execute('CREATE TABLE trans_details(id INTEGER PRIMARY KEY,bill_id INTEGER,prod_id INTEGER,amount REAL,unitnum INTEGER)');
+      await src.insert('trans_details',{'id':1,'bill_id':1,'prod_id':1,'amount':1.5,'unitnum':2});
       for(final movement in [
         {'id':1,'dain':10,'madin':0,'cur':1,'bill_type':2},
         {'id':2,'dain':7,'madin':7,'cur':1,'bill_type':2},
@@ -87,7 +90,17 @@ void main(){
       expect((view['ledger'] as List).firstWhere((r)=>r['id']=='new-doc')['journalLines'],hasLength(2));
       await expectLater(migrate.activate(candidate),throwsStateError);
       await expectLater(local.clearAll(),throwsStateError);
+      final archive=await LegacyHistoryArchive(local).load();
+      expect(archive['source_trans_details'],hasLength(1));
       final opening=LegacyStockOpening(local);
+      final counted=await opening.load();
+      expect((counted['products'] as List).single['legacyTransferNetByWarehouse'],{'legacy-wh-1':-18,'legacy-wh-2':18});
+      // Simulate an older activated archive that has the original source but
+      // no structured transfer rows. Recovery is read-only.
+      await db.delete('legacy_operational_rows',where:'collection = ?',whereArgs:['source_trans_details']);
+      final recovered=await LegacyHistoryArchive(local).load();
+      expect(recovered['source_trans_details'],hasLength(1));
+      expect(await db.query('legacy_operational_rows',where:'collection = ?',whereArgs:['source_trans_details']),isEmpty);
       final stock=StockInvoiceCommands(local);
       final a=await LocalAccountCommands(local).save(w,'inventory-asset',{'name':'Stock asset','category':'shop','currency':'ريال'});
       final b=await LocalAccountCommands(local).save(w,'opening-offset',{'name':'Opening offset','category':'shop','currency':'ريال'});
