@@ -236,6 +236,12 @@ class LocalBackupRestore {
     if(str(ws['companyName']).trim().isEmpty)throw const FormatException('Company name missing');
     final data={for(final k in collections)k:rows(root[k]??[]).map((r)=>Map<String,dynamic>.from(r)).toList()};
     final defaultCurrency=currency(ws['defaultCurrency']??ws['baseCurrency']);
+    if(root['erpData']!=null&&root['erpData'] is! Map)throw const FormatException('Invalid ERP data');
+    // These are not part of the recognized web bundle layout. Do not
+    // silently drop independent accounting journal tables.
+    for(final key in ['journalEntries','journalLines']){
+      if(root[key]!=null&&rows(root[key]).isNotEmpty)throw const FormatException('Separate journal tables require a native backup');
+    }
     if(!['accounts','warehouses','inventory','ledger'].every(root.containsKey))throw const FormatException('Incomplete core backup');
     final accountIds=<String>{};
     final warehouseIds=<String>{};
@@ -284,6 +290,13 @@ class LocalBackupRestore {
       if(str(row['counterpartAccountId']).isNotEmpty&&!accountIds.contains(row['counterpartAccountId']))missingRefs++;
       final ls=rows(row['lines']??[]);
       if(row['lineCount'] is num&&row['lineCount']!=ls.length)throw const FormatException('Missing invoice detail rows');
+      row['lineCount']=ls.length;
+      row['lines']=[for(final raw in ls)<String,dynamic>{
+        ...raw,
+        'inventoryItemId':raw['inventoryItemId']==null?null:str(raw['inventoryItemId']),
+        'warehouseId':raw['warehouseId']==null?null:str(raw['warehouseId']),
+        'lineKind':raw['lineKind']=='free'?'free':str(raw['inventoryItemId']).isNotEmpty?'item':'free',
+      }];
       lineCount+=ls.length;
       // Preserve historical raw amount semantics, never manufacture journal legs.
     }
