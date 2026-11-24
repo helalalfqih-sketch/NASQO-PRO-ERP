@@ -176,6 +176,8 @@ export type LedgerEntryRecord = {
   deliveryDays?: number;
   sourceOrigin?: "native" | "smartpro_sql" | "legacy_sqlite";
   postingStatus?: "draft" | "posted" | "reversed" | "historical_unposted";
+  /** Editable quote/order created locally; never posted to accounts or stock. */
+  localDraft?: boolean;
   /** Explicit balanced SQLite journal legs; authoritative when present. */
   journalLines?: {accountId:string;debitMinor:number;creditMinor:number}[];
   stockPosting?: boolean;

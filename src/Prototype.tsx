@@ -6060,10 +6060,15 @@ function InvoiceModal({
       ? "cash"
       : "credit";
   const initialKind: "purchase" | "sale" =
-    kindOverride ?? (initialAccount?.category === "sales" ? "sale" : "purchase");
+    kindOverride ?? (editingEntry ? ((editingEntry.direction === "debit") !== (editingEntry.kind === "return") ? "sale" : "purchase") : (initialAccount?.category === "sales" ? "sale" : "purchase"));
 
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
-   const [localTaxAmount,setLocalTaxAmount] = useState("");
+  const draftKind=editingEntry?.kind==="quote"||editingEntry?.kind==="order" ? editingEntry.kind
+    : intent==="quote"||intent==="order" ? intent : null;
+  const localDraft=hybridLocal&&draftKind!==null&&!editingEntry?.deleted&&(!editingEntry||editingEntry.localDraft===true);
+  const metadataOnly=hybridLocal&&editingEntry?.kind==="invoice"&&editingEntry.postingStatus==="posted"&&
+    !editingEntry.deleted&&editingEntry.journalLines?.length;
+  const [localTaxAmount,setLocalTaxAmount] = useState(editingEntry?.taxAmount==null?"":String(editingEntry.taxAmount));
   const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">("amount");
   const [localOriginalId,setLocalOriginalId] = useState("");
   const [localReturnQty,setLocalReturnQty] = useState<Record<string,string>>({});
@@ -6334,7 +6339,7 @@ function InvoiceModal({
     return q === undefined ? "غير معتمد" : `تاريخي غير معتمد: ${formatAmount(q)}${item.legacyTransferIncomplete ? " (غير مكتمل)" : ""}`;
   };
   const pickProductIntoInvoice = (item: InventoryItemRecord) => {
-    if (historicalStockPending(item)) {
+    if (historicalStockPending(item) && !localDraft) {
       if (!warehouseId) { ctx.showToast("اختر المخزن أولًا"); return; }
       void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{
         workspaceId:ctx.uid,warehouseId,productId:item.legacySourceItemId ?? item.id,
@@ -6520,18 +6525,30 @@ function InvoiceModal({
       return;
     }
 
-    if (hybridLocal && (editingEntry || isReturn || intent === "quote" || intent === "order")) {
+    if(metadataOnly&&editingEntry){
+      setSaving(true);
+      try{
+        await updateLedgerEntry(ctx.uid,editingEntry.id,{accountId:editingEntry.accountId,accountName:editingEntry.accountName,
+          details:note.trim()===stripAutoLineSummary(editingEntry.details)?editingEntry.details:note.trim(),
+          documentNumber:documentNumber.trim()});
+        ctx.showToast("تم حفظ البيان والمرجع فقط؛ لم تتغير القيود أو الكميات.");
+        onClose();
+      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
+      finally{setSaving(false);}
+      return;
+    }
+    if (hybridLocal && ((editingEntry && !localDraft) || isReturn || (draftKind!==null && !localDraft))) {
       focusInvalid(accountSelectRef.current, {
-        field:"submit",message:"تعديل القيود وعروض الأسعار يحتاج مسارًا مستقلًا.",
+        field:"submit",message:"تعديل المستند المرحّل أو المستورد يتطلب مسار عكس معتمد.",
       });
       return;
     }
     if(hybridLocal && content==="items"){
-      if(validLines.some(l=>{const item=l.inventoryItemId?inventoryById.get(l.inventoryItemId):undefined;return !item||historicalStockPending(item)||item.warehouseId!==warehouseId;})){
+      if(validLines.some(l=>{const item=l.inventoryItemId?inventoryById.get(l.inventoryItemId):undefined;return !item||(!localDraft&&historicalStockPending(item))||item.warehouseId!==warehouseId;})){
         focusInvalid(accountSelectRef.current,{field:"submit",message:"اعتمد مخزون الأصناف وحدد المخزن الصحيح قبل ترحيل الفاتورة."});
         return;
       }
-      if(currency!=="ريال" || !selectedWarehouse || !validLines.length ||
+      if((!localDraft&&currency!=="ريال") || !selectedWarehouse || !validLines.length ||
         (localTaxMode==="rate"&&!validTaxRate) || (localTaxMode==="amount"&&parsedTax<0) ||
         validLines.some(l=>!l.inventoryItemId || !validLocalQuantity(l.quantity) || ![1,2,3].includes(l.unitNum??1))){
         focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن ووحدات الأصناف المعتمدة وكميات حتى ثلاث منازل عشرية وضريبة صالحة؛ العملة المحلية ريال."});
@@ -6598,11 +6615,11 @@ function InvoiceModal({
             ? parsedEntryNum
             : maxNumericField(ctx.ledger, (e) => e.entryNumber, 1000) + 1;
       const entryKind =
-        intent === "quote" ? "quote" : intent === "order" ? "order" : isReturn ? "return" : "invoice";
+        draftKind ?? (isReturn ? "return" : "invoice");
       const typeLabel =
-        intent === "quote"
+        draftKind === "quote"
           ? "عرض سعر"
-          : intent === "order"
+          : draftKind === "order"
             ? "طلبية جديدة"
             : isReturn
               ? kind === "purchase"
@@ -6636,7 +6653,7 @@ function InvoiceModal({
         amount: effectiveAmount,
         ...(hybridLocal && content==="items" ? {taxAmount:taxTotal,
           ...(localTaxMode==="rate"?{taxRateBps:taxBps}:{})}:{}),
-        settledOnReceipt: payment === "cash",
+        settledOnReceipt: payment === "cash" && !localDraft,
         currency,
         exchangeRate: parseArabicNumber(exchangeRate) || 1,
         details: finalDetails,
@@ -7484,6 +7501,8 @@ function InvoiceModal({
             </div>
           ) : null}
 
+          {metadataOnly ? <div className="field-inline-error" role="status">المستند مرحّل؛ الحفظ يغيّر البيان والمرجع فقط. لن تُحفظ تعديلات المبلغ أو الأصناف أو الحساب.</div> : null}
+          {localDraft ? <div className="field-inline-error" role="status">مسودة تجارية: لا تُرحّل قيودًا ولا تحجز مخزونًا.</div> : null}
           {editingEntry && !editingEntry.deleted ? (
             <button
               type="button"
@@ -7514,7 +7533,7 @@ function InvoiceModal({
             <button type="button" className="save" data-testid="invoice-save-btn" disabled={saving} onClick={() => void handleSave("save")}>
               {saving
                 ? "جاري الحفظ..."
-                : editingEntry
+                : metadataOnly ? "حفظ البيان والمرجع فقط" : editingEntry
                   ? "حفظ التعديل"
                   : intent === "quote"
                     ? "حفظ عرض السعر"
@@ -7528,7 +7547,7 @@ function InvoiceModal({
               type="button"
               className="save-print save-whatsapp"
               data-testid="invoice-save-whatsapp-btn"
-              disabled={saving}
+              disabled={saving||Boolean(metadataOnly)}
               onClick={() => void handleSave("whatsapp")}
             >
               <WhatsAppIcon />
@@ -10775,8 +10794,18 @@ function TransactionModal({
       return;
     }
     if (hybridLocal && editingEntry) {
-      const msg = "تعديل السند المرحل غير متاح بعد.";
-      setTxError({field:"submit",message:msg}); ctx.showToast(msg); return;
+      if(editingEntry.postingStatus!=="posted"||!editingEntry.journalLines?.length||editingEntry.deleted){
+        const msg="التعديل الوصفي متاح للسند المحلي المرحّل فقط.";
+        setTxError({field:"submit",message:msg});ctx.showToast(msg);return;
+      }
+      setSaving(true);
+      try{
+        await updateLedgerEntry(ctx.uid,editingEntry.id,{accountId:editingEntry.accountId,accountName:editingEntry.accountName,details:note.trim()});
+        ctx.showToast("تم حفظ بيان السند دون تغيير القيود.");
+        onClose();
+      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
+      finally{setSaving(false);}
+      return;
     }
     const parsedAmount = parseArabicNumber(amount);
     if (parsedAmount <= 0) {
@@ -11040,11 +11069,11 @@ function TransactionModal({
           <button className="cancel" onClick={onClose}>
             إلغاء
           </button>
-          <button className="save-print" disabled={saving} onClick={() => void save(true)}>
+          <button className="save-print" disabled={saving||(hybridLocal&&Boolean(editingEntry))} onClick={() => void save(true)}>
             حفظ وطباعة
           </button>
           <button className="save" disabled={saving} onClick={() => void save(false)}>
-            {saving ? "جاري الحفظ..." : "حفظ"}
+            {saving ? "جاري الحفظ..." : hybridLocal&&editingEntry ? "حفظ البيان فقط" : "حفظ"}
           </button>
         </div>
       </section>
@@ -12769,8 +12798,10 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                 <div style={{ display: "flex", gap: 6 }}>
                   <button
                     onClick={async () => {
-                      await setLedgerDeleted(ctx.uid, item.id, false);
-                      ctx.showToast("تمت استعادة العملية");
+                      try {
+                        await setLedgerDeleted(ctx.uid, item.id, false);
+                        ctx.showToast("تمت استعادة العملية");
+                      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذرت الاستعادة");}
                     }}
                     style={{
                       padding: "4px 8px",
@@ -12784,8 +12815,10 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                   </button>
                   <button
                     onClick={async () => {
-                      await permanentlyDeleteLedger(ctx.uid, item.id);
-                      ctx.showToast("تم الحذف النهائي");
+                      try {
+                        await permanentlyDeleteLedger(ctx.uid, item.id);
+                        ctx.showToast("تم الحذف النهائي");
+                      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر الحذف");}
                     }}
                     style={{
                       padding: "4px 8px",
