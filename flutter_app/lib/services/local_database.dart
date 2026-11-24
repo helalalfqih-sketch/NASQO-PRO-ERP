@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 6;
+  static const int dbVersion = 7;
 
   Database? _db;
 
@@ -50,6 +50,7 @@ class LocalDatabase {
         if (oldVersion < 4) await createDocumentSchema(db);
         if (oldVersion < 5) await createStockPostingSchema(db);
         if (oldVersion < 6) await createStockUnitsAndReturnsSchema(db);
+        if (oldVersion < 7) await createBackupReviewSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -125,6 +126,7 @@ class LocalDatabase {
         await createDocumentSchema(db);
         await createStockPostingSchema(db);
         await createStockUnitsAndReturnsSchema(db);
+        await createBackupReviewSchema(db);
       },
     );
     return _db!;
@@ -189,6 +191,19 @@ class LocalDatabase {
     await db.execute('ALTER TABLE stock_posting_documents ADD COLUMN return_original_id TEXT REFERENCES stock_posting_documents(id)');
     await db.execute('CREATE INDEX stock_return_original ON stock_posting_documents(return_original_id)');
     await db.execute('CREATE TABLE inventory_unit_settings (item_id TEXT PRIMARY KEY REFERENCES inventory_items(id), settings_json TEXT NOT NULL)');
+  }
+
+  static Future<void> createBackupReviewSchema(DatabaseExecutor db) async {
+    await db.execute('CREATE TABLE backup_review_sources (sha TEXT PRIMARY KEY, file_name TEXT NOT NULL, source_format TEXT NOT NULL, meta_json TEXT NOT NULL)');
+    await db.execute('CREATE TABLE backup_review_rows (sha TEXT NOT NULL REFERENCES backup_review_sources(sha), collection TEXT NOT NULL, ordinal INTEGER NOT NULL, row_json TEXT NOT NULL, PRIMARY KEY(sha,collection,ordinal))');
+    await db.execute('CREATE TABLE backup_review_chunks (sha TEXT NOT NULL REFERENCES backup_review_sources(sha), ordinal INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(sha,ordinal))');
+    await db.execute('CREATE TABLE backup_review_active (singleton INTEGER PRIMARY KEY CHECK(singleton=1), sha TEXT NOT NULL REFERENCES backup_review_sources(sha))');
+  }
+
+  static Future<void> requireLiveWorkspace(DatabaseExecutor db) async {
+    if ((await db.query('backup_review_active',limit:1)).isNotEmpty) {
+      throw StateError('Historical backup review is read only');
+    }
   }
 
   Future<Map<String, dynamic>> createAccountAtomic(
@@ -272,6 +287,7 @@ class LocalDatabase {
     final encoded = jsonEncode(payload);
     final db = await database;
     return db.transaction((txn) async {
+      await requireLiveWorkspace(txn);
       final prior = await txn.query('bridge_idempotency_keys',
           where: 'workspace_id = ? AND operation_id = ?',
           whereArgs: [workspaceId, operationId]);
@@ -424,6 +440,7 @@ class LocalDatabase {
   }) async {
     final db = await database;
     await db.transaction((txn) async {
+      await requireLiveWorkspace(txn);
       final history = await txn.query('bridge_idempotency_keys', limit: 1);
       if (history.isNotEmpty) {
         throw StateError('Legacy snapshot writes disabled after transactional operations');
@@ -482,6 +499,7 @@ class LocalDatabase {
   Future<void> clearAll() async {
     final db = await database;
     await db.transaction((txn) async {
+      await requireLiveWorkspace(txn);
       final pending = await txn.query('sync_outbox',
           where: 'acknowledged_at IS NULL', limit: 1);
       if (pending.isNotEmpty) throw StateError('Unsynced operations exist');
@@ -497,6 +515,7 @@ class LocalDatabase {
       await txn.delete('ledger_entries');
       await txn.delete('accounts');
       await txn.delete('warehouses');
+      await txn.delete('inventory_unit_settings');
       await txn.delete('inventory_items');
       await txn.delete('erp_state');
     });

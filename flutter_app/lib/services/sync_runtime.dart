@@ -23,6 +23,7 @@ class SyncRuntime {
       final db = await local.database;
       // Existing domain tables are single-workspace. Never mix tenants.
       await db.transaction((txn) async {
+        await LocalDatabase.requireLiveWorkspace(txn);
         final rows = await txn.query('erp_state', where: 'stateKey = ?',
             whereArgs: ['sync_workspace_binding']);
         if (rows.isEmpty) {
