@@ -173,7 +173,7 @@ class LocalStockCatalog {
           if(!seen.add(identity))throw StateError('Duplicate import row');
           if(matches.isEmpty){
             final id=StockInvoiceCommands.identity('item_${key}_$i');
-            await insertItem(t,id,input);inserted++;
+            await insertItem(t,id,input);seen.add(id);inserted++;
           }else if(mode=='insert-only'){skipped++;}
           else{await editItem(t,matches.single['id'] as String,input);updated++;}
         }

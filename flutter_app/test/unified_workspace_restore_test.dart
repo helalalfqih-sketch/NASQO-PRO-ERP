@@ -9,6 +9,7 @@ import 'package:nasqo_pro_erp/services/legacy_operational_restore.dart';
 import 'package:nasqo_pro_erp/services/legacy_stock_opening.dart';
 import 'package:nasqo_pro_erp/services/legacy_history_archive.dart';
 import 'package:nasqo_pro_erp/services/local_invoice_roles.dart';
+import 'package:nasqo_pro_erp/services/local_inventory_reports.dart';
 import 'package:nasqo_pro_erp/services/stock_invoice_commands.dart';
 import 'package:nasqo_pro_erp/hybrid/local_snapshot_adapter.dart';
 
@@ -80,6 +81,16 @@ void main(){
       expect(pending['quantity'],0);expect(pending['quantityUnverified'],true);
       expect(pending['legacyStoredQuantity'],999);
       expect(pending['legacyHistoricalQtyByWarehouse'],{'wh-a':9.5,'wh-b':2.5});
+      final historyReport=await db.transaction((t)=>LocalInventoryReports.report(t,snapshot,{}));
+      final reportRows=historyReport['itemRows'] as List;
+      expect(reportRows.firstWhere((r)=>r['id']=='verified')['remainingValue'],15);
+      expect(reportRows.firstWhere((r)=>r['id']=='pending')['availableQty'],12);
+      expect(reportRows.firstWhere((r)=>r['id']=='pending')['remainingValue'],0);
+      final scopedReport=await db.transaction((t)=>LocalInventoryReports.report(t,snapshot,{'itemId':'pending','warehouseId':'wh-a'}));
+      expect((scopedReport['itemRows'] as List).single['availableQty'],9.5);
+      final stats=await db.transaction((t)=>LocalInventoryReports.priceStats(t,snapshot,'pending'));
+      expect(stats['txCount'],1);expect(stats['minPrice'],2);expect(stats['lastPrice'],2);
+      expect(await db.query('sync_outbox'),isEmpty);
       final archive=await LegacyHistoryArchive(local).load();
       expect(archive['source_store_trans'],hasLength(1));expect(archive['source_trans_details'],hasLength(1));
       expect(archive['source_offers'],hasLength(1));expect(archive['source_offer_bill_details'],hasLength(1));
@@ -97,6 +108,12 @@ void main(){
       snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((snapshot['inventory'] as List).firstWhere((i)=>i['id']=='verified')['quantity'],6.5);
       expect(await db.query('journal_entries'),hasLength(2));
+      final saleReport=await db.transaction((t)=>LocalInventoryReports.report(t,snapshot,{'itemId':'verified'}));
+      final saleRow=(saleReport['itemRows'] as List).single;
+      expect(saleRow['availableQty'],6.5);expect(saleRow['sellQty'],1);
+      expect(saleRow['remainingValue'],13);expect(saleRow['profit'],1);
+      final previousReport=await db.transaction((t)=>LocalInventoryReports.report(t,snapshot,{'itemId':'verified','toDate':'2026-01-01'}));
+      expect((previousReport['itemRows'] as List).single['availableQty'],7.5);
       final saved=await backup.exportNative();
       final safeFile=await File('${dir.path}/native.back').writeAsBytes(saved);
       final native=await backup.inspect(safeFile,'native.back');

@@ -105,6 +105,7 @@ class LocalInventoryReports {
     }
     final headers=await sourceRows(db,'source_store_trans',sha),lines=await sourceRows(db,'source_trans_details',sha);
     final byHeader={for(final h in headers)s(h['id']):h};
+    final incompleteTransferHistory=inventory.any((p)=>p['legacyHistoryIncludesTransfers']==false);
     final rawProducts={for(final p in sourceProducts)s(p['legacyId']??s(p['id']).replaceFirst('legacy-prod-','')):p};
     final rawWarehouses={for(final w in warehouses.keys)w.replaceFirst('legacy-wh-',''):w};
     final unresolved=<String,Map<String,dynamic>>{};
@@ -118,7 +119,8 @@ class LocalInventoryReports {
           'details':s(h['details']),'linesCount':0};
       }
     }
-    for(final l in lines){
+    for(var lineIndex=0;lineIndex<lines.length;lineIndex++){
+      final l=lines[lineIndex];
       final hid=s(l['bill_id']),h=byHeader[hid],normalized=l['normalizedRefs']==true;
       final p=(normalized?source:rawProducts)[s(l['prod_id'])];
       if(h==null||p==null){missingLines++;continue;}
@@ -139,7 +141,7 @@ class LocalInventoryReports {
         // A same-warehouse source record has no net effect.
         if(from==to)continue;
         result.add({'itemId':item,'sourceItemId':s(p['id']),'source':'transfer','historical':true,
-          'role':k,'refId':'tx-$hid','date':date,'label':wh==from?'تحويل صادر':'تحويل وارد',
+          'role':k,'refId':'tx-$hid','transferLineKey':'$hid:$lineIndex','date':date,'label':wh==from?'تحويل صادر':'تحويل وارد',
           'accountName':"${warehouses[from]} ← ${warehouses[to]}",'warehouseId':wh,'warehouseName':warehouses[wh],
           'fromWarehouseId':from,'toWarehouseId':to,'quantity':qty,'unit':s(l['unit']),
           'unitNum':unit,'baseQuantity':base,'effectQty':positive(k)?base:-base,
@@ -155,7 +157,7 @@ class LocalInventoryReports {
         'baseQuantity':q,'effectQty':q,'currency':s(p['currencyCode']),'financial':false});
     }
     return {'events':result,'openings':openings,'unresolved':unresolved.values.toList(),
-      'missingLines':missingLines,'lastSourceDate':lastSourceDate};
+      'missingLines':missingLines,'lastSourceDate':lastSourceDate,'incompleteTransferHistory':incompleteTransferHistory};
   }
 
   static Future<Map<String,dynamic>> priceStats(DatabaseExecutor db,Map<String,dynamic> snapshot,String itemId)async{
@@ -208,12 +210,12 @@ class LocalInventoryReports {
       final buyValue=netRole(money,'buy','total')-netRole(money,'purchaseReturn','total');
       final sellValue=netRole(money,'sell','total')-netRole(money,'saleReturn','total');
       final txIn=netRole(relevant,'transferIn','baseQuantity'),txOut=netRole(relevant,'transferOut','baseQuantity');
-      final catalogCost=n(item['avgCost']),referenceCost=n(item['legacyCatalogCost'],catalogCost);
+      final catalogCost=n(item['avgCost']),referenceCost=rowCurrency==c?n(item['legacyCatalogCost'],catalogCost):0;
       final historicBuys=events.where((e)=>e['role']=='buy'&&e['financial']==true&&e['currency']==rowCurrency).toList()
         ..sort((a,b){final d=s(b['date']).compareTo(s(a['date']));return d!=0?d:n(b['entryNumber']).compareTo(n(a['entryNumber']));});
       final purchased=sum(historicBuys,'baseQuantity'),paid=sum(historicBuys,'total');
       final fallback=referenceCost>0?referenceCost:purchased>0?paid/purchased:0;
-      final avg=catalogCost>0&&item['quantityUnverified']!=true?catalogCost:
+      final avg=rowCurrency==c&&catalogCost>0&&item['quantityUnverified']!=true?catalogCost:
         buys>0&&buyValue>0?buyValue/buys:purchased>0?paid/purchased:fallback;
       final last=historicBuys.isEmpty?avg:n(historicBuys.first['baseQuantity'])>0?
         n(historicBuys.first['total'])/n(historicBuys.first['baseQuantity']):avg;
@@ -230,7 +232,7 @@ class LocalInventoryReports {
         (scope.isEmpty||scope==wh?current:0)-sum(balanceEvents.where((e)=>to.isNotEmpty&&s(e['date']).compareTo(to)>0),'effectQty');
       final periodNet=sum(endEvents.where((e)=>from.isEmpty||s(e['date']).compareTo(from)>=0),'effectQty');
       final openingQty=available-periodNet;
-      final value=historicalOnly?0:round(available*catalogCost);
+      final value=historicalOnly||rowCurrency!=c?0:round(available*catalogCost);
       if(historicalOnly)estimates++;
       final otherCurrencies=relevant.where((e)=>e['financial']==true&&e['currency']!=rowCurrency);
       if(otherCurrencies.isNotEmpty)mixed++;
@@ -239,7 +241,7 @@ class LocalInventoryReports {
         if(e['recordedCost']!=null&&basis=='avg')return n(e['recordedCost']);
         return n(e['baseQuantity'])*unitCost;
       }
-      final profit=money.where((e)=>['sell','saleReturn'].contains(e['role'])).fold<num>(0,(acc,e)=>
+      final profit=money.where((e)=>['sell','saleReturn'].contains(e['role'])&&(rowCurrency==c||unitCost>0||e['recordedCost']!=null)).fold<num>(0,(acc,e)=>
         acc+(e['role']=='sell'?1:-1)*(n(e['total'])-costFor(e)));
       rows.add({'id':id,'code':item['legacyId'],'name':item['name'],'sku':s(item['sku']),'unit':s(item['unit']),
         'unit2':s(item['unit2']),'count2':item['count2'],'warehouseId':wh,'currencyCode':rowCurrency,
@@ -274,7 +276,19 @@ class LocalInventoryReports {
           'transferInQty':netRole(movement,'transferIn','baseQuantity'),'transferOutQty':netRole(movement,'transferOut','baseQuantity'),
           'netComputedQty':sum(movement,'effectQty')});
       }
-      if(itemId.isNotEmpty)movements.addAll(relevant.map((e)=>{...e}..remove('financial')..remove('recordedCost')));
+      if(itemId.isNotEmpty){
+        final transfers=<String,Map<String,dynamic>>{};
+        for(final e in relevant){
+          final row=<String,dynamic>{...e}..remove('financial')..remove('recordedCost');
+          if(scope.isEmpty&&row['transferLineKey']!=null){
+            final key=s(row['transferLineKey']);
+            final prior=transfers[key];
+            if(prior!=null){prior['effectQty']=n(prior['effectQty'])+n(row['effectQty']);prior['label']='تحويل بين المخازن';prior['warehouseName']=row['accountName'];continue;}
+            transfers[key]=row;
+          }
+          movements.add(row);
+        }
+      }
     }
     movements.sort((a,b){final d=s(b['date']).compareTo(s(a['date']));return d!=0?d:n(b['entryNumber']).compareTo(n(a['entryNumber']));});
     final buckets=totals.values.map((b)=><String,dynamic>{...b,
@@ -283,9 +297,9 @@ class LocalInventoryReports {
     final one=buckets.length==1?buckets.single:<String,dynamic>{};
     final unresolved=data['unresolved'] as List;
     final note='الرصيد المعتمد من SQLite ولا تُعاد إضافة الحركات القديمة إليه. الكميات التاريخية غير المعتمدة تقديرية ولا تدخل في قيمة المخزون. '
-      'الأرباح التاريخية تقديرية حسب أساس السعر المختار؛ الربح المسجل متاح للفواتير المحلية. '
+      'الأرباح التاريخية تقديرية حسب أساس السعر المختار؛ الربح المسجل متاح للفواتير المحلية. قيمة المتبقي بسعر التكلفة الحالي وليست تقييمًا تاريخيًا. '
       'استثناءات: ${unresolved.length} تحويل غير مكتمل، ${data['missingLines']} بند غير مرتبط، $unknownValue بند دون قيمة مالية معتمدة، $mixed صنف متعدد العملات.'
-      + (movements.length>300?' تظهر أحدث 300 حركة فقط.':'');
+      + (data['incompleteTransferHistory']==true?' بعض التحويلات القديمة غير متوفرة في المصدر.':'') + (movements.length>300?' تظهر أحدث 300 حركة فقط.':'');
     return {'warehouses':warehouses,'warehouseStocks':warehouseStocks,'itemRows':rows,
       'totals':{'totalSales':one['totalSales']??0,'totalPurchases':one['totalPurchases']??0,
         'totalProfit':one['totalProfit']??0,'totalRemainingValue':one['totalRemainingValue']??0,
