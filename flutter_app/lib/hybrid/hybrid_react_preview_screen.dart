@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
+import '../services/backup_encryption.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
@@ -44,7 +46,65 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   final _documentOutput=LocalDocumentOutput();
   late final NativeCloudSession _cloud=NativeCloudSession(
     confirm:_confirmCloud,exportWorkspace:_exportCloudWorkspace,restoreWorkspace:_restoreCloudFile,
-    pickFile:_pickCloudFile,saveFile:_saveCloudFile);
+    pickFile:_pickCloudFile,saveFile:_saveCloudFile,
+    requestRecoveryKey:_requestCloudRecoveryKey);
+
+  // The key is requested in native Flutter, never from the React bridge.
+  // Do not log, persist, or automatically copy it to the clipboard.
+  Future<SecretKey?> _requestCloudRecoveryKey(bool allowGenerate)async{
+    if(!mounted||_backupBusy)return null;
+    String input='';
+    String? error;
+    SecretKey? entered;
+    final choice=await showDialog<String>(context:context,builder:(ctx)=>
+      StatefulBuilder(builder:(ctx,setDialogState)=>AlertDialog(
+        title:const Text('مفتاح استرداد النسخة'),
+        content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,
+          crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            Text(allowGenerate?'أدخل مفتاحك المحفوظ، أو أنشئ مفتاحًا جديدًا واحفظه خارج Drive. فقدان المفتاح يعني عدم إمكانية استعادة النسخة.':
+              'أدخل مفتاح الاسترداد الأصلي للنسخة. لا يمكن استبدالها أو فك تشفيرها دون المفتاح الصحيح.'),
+            const SizedBox(height:12),
+            TextField(
+              textDirection:TextDirection.ltr,obscureText:true,
+              autocorrect:false,enableSuggestions:false,enableIMEPersonalizedLearning:false,
+              decoration:InputDecoration(labelText:'مفتاح الاسترداد',errorText:error),
+              onChanged:(value){input=value;if(error!=null)setDialogState(()=>error=null);}),
+          ])),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),
+          if(allowGenerate)TextButton(onPressed:()=>Navigator.pop(ctx,'generate'),child:const Text('إنشاء مفتاح')),
+          FilledButton(onPressed:(){
+            try{entered=BackupEncryption.importRecoveryKey(input);}
+            on FormatException{setDialogState(()=>error='المفتاح غير صالح');return;}
+            Navigator.pop(ctx,'use');
+          },child:const Text('متابعة')),
+        ])));
+    input='';
+    if(!mounted||choice==null)return null;
+    if(choice=='use')return entered;
+    if(choice!='generate'||!allowGenerate)return null;
+    final key=await BackupEncryption.newRecoveryKey();
+    final encoded=await BackupEncryption.exportRecoveryKey(key);
+    if(!mounted)return null;
+    var saved=false;
+    final approved=await showDialog<bool>(context:context,barrierDismissible:false,builder:(ctx)=>
+      StatefulBuilder(builder:(ctx,setDialogState)=>AlertDialog(
+        title:const Text('احفظ مفتاح الاسترداد'),
+        content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,
+          crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            const Text('احفظ المفتاح في مكان آمن منفصل عن النسخة. لا يُرسل إلى Google Drive ولا يمكن للنظام استعادته إذا فقدته.'),
+            const SizedBox(height:12),
+            SelectableText(encoded,textDirection:TextDirection.ltr),
+            CheckboxListTile(contentPadding:EdgeInsets.zero,value:saved,
+              onChanged:(value)=>setDialogState(()=>saved=value==true),
+              title:const Text('حفظت المفتاح في مكان آمن')),
+          ])),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:saved?()=>Navigator.pop(ctx,true):null,child:const Text('تشفير ومتابعة')),
+        ])));
+    return approved==true&&mounted?key:null;
+  }
   Future<bool> _confirmCloud(String title,String message)async{
     if(!mounted||_backupBusy)return false;
     return await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
