@@ -6243,8 +6243,9 @@ function InvoiceModal({
 
   if (!open) return null;
 
-  const localCash = hybridLocal && content === "items" && payment === "cash";
-  const invoiceAccounts=hybridLocal&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && a.isCashAccount===localCash):ctx.accounts;
+  const invoiceAccounts=hybridLocal&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount):ctx.accounts;
+  const invoiceCashboxes=hybridLocal?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
+  const effectiveCashboxId=hybridLocal?(invoiceCashboxes.find(cb=>cb.id===cashboxId)?.id??invoiceCashboxes[0]?.id):cashboxId;
   const selectedAccount = invoiceAccounts.find((a) => a.id === accountId) ?? invoiceAccounts[0];
   const selectedWarehouse = ctx.warehouses.find((w) => w.id === warehouseId);
   const accountSummary = selectedAccount
@@ -6498,10 +6499,9 @@ function InvoiceModal({
       return;
     }
 
-    if (hybridLocal && (editingEntry || (content==="free" && payment !== "credit") ||
-        isReturn || intent === "quote" || intent === "order")) {
+    if (hybridLocal && (editingEntry || isReturn || intent === "quote" || intent === "order")) {
       focusInvalid(accountSelectRef.current, {
-        field:"submit",message:"الفواتير الحرة المحلية آجلة فقط. تعديل القيود وعروض الأسعار يحتاج مسارًا مستقلًا.",
+        field:"submit",message:"تعديل القيود وعروض الأسعار يحتاج مسارًا مستقلًا.",
       });
       return;
     }
@@ -6607,7 +6607,7 @@ function InvoiceModal({
       const payload: Partial<LedgerEntryRecord> & { accountId: string; accountName: string } = {
         accountId: selectedAccount.id,
         accountName: selectedAccount.name,
-         ...(!hybridLocal && payment === "cash" && cashboxId ? { cashboxId } : { cashboxId: undefined }),
+         ...(payment === "cash" && effectiveCashboxId ? { cashboxId:effectiveCashboxId } : { cashboxId: undefined }),
         kind: entryKind,
         typeLabel,
         payment,
@@ -6859,8 +6859,8 @@ function InvoiceModal({
               preferredCategories={
                 kind === "sale" ? ["sales", "clients", "shop"] : ["purchases", "shop"]
               }
-              label={localCash?"حساب الصندوق النقدي":kind === "sale" ? "العميل / الحساب" : "المورد / الحساب"}
-              placeholder={localCash?"اختر حساب صندوق":kind === "sale" ? "اختر العميل أو الحساب" : "اختر المورد أو الحساب"}
+              label={kind === "sale" ? "العميل / الحساب" : "المورد / الحساب"}
+              placeholder={kind === "sale" ? "اختر العميل أو الحساب" : "اختر المورد أو الحساب"}
               searchPlaceholder="ابحث عن الحساب بالاسم أو الرقم أو الهاتف..."
               emptyText="لا توجد حسابات — أضف حسابًا من +"
               ariaLabel="حساب الفاتورة"
@@ -6956,15 +6956,15 @@ function InvoiceModal({
                 ))}
               </select>
             </label>
-            {payment === "cash" && ctx.cashboxes.length > 0 ? (
+            {payment === "cash" && invoiceCashboxes.length > 0 ? (
               <label className="invoice-field-box">
                 <span>الصندوق</span>
                 <select
                   aria-label="صندوق النقدية"
-                  value={cashboxId ?? ""}
+                  value={effectiveCashboxId ?? ""}
                   onChange={(e) => setCashboxId(Number(e.target.value))}
                 >
-                  {ctx.cashboxes.map((cb) => (
+                  {invoiceCashboxes.map((cb) => (
                     <option key={cb.id} value={cb.id}>
                       {cb.name}
                     </option>
@@ -10698,8 +10698,7 @@ function TransactionModal({
     editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
   );
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
-  const [localCounterpartId,setLocalCounterpartId] = useState(editingEntry?.counterpartAccountId ?? "");
-  const localDraftId = useRef("");
+   const localDraftId = useRef("");
   const [cashboxId, setCashboxId] = useState<number | undefined>(
     editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
   );
@@ -10735,7 +10734,10 @@ function TransactionModal({
 
   if (!open) return null;
 
-  const selectedAccount = ctx.accounts.find((a) => a.id === accountId) ?? initialAccount ?? ctx.accounts[0];
+  const voucherAccounts=hybridLocal?ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount):ctx.accounts;
+  const voucherCashboxes=hybridLocal?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
+  const effectiveCashboxId=hybridLocal?(voucherCashboxes.find(cb=>cb.id===cashboxId)?.id??voucherCashboxes[0]?.id):cashboxId;
+  const selectedAccount = voucherAccounts.find((a) => a.id === accountId) ?? (!hybridLocal?initialAccount:undefined) ?? voucherAccounts[0];
   const summary = selectedAccount ? computeAccountSummary(selectedAccount, ctx.ledger, currency) : null;
   const currentTime = new Intl.DateTimeFormat("ar-SA", {
     weekday: "short",
@@ -10751,9 +10753,8 @@ function TransactionModal({
       ctx.showToast(msg, 4500);
       return;
     }
-    if (hybridLocal && (editingEntry || !ctx.accounts.some(a => a.id===localCounterpartId &&
-        a.id!==selectedAccount.id && a.currency===currency && (payment!=="cash" || a.isCashAccount)))) {
-      const msg = "اختر حسابًا مقابلًا من نفس العملة؛ للسند النقدي اختر حساب صندوق. تعديل السند المرحل غير متاح.";
+    if (hybridLocal && editingEntry) {
+      const msg = "تعديل السند المرحل غير متاح بعد.";
       setTxError({field:"submit",message:msg}); ctx.showToast(msg); return;
     }
     const parsedAmount = parseArabicNumber(amount);
@@ -10790,11 +10791,10 @@ function TransactionModal({
         ctx.showToast(`تم تعديل السند #${editingEntry.entryNumber}`);
       } else {
         targetEntryId = await createLedgerEntry(ctx.uid, {
-          ...(hybridLocal ? {id:localDraftId.current,counterpartAccountId:localCounterpartId,
-            counterpartAccountName:ctx.accounts.find(a=>a.id===localCounterpartId)?.name ?? ""} : {}),
+          ...(hybridLocal ? {id:localDraftId.current} : {}),
           accountId: selectedAccount.id,
           accountName: selectedAccount.name,
-          ...(cashboxId ? { cashboxId } : {}),
+          ...(effectiveCashboxId && (!hybridLocal || payment==="cash") ? {cashboxId:effectiveCashboxId} : {}),
           kind: "voucher",
           typeLabel,
           payment,
@@ -10865,7 +10865,7 @@ function TransactionModal({
         </div>
 
         <AccountSelectCombobox
-          accounts={ctx.accounts}
+          accounts={voucherAccounts}
           value={selectedAccount?.id ?? ""}
           onChange={(nextId) => {
             if (txError?.field === "account") setTxError(null);
@@ -10881,24 +10881,15 @@ function TransactionModal({
           invalid={txError?.field === "account"}
           compact
         />
-        {hybridLocal && !editingEntry && <label className="invoice-field-box">
-          <span>الحساب المقابل للسند</span>
-          <select aria-label="الحساب المقابل للسند" value={localCounterpartId}
-            onChange={e=>setLocalCounterpartId(e.target.value)}>
-            <option value="">اختر الحساب المقابل</option>
-            {ctx.accounts.filter(a=>a.id!==selectedAccount?.id && a.currency===currency &&
-              (payment!=="cash" || a.isCashAccount)).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </label>}
         <div className="transaction-cashbox-row">
-          {ctx.cashboxes.length > 0 || editingEntry?.cashboxId ? (
+          {(voucherCashboxes.length > 0 && (!hybridLocal||payment==="cash")) || editingEntry?.cashboxId ? (
             <select
               className="transaction-fund"
               aria-label="صندوق النقد"
-              value={cashboxId ?? ""}
+              value={effectiveCashboxId ?? ""}
               onChange={(e) => setCashboxId(Number(e.target.value))}
             >
-              {ctx.cashboxes.map((cb) => (
+              {voucherCashboxes.map((cb) => (
                 <option key={cb.id} value={cb.id}>
                   {cb.name}
                 </option>

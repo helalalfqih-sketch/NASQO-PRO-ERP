@@ -298,7 +298,7 @@ class StockInvoiceCommands {
         }
         final header={...details,'id':id,'originalInvoiceId':original,'entryNumber':entryNumber,'entryDate':entryDate,
           'netMinor':net,'taxMinor':tax,'totalMinor':total,'lines':changes.map((x)=>x['data']).toList()};
-        await t.insert('ledger_entries',{...entry,'id':id,'kind':'return','direction':sale?'credit':'debit','amount':total/100,
+        await t.insert('ledger_entries',{...entry,'id':id,'kind':'returnEntry','direction':sale?'credit':'debit','amount':total/100,
           'typeLabel':sale?'مردود مبيعات':'مردود مشتريات','details':'مرتجع مرتبط للفاتورة $original',
           'documentNumber':entryNumber.toString(),'entryNumber':entryNumber,'entryDate':entryDate});
         await t.insert('stock_posting_documents',{'id':id,'return_original_id':original,'document_json':jsonEncode(header)});

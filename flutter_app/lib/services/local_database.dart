@@ -678,7 +678,7 @@ class LocalDatabase {
         invoiceContent: (m['invoiceContent'] as String?) ?? 'none',
         postingStatus: m['postingStatus'] as String?,
         kind: LedgerKind.values.firstWhere(
-          (e) => e.name == m['kind'],
+          (e) => e.name == (m['kind']=='return'?'returnEntry':m['kind']=='simple-entry'?'simpleEntry':m['kind']),
           orElse: () => LedgerKind.invoice,
         ),
         typeLabel: m['typeLabel'] as String,

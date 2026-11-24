@@ -76,7 +76,7 @@ class LocalInvoiceRoles {
     }
     final id=roles is Map?roles[key]:null;
     if(id is! String||id.isEmpty||
-        (await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[id,currency])).length!=1)
+        (await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[id,code])).length!=1)
       throw const InvoicePostingSetupRequired('حدد حساب الصندوق مرة واحدة من الإعدادات ← حسابات الترحيل التلقائي.');
     return id;
   }
@@ -106,10 +106,11 @@ class LocalInvoiceRoles {
       if(v!=CurrencyCode.currency2&&v.label==input['currency'])currency=v.name;
     }
     if(currency==null||!currencyNames.containsKey(currency))throw const InvoicePostingSetupRequired('عملة الفاتورة غير مدعومة للترحيل المحلي.');
+    final code=currency;
     final db=await local.database;
     return db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
-      final data=await read(t),raw=data[currency];
+      final data=await read(t),raw=data[code];
       final settings=raw is Map?raw:<String,dynamic>{};
       final sale=input['direction']=='debit',stock=input['invoiceContent']=='items';
       final primary=input['accountId'];
@@ -121,7 +122,7 @@ class LocalInvoiceRoles {
       }
       final cash=input['payment']=='cash';
       if(input['kind']=='voucher'){
-        final counter=cash?await cashAccount(t,currency!,input['cashboxId']):role('balanceVoucher','حساب تسوية السندات');
+        final counter=cash?await cashAccount(t,code,input['cashboxId']):role('balanceVoucher','حساب تسوية السندات');
         if(counter==primary)throw const InvoicePostingSetupRequired('اختر حسابًا مختلفًا عن حساب الصندوق أو التسوية.');
         return {...input,'counterpartAccountId':counter,if(!cash)'cashboxId':null};
       }
@@ -156,7 +157,7 @@ class LocalInvoiceRoles {
         if((await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 0',whereArgs:[id,currency])).length!=1)
           throw const InvoicePostingSetupRequired('أحد حسابات الترحيل غير موجود أو عملته غير مطابقة. راجع الإعدادات.');
       }
-      final settlement=cash?await cashAccount(t,currency!,input['cashboxId']):null;
+      final settlement=cash?await cashAccount(t,code,input['cashboxId']):null;
       if(settlement!=null&&(settlement==primary||roles.contains(settlement)))
         throw const InvoicePostingSetupRequired('اختر حساب العميل أو المورد، وليس حساب الصندوق.');
       return {...input,'counterpartAccountId':counter,
