@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import '../services/local_backup_restore.dart';
 import 'package:flutter/material.dart';
+import '../screens/cloud_identity_screen.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -215,6 +216,15 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       appBar: AppBar(
         title: const Text('نسقو — واجهة React المحلية'),
         actions: [
+          IconButton(
+            tooltip: 'الحساب السحابي',
+            icon: const Icon(Icons.account_circle_outlined),
+            onPressed: _backupBusy || _review || !_backupStateLoaded ? null : () {
+              Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const CloudIdentityScreen(),
+              ));
+            },
+          ),
           IconButton(tooltip:'استيراد نسخة احتياطية',icon:const Icon(Icons.file_open),
             onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
           IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
