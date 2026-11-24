@@ -575,6 +575,8 @@ class LocalBackupRestore {
           await txn.insert(n,row,conflictAlgorithm:ConflictAlgorithm.abort);
         }
       }
+      final integrity=await txn.rawQuery('PRAGMA integrity_check');
+      if(integrity.length!=1||integrity.single.values.single!='ok')throw StateError('SQLite integrity verification failed');
       final fk=await txn.rawQuery('PRAGMA foreign_key_check');
       if(fk.isNotEmpty)throw StateError('Foreign key verification failed');
       final unbalanced=await txn.rawQuery('SELECT j.id FROM journal_entries j LEFT JOIN journal_lines l ON l.journal_id=j.id GROUP BY j.id HAVING COUNT(l.id)<2 OR COALESCE(SUM(l.debit_minor),0)!=COALESCE(SUM(l.credit_minor),0) OR COALESCE(SUM(l.debit_minor),0)<=0');
