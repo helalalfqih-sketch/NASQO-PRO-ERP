@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 3;
+  static const int dbVersion = 4;
 
   Database? _db;
 
@@ -47,6 +47,7 @@ class LocalDatabase {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await createSyncSchema(db);
         if (oldVersion < 3) await createAccountingSchema(db);
+        if (oldVersion < 4) await createDocumentSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -119,6 +120,7 @@ class LocalDatabase {
         ''');
         await createSyncSchema(db);
         await createAccountingSchema(db);
+        await createDocumentSchema(db);
       },
     );
     return _db!;
@@ -164,6 +166,13 @@ class LocalDatabase {
     await db.execute('CREATE TABLE IF NOT EXISTS stock_movements (id TEXT PRIMARY KEY, item_id TEXT NOT NULL REFERENCES inventory_items(id), quantity_delta REAL NOT NULL, operation_id TEXT NOT NULL)');
     await db.execute('CREATE TABLE IF NOT EXISTS sync_inbox (workspace_id TEXT NOT NULL, operation_id TEXT NOT NULL, PRIMARY KEY(workspace_id, operation_id))');
     await db.execute('CREATE TABLE IF NOT EXISTS sync_conflicts (workspace_id TEXT NOT NULL, operation_id TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(workspace_id, operation_id))');
+  }
+
+  static Future<void> createDocumentSchema(DatabaseExecutor db) async {
+    await db.execute("ALTER TABLE ledger_entries ADD COLUMN counterpartAccountId TEXT NOT NULL DEFAULT ''");
+    await db.execute("ALTER TABLE ledger_entries ADD COLUMN counterpartAccountName TEXT NOT NULL DEFAULT ''");
+    await db.execute("ALTER TABLE ledger_entries ADD COLUMN invoiceContent TEXT NOT NULL DEFAULT 'none'");
+    await db.execute("ALTER TABLE ledger_entries ADD COLUMN postingStatus TEXT");
   }
 
   Future<Map<String, dynamic>> createAccountAtomic(
@@ -512,6 +521,10 @@ class LocalDatabase {
         'id': l.id,
         'accountId': l.accountId,
         'accountName': l.accountName,
+        'counterpartAccountId': l.counterpartAccountId,
+        'counterpartAccountName': l.counterpartAccountName,
+        'invoiceContent': l.invoiceContent,
+        'postingStatus': l.postingStatus,
         'kind': l.kind.name,
         'typeLabel': l.typeLabel,
         'payment': l.payment.name,
@@ -533,6 +546,10 @@ class LocalDatabase {
         id: m['id'] as String,
         accountId: m['accountId'] as String,
         accountName: m['accountName'] as String,
+        counterpartAccountId: (m['counterpartAccountId'] as String?) ?? '',
+        counterpartAccountName: (m['counterpartAccountName'] as String?) ?? '',
+        invoiceContent: (m['invoiceContent'] as String?) ?? 'none',
+        postingStatus: m['postingStatus'] as String?,
         kind: LedgerKind.values.firstWhere(
           (e) => e.name == m['kind'],
           orElse: () => LedgerKind.invoice,
