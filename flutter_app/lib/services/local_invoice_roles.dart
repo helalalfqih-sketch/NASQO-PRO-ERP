@@ -56,7 +56,10 @@ class LocalInvoiceRoles {
 
   Future<Map<String,dynamic>> resolve(Map<String,dynamic> input)async{
     if(input['kind']!='invoice')return input;
-    final currency=CurrencyCode.values.where((v)=>v!=CurrencyCode.currency2&&v.label==input['currency']).firstOrNull?.name;
+    String? currency;
+    for(final v in CurrencyCode.values){
+      if(v!=CurrencyCode.currency2&&v.label==input['currency'])currency=v.name;
+    }
     if(currency==null||!currencyNames.containsKey(currency))throw const InvoicePostingSetupRequired('عملة الفاتورة غير مدعومة للترحيل المحلي.');
     final db=await local.database;
     return db.transaction((t)async{

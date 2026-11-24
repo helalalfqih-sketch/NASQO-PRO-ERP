@@ -54,6 +54,7 @@ interface SystemSettingsPageProps {
   onOpenGoogleDrive?: () => void;
   onOpenFullSqliteImport?: () => void;
   onRestoreJson: () => void;
+  onOpenInvoiceRoles?: () => void;
   onOpenTrash?: () => void;
   onSignOut: () => void;
   onNotify: (msg: string) => void;
@@ -84,6 +85,7 @@ export function SystemSettingsPage({
   onOpenGoogleDrive,
   onOpenFullSqliteImport,
   onRestoreJson,
+  onOpenInvoiceRoles,
   onSignOut,
   onNotify,
   onBack,
@@ -1693,6 +1695,11 @@ export function SystemSettingsPage({
                 >
                   استعادة نسخة من ملف
                 </button>
+                {onOpenInvoiceRoles ? (
+                  <button type="button" className="ref-btn" onClick={onOpenInvoiceRoles} data-testid="settings-invoice-roles-btn">
+                    حسابات الترحيل التلقائي
+                  </button>
+                ) : null}
                 {onSyncDatabase ? (
                   <button
                     type="button"
