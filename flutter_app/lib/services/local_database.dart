@@ -239,6 +239,7 @@ class LocalDatabase {
     required String operationType,
     required Map<String, dynamic> payload,
     required Future<Map<String, dynamic>> Function(Transaction txn) apply,
+    Map<String, dynamic> Function(Map<String, dynamic>)? syncPayload,
   }) async {
     if (workspaceId.isEmpty || operationId.isEmpty || operationType.isEmpty) {
       throw ArgumentError('Missing operation identity');
@@ -262,7 +263,7 @@ class LocalDatabase {
         'operation_id': operationId,
         'workspace_id': workspaceId,
         'operation_type': operationType,
-        'payload_json': encoded,
+        'payload_json': syncPayload == null ? encoded : jsonEncode(syncPayload(result)),
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       await txn.insert('bridge_idempotency_keys', {
