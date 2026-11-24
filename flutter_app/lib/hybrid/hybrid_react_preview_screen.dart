@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import '../services/local_backup_restore.dart';
+import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
 import '../screens/cloud_identity_screen.dart';
 import '../services/stock_invoice_commands.dart';
@@ -74,6 +75,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     final db=await LocalDatabase.instance.database;
     final archived=await db.transaction((txn)=>LocalBackupRestore.reviewInvoice(txn,id));
     if(archived!=null)return archived;
+    final imported=await db.transaction((txn)=>LegacyOperationalRestore.invoice(txn,id));
+    if(imported!=null)return imported;
     final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
     final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
     final stored=await db.query('stock_posting_lines',where:'document_id = ?',whereArgs:[id],orderBy:'rowid');
@@ -94,14 +97,15 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   final _backups=LocalBackupRestore(LocalDatabase.instance);
   bool _backupBusy=false;
   bool _review=false;
+  bool _legacyOperational=false;
   bool _backupStateLoaded=false;
   int _viewGeneration=0;
 
   @override
   void initState(){
     super.initState();
-    _backups.isReview().then((value){
-      if(mounted)setState((){_review=value;_backupStateLoaded=true;});
+    Future.wait<bool>([_backups.isReview(),LocalDatabase.instance.database.then(LocalDatabase.hasLegacyOperational)]).then((value){
+      if(mounted)setState((){_review=value[0];_legacyOperational=value[1];_backupStateLoaded=true;});
     }).catchError((Object _){
       if(mounted)setState(()=>_error='تعذر التحقق من حالة قاعدة البيانات المحلية.');
     });
@@ -126,18 +130,23 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       const labels={'accounts':'الحسابات','warehouses':'المخازن','inventory':'الأصناف','inventory_items':'الأصناف','ledger':'الحركات','ledger_entries':'الحركات','journal_entries':'القيود','invoice_lines':'بنود الفواتير'};
       final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
         .map((e)=>'${labels[e.key]}: ${e.value}').join('\n');
-      final accept=await showDialog<bool>(context:context,builder:(context)=>AlertDialog(
+      final accept=await showDialog<String>(context:context,builder:(context)=>AlertDialog(
         title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':'استيراد نسخة للمراجعة المحلية'),
         content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
           (candidate.native?'تُستعاد السجلات والقيود وطابور المزامنة في قاعدة محلية فارغة فقط. لن تُمسح بياناتك الحالية.':
           'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
-        actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('إلغاء')),
-          FilledButton(onPressed:()=>Navigator.pop(context,true),child:Text(candidate.native?'استعادة':'استيراد وعرض'))]));
-      if(accept!=true||!mounted)return null;
-      if(candidate.native){await _backups.restoreNative(candidate);}else{await _backups.openReview(candidate);}
+        actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
+          if(candidate.format=='legacy-sqlite')OutlinedButton(onPressed:()=>Navigator.pop(context,'live'),child:const Text('استعادة الحسابات للعمل')),
+          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':'review'),child:Text(candidate.native?'استعادة':'استيراد وعرض'))]));
+      if(accept==null||!mounted)return null;
+      if(accept=='live'){
+        if(!await _confirmActivation(candidate))return null;
+        await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate);
+      }else if(candidate.native){await _backups.restoreNative(candidate);}else{await _backups.openReview(candidate);}
+      final legacy=await LocalDatabase.hasLegacyOperational(await LocalDatabase.instance.database);
       if(!mounted)return null;
-      setState((){_review=!candidate.native;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
-      await _message(candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من شريط التطبيق.');
+      setState((){_review=accept=='review';_legacyOperational=legacy;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
+      await _message(accept=='live'?'تم تفعيل الحسابات والسجل التاريخي. المخزون المستورد يحتاج جردًا وتقييمًا؛ العملات المفقودة خارج الأرصدة.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من شريط التطبيق.');
       return {'fileName':name,'mimeType':'application/octet-stream','sizeBytes':candidate.bytes.length,
         'base64Content':'','nativeRestored':true};
     }on FormatException catch(e){
@@ -151,6 +160,40 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       if(mounted)setState(()=>_backupBusy=false);
     }
   }
+  Future<bool> _confirmActivation(BackupCandidate candidate)async{
+    if(!mounted)return false;
+    return await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('استعادة تشغيلية للحسابات'),
+      content:SingleChildScrollView(child:Text('تحتاج قاعدة عمل فارغة. ستُنقل الحسابات والحركات الأصلية وبنود الفواتير دون إعادة ترحيل القيود القديمة.\n'
+        'عملات غير معرّفة: ${candidate.meta['unknownCurrencies']??0}. تبقى خارج الأرصدة.\n'
+        'ستُسجّل السندات الجديدة بقيود مزدوجة. أرصدة الصناديق والتكاليف التاريخية ليست قيودًا مزدوجة مؤكدة.\n'
+        'لا يمكن البيع أو الشراء من الأصناف المستوردة قبل اعتماد الجرد والتكلفة. لن ترفع البيانات للسحابة.')),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('تفعيل الحسابات'))]))==true;
+  }
+
+  Future<void> _activateReviewed()async{
+    if(_backupBusy)return;
+    setState(()=>_backupBusy=true);
+    File? temp;
+    try{
+      final bytes=await _backups.exportReviewSource();
+      if(bytes==null)throw StateError('No active backup');
+      final cache=await _backupChannel.invokeMethod<String>('cachePath');
+      if(cache==null)throw StateError('Cache unavailable');
+      temp=File('$cache/nasqo-activate-${DateTime.now().microsecondsSinceEpoch}.back');
+      await temp.writeAsBytes(bytes,flush:true);
+      final candidate=await _backups.inspect(temp,'legacy-original.back');
+      if(candidate.format!='legacy-sqlite')throw StateError('هذه الصيغة تحتاج مسار ترحيل آخر');
+      if(!await _confirmActivation(candidate))return;
+      await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate);
+      if(mounted)setState((){_review=false;_legacyOperational=true;_viewGeneration++;});
+      await _message('تم تفعيل الحسابات للعمل المحلي؛ المخزون يحتاج مطابقة.');
+    }on StateError catch(e){await _message('لم يتم تغيير قاعدة العمل: ${e.message}');}
+    catch(_){await _message('تعذر تفعيل النسخة؛ لم يتم تأكيد أي تغيير للبيانات.');}
+    finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
+  }
+
   Future<bool> _exportBackup()async{
     if(_backupBusy)return false;
     setState(()=>_backupBusy=true);
@@ -286,10 +329,11 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
           IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
             onPressed:_backupBusy?null:_exportBackup),
+          if(_review) IconButton(tooltip:'تفعيل الحسابات المستوردة',icon:const Icon(Icons.play_circle_outline),onPressed:_backupBusy?null:_activateReviewed),
           if(_review) IconButton(tooltip:'تقرير جاهزية الاستعادة',icon:const Icon(Icons.fact_check_outlined),
             onPressed:_backupBusy?null:_showRestoreReadiness),
           if(_review) TextButton(onPressed:_backupBusy?null:_leaveReview,child:const Text('العودة للبيانات الحالية')),
-          if (widget.onShowNative != null && !_review && _backupStateLoaded && !_backupBusy)
+          if (widget.onShowNative != null && !_review && !_legacyOperational && _backupStateLoaded && !_backupBusy)
             TextButton(
               onPressed: widget.onShowNative,
               child: const Text('واجهة Flutter'),
@@ -304,6 +348,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             padding: const EdgeInsets.all(10),
             child: Text(
               _review?'نسخة تاريخية مستوردة — للقراءة فقط. اضغط أيقونة تقرير جاهزية الاستعادة لمعرفة ما يحتاج إلى تسوية.':
+              _legacyOperational?'حسابات مستوردة للعمل المحلي — سجل تاريخي؛ المخزون والعملات غير المعتمدة بحاجة إلى تسوية.':
               'نسقو المحلي: استيراد وتصدير النسخ الاحتياطية من شريط التطبيق؛ المزامنة قيد التطوير.',
               textAlign: TextAlign.center,
             ),

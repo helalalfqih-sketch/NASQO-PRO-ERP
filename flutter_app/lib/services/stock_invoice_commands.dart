@@ -164,6 +164,7 @@ class StockInvoiceCommands {
           final unitNum=l['unit_num'] as int;
           final rows=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,warehouse]);
           if(rows.length!=1) throw StateError('Stock item not in selected warehouse');
+          await LocalDatabase.requireVerifiedStock(t,item);
           final row=rows.single;
           final savedUnits=await t.query('inventory_unit_settings',where:'item_id = ?',whereArgs:[item]);
           final units=savedUnits.isEmpty?<String,dynamic>{}:jsonDecode(savedUnits.single['settings_json'] as String) as Map<String,dynamic>;
@@ -253,6 +254,7 @@ class StockInvoiceCommands {
           final base=q*factor;
           final stock=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,entry['warehouseId']]);
           if(stock.length!=1) throw StateError('Stock item missing');
+          await LocalDatabase.requireVerifiedStock(t,item);
           final before=qty(stock.single['quantity']),beforeValue=valuation(stock.single);
           final after=sale?before+base:before-base;
           final afterValue=sale?beforeValue+costPart:beforeValue-costPart;

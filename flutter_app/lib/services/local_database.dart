@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 7;
+  static const int dbVersion = 8;
 
   Database? _db;
 
@@ -51,6 +51,7 @@ class LocalDatabase {
         if (oldVersion < 5) await createStockPostingSchema(db);
         if (oldVersion < 6) await createStockUnitsAndReturnsSchema(db);
         if (oldVersion < 7) await createBackupReviewSchema(db);
+        if (oldVersion < 8) await createLegacyOperationalSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -127,6 +128,7 @@ class LocalDatabase {
         await createStockPostingSchema(db);
         await createStockUnitsAndReturnsSchema(db);
         await createBackupReviewSchema(db);
+        await createLegacyOperationalSchema(db);
       },
     );
     return _db!;
@@ -200,6 +202,22 @@ class LocalDatabase {
     await db.execute('CREATE TABLE backup_review_active (singleton INTEGER PRIMARY KEY CHECK(singleton=1), sha TEXT NOT NULL REFERENCES backup_review_sources(sha))');
   }
 
+  static Future<void> createLegacyOperationalSchema(DatabaseExecutor db) async {
+    await db.execute('CREATE TABLE legacy_operational_source (singleton INTEGER PRIMARY KEY CHECK(singleton=1), sha TEXT NOT NULL, file_name TEXT NOT NULL, meta_json TEXT NOT NULL)');
+    await db.execute('CREATE TABLE legacy_operational_chunks (ordinal INTEGER PRIMARY KEY, data_base64 TEXT NOT NULL)');
+    await db.execute('CREATE TABLE legacy_operational_rows (collection TEXT NOT NULL, record_id TEXT NOT NULL, row_json TEXT NOT NULL, PRIMARY KEY(collection,record_id))');
+    await db.execute('CREATE TABLE legacy_unverified_stock (item_id TEXT PRIMARY KEY REFERENCES inventory_items(id))');
+  }
+
+  static Future<bool> hasLegacyOperational(DatabaseExecutor db) async =>
+    (await db.query('legacy_operational_source',limit:1)).isNotEmpty;
+
+  static Future<void> requireVerifiedStock(DatabaseExecutor db,String id) async {
+    if ((await db.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty) {
+      throw StateError('Imported stock requires physical quantity and cost reconciliation');
+    }
+  }
+
   static Future<void> requireLiveWorkspace(DatabaseExecutor db) async {
     if ((await db.query('backup_review_active',limit:1)).isNotEmpty) {
       throw StateError('Historical backup review is read only');
@@ -255,6 +273,7 @@ class LocalDatabase {
       for (var i = 0; i < normalized.length; i++) {
         final line = normalized[i];
         final itemId = line['item_id'] as String;
+        await requireVerifiedStock(txn,itemId);
         final quantity = line['quantity'] as num;
         final changed = await txn.rawUpdate(
             'UPDATE inventory_items SET quantity = quantity - ? WHERE id = ? AND warehouseId = ? AND quantity >= ?',
@@ -441,6 +460,7 @@ class LocalDatabase {
     final db = await database;
     await db.transaction((txn) async {
       await requireLiveWorkspace(txn);
+      if(await hasLegacyOperational(txn))throw StateError('Imported workspace cannot be replaced by snapshot');
       final history = await txn.query('bridge_idempotency_keys', limit: 1);
       if (history.isNotEmpty) {
         throw StateError('Legacy snapshot writes disabled after transactional operations');
@@ -500,6 +520,7 @@ class LocalDatabase {
     final db = await database;
     await db.transaction((txn) async {
       await requireLiveWorkspace(txn);
+      if(await hasLegacyOperational(txn))throw StateError('Imported workspace cannot be cleared through legacy reset');
       final pending = await txn.query('sync_outbox',
           where: 'acknowledged_at IS NULL', limit: 1);
       if (pending.isNotEmpty) throw StateError('Unsynced operations exist');

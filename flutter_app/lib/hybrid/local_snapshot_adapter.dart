@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../models/erp_models.dart';
 import '../services/local_database.dart';
 import '../services/local_backup_restore.dart';
+import '../services/legacy_operational_restore.dart';
 
 /// Adapts the existing on-device SQLite schema to the React Hybrid snapshot.
 /// No network calls, no automatic import, no fabricated customer/invoice rows.
@@ -79,6 +80,7 @@ class HybridLocalSnapshotAdapter {
         final item=items[row['item_id']];
         if(item!=null) item.addAll(jsonDecode(row['settings_json'] as String) as Map<String,dynamic>);
       }
+      await LegacyOperationalRestore.merge(txn,data);
       return data;
     });
   }

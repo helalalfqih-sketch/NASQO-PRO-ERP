@@ -29,7 +29,9 @@ class LocalBackupRestore {
     'journal_entries','journal_lines','invoice_lines','stock_movements',
     'stock_posting_documents','stock_posting_lines','inventory_unit_settings',
     'sync_outbox','bridge_idempotency_keys','sync_state','sync_inbox','sync_conflicts',
+    ...legacyOperationalTables,
   ];
+  static const legacyOperationalTables=['legacy_operational_source','legacy_operational_chunks','legacy_operational_rows','legacy_unverified_stock'];
   static const collections=['currencies','accountGroups','cashboxes','accounts','warehouses','inventory','ledger'];
   static const knownFormats=['nasqo-unified-sqlite-export-v1','nasqo-unified-sqlite-export-v2','nasqo-pro-erp-backup'];
   static Map<String,dynamic> object(Object? v){
@@ -97,14 +99,15 @@ class LocalBackupRestore {
           if((count.single['n'] as int)>100000)throw const FormatException('Too many records');
           return (await source.query(table)).map((r)=>Map<String,dynamic>.from(r)).toList();
         }
-        if(names.containsAll(tables)&&!names.contains('workspaces')){
+        if(names.containsAll(tables.where((n)=>!legacyOperationalTables.contains(n)))&&!names.contains('workspaces')){
+          if(legacyOperationalTables.any(names.contains)&&!names.containsAll(legacyOperationalTables))throw const FormatException('Incomplete operational archive');
           if(names.contains('backup_review_sources')&&(await get('backup_review_sources')).isNotEmpty)throw const FormatException('Use the native export option for operational data or export the archived original separately');
           final core={for(final table in tables)table:await get(table)};
           return BackupCandidate(name,'native-sqlite',bytes,hash,{}, {},core);
         }
         if(names.containsAll(['customers','stores','products'])&&(names.contains('input_move')||names.contains('bounds'))){
           final sourceTables=<String,List<Map<String,dynamic>>>{};
-          for(final n in ['customers','stores','products','currencies','boxes','cboxes','input_move','bounds','bill_details','bill_details2']){
+          for(final n in ['customers','stores','products','currencies','boxes','cboxes','input_move','bounds','bill_details','bill_details2','store_trans','trans_details','offers','offer_bill_details','offer_sbill_details','bin','bin_bill_details','bin_bill_details2','alerts']){
             sourceTables[n]=await get(n);
           }
           return _legacy(name,bytes,hash,sourceTables);
@@ -130,10 +133,11 @@ class LocalBackupRestore {
       final payload=root['payload'];
       if(payload is! String||sha256.convert(utf8.encode(payload)).toString()!=root['sha256'])throw const FormatException('Backup checksum mismatch');
       final body=object(jsonDecode(payload));
-      if(body['schemaVersion']!=LocalDatabase.dbVersion)throw const FormatException('Native backup schema version mismatch');
+      if(![7,LocalDatabase.dbVersion].contains(body['schemaVersion']))throw const FormatException('Native backup schema version mismatch');
       final data=object(body['tables']);
-      if(data.keys.toSet().difference(tables.toSet()).isNotEmpty||!data.keys.toSet().containsAll(tables))throw const FormatException('Incomplete native backup');
-      return BackupCandidate(name,nativeFormat,bytes,hash,{}, {},{for(final n in tables)n:rows(data[n])});
+      final required=body['schemaVersion']==7?tables.where((n)=>!legacyOperationalTables.contains(n)):tables;
+      if(data.keys.toSet().difference(tables.toSet()).isNotEmpty||!data.keys.toSet().containsAll(required))throw const FormatException('Incomplete native backup');
+      return BackupCandidate(name,nativeFormat,bytes,hash,{}, {},{for(final n in tables)n:rows(data[n]??[])});
     }
     if(!knownFormats.contains(root['format'])||![1,2].contains(root['version']))throw const FormatException('Unsupported JSON backup format');
     return _web(name,bytes,hash,root);
@@ -225,13 +229,14 @@ class LocalBackupRestore {
     final cur={for(final r in t['currencies']!)integer(r['id']):str(r['name'],'ريال')};
     String getCurrency(Object? id)=>cur[integer(id,1)]??'عملة غير معرّفة (${str(id)})';
     String category(String group,int type){
+      if(group.contains('رأس المال')||group.contains('راس المال')||group.contains('أصول')||group.contains('اصول')||group.contains('سحبيات'))return 'shop';
       if(group.contains('مورد')||group.contains('مشتريات'))return 'purchases';
       if(group.contains('موظف'))return 'employees';
       if(group.contains('مبيعات'))return 'sales';
       if(group.contains('صندوق')||group.contains('حوال'))return 'transfers';
       if(group.contains('مصروف')||group.contains('محل'))return 'shop';
       if(group.contains('عميل')||group.contains('عملاء'))return 'clients';
-      return const {3:'purchases',4:'employees',5:'shop',6:'transfers'}[type]??'clients';
+      return group.isNotEmpty?'shop':const {3:'purchases',4:'employees',5:'shop',6:'transfers'}[type]??'clients';
     }
     final groups={for(final r in t['boxes']!)integer(r['id']):r};
     final accounts=<Map<String,dynamic>>[];
@@ -239,7 +244,7 @@ class LocalBackupRestore {
       final id=integer(r['id']),type=integer(r['type'],1),group=groups[type];
       accounts.add({'id':'legacy-acc-$id','name':str(r['name'],'حساب $id'),'category':category(str(group?['name']),type),
         'phone':str(r['phone']??r['phon']),'creditLimit':numValue(r['lim']),'currency':getCurrency(group?['cur']??1),
-        'isCashAccount':id==1||str(r['name']).contains('نقد'),'openingBalance':0,'openingDirection':'debit',
+        'isCashAccount':str(r['name']).contains('نقد')||str(r['name']).contains('صندوق'),'openingBalance':0,'openingDirection':'debit',
         'note':str(r['details']),'codeNumber':id,'sortOrder':id,if(group!=null)'groupId':type});
     }
     final warehouses=t['stores']!.map((r)=> <String,dynamic>{'id':'legacy-wh-${integer(r['id'])}','name':str(r['name']),'details':str(r['details']),'isDefault':integer(r['id'])==1,'codeNumber':integer(r['id'])}).toList();
@@ -259,23 +264,37 @@ class LocalBackupRestore {
         final bill=integer(r['bill_id']),pid='legacy-prod-${integer(r['prod_id'])}';
         detail.putIfAbsent(bill,()=>[]).add({'lineKind':n=='bill_details'?'item':'free',
           if(n=='bill_details')'inventoryItemId':pid,'itemName':prodNames[pid]??str(r['details']),
-          'warehouseId':'legacy-wh-${integer(r['store_id'])}','price':numValue(r['price']),
+          if(n=='bill_details')'warehouseId':'legacy-wh-${integer(r['store_id'])}','price':numValue(r['price']),
           'quantity':numValue(r['amount']),'total':numValue(r['total']),'discount':numValue(r['discount']),
-          'bonus':numValue(r['bonus']),'unit':str(r['unit']),'unitNum':integer(r['unitnum'],1),'details':str(r['details'])});
+          'bonus':numValue(r['bonus']),'unit':str(r['unit']),'unitNum':integer(r['unitnum'],1),'details':str(r['details']),'expiryDate':str(r['exdate']),'legacyId':r['id']});
       }
     }
     final ledger=<Map<String,dynamic>>[];
-    var ambiguous=0,missing=0;
+    var ambiguous=0,missing=0,unknownCurrencies=0;
+    final seenMoves=<int>{};
+    final whNames={for(final w in warehouses)w['id']:w['name']};
+    final votes=<String,Map<String,int>>{};
     final moves=t['input_move']!.isNotEmpty?t['input_move']!:t['bounds']!;
     for(final r in moves){
       final id=integer(r['id']),aid='legacy-acc-${integer(r['per_id']??r['acc_id'])}';
+      if(!seenMoves.add(id))throw const FormatException('Duplicate movement');
       final d=numValue(r['dain']),c=numValue(r['madin']);
-      if(d>0&&c>0)ambiguous++;
+      if(!cur.containsKey(integer(r['cur']??r['cur_id'],1)))unknownCurrencies++;
+      if(d>0&&c>0&&(d-c).abs()>=0.01)ambiguous++;
       if(!names.containsKey(aid))missing++;
       final doc=integer(r['bill_type']??r['doc_type'],1);
       final kind=[2,3,7,9].contains(doc)?'invoice':[4,5].contains(doc)?'return':'voucher';
       final typeLabel=const {2:'فاتورة بيع',3:'فاتورة شراء',4:'مردود مبيعات',5:'مردود مشتريات',7:'فاتورة بيع حرة',9:'فاتورة شراء حرة'}[doc]??'سند تاريخي';
       final settled=d>0&&c>0&&(d-c).abs()<0.01;
+      final cb=integer(r['cboxid']);
+      final billLines=detail[id]??<Map<String,dynamic>>[];
+      String wh='';
+      for(final line in billLines){
+        final store=str(line['warehouseId']),item=str(line['inventoryItemId']);
+        if(!whNames.containsKey(store)||!prodNames.containsKey(item))continue;
+        if(wh.isEmpty)wh=store;
+        final v=votes.putIfAbsent(item,()=> <String,int>{});v[store]=(v[store]??0)+1;
+      }
       final year=integer(r['year']),month=integer(r['month']),day=integer(r['day']);
       String date=str(r['date']);
       if(date.isEmpty&&year>1900&&month>=1&&month<=12&&day>=1&&day<=31){
@@ -284,13 +303,21 @@ class LocalBackupRestore {
       final nd=str(r['ndate']);
       if(date.isEmpty&&RegExp(r'^[0-9]{8}$').hasMatch(nd)&&nd!='00000000')date='${nd.substring(0,4)}-${nd.substring(4,6)}-${nd.substring(6,8)}';
       ledger.add({'id':'legacy-ent-$id','accountId':aid,'accountName':names[aid]??'حساب غير مرتبط',
-        'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':settled?'cash':'credit',
+        'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':settled||(doc==1&&cb>0)?'cash':d==0&&c==0?'balance':'credit',if(cb>0)'cashboxId':cb,
         'direction':settled?([2,5,7].contains(doc)?'debit':'credit'):(d>=c?'debit':'credit'),
-        'amount':d>=c?d:c,'rawDain':d,'rawMadin':c,'settledOnReceipt':settled,'currency':getCurrency(r['cur']),
-        'exchangeRate':numValue(r['curprice'],1),'details':str(r['details']),'documentNumber':str(r['bill']),
-        'warehouseId':'','warehouseName':'','invoiceContent':[7,9].contains(doc)?'free':kind=='voucher'?'none':'items',
+        'amount':d>=c?d:c,'rawDain':d,'rawMadin':c,'settledOnReceipt':settled,'currency':getCurrency(r['cur']??r['cur_id']),
+        'exchangeRate':numValue(r['curprice'],1)==0?1:numValue(r['curprice'],1),'details':str(r['details']),'documentNumber':str(r['bill']),
+        'warehouseId':wh,'warehouseName':whNames[wh]??'','invoiceContent':[7,9].contains(doc)?'free':kind=='voucher'?'none':'items',
         'entryNumber':id,'entryDate':date,'createdAtMs':DateTime.tryParse(date)?.millisecondsSinceEpoch??0,
-        'deleted':false,'docType':doc,'sourceOrigin':'legacy_sqlite','postingStatus':'historical_unposted','lines':detail[id]??[]});
+        'deleted':false,'docType':doc,'sourceOrigin':'legacy_sqlite','postingStatus':'historical_unposted','lineCount':billLines.length,'lines':billLines});
+    }
+    for(final item in inventory){
+      final v=votes[item['id']];
+      if(v!=null&&v.isNotEmpty){
+        final sorted=v.entries.toList()..sort((a,b){final d=b.value.compareTo(a.value);return d==0?a.key.compareTo(b.key):d;});
+        item['warehouseId']=sorted.first.key;
+        item['legacyWarehouseCount']=v.length;
+      }
     }
     final data=<String,List<Map<String,dynamic>>>{
       'accounts':accounts,'warehouses':warehouses,'inventory':inventory,'ledger':ledger,
@@ -301,6 +328,8 @@ class LocalBackupRestore {
     return BackupCandidate(name,'legacy-sqlite',bytes,hash,data,{
       'workspace':{'companyName':'مراجعة النسخة القديمة','defaultCurrency':cur.values.isEmpty?'ريال':cur.values.first},
       'invoiceLines':detail.values.fold<int>(0,(s,l)=>s+l.length),'ambiguousMoves':ambiguous,'missingReferences':missing,
+      'unknownCurrencies':unknownCurrencies,'orphanDetailBills':detail.keys.where((id)=>!seenMoves.contains(id)).length,
+      'sourceExtraCounts':{for(final n in ['store_trans','trans_details','offers','offer_bill_details','offer_sbill_details','bin','bin_bill_details','bin_bill_details2','alerts'])n:t[n]?.length??0},
       'historicalReview':true,'stockUnverified':true,
     },null);
   }
@@ -336,6 +365,16 @@ class LocalBackupRestore {
       if(orphan.isNotEmpty)throw StateError('Ledger account missing');
       final orphanStock=await txn.rawQuery('SELECT i.id FROM inventory_items i LEFT JOIN warehouses w ON w.id=i.warehouseId WHERE w.id IS NULL LIMIT 1');
       if(orphanStock.isNotEmpty)throw StateError('Warehouse missing');
+      final sources=await txn.query('legacy_operational_source');
+      final chunks=await txn.query('legacy_operational_chunks',orderBy:'ordinal');
+      if(sources.isNotEmpty){
+        final out=BytesBuilder(copy:false);
+        for(var i=0;i<chunks.length;i++){
+          if(chunks[i]['ordinal']!=i)throw StateError('Missing original source chunk');
+          out.add(base64Decode(chunks[i]['data_base64'] as String));
+        }
+        if(sha256.convert(out.takeBytes()).toString()!=sources.single['sha'])throw StateError('Original source checksum mismatch');
+      }else if(chunks.isNotEmpty||(await txn.query('legacy_operational_rows',limit:1)).isNotEmpty||(await txn.query('legacy_unverified_stock',limit:1)).isNotEmpty){throw StateError('Missing imported source metadata');}
     });
   }
 
