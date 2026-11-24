@@ -4,6 +4,7 @@ import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
 import '../screens/cloud_identity_screen.dart';
+import '../screens/legacy_stock_opening_screen.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -329,6 +330,10 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
           IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
             onPressed:_backupBusy?null:_exportBackup),
+          if(_legacyOperational&&!_review) IconButton(tooltip:'اعتماد جرد المخازن',icon:const Icon(Icons.inventory_2_outlined),onPressed:_backupBusy?null:()async{
+            await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>const LegacyStockOpeningScreen()));
+            if(mounted)setState(()=>_viewGeneration++);
+          }),
           if(_review) IconButton(tooltip:'تفعيل الحسابات المستوردة',icon:const Icon(Icons.play_circle_outline),onPressed:_backupBusy?null:_activateReviewed),
           if(_review) IconButton(tooltip:'تقرير جاهزية الاستعادة',icon:const Icon(Icons.fact_check_outlined),
             onPressed:_backupBusy?null:_showRestoreReadiness),
