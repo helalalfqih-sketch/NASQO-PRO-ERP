@@ -551,8 +551,18 @@ class LocalBackupRestore {
   }
 
   Future<void> restoreNative(BackupCandidate candidate,{String? replacementSha})async{
-    final data=candidate.nativeTables;
-    if(data==null||sha256.convert(candidate.bytes).toString()!=candidate.sha)throw ArgumentError('Not an intact native backup');
+    if(candidate.nativeTables==null||sha256.convert(candidate.bytes).toString()!=candidate.sha)throw ArgumentError('Not an intact native backup');
+    // Reparse authenticated bytes rather than trusting mutable preview rows.
+    final root=object(jsonDecode(utf8.decode(candidate.bytes)));
+    final payload=root['payload'];
+    if(root['format']!=nativeFormat||payload is! String||sha256.convert(utf8.encode(payload)).toString()!=root['sha256'])throw const FormatException('Backup checksum mismatch');
+    final body=object(jsonDecode(payload));
+    final version=body['schemaVersion'];
+    if(![7,8,9,LocalDatabase.dbVersion].contains(version))throw const FormatException('Native backup schema version mismatch');
+    final raw=object(body['tables']);
+    final required=tables.where((n)=>(version!=7||!legacyOperationalTables.contains(n))&&(version==9||version==LocalDatabase.dbVersion||n!='legacy_stock_openings'));
+    if(raw.keys.toSet().difference(tables.toSet()).isNotEmpty||!raw.keys.toSet().containsAll(required))throw const FormatException('Incomplete native backup');
+    final data={for(final n in tables)n:rows(raw[n]??[])};
     // Never use the local replacement workflow to enroll a different
     // synchronized database or restore acknowledged remote history.
     if(replacementSha!=null&&(data['erp_state']!.any((r)=>r['stateKey']=='sync_workspace_binding')||
