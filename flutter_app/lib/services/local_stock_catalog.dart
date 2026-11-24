@@ -40,6 +40,10 @@ class LocalStockCatalog {
       units['unit$n']=name;units['count$n']=count;
       if(input['sprice$n']!=null) units['sprice$n']=StockInvoiceCommands.money(input['sprice$n'])/100;
     }
+    if(units.containsKey('unit3')){
+      if(!units.containsKey('unit2')) throw ArgumentError('Third unit requires second unit');
+      StockInvoiceCommands.qty((units['count2'] as int)*(units['count3'] as int));
+    }
     final defaultUnit=StockInvoiceCommands.qty(input['defaultUnit']??1);
     if(defaultUnit!=1&&!units.containsKey('unit$defaultUnit')) throw ArgumentError('Default unit missing');
     units['defaultUnit']=defaultUnit;

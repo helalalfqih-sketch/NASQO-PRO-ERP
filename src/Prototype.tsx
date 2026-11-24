@@ -6047,7 +6047,9 @@ function InvoiceModal({
   const [localCostAccountId,setLocalCostAccountId] = useState("");
   const [localTaxAccountId,setLocalTaxAccountId] = useState("");
   const [localTaxAmount,setLocalTaxAmount] = useState("");
+  const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">("amount");
   const [localOriginalId,setLocalOriginalId] = useState("");
+  const [localReturnQty,setLocalReturnQty] = useState<Record<string,string>>({});
   const [content, setContent] = useState<"items" | "free">(initialContent);
   const [payment, setPayment] = useState<"cash" | "credit">(initialPayment);
   const [kind, setKind] = useState<"purchase" | "sale">(initialKind);
@@ -6243,7 +6245,9 @@ function InvoiceModal({
 
   if (!open) return null;
 
-  const selectedAccount = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const localCash = hybridLocal && content === "items" && payment === "cash";
+  const invoiceAccounts=hybridLocal&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && a.isCashAccount===localCash):ctx.accounts;
+  const selectedAccount = invoiceAccounts.find((a) => a.id === accountId) ?? invoiceAccounts[0];
   const selectedWarehouse = ctx.warehouses.find((w) => w.id === warehouseId);
   const accountSummary = selectedAccount
     ? computeAccountSummary(selectedAccount, ctx.ledger, currency)
@@ -6271,11 +6275,19 @@ function InvoiceModal({
   const computedItemsTotal = validLines.reduce((sum, l) => sum + l.total, 0);
   const computedItemsDiscount = validLines.reduce((sum, l) => sum + (l.discount ?? 0), 0);
   const computedItemsQty = validLines.reduce((sum, l) => sum + l.quantity, 0);
-  const taxTotal = hybridLocal && content === "items" && !isReturn ? Math.max(0,parseArabicNumber(localTaxAmount)) : 0;
+  const parsedTax = parseArabicNumber(localTaxAmount);
+  const taxBps = Math.round(parsedTax*100);
+  const validTaxRate = Number.isFinite(parsedTax) && parsedTax>=0 && parsedTax<=100 && Math.abs(parsedTax*100-taxBps)<0.000001;
+  const netMinor = Math.round(computedItemsTotal*100);
+  const calculatedTax = validTaxRate && Number.isSafeInteger(netMinor) && netMinor>=0
+    ? Number((BigInt(netMinor)*BigInt(taxBps)+5000n)/10000n)/100 : 0;
+  const taxTotal = hybridLocal && content === "items" && !isReturn
+    ? localTaxMode==="rate"?calculatedTax:Math.max(0,parsedTax):0;
   const effectiveAmount = content === "items" && validLines.length > 0
     ? Math.round((computedItemsTotal + taxTotal)*100)/100 : parseArabicNumber(amount);
   const eligibleLocalReturns = ctx.ledger.filter(e=>e.kind==="invoice" && e.stockPosting &&
     !e.deleted && !e.returnedById && e.stockSale === (kind === "sale"));
+  const localOriginal=eligibleLocalReturns.find(e=>e.id===localOriginalId);
 
   const applyParsedLegacyRows = () => {
     if (parsedLegacyRows.length === 0) return;
@@ -6437,14 +6449,19 @@ function InvoiceModal({
     if (hybridLocal && isReturn && !editingEntry) {
       const original=eligibleLocalReturns.find(e=>e.id===localOriginalId);
       if(!original){focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر الفاتورة المخزنية الأصلية للمرتجع."});return;}
+      const returnLines=(original.returnableLines??[]).map(l=>({itemId:l.itemId,quantity:parseArabicNumber(localReturnQty[l.itemId]??"0")}));
+      if(!returnLines.some(l=>l.quantity>0)||returnLines.some(l=>!Number.isInteger(l.quantity)||l.quantity<0||l.quantity>(original.returnableLines?.find(x=>x.itemId===l.itemId)?.quantity??0))){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"حدد الكميات المراد إرجاعها ضمن الكمية المتبقية بالفاتورة."});return;
+      }
       setSaving(true);setFormError(null);keyboard.hide();
       try{
         if(!draftNewEntryIdRef.current) draftNewEntryIdRef.current = "ret_"+Date.now()+"_"+Math.random().toString(36).slice(2,9);
         const nextNum=maxNumericField(ctx.ledger,(e)=>e.entryNumber,1000)+1;
         await createLedgerEntry(ctx.uid,{id:draftNewEntryIdRef.current,kind:"return",
           originalInvoiceId:original.id,accountId:original.accountId,accountName:original.accountName,
+          returnLines:returnLines.filter(l=>l.quantity>0),
           entryNumber:nextNum,entryDate:entryDate.trim()||new Date().toISOString().slice(0,10)});
-        triggerHaptic("success");ctx.showToast("تم ترحيل المرتجع الكامل وعكس قيده ومخزونه");onClose();
+        triggerHaptic("success");ctx.showToast("تم ترحيل الكميات المرتجعة وعكس قيدها ومخزونها");onClose();
       }catch(err){setFormError({field:"submit",message:err instanceof Error?err.message:"تعذر حفظ المرتجع"});}
       finally{setSaving(false);}
       return;
@@ -6457,12 +6474,12 @@ function InvoiceModal({
       return;
     }
 
-    if (hybridLocal && (editingEntry || payment !== "credit" ||
+    if (hybridLocal && (editingEntry || (content==="free" && payment !== "credit") ||
         isReturn || intent === "quote" || intent === "order" ||
         !ctx.accounts.some(a => a.id === localCounterpartId && a.id !== selectedAccount.id &&
           a.currency === currency && !a.isCashAccount))) {
       focusInvalid(accountSelectRef.current, {
-        field:"submit",message:"الوضع المحلي يدعم الفواتير الآجلة الجديدة بحساب مقابل محدد.",
+        field:"submit",message:"اختر حساب الفاتورة والحساب المقابل. الفواتير الحرة المحلية آجلة فقط.",
       });
       return;
     }
@@ -6472,8 +6489,9 @@ function InvoiceModal({
         ...(taxTotal>0?[localTaxAccountId]:[])];
       if(currency!=="ريال" || !selectedWarehouse || roleIds.some(id=>!id) ||
         new Set(roleIds).size!==roleIds.length || !validLines.length ||
-        validLines.some(l=>!l.inventoryItemId || !Number.isInteger(l.quantity) || l.unitNum!==1)){
-        focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن والحسابات المختلفة والأصناف بوحدتها الأساسية وكمية صحيحة؛ العملة المحلية ريال."});
+        (localTaxMode==="rate"&&!validTaxRate) || (localTaxMode==="amount"&&parsedTax<0) ||
+        validLines.some(l=>!l.inventoryItemId || !Number.isInteger(l.quantity) || ![1,2,3].includes(l.unitNum??1))){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن والحسابات المختلفة ووحدات الأصناف المعتمدة وكميات صحيحة وضريبة صالحة؛ العملة المحلية ريال."});
         return;
       }
     }
@@ -6569,13 +6587,14 @@ function InvoiceModal({
         accountName: selectedAccount.name,
         ...(hybridLocal ? {counterpartAccountId:localCounterpartId,
           counterpartAccountName:ctx.accounts.find(a=>a.id===localCounterpartId)?.name ?? ""} : {}),
-        ...(payment === "cash" && cashboxId ? { cashboxId } : { cashboxId: undefined }),
+        ...(!hybridLocal && payment === "cash" && cashboxId ? { cashboxId } : { cashboxId: undefined }),
         kind: entryKind,
         typeLabel,
         payment,
         direction,
         amount: effectiveAmount,
         ...(hybridLocal && content==="items" ? {taxAmount:taxTotal,
+          ...(localTaxMode==="rate"?{taxRateBps:taxBps}:{}),
           ...(taxTotal>0?{taxAccountId:localTaxAccountId}:{}),
           ...(kind==="sale"?{inventoryAccountId:localInventoryAccountId,costAccountId:localCostAccountId}:{})}:{}),
         settledOnReceipt: payment === "cash",
@@ -6813,7 +6832,7 @@ function InvoiceModal({
 
           <div className="invoice-section-card">
             <AccountSelectCombobox
-              accounts={ctx.accounts}
+              accounts={invoiceAccounts}
               value={selectedAccount?.id ?? ""}
               onChange={(nextId) => {
                 if (formError?.field === "account") setFormError(null);
@@ -6822,8 +6841,8 @@ function InvoiceModal({
               preferredCategories={
                 kind === "sale" ? ["sales", "clients", "shop"] : ["purchases", "shop"]
               }
-              label={kind === "sale" ? "العميل / الحساب" : "المورد / الحساب"}
-              placeholder={kind === "sale" ? "اختر العميل أو الحساب" : "اختر المورد أو الحساب"}
+              label={localCash?"حساب الصندوق النقدي":kind === "sale" ? "العميل / الحساب" : "المورد / الحساب"}
+              placeholder={localCash?"اختر حساب صندوق":kind === "sale" ? "اختر العميل أو الحساب" : "اختر المورد أو الحساب"}
               searchPlaceholder="ابحث عن الحساب بالاسم أو الرقم أو الهاتف..."
               emptyText="لا توجد حسابات — أضف حسابًا من +"
               ariaLabel="حساب الفاتورة"
@@ -6848,12 +6867,18 @@ function InvoiceModal({
             </label>}
 
             {hybridLocal && !editingEntry && isReturn && <label className="invoice-field-box">
-              <span>الفاتورة المخزنية الأصلية (مرتجع كامل)</span>
-              <select aria-label="الفاتورة الأصلية للمرتجع" value={localOriginalId} onChange={e=>setLocalOriginalId(e.target.value)}>
+              <span>الفاتورة المخزنية الأصلية (مرتجع جزئي أو كامل)</span>
+              <select aria-label="الفاتورة الأصلية للمرتجع" value={localOriginalId} onChange={e=>{setLocalOriginalId(e.target.value);setLocalReturnQty({});}}>
                 <option value="">اختر الفاتورة الأصلية</option>
                 {eligibleLocalReturns.map(e=><option key={e.id} value={e.id}>#{e.entryNumber} — {e.accountName} — {formatAmount(e.amount)}</option>)}
               </select>
-              <small>يعكس المرتجع المحلي كامل القيد والكميات والضريبة الأصلية، دون الاعتماد على بقية حقول هذه الشاشة. يتطلب عدم وجود حركة لاحقة على الأصناف.</small>
+              {localOriginal?.returnableLines?.map(l=><label className="invoice-field-box" key={l.itemId}>
+                <span>{l.itemName} — المتبقي {l.quantity} {l.unit}</span>
+                <KeyboardInput aria-label={"كمية إرجاع "+l.itemName} inputMode="numeric"
+                  value={localReturnQty[l.itemId]??""} onChange={e=>setLocalReturnQty(prev=>({...prev,[l.itemId]:e.target.value}))}/>
+              </label>)}
+              {localOriginal&&<button type="button" onClick={()=>setLocalReturnQty(Object.fromEntries((localOriginal.returnableLines??[]).map(l=>[l.itemId,String(l.quantity)])))}>إرجاع كامل الكمية المتبقية</button>}
+              <small>المرتجع يستخدم السعر والخصم والضريبة والتكلفة الأصلية تلقائيًا. مرتجع الشراء يتطلب رصيدًا وتقييمًا كافيين.</small>
             </label>}
             {hybridLocal && !editingEntry && !isReturn && content==="items" && <>
               {kind==="sale" && <>
@@ -6870,16 +6895,22 @@ function InvoiceModal({
                   </select>
                 </label>
               </>}
-              <label className="invoice-field-box"><span>قيمة الضريبة (اختياري)</span>
+              <label className="invoice-field-box"><span>طريقة إدخال الضريبة</span>
+                <select aria-label="طريقة الضريبة" value={localTaxMode} onChange={e=>{setLocalTaxMode(e.target.value as "amount"|"rate");setLocalTaxAmount("");}}>
+                  <option value="amount">قيمة ثابتة</option><option value="rate">نسبة مئوية</option>
+                </select>
+              </label>
+              <label className="invoice-field-box"><span>{localTaxMode==="rate"?"نسبة الضريبة %":"قيمة الضريبة (اختياري)"}</span>
                 <KeyboardInput aria-label="قيمة ضريبة الفاتورة" value={localTaxAmount} onChange={e=>setLocalTaxAmount(e.target.value)} inputMode="decimal"/>
               </label>
+              <small>الضريبة المحسوبة: {formatAmount(taxTotal)} {currency}. حدد النسبة المناسبة لمنشأتك.</small>
               {taxTotal>0 && <label className="invoice-field-box"><span>{kind==="sale"?"حساب الضريبة المستحقة":"حساب الضريبة القابلة للاسترداد"}</span>
                 <select aria-label="حساب الضريبة" value={localTaxAccountId} onChange={e=>setLocalTaxAccountId(e.target.value)}>
                   <option value="">اختر الحساب</option>
                   {ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </label>}
-              <small>صافي الأصناف بعد الخصم + الضريبة = {formatAmount(effectiveAmount)} {currency}. يدعم البيع والشراء الآجل بوحدة أساسية كاملة.</small>
+              <small>صافي الأصناف بعد الخصم + الضريبة = {formatAmount(effectiveAmount)} {currency}. يدعم البيع والشراء النقدي والآجل، بوحدات أصناف ذات معاملات تحويل صحيحة.</small>
             </>}
             {formError?.field === "account" ? (
               <div className="field-inline-error" role="alert" data-testid="invoice-account-error">

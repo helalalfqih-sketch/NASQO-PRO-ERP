@@ -139,7 +139,7 @@ class HybridReadOnlyProtocol {
         final result=await createStockRecord!(actionName!,key,params['payload'] as Map<String,dynamic>);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
       } on ArgumentError {
-        return _error(id,actionName,'VALIDATION_ERROR','يدعم المخزون المحلي إنشاء أصناف بوحدة أساسية ورصيد وتكلفة صفر قبل الشراء.');
+        return _error(id,actionName,'VALIDATION_ERROR','يدعم المخزون المحلي إنشاء أصناف بوحدات معتمدة ورصيد وتكلفة صفر قبل الشراء.');
       } catch(_){
         return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر حفظ بيانات المخزون محليًا.');
       }

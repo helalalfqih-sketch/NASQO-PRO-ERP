@@ -167,7 +167,7 @@ class StockInvoiceCommands {
           final row=rows.single;
           final savedUnits=await t.query('inventory_unit_settings',where:'item_id = ?',whereArgs:[item]);
           final units=savedUnits.isEmpty?<String,dynamic>{}:jsonDecode(savedUnits.single['settings_json'] as String) as Map<String,dynamic>;
-          final factor=unitNum==1?1:qty(units['count$unitNum']);
+          final factor=unitNum==1?1:unitNum==2?qty(units['count2']):qty(qty(units['count2'])*qty(units['count3']));
           final unit=unitNum==1?row['unit']:units['unit$unitNum'];
           if(factor<1||unit is! String||unit.isEmpty) throw ArgumentError('Undefined item unit');
           final q=qty(sold*factor);
@@ -249,7 +249,7 @@ class StockInvoiceCommands {
           if(q<0||q>sold-prev) throw StateError('Return exceeds original quantity');
           int portion(int value)=>proportional(value,prev+q,sold)-proportional(value,prev,sold);
           final netPart=portion(lineNet),taxPart=portion(lineTax),costPart=portion(data['cost_minor'] as int);
-          final discountPart=portion(data['discount_minor'] as int);
+          final discountPart=q*(data['price_minor'] as int)-netPart;
           final base=q*factor;
           final stock=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,entry['warehouseId']]);
           if(stock.length!=1) throw StateError('Stock item missing');
