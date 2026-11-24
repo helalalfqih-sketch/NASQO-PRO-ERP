@@ -10,6 +10,7 @@ import 'package:nasqo_pro_erp/services/local_document_commands.dart';
 import 'package:nasqo_pro_erp/services/legacy_stock_opening.dart';
 import 'package:nasqo_pro_erp/services/legacy_history_archive.dart';
 import 'package:nasqo_pro_erp/services/stock_invoice_commands.dart';
+import 'package:nasqo_pro_erp/services/local_invoice_roles.dart';
 import 'package:nasqo_pro_erp/hybrid/local_snapshot_adapter.dart';
 
 void main(){
@@ -135,12 +136,26 @@ void main(){
         'lines':[{'inventoryItemId':second,'quantity':1,'price':9,'total':9,'unitNum':1}]};
       await expectLater(stock.post(w,'bad-account',{...sale,'inventoryAccountId':b}),throwsStateError);
       await expectLater(stock.post(w,'bad-date',{...sale,'entryDate':'2026-11-23'}),throwsStateError);
-      await stock.post(w,'sale-counted',sale);
+      final roles=LocalInvoiceRoles(local);
+      final originalForm={...sale}..remove('counterpartAccountId')..remove('inventoryAccountId')..remove('costAccountId');
+      final beforeRoles=await db.query('ledger_entries');
+      await expectLater(roles.resolve(originalForm),throwsA(isA<InvoicePostingSetupRequired>()));
+      expect(await db.query('ledger_entries'),beforeRoles);
+      await roles.save('sar',{'revenue':'legacy-acc-2','inventory':b,'cost':cost,'expense':b});
+      final resolved=await roles.resolve(originalForm);
+      expect(resolved['counterpartAccountId'],'legacy-acc-2');
+      // Approved opening overrides the unrelated default inventory account.
+      expect(resolved['inventoryAccountId'],a);
+      expect(resolved['costAccountId'],cost);
+      await stock.post(w,'sale-counted',resolved);
       final purchase=<String,dynamic>{'id':'purchase-counted','kind':'invoice','invoiceContent':'items','direction':'credit','payment':'credit',
         'accountId':'legacy-acc-1','counterpartAccountId':a,'warehouseId':'legacy-wh-1','currency':'ريال',
         'entryNumber':10,'entryDate':'2026-11-24','amount':10,
         'lines':[{'inventoryItemId':'legacy-prod-1','quantity':2,'price':5,'total':10,'unitNum':1}]};
-      await stock.post(w,'purchase-counted',purchase);
+      final purchaseForm={...purchase}..remove('counterpartAccountId');
+      final resolvedPurchase=await roles.resolve(purchaseForm);
+      expect(resolvedPurchase['counterpartAccountId'],a);
+      await stock.post(w,'purchase-counted',resolvedPurchase);
       final inv=await db.query('inventory_items',where:'id = ?',whereArgs:['legacy-prod-1']);
       final inv2=await db.query('inventory_items',where:'id = ?',whereArgs:[second]);
       expect(inv.single['quantity'],12);
@@ -186,6 +201,7 @@ void main(){
       expect(await db.query('ledger_entries'),hasLength(5));
       expect(await db.query('journal_entries'),isEmpty);
       expect(await db.query('sync_outbox'),isEmpty);
+      expect((await roles.load())['roles'],isEmpty);
       // Restore the saved native safety copy, also with an explicit lease.
       final activated=(await backup.replacementBackup())!;
       await backup.restoreNative(restored,replacementSha:sha256.convert(activated).toString());
@@ -193,6 +209,7 @@ void main(){
       expect((await db.query('ledger_entries')),hasLength(10));
       expect((await db.query('journal_lines')),hasLength(12));
       expect(await db.query('legacy_stock_openings'),hasLength(2));
+      expect(((await roles.load())['roles'] as Map)['sar']['revenue'],'legacy-acc-2');
       final snap=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((snap['inventory'] as List).firstWhere((e)=>e['id']==second)['legacySourceItemId'],'legacy-prod-1');
 

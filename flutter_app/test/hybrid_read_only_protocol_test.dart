@@ -24,6 +24,24 @@ Map<String, dynamic> emptySnapshot() => {
 };
 
 void main() {
+  test('native restore action accepts only workspace, no SQL or base64',()async{
+    var picked=0,settings=0;
+    final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),
+      pickBackup:()async{picked++;return {'nativeRestored':true,'restoreMode':'operational'};},
+      openInvoiceRoles:()async{settings++;});
+    Future<Map<String,dynamic>> invoke(String action,Map<String,dynamic> payload)async=>
+      jsonDecode(await endpoint.handle(jsonEncode(request(action,payload:payload)))) as Map<String,dynamic>;
+    expect((await invoke('restoreLocalBackup',{'workspaceId':'other'}))['ok'],false);
+    expect((await invoke('restoreLocalBackup',{'workspaceId':'local-erp-workspace','base64Content':'x'}))['ok'],false);
+    expect(picked,0);
+    final response=await invoke('restoreLocalBackup',{'workspaceId':'local-erp-workspace'});
+    expect(response['ok'],true);
+    expect(response['data']['restoreMode'],'operational');
+    expect(picked,1);
+    expect((await invoke('openInvoiceRoles',{'workspaceId':'local-erp-workspace'}))['ok'],true);
+    expect(settings,1);
+  });
+
   test('returns valid local snapshot without calling any network service', () async {
     var reads = 0;
     final endpoint = HybridReadOnlyProtocol(readSnapshot: () async {
