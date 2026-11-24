@@ -40,6 +40,9 @@ void main(){
       final sell=invoice('sell',2,true,3,10,2,3);
       await s.post(w,'sell-op',sell);
       await s.post(w,'sell-op',sell);
+      final beforeConflict=await LocalBackupRestore(local).exportNative();
+      await expectLater(s.post(w,'sell-op',invoice('sell',2,true,2,10,2,3)),throwsStateError);
+      expect(await LocalBackupRestore(local).exportNative(),orderedEquals(beforeConflict));
       expect((await stock())['quantity'],7);
       expect((await stock())['avgCost'],4);
       await expectLater(s.post(w,'oversell',invoice('bad',3,true,8,10,0,0)),throwsStateError);
@@ -53,6 +56,10 @@ void main(){
       await expectLater(s.post(w,'over-return',{...ret,'id':'ret2','entryNumber':4,'returnLines':[{'itemId':'item','quantity':3}]}),throwsStateError);
       await s.post(w,'remaining-return',{...ret,'id':'ret3','entryNumber':4,'returnLines':[{'itemId':'item','quantity':2}]});
       expect((await stock())['quantity'],10);
+      final creditRefunds=await db.rawQuery("SELECT SUM(credit_minor) AS total FROM journal_lines WHERE account_id = ? AND journal_id IN ('ret','ret3')",[customer]);
+      expect(creditRefunds.single['total'],3100);
+      final creditTax=await db.rawQuery("SELECT SUM(debit_minor) AS total FROM journal_lines WHERE account_id = ? AND journal_id IN ('ret','ret3')",[tax]);
+      expect(creditTax.single['total'],300);
       await expectLater(s.post(w,'duplicate-return',{...ret,'id':'ret2','entryNumber':5}),throwsStateError);
       final sums=await db.rawQuery('SELECT journal_id,SUM(debit_minor) AS d,SUM(credit_minor) AS c FROM journal_lines GROUP BY journal_id');
       expect(sums,hasLength(4));
@@ -80,7 +87,14 @@ void main(){
       expect((await db.query('inventory_items',where:'id = ?',whereArgs:[carton])).single['quantity'],12);
       await s.post(w,'carton-return',{'id':'carton-ret','kind':'return','originalInvoiceId':'cash-sale','entryNumber':7,'entryDate':'2026-11-24',
         'returnLines':[{'itemId':carton,'quantity':1}]});
+      await s.post(w,'carton-return',{'id':'carton-ret','kind':'return','originalInvoiceId':'cash-sale','entryNumber':7,'entryDate':'2026-11-24',
+        'returnLines':[{'itemId':carton,'quantity':1}]});
       expect((await db.query('inventory_items',where:'id = ?',whereArgs:[carton])).single['quantity'],24);
+      final refundLeg=(await db.query('journal_lines',where:'journal_id = ? AND account_id = ?',whereArgs:['carton-ret',cash])).single;
+      expect(refundLeg['credit_minor'],4200);
+      final refundTax=(await db.query('journal_lines',where:'journal_id = ? AND account_id = ?',whereArgs:['carton-ret',tax])).single;
+      expect(refundTax['debit_minor'],200);
+      expect(await db.query('stock_movements',where:'operation_id = ?',whereArgs:['carton-return']),hasLength(1));
 
       final fractional=await catalog.createItem(w,'fractional-op',{'name':'Fractional item','warehouseId':'wh','unit':'kg','unit2':'pack','count2':4});
       Map<String,dynamic> fractionalInvoice(String id,int n,bool sale,num q,num price,num amount,int unitNum)=>{
