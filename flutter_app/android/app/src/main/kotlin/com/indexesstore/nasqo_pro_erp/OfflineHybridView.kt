@@ -1,6 +1,8 @@
 package com.indexesstore.nasqo_pro_erp
 
 import android.content.Context
+import android.print.PrintManager
+import android.print.PrintAttributes
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -143,6 +145,18 @@ private class OfflineHybridView(
                             webView.loadUrl("$origin${resourcePrefix}index.html")
                         }
                         result.success(null)
+                    }
+                }
+                "printCurrentPage" -> {
+                    try {
+                        val title = call.arguments as? String ?: throw IllegalArgumentException()
+                        require(started && title.length in 1..160 && webView.url.orEmpty().startsWith("$origin$resourcePrefix"))
+                        val manager = context.getSystemService(Context.PRINT_SERVICE) as PrintManager
+                        manager.print(title, webView.createPrintDocumentAdapter(title),
+                            PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build())
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.error("PRINT_FAILED", "Unable to open Android print preview", null)
                     }
                 }
                 "respond" -> {

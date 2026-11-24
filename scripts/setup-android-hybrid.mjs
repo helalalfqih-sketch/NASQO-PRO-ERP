@@ -20,6 +20,15 @@ if (!xml.includes('android.permission.INTERNET')) {
   xml = xml.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />\n    <application');
   fs.writeFileSync(manifest, xml);
 }
+// Restrict document sharing to a dedicated cache subtree. The system
+// chooser grants temporary read access only to the explicitly selected file.
+if (!xml.includes('android:authorities="${applicationId}.documents"')) {
+  xml = xml.replace('</application>', '    <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.documents" android:exported="false" android:grantUriPermissions="true">\n      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/nasqo_document_paths" />\n    </provider>\n</application>');
+  fs.writeFileSync(manifest, xml);
+}
+const xmlDir = path.join(path.dirname(manifest), 'res', 'xml');
+fs.mkdirSync(xmlDir, {recursive:true});
+fs.writeFileSync(path.join(xmlDir,'nasqo_document_paths.xml'), '<?xml version="1.0" encoding="utf-8"?>\n<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="documents" path="nasqo-shared-documents/" /></paths>\n');
 const dependency = 'implementation("androidx.webkit:webkit:1.12.1")';
 if (!original.includes(dependency)) {
   fs.appendFileSync(file, `\n// Local, offline React ES module loading through WebViewAssetLoader.\ndependencies {\n    ${dependency}\n}\n`);

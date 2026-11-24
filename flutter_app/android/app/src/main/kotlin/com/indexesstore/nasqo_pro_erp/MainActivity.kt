@@ -2,6 +2,8 @@ package com.indexesstore.nasqo_pro_erp
 
 import android.app.Activity
 import android.content.Intent
+import android.content.ClipData
+import androidx.core.content.FileProvider
 import android.provider.OpenableColumns
 import java.io.File
 import java.io.InputStream
@@ -20,6 +22,71 @@ class MainActivity : FlutterActivity() {
     private val openBackup = 7311
     private val saveBackup = 7312
     private val maxBackupBytes = 32L * 1024 * 1024
+    private val documentTypes = mapOf("application/pdf" to ".pdf", "image/png" to ".png", "text/csv" to ".csv")
+    private fun checkedDocument(call: io.flutter.plugin.common.MethodCall): Triple<File, String, String> {
+        val mime = call.argument<String>("mimeType") ?: throw IllegalArgumentException()
+        val extension = documentTypes[mime] ?: throw IllegalArgumentException()
+        val name = call.argument<String>("fileName") ?: throw IllegalArgumentException()
+        require(name.length in 1..120 && !name.startsWith(".") && !name.contains('/') &&
+            !name.contains('\\') && name.none { it.code < 32 || it.code == 127 } && name.lowercase().endsWith(extension))
+        val root = File(cacheDir, "nasqo-document-export").canonicalFile
+        val source = File(call.argument<String>("path") ?: throw IllegalArgumentException()).canonicalFile
+        require(source.path.startsWith(root.path + File.separator) && source.isFile && source.length() in 1L..(16L*1024*1024))
+        return Triple(source, name, mime)
+    }
+    private fun documentOutput(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
+        try {
+            when (call.method) {
+                "shareDocument" -> {
+                    val (source, name, mime) = checkedDocument(call)
+                    val folder = File(cacheDir, "nasqo-shared-documents")
+                    folder.mkdirs()
+                    folder.listFiles()?.filter { System.currentTimeMillis()-it.lastModified() > 86400000L }?.forEach { it.deleteRecursively() }
+                    val sub = File(folder, "share-" + java.util.UUID.randomUUID().toString())
+                    require(sub.mkdir())
+                    val target = File(sub, name)
+                    source.inputStream().use { input -> target.outputStream().use { out -> boundedCopy(input, out) } }
+                    val uri = FileProvider.getUriForFile(this, packageName + ".documents", target)
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = mime
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        clipData = ClipData.newRawUri(name, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(send, "مشاركة المستند"))
+                    result.success(true)
+                }
+                "shareText" -> {
+                    val title = call.argument<String>("title") ?: "نسقو برو"
+                    val text = call.argument<String>("text") ?: throw IllegalArgumentException()
+                    val phone = call.argument<String>("phone") ?: ""
+                    require(title.length <= 200 && text.length in 1..12000 && (phone.isEmpty() || Regex("^[0-9]{7,15}$").matches(phone)))
+                    var targeted = false
+                    if (phone.isNotEmpty()) {
+                        val uri = Uri.Builder().scheme("https").authority("wa.me").appendPath(phone).appendQueryParameter("text",text).build()
+                        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                            try {
+                                startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg))
+                                targeted = true
+                                break
+                            } catch (_: Exception) {}
+                        }
+                    }
+                    if (!targeted) {
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT,title)
+                            putExtra(Intent.EXTRA_TEXT,text)
+                        },title))
+                    }
+                    result.success(mapOf("opened" to true, "targeted" to targeted))
+                }
+                else -> result.notImplemented()
+            }
+        } catch (_: Exception) {
+            result.error("DOCUMENT_OUTPUT_FAILED", "Unable to open document output", null)
+        }
+    }
     private fun boundedCopy(input: InputStream, output: OutputStream): Long {
         val buffer = ByteArray(65536)
         var total = 0L
@@ -60,6 +127,16 @@ class MainActivity : FlutterActivity() {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = "*/*"
                     }, openBackup)
+                }
+                "exportDocument" -> {
+                    val (file, name, mime) = checkedDocument(call)
+                    exportFile = file
+                    backupResult = result
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = mime
+                        putExtra(Intent.EXTRA_TITLE, name)
+                    }, saveBackup)
                 }
                 "exportBackup" -> {
                     val path = call.argument<String>("path") ?: throw IllegalArgumentException()
@@ -139,6 +216,8 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nasqo/local_backup")
             .setMethodCallHandler(::backupPicker)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nasqo/document_output")
+            .setMethodCallHandler(::documentOutput)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "nasqo/android_updates")
             .setMethodCallHandler { call, result ->
                 if (call.method != "openDownload") {
