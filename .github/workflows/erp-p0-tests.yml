@@ -1,0 +1,26 @@
+name: ERP P0 tests only
+on:
+  push:
+    branches: [agent/cloud-session-hardening-v1118]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.3"
+          channel: stable
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Prepare test assets and dependencies
+        working-directory: flutter_app
+        run: |
+          mkdir -p assets/web/assets
+          flutter pub get
+      - name: Run P0 regression tests
+        working-directory: flutter_app
+        run: flutter test test/offline_transaction_test.dart test/stock_invoice_commands_test.dart test/local_backup_restore_test.dart test/backup_encryption_test.dart test/native_cloud_session_test.dart
