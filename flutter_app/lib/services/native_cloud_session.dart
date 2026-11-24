@@ -281,6 +281,7 @@ class NativeCloudSession {
       next=result['nextPageToken'] as String?;
       if(next==null||next.isEmpty)break;
     }
+    if(next!=null&&next.isNotEmpty)throw const NativeCloudException('نتائج البحث كثيرة؛ ضيّق نطاق البحث لعرض جميع النتائج.');
     return out;
   }
   Future<Map<String,dynamic>> _metadata(String id)=>_json('GET','/drive/v3/files/$id',query:{'fields':fields});
