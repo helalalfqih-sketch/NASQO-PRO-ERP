@@ -152,9 +152,9 @@ class NativeCloudSession {
         case 'uploadLocal':
           validateKeys(args,{'parentId'});
           final parent=args['parentId']==null?null:fileId(args['parentId']);
-          final confirmedAccount=_requireDrive();
+          final pickerAccount=_requireDrive();
           final picked=await pickFile();
-          if(!identical(confirmedAccount,_requireDrive()))throw const NativeCloudException('تغير الحساب أثناء اختيار الملف.',code:'UNAUTHORIZED_ACTION');
+          if(!identical(pickerAccount,_requireDrive()))throw const NativeCloudException('تغير الحساب أثناء اختيار الملف.',code:'UNAUTHORIZED_ACTION');
           if(picked==null)return {'cancelled':true};
           final name=fileName(picked.name);
           if(!await confirm('رفع ملف إلى Drive','رفع الملف '+name+' إلى حساب '+_drive!.email+'؟'))return {'cancelled':true};
@@ -195,7 +195,8 @@ class NativeCloudSession {
           return {'uploadId':uploadId};
         case 'appendUpload':
           validateKeys(args,{'uploadId','offset','base64'});
-          final upload=_uploads[args['uploadId']];
+          final uploadId=boundedText(args['uploadId'],max:64);
+          final upload=_uploads[uploadId];
           final chunk=args['base64'];
           if(upload==null||args['offset']!=upload.bytes.length||chunk is! String||chunk.length>22000)
             throw ArgumentError('Invalid upload chunk');
@@ -205,10 +206,10 @@ class NativeCloudSession {
           return {'received':upload.bytes.length};
         case 'abortUpload':
           validateKeys(args,{'uploadId'});
-          _uploads.remove(args['uploadId']);return {'cancelled':true};
+          _uploads.remove(boundedText(args['uploadId'],max:64));return {'cancelled':true};
         case 'finishUpload':
           validateKeys(args,{'uploadId'});
-          final upload=_uploads.remove(args['uploadId']);
+          final upload=_uploads.remove(boundedText(args['uploadId'],max:64));
           if(upload==null||upload.bytes.length!=upload.size)throw ArgumentError('Incomplete upload');
           if(!await confirm('رفع ملف إلى Drive','رفع '+upload.name+' إلى '+_drive!.email+(upload.existing==null?'؟':' مع استبدال الملف المحدد؟')))return {'cancelled':true};
           return await _upload(upload.bytes.takeBytes(),upload.name,upload.mime,parent:upload.parent,existing:upload.existing);
