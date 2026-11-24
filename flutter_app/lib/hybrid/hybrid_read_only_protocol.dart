@@ -18,6 +18,8 @@ class HybridReadOnlyProtocol {
     this.postDocument,
     this.createStockRecord,
     this.manageCatalog,
+    this.readInventoryReport,
+    this.readProductPriceStats,
     this.readInvoiceDetail,
     this.pickBackup,
     this.openInvoiceRoles,
@@ -33,6 +35,8 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? manageCatalog;
+  final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? readInventoryReport;
+  final Future<Map<String,dynamic>> Function(String)? readProductPriceStats;
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
@@ -95,6 +99,25 @@ class HybridReadOnlyProtocol {
         }
         return _error(id,actionName,'UNAUTHORIZED_ACTION','الخدمة المحلية غير متاحة.');
       }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر إكمال العملية المحلية.');}
+    }
+    if(actionName=='getInventoryMovementsReport'||actionName=='getProductPriceStats'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace')
+        return _error(id,actionName,'VALIDATION_ERROR','معرف قاعدة العمل غير صالح.');
+      try{
+        Map<String,dynamic> result;
+        if(actionName=='getInventoryMovementsReport'&&readInventoryReport!=null){
+          if(p.keys.any((k)=>!['workspaceId','options'].contains(k)))throw ArgumentError('Invalid report parameters');
+          final options=p['options']==null?<String,dynamic>{}:Map<String,dynamic>.from(p['options'] as Map);
+          if(options.keys.any((k)=>!['warehouseId','itemId','currency','fromDate','toDate','profitBasis','search'].contains(k))||
+              options.values.any((v)=>v!=null&&(v is! String||v.length>150)))throw ArgumentError('Invalid report filters');
+          result=await readInventoryReport!(options);
+        }else if(actionName=='getProductPriceStats'&&readProductPriceStats!=null){
+          if(p.length!=2||p['itemId'] is! String||(p['itemId'] as String).length>150)throw ArgumentError('Invalid item');
+          result=await readProductPriceStats!(p['itemId'] as String);
+        }else{return _error(id,actionName,'UNAUTHORIZED_ACTION','خدمة التقرير غير متاحة.');}
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر قراءة التقرير المحلي.');}
     }
     if(actionName=='getCashboxesReport'){
       final p=request['payload'];

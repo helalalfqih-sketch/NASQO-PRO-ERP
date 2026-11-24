@@ -5057,6 +5057,9 @@ function InventoryReportPage({
   return (
     <>
       <div className="nasqo-pinned-layout smart-movements-layout" data-testid="inventory-report-screen" dir="rtl">
+        {movementReport && "dataScopeNote" in movementReport && typeof movementReport.dataScopeNote === "string" ? (
+          <small style={{padding:"6px 10px",color:"#92400e",background:"#fff7ed"}}>{movementReport.dataScopeNote}</small>
+        ) : null}
         <UnifiedSearchFilterBar
           testId="inventory-search-bar"
           inputTestId="inventory-search-input"

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
 import '../services/local_database.dart';
 import '../services/local_backup_restore.dart';
@@ -16,7 +17,10 @@ class HybridLocalSnapshotAdapter {
   static Future<Map<String, dynamic>> readFromDevice() async {
     final local=LocalDatabase.instance;
     final db=await local.database;
-    return db.transaction((txn) async {
+    return db.transaction((txn)=>readInTransaction(txn,local));
+  }
+
+  static Future<Map<String,dynamic>> readInTransaction(Transaction txn,LocalDatabase local)async{
       final review=await LocalBackupRestore.reviewSnapshot(txn);
       if(review!=null)return review;
       final data=fromSnapshot(await local.loadSnapshot(executor:txn));
@@ -91,7 +95,6 @@ class HybridLocalSnapshotAdapter {
       await LocalWorkspaceSettings.attach(txn,data);
       await LocalInvoiceRoles.attachCashboxes(txn,data);
       return data;
-    });
   }
 
   static Map<String, dynamic> fromSnapshot(

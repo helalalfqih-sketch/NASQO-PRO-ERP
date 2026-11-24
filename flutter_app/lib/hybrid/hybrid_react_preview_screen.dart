@@ -11,6 +11,7 @@ import '../screens/local_invoice_roles_screen.dart';
 import '../services/local_invoice_roles.dart';
 import '../services/local_workspace_settings.dart';
 import '../services/local_master_catalog.dart';
+import '../services/local_inventory_reports.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
@@ -44,6 +45,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     postDocument: _postDocument,
     createStockRecord: _createStockRecord,
     manageCatalog: _manageCatalog,
+    readInventoryReport: _readInventoryReport,
+    readProductPriceStats: _readProductPriceStats,
     readInvoiceDetail: _readInvoiceDetail,
     pickBackup: _restoreBackup,
     openInvoiceRoles: _openInvoiceRoles,
@@ -78,6 +81,15 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
         .firstWhere((e) => e['id'] == id);
     return {'entry':entry,'snapshot':snapshot};
+  }
+
+  static Future<Map<String,dynamic>> _readInventoryReport(Map<String,dynamic> options)async{
+    final local=LocalDatabase.instance,db=await LocalDatabase.instance.database;
+    return db.transaction((t)async=>LocalInventoryReports.report(t,await HybridLocalSnapshotAdapter.readInTransaction(t,local),options));
+  }
+  static Future<Map<String,dynamic>> _readProductPriceStats(String id)async{
+    final local=LocalDatabase.instance,db=await LocalDatabase.instance.database;
+    return db.transaction((t)async=>LocalInventoryReports.priceStats(t,await HybridLocalSnapshotAdapter.readInTransaction(t,local),id));
   }
 
   static Future<Map<String,dynamic>> _manageCatalog(String action,String key,Map<String,dynamic> p)async{
