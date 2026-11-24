@@ -10963,6 +10963,8 @@ function AccountCreateModal({
   onClose: () => void;
 }) {
   const ctx = useWorkspace();
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const [localCashAccount,setLocalCashAccount] = useState(initialAccount?.isCashAccount ?? false);
   const [name, setName] = useState(initialAccount?.name ?? "");
   const [category, setCategory] = useState<AccountCategory>(initialAccount?.category ?? defaultCategory);
   const [phone, setPhone] = useState(initialAccount?.phone ?? "");
@@ -11001,6 +11003,12 @@ function AccountCreateModal({
       ctx.showToast("أدخل اسم الحساب أولًا");
       return;
     }
+    if (hybridLocal && (settlement || documentNumber || accountImage !== "1" ||
+        sendMode !== "never" || messageMethod !== "sms" ||
+        (!initialAccount && openingBalance && parseArabicNumber(openingAmount) !== 0))) {
+      ctx.showToast("بعض الإعدادات أو الرصيد الافتتاحي غير مدعومة في الإصدار المحلي بعد.");
+      return;
+    }
     setSaving(true);
     try {
       const nextCode =
@@ -11013,7 +11021,7 @@ function AccountCreateModal({
           phone,
           creditLimit: debtLimit ? parseArabicNumber(debtAmount) : initialAccount?.creditLimit ?? 1000000,
           currency: accountCurrency,
-          isCashAccount: initialAccount?.isCashAccount ?? false,
+          isCashAccount: hybridLocal ? localCashAccount : initialAccount?.isCashAccount ?? false,
           accountImage,
           sortOrder: parseArabicNumber(sortOrder) || 1,
           settlement,
@@ -11030,6 +11038,8 @@ function AccountCreateModal({
       triggerHaptic("success");
       ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : import.meta.env.VITE_NASQO_HYBRID === "1" ? "تم إنشاء الحساب وحفظه محليًا" : "تم إنشاء الحساب وحفظه في السحابة");
       onClose();
+    } catch (err) {
+      ctx.showToast(err instanceof Error ? err.message : "تعذر حفظ الحساب");
     } finally {
       setSaving(false);
     }
@@ -11045,6 +11055,11 @@ function AccountCreateModal({
         aria-labelledby={`${testId}-title`}
       >
         <h2 id={`${testId}-title`}>{initialAccount ? "تعديل بيانات حساب" : "إضافة حساب جديد"}</h2>
+        {hybridLocal && <div className="account-check-row">
+          <label><input type="checkbox" checked={localCashAccount} disabled={Boolean(initialAccount)}
+            onChange={e=>setLocalCashAccount(e.target.checked)}/> حساب صندوق نقدي</label>
+          <small>محليًا: الاسم والهاتف والملاحظات وحد الائتمان قابلة للتعديل. باقي الإعدادات غير معتمدة بعد.</small>
+        </div>}
         {mode === "compact" ? (
           <>
             <label className="underlined-form-field" htmlFor="compact-account-name">
