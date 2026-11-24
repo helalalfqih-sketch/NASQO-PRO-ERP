@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../services/legacy_history_reports.dart';
 
 /// Minimal, fail-closed protocol endpoint for the offline React -> Flutter
 /// bridge. It never accepts raw SQL, filesystem, or financial write commands.
@@ -56,6 +57,23 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='getCashboxesReport'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace'||
+          p.keys.any((k)=>!['workspaceId','options'].contains(k))||
+          (p['options']!=null&&p['options'] is! Map<String,dynamic>)){
+        return _error(id,actionName,'VALIDATION_ERROR','معطيات تقرير الصناديق غير صالحة.');
+      }
+      final options=p['options'] as Map<String,dynamic>? ?? <String,dynamic>{};
+      if(options.keys.any((k)=>!['currency','fromDate','toDate'].contains(k))||
+          options.values.any((v)=>v!=null&&(v is! String||v.length>100))){
+        return _error(id,actionName,'VALIDATION_ERROR','معطيات التقرير غير صالحة.');
+      }
+      try{
+        final report=LegacyHistoryReports.cashboxes(await readSnapshot(),options);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':report});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر حساب تقرير الصناديق المحلية.');}
     }
     if(actionName=='backupWorkspace'&&exportBackup!=null){
       final params=request['payload'];

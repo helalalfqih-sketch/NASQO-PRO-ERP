@@ -16,6 +16,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
   String date=DateTime.now().toIso8601String().substring(0,10);
   bool busy=true,confirmed=false,changed=false;
   String? error;
+  int unresolvedTransfers=0;
 
   @override
   void initState(){super.initState();_load();}
@@ -28,6 +29,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       if(!mounted)return;
       setState((){
         products=rows(data['products']);warehouses=rows(data['warehouses']);accounts=rows(data['accounts']);openings=rows(data['openings']);
+        unresolvedTransfers=(data['unresolvedTransfers'] as List).length;
         if(!warehouses.any((w)=>w['id']==warehouse))warehouse=null;
         if(!accounts.any((a)=>a['id']==asset))asset=null;
         if(!accounts.any((a)=>a['id']==offset))offset=null;
@@ -94,6 +96,10 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     final term=search.text.trim().toLowerCase();
     final filtered=products.where((p)=>'${p['name']} ${p['sku']} ${p['id']}'.toLowerCase().contains(term)).take(60).toList();
     final p=selected,o=approved;
+    final invoices=p?['legacyInvoiceQtyByWarehouse'];
+    final transfers=p?['legacyTransferNetByWarehouse'];
+    final hasHistory=(invoices is Map&&invoices.containsKey(warehouse))||(transfers is Map&&transfers.containsKey(warehouse));
+    final historical=(invoices is Map?(invoices[warehouse] as num? ??0):0)+(transfers is Map?(transfers[warehouse] as num? ??0):0);
     final q=num.tryParse(normalize(quantity.text)),v=num.tryParse(normalize(value.text));
     final avg=q!=null&&q.isFinite&&q>0&&v!=null&&v.isFinite?(v/q).toStringAsFixed(4):null;
     return Directionality(textDirection:TextDirection.rtl,child:PopScope(canPop:!busy,child:Scaffold(
@@ -101,6 +107,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       body:ListView(padding:const EdgeInsets.all(16),children:[
         Text('اعتمادات المخازن المسجلة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
         const Text('أدخل الكمية الفعلية والتكلفة الإجمالية بعد الجرد. كل صنف ومخزن يُعتمد مستقلًا. التاريخ السابق محفوظ، وليس جردًا مؤكدًا.'),
+        if(unresolvedTransfers>0)Text('تحويلات تحتاج مطابقة مخزن: $unresolvedTransfers. لم تُضم كمياتها الملتبسة إلى التقدير.'),
         if(busy)const LinearProgressIndicator(),
         const SizedBox(height:12),
         TextField(controller:search,enabled:!busy,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'بحث باسم الصنف أو الباركود أو الرقم',prefixIcon:Icon(Icons.search),border:OutlineInputBorder())),
@@ -118,6 +125,14 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
           if(o==null&&warehouse!=null)...[
             if(p['legacyInvoiceQtyByWarehouse'] is Map&&(p['legacyInvoiceQtyByWarehouse'] as Map).containsKey(warehouse))
               Text('صافي الفواتير التاريخية لهذا المخزن: ${(p['legacyInvoiceQtyByWarehouse'] as Map)[warehouse]} (ليس جردًا معتمدًا؛ لا يشمل التحويلات).'),
+            if(transfers is Map&&transfers.containsKey(warehouse))
+              Text('صافي التحويلات المعروفة: ${transfers[warehouse]}'),
+            if(hasHistory)Text('صافي التاريخ بعد التحويلات المعروفة: $historical'),
+            if(p['legacyTransferIncomplete']==true)const Text('هذا الصنف مرتبط بتحويل غير مكتمل؛ راجع سجله قبل اعتماد الكمية.'),
+            if(hasHistory&&historical>=0&&historical==historical.round()&&p['legacyTransferIncomplete']!=true)
+              TextButton(onPressed:busy?null:()=>setState((){
+                quantity.text=historical.round().toString();confirmed=false;
+              }),child:const Text('استخدام الكمية المحسوبة كاقتراح للجرد')),
             if(p['avgCost'] is num)Text('سعر التكلفة المسجل تاريخيًا: ${p['avgCost']} ريال (مرجع فقط).'),
             TextField(controller:quantity,enabled:!busy,keyboardType:TextInputType.number,onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية',border:OutlineInputBorder())),
             const SizedBox(height:12),

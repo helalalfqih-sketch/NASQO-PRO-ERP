@@ -963,6 +963,7 @@ export async function fetchCashboxesReport(
     return await hybridBridge.invoke<
       "getCashboxesReport",
       {
+        historicalRegisterOnly?: boolean;
         cashboxes: Array<{
           id: number;
           name: string;

@@ -132,13 +132,14 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
         .map((e)=>'${labels[e.key]}: ${e.value}').join('\n');
       final accept=await showDialog<String>(context:context,builder:(context)=>AlertDialog(
-        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':'استيراد نسخة للمراجعة المحلية'),
+        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.format=='legacy-sqlite'?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
         content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
           (candidate.native?'تُستعاد السجلات والقيود وطابور المزامنة في قاعدة محلية فارغة فقط. لن تُمسح بياناتك الحالية.':
+          candidate.format=='legacy-sqlite'?'الاستعادة التشغيلية تنقل الحسابات والحركات إلى قاعدة عمل فارغة وتحفظ الملف الأصلي. المخزون يحتاج اعتمادًا مستقلًا. يمكنك اختيار المراجعة فقط بدلًا منها.':
           'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
         actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
-          if(candidate.format=='legacy-sqlite')OutlinedButton(onPressed:()=>Navigator.pop(context,'live'),child:const Text('استعادة الحسابات للعمل')),
-          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':'review'),child:Text(candidate.native?'استعادة':'استيراد وعرض'))]));
+          if(candidate.format=='legacy-sqlite')OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
+          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.format=='legacy-sqlite'?'live':'review'),child:Text(candidate.native?'استعادة':candidate.format=='legacy-sqlite'?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
       if(accept==null||!mounted)return null;
       if(accept=='live'){
         if(!await _confirmActivation(candidate))return null;

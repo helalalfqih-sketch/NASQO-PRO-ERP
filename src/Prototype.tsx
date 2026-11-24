@@ -12264,6 +12264,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
         </section>
 
         <div className="account-groups-table-wrap cashboxes-table-wrap">
+          {import.meta.env.VITE_NASQO_HYBRID === "1" && <p>تقرير الصناديق التاريخية المستوردة؛ حسابات النقدية التشغيلية تظهر منفصلة أدناه. لا يمثل التقرير اعتمادًا نهائيًا للنقدية.</p>}
           {loading ? (
             <NasqoBrandLoader size="sm" label="جاري حساب حركة الصناديق..." />
           ) : (
@@ -12343,7 +12344,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
                         {formatAmount(report.reconciliation.unlinkedCashOut)})
                       </div>
                       <div>
-                        إجمالي صافي النقدية الموحد (يطابق الميزانية):{" "}
+                        إجمالي صافي النقدية في نطاق التقرير:{" "}
                         <b className="coa-cash-tag"><bdi>{formatAmount(report.reconciliation.totalCashNet)}</bdi></b>
                       </div>
                     </>

@@ -5,6 +5,8 @@ import 'stock_invoice_commands.dart';
 import 'local_document_commands.dart';
 import 'local_backup_restore.dart';
 import 'legacy_stock_projection.dart';
+import 'legacy_history_reports.dart';
+import 'legacy_history_archive.dart';
 
 /// One-time opening count per imported product and warehouse. Opening stock
 /// is NOT calculated from historical movements. The operator must substantiate
@@ -15,7 +17,7 @@ class LegacyStockOpening {
 
   Future<Map<String,dynamic>> load() async {
     final db=await local.database;
-    return db.transaction((t)async{
+    final data=await db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
       if(!await LocalDatabase.hasLegacyOperational(t))throw StateError('Imported workspace required');
       final items=(await t.query('legacy_operational_rows',where:'collection = ?',whereArgs:['inventory']))
@@ -31,6 +33,17 @@ class LegacyStockOpening {
         'openings':await t.query('legacy_stock_openings'),
       };
     });
+    final extra=await LegacyHistoryArchive(local).load();
+    final products=(data['products'] as List).cast<Map<String,dynamic>>();
+    final warehouses=(data['warehouses'] as List).map((r)=>Map<String,dynamic>.from(r as Map));
+    final report=LegacyHistoryReports.transfers(products,warehouses,extra['source_store_trans']!,extra['source_trans_details']!);
+    final nets=report['netByItem'] as Map;
+    final affected=report['affectedItemIds'] as List;
+    for(final p in products){
+      p['legacyTransferNetByWarehouse']=nets[p['id']]??<String,num>{};
+      p['legacyTransferIncomplete']=affected.contains(p['id']);
+    }
+    return {...data,'unresolvedTransfers':report['unresolvedIds']};
   }
 
   Future<String> approve(String workspace, Map<String,dynamic> input) async {
