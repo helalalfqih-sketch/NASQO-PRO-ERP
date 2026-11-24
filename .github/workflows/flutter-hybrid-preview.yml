@@ -87,3 +87,78 @@ jobs:
           path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Build signed versioned preview APK
+        if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true'
+        working-directory: flutter_app
+        env:
+          NASQO_ANDROID_KEYSTORE_BASE64: ${{ secrets.NASQO_ANDROID_KEYSTORE_BASE64 }}
+          NASQO_ANDROID_STORE_PASSWORD: ${{ secrets.NASQO_ANDROID_STORE_PASSWORD }}
+          NASQO_ANDROID_KEY_ALIAS: ${{ secrets.NASQO_ANDROID_KEY_ALIAS }}
+          NASQO_ANDROID_KEY_PASSWORD: ${{ secrets.NASQO_ANDROID_KEY_PASSWORD }}
+          NASQO_ANDROID_CERT_SHA256: ${{ vars.NASQO_ANDROID_CERT_SHA256 }}
+          NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
+          NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${NASQO_ANDROID_KEYSTORE_BASE64:?Configure a permanent signing keystore}"
+          : "${NASQO_ANDROID_CERT_SHA256:?Configure the expected signing certificate SHA256}"
+          export NASQO_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/nasqo-release.jks"
+          trap 'rm -f "$NASQO_ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$NASQO_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$NASQO_ANDROID_KEYSTORE_PATH"
+          node ../scripts/configure-android-signing.mjs
+          CODE=$((1000 + GITHUB_RUN_NUMBER))
+          flutter build apk --release \
+            --build-name="1.0.$GITHUB_RUN_NUMBER" --build-number="$CODE" \
+            --dart-define=NASQO_ANDROID_PREVIEW=true \
+            --dart-define=NASQO_ANDROID_BUILD_NUMBER="$CODE" \
+            --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
+            --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          test -n "$SIGNER"
+          ACTUAL=$("$SIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          EXPECTED=$(printf '%s' "$NASQO_ANDROID_CERT_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test -n "$ACTUAL" && test "$ACTUAL" = "$EXPECTED"
+          mkdir -p release-output
+          cp "$APK" release-output/NASQO-PRO-ERP.apk
+          (cd release-output && sha256sum NASQO-PRO-ERP.apk > NASQO-PRO-ERP.apk.sha256)
+
+      - name: Upload signed preview APK
+        if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: flutter_app/release-output/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-preview:
+    needs: flutter-hybrid
+    if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+      - name: Publish immutable versioned prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          CODE=$((1000 + GITHUB_RUN_NUMBER))
+          TAG="android-preview-v$CODE"
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Version already published; refusing overwrite"
+            exit 1
+          fi
+          gh release create "$TAG" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "NASQO Android preview 1.0.$GITHUB_RUN_NUMBER" \
+            --notes "Signed development preview. Financial workflows and cloud sync are not production-certified. Android verifies the signing identity on upgrade."
