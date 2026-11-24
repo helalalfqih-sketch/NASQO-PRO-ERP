@@ -204,7 +204,7 @@ export class NasqoHybridBridge {
     const isFinancial = isFinancialMutationCommand(action);
     const catalogAction = this.localCatalogEditing && ["saveAccountGroup","saveCurrency","deleteCurrency","deleteAccount",
       "updateInventoryItem","deleteInventoryItem","importInventoryItems","batchUpdateInventoryItems","saveWarehouse"].includes(action);
-    if (isFinancial && this.readOnlyFinancialMode && !catalogAction && !(action === "saveAccount" && this.localAccountCreation) && !(action === "createLedgerEntry" && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
+    if (isFinancial && this.readOnlyFinancialMode && !catalogAction && !(action === "saveAccount" && this.localAccountCreation) && !((action === "createLedgerEntry" || action === "updateLedgerEntry" || action === "setLedgerDeleted" || action === "permanentlyDeleteLedger") && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
         "في هذه الدفعة تبقى العمليات المالية للقراءة والعرض فقط؛ الترحيل يتم حصريًا عبر Flutter وSQLite.",

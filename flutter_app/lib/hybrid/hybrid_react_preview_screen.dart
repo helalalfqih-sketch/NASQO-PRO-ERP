@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'hybrid_read_only_protocol.dart';
 import '../services/local_account_commands.dart';
 import '../services/local_document_commands.dart';
+import '../services/local_document_lifecycle.dart';
 import 'local_snapshot_adapter.dart';
 import '../services/local_database.dart';
 
@@ -46,6 +47,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     createAccount: (key,payload) => _saveAccount(key,payload),
     updateAccount: (key,id,payload) => _saveAccount(key,payload,accountId:id),
     postDocument: _postDocument,
+    manageDocument: _manageDocument,
     createStockRecord: _createStockRecord,
     manageCatalog: _manageCatalog,
     readInventoryReport: _readInventoryReport,
@@ -78,15 +80,35 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
 
   static Future<Map<String,dynamic>> _postDocument(String key,Map<String,dynamic> payload) async {
     final local=LocalDatabase.instance;
-    final resolved=await LocalInvoiceRoles(local).resolve(payload);
-    final isStock=resolved['invoiceContent']=='items'||resolved['kind']=='return';
-    final id=isStock
-      ? await StockInvoiceCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved)
-      : await LocalDocumentCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved);
+    final String id;
+    if(LocalDocumentLifecycle.isDraftKind(payload['kind'])){
+      id=await LocalDocumentLifecycle(local).saveDraft(HybridLocalSnapshotAdapter.workspaceId,key,payload);
+    }else{
+      final resolved=await LocalInvoiceRoles(local).resolve(payload);
+      final isStock=resolved['invoiceContent']=='items'||resolved['kind']=='return';
+      id=isStock
+        ? await StockInvoiceCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved)
+        : await LocalDocumentCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved);
+    }
     final snapshot = await HybridLocalSnapshotAdapter.readFromDevice();
     final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
         .firstWhere((e) => e['id'] == id);
     return {'entry':entry,'snapshot':snapshot};
+  }
+
+  static Future<Map<String,dynamic>> _manageDocument(String action,String key,Map<String,dynamic> params)async{
+    final lifecycle=LocalDocumentLifecycle(LocalDatabase.instance),w=HybridLocalSnapshotAdapter.workspaceId;
+    final id=params['entryId'] as String;
+    if(action=='updateLedgerEntry'){
+      final p=params['payload'] as Map<String,dynamic>;
+      if(LocalDocumentLifecycle.isDraftKind(p['kind'])){await lifecycle.saveDraft(w,key,p,editingId:id);}
+      else{await lifecycle.amendMetadata(w,key,id,p);}
+    }else{
+      await lifecycle.trash(w,key,id,deleted:params['deleted'] as bool?,permanent:action=='permanentlyDeleteLedger');
+    }
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    return {'snapshot':snapshot,if(action=='updateLedgerEntry')
+      'entry':(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id)};
   }
 
   static Future<Map<String,dynamic>> _readInventoryReport(Map<String,dynamic> options)async{
@@ -155,6 +177,12 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     final db=await LocalDatabase.instance.database;
     final archived=await db.transaction((txn)=>LocalBackupRestore.reviewInvoice(txn,id));
     if(archived!=null)return archived;
+    final draft=await LocalDocumentLifecycle.draft(db,id);
+    if(draft!=null){
+      final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+      final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
+      return {'entry':entry,'lines':draft['lines']};
+    }
     final imported=await db.transaction((txn)=>LegacyOperationalRestore.invoice(txn,id));
     if(imported!=null)return imported;
     final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();

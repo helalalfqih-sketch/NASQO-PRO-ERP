@@ -1,3 +1,4 @@
+import '../services/local_document_lifecycle.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
@@ -94,6 +95,7 @@ class HybridLocalSnapshotAdapter {
       await LocalMasterCatalog.attachAccountMeta(txn,data);
       await LocalWorkspaceSettings.attach(txn,data);
       await LocalInvoiceRoles.attachCashboxes(txn,data);
+      await LocalDocumentLifecycle.attach(txn,data);
       return data;
   }
 

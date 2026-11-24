@@ -16,6 +16,7 @@ class HybridReadOnlyProtocol {
     this.createAccount,
     this.updateAccount,
     this.postDocument,
+    this.manageDocument,
     this.createStockRecord,
     this.manageCatalog,
     this.readInventoryReport,
@@ -36,6 +37,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
   final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
+  final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? manageDocument;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? manageCatalog;
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? readInventoryReport;
@@ -339,6 +341,25 @@ class HybridReadOnlyProtocol {
         final result=await readInvoiceDetail!(params['entryId'] as String);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
       }catch(_){return _error(id,actionName,'NOT_FOUND','تعذر العثور على تفاصيل الفاتورة المحلية.');}
+    }
+    if(actionName!=null&&['updateLedgerEntry','setLedgerDeleted','permanentlyDeleteLedger'].contains(actionName)&&manageDocument!=null){
+      final p=request['payload'],key=request['idempotencyKey'];
+      final fields=switch(actionName){
+        'updateLedgerEntry'=>{'workspaceId','entryId','payload'},
+        'setLedgerDeleted'=>{'workspaceId','entryId','deleted'},
+        _=>{'workspaceId','entryId'},
+      };
+      if(key is! String||key.isEmpty||key.length>150||p is! Map<String,dynamic>||
+        p['workspaceId']!='local-erp-workspace'||p['entryId'] is! String||(p['entryId'] as String).length>150||
+        p.keys.toSet().length!=fields.length||!p.keys.toSet().containsAll(fields)||
+        (actionName=='updateLedgerEntry'&&p['payload'] is! Map<String,dynamic>)||
+        (actionName=='setLedgerDeleted'&&p['deleted'] is! bool))
+        return _error(id,actionName,'VALIDATION_ERROR','طلب تعديل المستند غير صالح.');
+      try{
+        final result=await manageDocument!(actionName,key,p);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }on StateError catch(e){return _error(id,actionName,'VALIDATION_ERROR',e.message.toString());}
+      catch(_){return _error(id,actionName,'VALIDATION_ERROR','تعذر تعديل المستند دون تغيير القيود أو المخزون.');}
     }
     if (actionName == 'createLedgerEntry' && postDocument != null) {
       final params = request['payload'];
