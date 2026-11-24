@@ -21,7 +21,8 @@ abstract class RemoteChangeStore {
 }
 
 class SyncEngine {
-  SyncEngine(this.local, this.transport, this.remote);
+  SyncEngine(this.local, this.transport, this.remote, {this.allowedOperationTypes});
+  final Set<String>? allowedOperationTypes;
   final LocalDatabase local;
   final SyncTransport transport;
   final RemoteChangeStore remote;
@@ -32,7 +33,7 @@ class SyncEngine {
     if (_running) throw StateError('Synchronization already running');
     _running = true;
     try {
-      final pending = await local.pendingOperations(workspaceId);
+      final pending = await local.pendingOperations(workspaceId,operationTypes:allowedOperationTypes);
       for (final row in pending) {
         final id = row['operation_id'] as String;
         final revision = await transport.push(workspaceId, id,
