@@ -27,16 +27,18 @@ void main(){
       await src.execute('CREATE TABLE boxes(id INTEGER PRIMARY KEY,name TEXT,cur INTEGER)');
       await src.execute('CREATE TABLE customers(id INTEGER PRIMARY KEY,name TEXT,type INTEGER,lim REAL)');
       await src.execute('CREATE TABLE stores(id INTEGER PRIMARY KEY,name TEXT)');
-      await src.execute('CREATE TABLE products(id INTEGER PRIMARY KEY,name TEXT,unit TEXT,price REAL,price2 REAL,cur INTEGER)');
+      await src.execute('CREATE TABLE products(id INTEGER PRIMARY KEY,name TEXT,unit TEXT,price REAL,price2 REAL,cur INTEGER,count2 REAL,count3 REAL)');
       await src.execute('CREATE TABLE input_move(id INTEGER PRIMARY KEY,per_id INTEGER,dain REAL,madin REAL,cur INTEGER,bill_type INTEGER,year INTEGER,month INTEGER,day INTEGER,curprice REAL,cboxid INTEGER)');
-      await src.execute('CREATE TABLE bill_details(id INTEGER PRIMARY KEY,bill_id INTEGER,prod_id INTEGER,store_id INTEGER,amount REAL,price REAL,total REAL)');
+      await src.execute('CREATE TABLE bill_details(id INTEGER PRIMARY KEY,bill_id INTEGER,prod_id INTEGER,store_id INTEGER,amount REAL,price REAL,total REAL,unitnum INTEGER,bonus REAL)');
       await src.insert('currencies',{'id':1,'name':'ريال','amount':1});
       await src.insert('boxes',{'id':1,'name':'العملاء','cur':1});
       await src.insert('customers',{'id':1,'name':'Client','type':1,'lim':0});
       await src.insert('customers',{'id':2,'name':'Counterpart','type':1,'lim':0});
       await src.insert('stores',{'id':1,'name':'Main'});
       await src.insert('stores',{'id':2,'name':'Second'});
-      await src.insert('products',{'id':1,'name':'Product','unit':'piece','price':5,'price2':3,'cur':1});
+      await src.insert('products',{'id':1,'name':'Product','unit':'piece','price':5,'price2':3,'cur':1,'count2':12,'count3':2});
+      await src.execute('CREATE TABLE store_trans(id INTEGER PRIMARY KEY,store_id1 INTEGER,store_id2 INTEGER,type INTEGER)');
+      await src.insert('store_trans',{'id':1,'store_id1':1,'store_id2':2,'type':1});
       for(final movement in [
         {'id':1,'dain':10,'madin':0,'cur':1,'bill_type':2},
         {'id':2,'dain':7,'madin':7,'cur':1,'bill_type':2},
@@ -46,10 +48,14 @@ void main(){
       ]){
         await src.insert('input_move',{...movement,'per_id':1,'year':2026,'month':11,'day':8,'curprice':0,'cboxid':0});
       }
-      await src.insert('bill_details',{'id':1,'bill_id':1,'prod_id':1,'store_id':1,'amount':2.5,'price':4,'total':10});
+      await src.insert('bill_details',{'id':1,'bill_id':1,'prod_id':1,'store_id':1,'amount':2.5,'price':4,'total':10,'unitnum':2,'bonus':1});
+      await src.insert('bill_details',{'id':2,'bill_id':2,'prod_id':1,'store_id':2,'amount':1,'price':7,'total':7,'unitnum':3,'bonus':0});
       await src.close();
       final candidate=await backup.inspect(file,'fixture.back');
       expect(candidate.meta['unknownCurrencies'],1);
+      expect(candidate.collections['inventory']!.single['computedQuantity'],-55);
+      expect(candidate.collections['inventory']!.single['legacyInvoiceQtyByWarehouse'],{'legacy-wh-1':-31,'legacy-wh-2':-24});
+      expect(candidate.collections['source_store_trans'],hasLength(1));
       await backup.openReview(candidate);
       await migrate.activate(candidate);
       expect(await backup.isReview(),false);
@@ -61,13 +67,16 @@ void main(){
       expect(await LegacyOperationalRestore.original(db),orderedEquals(candidate.bytes));
       var view=await HybridLocalSnapshotAdapter.readFromDevice();
       final rows=(view['ledger'] as List).cast<Map<String,dynamic>>();
-      expect(rows.where((r)=>r['postingStatus']=='posted'),hasLength(3));
+      expect(rows.where((r)=>r['postingStatus']=='posted'),hasLength(4));
+      expect((await db.query('legacy_operational_rows',where:'collection = ?',whereArgs:['source_store_trans'])),hasLength(1));
       expect(rows.firstWhere((r)=>r['id']=='legacy-ent-4')['currency'],'عملة غير معرّفة (99)');
       final posted=rows.where((r)=>r['postingStatus']=='posted');
-      expect(posted.fold<num>(0,(sum,e)=>sum+(e['rawMadin'] as num)-(e['rawDain'] as num)),-6);
+      expect(posted.fold<num>(0,(sum,e)=>sum+(e['rawMadin'] as num)-(e['rawDain'] as num)),-11);
       final detail=await LegacyOperationalRestore.invoice(db,'legacy-ent-1');
       expect((detail!['lines'] as List).single['quantity'],2.5);
       expect((view['inventory'] as List).single['quantityUnverified'],true);
+      expect((view['inventory'] as List).single['computedQuantity'],-55);
+      expect((view['inventory'] as List).single['quantity'],0);
       await expectLater(LocalDatabase.requireVerifiedStock(db,'legacy-prod-1'),throwsStateError);
       final edited=await LocalAccountCommands(local).save(w,'rename',{'name':'Client updated','category':'clients','currency':'ريال','creditLimit':0,'openingDirection':'debit'},accountId:'legacy-acc-1');
       expect(edited,'legacy-acc-1');

@@ -322,7 +322,7 @@ function buildStatsFromSnapshot(snap: HybridWorkspaceSnapshot): UnifiedDbStats {
     fileSizeBytes: 0,
     accountsCount: snap.accounts.length,
     ledgerCount: snap.ledger.length,
-    invoiceLinesCount: snap.ledger.reduce((acc, e) => acc + (e.lines?.length ?? 0), 0),
+    invoiceLinesCount: snap.ledger.reduce((acc, e) => acc + (e.lineCount ?? e.lines?.length ?? 0), 0),
     warehousesCount: snap.warehouses.length,
     inventoryCount: snap.inventory.length,
     archivedCount: 0,

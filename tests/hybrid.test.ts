@@ -817,3 +817,31 @@ it("uses explicit journal legs for stock cost, tax and account reports",()=>{
   assert.equal(trial.salesTotal,28);
   assert.equal(trial.netProfit,16);
 });
+
+describe("Legacy register restoration parity", () => {
+  it("preserves both original sides in account, statement and group reports, without fictitious counterpart", () => {
+    const snap = createHybridHomeFixtureSnapshot();
+    const original = snap.accounts.find(a => a.groupId != null)!;
+    const account = {...original, openingBalance:0, currency:"ريال"};
+    const template = snap.ledger[0];
+    const legacy = {...template, id:"legacy-test", accountId:account.id, accountName:account.name, counterpartAccountId:"",
+      counterpartAccountName:"", currency:"ريال", rawDain:18, rawMadin:7, amount:18, direction:"debit" as const,
+      sourceOrigin:"legacy_sqlite" as const, postingStatus:"posted" as const, settledOnReceipt:false, deleted:false, kind:"voucher" as const,
+      payment:"credit" as const, journalLines:undefined, exchangeRate:1};
+    const excluded = {...legacy,id:"legacy-unknown",postingStatus:"historical_unposted" as const,rawDain:999,rawMadin:0,currency:"unknown"};
+    const entries = [legacy,excluded];
+    const summary=computeAccountSummary(account,entries,"ريال");
+    assert.equal(summary.debitTotal,18);
+    assert.equal(summary.creditTotal,7);
+    const statement=computeStatementRows(account,entries,{currency:"ريال"});
+    assert.equal(statement.debitTotal,18);
+    assert.equal(statement.creditTotal,7);
+    const groups=computeAccountGroupsSummary(snap.accountGroups,[account],entries,{[account.groupId!]: "ريال"});
+    assert.equal(groups.find(g=>g.id===account.groupId)?.netDebitMinusCredit,11);
+    const category=computeCategoryTotals([account],entries,"ريال")[account.category];
+    assert.equal(category.debitTotal,18);
+    assert.equal(category.creditTotal,7);
+    const trial=computeTrialBalanceReport([account],entries,[],[],{currency:"ريال"});
+    assert.equal(trial.totalDebitAccounts,11);
+  });
+});

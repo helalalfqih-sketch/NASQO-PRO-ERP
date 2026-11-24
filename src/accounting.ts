@@ -1676,6 +1676,12 @@ export function computeAccountGroupsSummary(
     const bucket = byGroupId.get(gId);
     if (!bucket) continue;
     if (bucket.currency !== "الكل" && entry.currency !== bucket.currency) continue;
+    const historical = legacyRegisterAmounts(entry,entry.accountId);
+    if (historical) {
+      bucket.debitTotal = addMoney(bucket.debitTotal,historical.debit);
+      bucket.creditTotal = addMoney(bucket.creditTotal,historical.credit);
+      continue;
+    }
     const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
     if (hasExplicitSides && entry.settledOnReceipt) {
       bucket.debitTotal = addMoney(bucket.debitTotal, entry.amount);
@@ -1806,7 +1812,8 @@ export function computeTrialBalanceReport(
           : 0;
 
     // Account balances & cumulative cash include prior periods up to toDate
-    accNets.set(e.accountId, addMoney(accNets.get(e.accountId) ?? 0, subMoney(dVal, cVal)));
+    const historical = legacyRegisterAmounts(e,e.accountId);
+    accNets.set(e.accountId, addMoney(accNets.get(e.accountId) ?? 0, historical ? subMoney(historical.debit,historical.credit) : subMoney(dVal, cVal)));
 
     // Cashbox inflows/outflows: only genuine cash vouchers, cash-settled invoices/returns, or entries linked to a cashbox
     const affectsCashbox =
