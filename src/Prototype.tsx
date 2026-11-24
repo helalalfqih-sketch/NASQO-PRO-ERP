@@ -1694,6 +1694,10 @@ export function AuthenticatedWorkspace({
   const saveLocalNamedBackup = useCallback(
     async (backupName: string) => {
       await runWithLoader("جاري تجهيز وتصدير النسخة الاحتياطية...", async () => {
+        if(hybrid.isHybrid){
+          try{await hybrid.exportLocalBackup(backupName);}catch(err){showToast(err instanceof Error?err.message:"تعذر تصدير النسخة المحلية.");}
+          return;
+        }
         const exportedAt = new Date().toISOString();
         const fileName = buildLocalBackupDownloadName(backupName);
         try {
@@ -1722,7 +1726,7 @@ export function AuthenticatedWorkspace({
         }
       });
     },
-    [buildBackupJsonString, runWithLoader, showToast, user.uid],
+    [buildBackupJsonString, runWithLoader, showToast, user.uid, hybrid],
   );
 
   const saveCloudNamedBackup = useCallback(

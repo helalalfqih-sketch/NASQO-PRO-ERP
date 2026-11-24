@@ -100,6 +100,7 @@ class LocalBackupRestore {
           return (await source.query(table)).map((r)=>Map<String,dynamic>.from(r)).toList();
         }
         if(names.containsAll(tables)&&!names.contains('workspaces')){
+          if(names.contains('backup_review_sources')&&(await get('backup_review_sources')).isNotEmpty)throw const FormatException('Use the native export option for operational data or export the archived original separately');
           final core={for(final table in tables)table:await get(table)};
           return BackupCandidate(name,'native-sqlite',bytes,hash,{}, {},core);
         }

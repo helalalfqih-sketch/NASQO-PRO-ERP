@@ -35,6 +35,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     createStockRecord: _createStockRecord,
     readInvoiceDetail: _readInvoiceDetail,
     pickBackup: _restoreBackup,
+    exportBackup: _exportBackup,
   );
 
   static Future<Map<String,dynamic>> _saveAccount(
@@ -149,8 +150,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       if(mounted)setState(()=>_backupBusy=false);
     }
   }
-  Future<void> _exportBackup()async{
-    if(_backupBusy)return;
+  Future<bool> _exportBackup()async{
+    if(_backupBusy)return false;
     setState(()=>_backupBusy=true);
     File? temp;
     try{
@@ -163,7 +164,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final ok=await _backupChannel.invokeMethod<bool>('exportBackup',{'path':temp.path,'fileName':
         _review?'nasqo-original-source.back':'nasqo-android-${DateTime.now().toIso8601String().substring(0,10)}.back'});
       if(ok==true)await _message('تم تصدير الملف. احتفظ به في مكان آمن؛ النسخة غير مشفرة.');
-    }catch(_){await _message('تعذر تصدير النسخة المحلية.');}
+      return ok==true;
+    }catch(_){await _message('تعذر تصدير النسخة المحلية.');return false;}
     finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
   }
   Future<void> _leaveReview()async{

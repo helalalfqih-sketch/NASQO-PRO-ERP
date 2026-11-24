@@ -1,0 +1,80 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:nasqo_pro_erp/services/local_database.dart';
+import 'package:nasqo_pro_erp/services/local_account_commands.dart';
+import 'package:nasqo_pro_erp/services/local_backup_restore.dart';
+import 'package:nasqo_pro_erp/hybrid/local_snapshot_adapter.dart';
+
+void main(){
+  test('native restore, legacy SQLite review, exact archive export and rollback preserve live data',()async{
+    sqfliteFfiInit();
+    databaseFactory=databaseFactoryFfi;
+    final dir=await Directory.systemTemp.createTemp('nasqo_backup_test_');
+    await databaseFactory.setDatabasesPath(dir.path);
+    final local=LocalDatabase.instance,db=await LocalDatabase.instance.database;
+    final backup=LocalBackupRestore(local);
+    const w='local-erp-workspace';
+    final account=LocalAccountCommands(local);
+    try{
+      // Native test uses a real standalone database copied from empty live SQLite
+      // through the application's export format, then imports a known account.
+      final initial=await backup.exportNative();
+      final initialFile=await File('${dir.path}/native.back').writeAsBytes(initial);
+      final candidate=await backup.inspect(initialFile,'native.back');
+      expect(candidate.native,isTrue);
+      expect(candidate.counts['accounts'],0);
+      await backup.restoreNative(candidate);
+      final id=await account.save(w,'live-account',{'name':'Live account','category':'clients','currency':'ريال'});
+      final live=await backup.exportNative();
+      final liveFile=await File('${dir.path}/live.back').writeAsBytes(live);
+      final liveCandidate=await backup.inspect(liveFile,'live.back');
+      expect(liveCandidate.counts['accounts'],1);
+      await expectLater(backup.restoreNative(liveCandidate),throwsStateError);
+      final damaged=Map<String,dynamic>.from(jsonDecode(utf8.decode(live)) as Map);
+      damaged['sha256']='bad';
+      final corrupt=await File('${dir.path}/bad.back').writeAsString(jsonEncode(damaged));
+      await expectLater(backup.inspect(corrupt,'bad.back'),throwsFormatException);
+      final legacyPath='${dir.path}/legacy.back';
+      final source=await databaseFactoryFfi.openDatabase(legacyPath);
+      await source.execute('CREATE TABLE customers (id INTEGER PRIMARY KEY,name TEXT,type INTEGER,lim REAL)');
+      await source.execute('CREATE TABLE stores (id INTEGER PRIMARY KEY,name TEXT,details TEXT)');
+      await source.execute('CREATE TABLE products (id INTEGER PRIMARY KEY,name TEXT,price REAL,price2 REAL,unit TEXT)');
+      await source.execute('CREATE TABLE currencies (id INTEGER PRIMARY KEY,name TEXT,amount REAL)');
+      await source.execute('CREATE TABLE input_move (id INTEGER PRIMARY KEY,per_id INTEGER,dain REAL,madin REAL,cur INTEGER,bill_type INTEGER,year INTEGER,month INTEGER,day INTEGER)');
+      await source.execute('CREATE TABLE bill_details (id INTEGER PRIMARY KEY,bill_id INTEGER,prod_id INTEGER,amount REAL,price REAL,total REAL)');
+      await source.insert('customers',{'id':1,'name':'Archived client','type':2,'lim':0});
+      await source.insert('stores',{'id':1,'name':'Warehouse','details':''});
+      await source.insert('products',{'id':1,'name':'Old product','price':5,'price2':3,'unit':'piece'});
+      await source.insert('currencies',{'id':1,'name':'ريال','amount':1});
+      await source.insert('input_move',{'id':1,'per_id':1,'dain':10,'madin':2,'cur':1,'bill_type':2,'year':2026,'month':11,'day':24});
+      await source.insert('bill_details',{'id':1,'bill_id':1,'prod_id':1,'amount':2,'price':5,'total':10});
+      await source.close();
+      final legacyFile=File(legacyPath),original=await legacyFile.readAsBytes();
+      final legacy=await backup.inspect(legacyFile,'legacy.back');
+      expect(legacy.native,isFalse);
+      expect(legacy.counts['accounts'],1);
+      expect(legacy.meta['ambiguousMoves'],1);
+      await backup.openReview(legacy);
+      await backup.openReview(legacy);
+      expect(await db.query('backup_review_sources'),hasLength(1));
+      expect(await backup.exportReviewSource(),orderedEquals(original));
+      final snap=await HybridLocalSnapshotAdapter.readFromDevice();
+      expect((snap['accounts'] as List).single['name'],'Archived client');
+      expect((snap['ledger'] as List).single['rawDain'],10);
+      expect((snap['ledger'] as List).single['rawMadin'],2);
+      expect((snap['ledger'] as List).single['postingStatus'],'historical_unposted');
+      expect((snap['inventory'] as List).single['quantityUnverified'],true);
+      expect((snap['capabilities'] as Map)['localDocumentPosting'],isNull);
+      final detail=await db.transaction((t)=>LocalBackupRestore.reviewInvoice(t,'legacy-ent-1'));
+      expect((detail!['lines'] as List).single['quantity'],2);
+      await expectLater(account.save(w,'blocked',{'name':'Blocked','category':'clients','currency':'ريال'}),throwsStateError);
+      expect((await db.query('accounts')).single['id'],id);
+      await backup.closeReview();
+      final current=await HybridLocalSnapshotAdapter.readFromDevice();
+      expect((current['accounts'] as List).single['name'],'Live account');
+      expect(await local.pendingOperations(w),hasLength(1));
+    }finally{await db.close();await dir.delete(recursive:true);}
+  });
+}

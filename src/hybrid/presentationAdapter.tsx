@@ -30,6 +30,7 @@ export interface HybridPresentationAdapterValue {
   notifyOpenAccountStatement: (accountId: string, currency?: string) => void;
   printDocument: (payload: HybridPrintPayload) => Promise<boolean>;
   exportPdf: (payload: HybridExportPdfPayload) => Promise<boolean>;
+  exportLocalBackup: (name: string) => Promise<boolean>;
   pickFile: (request: HybridPickFileRequest) => Promise<HybridPickFileResult | null>;
   showMessage: (message: string, level?: "info" | "success" | "warning" | "error") => void;
 }
@@ -53,6 +54,7 @@ const DEFAULT_WEB_ADAPTER: HybridPresentationAdapterValue = {
   notifyOpenAccountStatement: () => {},
   printDocument: async () => false,
   exportPdf: async () => false,
+  exportLocalBackup: async () => false,
   pickFile: async () => null,
   showMessage: () => {},
 };
@@ -105,6 +107,11 @@ export function createFlutterPresentationAdapter(
       if (!hybridBridge.hasNativeTransport()) return false;
       await hybridBridge.invoke("exportPdf", payload);
       return true;
+    },
+    exportLocalBackup: async (name) => {
+      const result=await hybridBridge.invoke<"backupWorkspace",{saved:boolean}>("backupWorkspace",
+        {workspaceId:"local-erp-workspace",backupName:name,target:"local"},{timeoutMs:300_000});
+      return result.saved===true;
     },
     pickFile: async (request) => {
       if (!hybridBridge.hasNativeTransport()) return null;
