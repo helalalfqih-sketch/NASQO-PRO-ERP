@@ -24,6 +24,22 @@ Map<String, dynamic> emptySnapshot() => {
 };
 
 void main() {
+  test('native print and share commands reject HTML, arbitrary URLs and foreign workspace',()async{
+    var prints=0,shares=0;
+    final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),
+      printCurrentPage:(title)async{prints++;return true;},
+      shareText:(p)async{shares++;return {'opened':true,'targeted':false};});
+    Future<Map<String,dynamic>> invoke(String action,Map<String,dynamic> payload)async=>
+      jsonDecode(await endpoint.handle(jsonEncode(request(action,payload:payload)))) as Map<String,dynamic>;
+    expect((await invoke('printDocument',{'title':'Report','kind':'report','htmlSnapshot':'<script>'}))['ok'],false);
+    expect((await invoke('shareText',{'workspaceId':'other','title':'Report','text':'x'}))['ok'],false);
+    expect((await invoke('shareText',{'workspaceId':'local-erp-workspace','title':'Report','text':'x','phone':'https://example.test'}))['ok'],false);
+    expect(prints,0);expect(shares,0);
+    expect((await invoke('printDocument',{'title':'Report','kind':'report'}))['data']['opened'],true);
+    expect((await invoke('shareText',{'workspaceId':'local-erp-workspace','title':'Report','text':'Synthetic'}))['data']['opened'],true);
+    expect(prints,1);expect(shares,1);
+  });
+
   test('stock reconciliation opens only scoped local product and warehouse references',()async{
     String? warehouse,product;
     var calls=0;
