@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:cryptography/cryptography.dart';
+import 'backup_encryption.dart';
+import 'cloud_backup_protection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -18,7 +21,11 @@ class NativeCloudException implements Exception {
 /// The app-specific Drive scope and fixed API origin limit all operations.
 class NativeCloudSession {
   NativeCloudSession({required this.confirm,required this.exportWorkspace,
-    required this.restoreWorkspace,required this.pickFile,required this.saveFile});
+    required this.restoreWorkspace,required this.pickFile,required this.saveFile,
+    RecoveryKeyPrompt? requestRecoveryKey})
+      :_protection=CloudBackupProtection(requestRecoveryKey??_cancelKey);
+  static Future<SecretKey?> _cancelKey(bool _)async=>null;
+  final CloudBackupProtection _protection;
   final Future<bool> Function(String,String) confirm;
   final Future<Uint8List> Function() exportWorkspace;
   final Future<bool> Function(Uint8List,String) restoreWorkspace;
@@ -143,12 +150,12 @@ class NativeCloudSession {
           final name=raw.toLowerCase().endsWith('.back')?raw:raw.replaceFirst(RegExp(r'\.(json|db|sqlite|backup)$',caseSensitive:false),'')+'.back';
           final existing=operation=='overwriteNative'?fileId(args['fileId']):null;
           final parent=args['parentId']==null?null:fileId(args['parentId']);
-          if(!await confirm('حفظ نسخة في Google Drive','ستُرفع نسخة كاملة غير مشفّرة من قاعدة العمل إلى حساب '+_drive!.email+
+          if(!await confirm('حفظ نسخة في Google Drive','ستُشفّر نسخة قاعدة العمل محليًا قبل رفعها إلى حساب '+_drive!.email+
               (existing==null?'':' مع استبدال الملف المحدد.')))return {'cancelled':true};
           final confirmedAccount=_requireDrive();
           final bytes=await exportWorkspace();
           if(!identical(confirmedAccount,_requireDrive()))throw const NativeCloudException('تغير الحساب بعد تأكيد النسخ الاحتياطي.',code:'UNAUTHORIZED_ACTION');
-          return await _upload(bytes,name,'application/octet-stream',parent:parent,existing:existing);
+          return await _upload(bytes,name,parent:parent,existing:existing);
         case 'uploadLocal':
           validateKeys(args,{'parentId'});
           final parent=args['parentId']==null?null:fileId(args['parentId']);
@@ -157,25 +164,32 @@ class NativeCloudSession {
           if(!identical(pickerAccount,_requireDrive()))throw const NativeCloudException('تغير الحساب أثناء اختيار الملف.',code:'UNAUTHORIZED_ACTION');
           if(picked==null)return {'cancelled':true};
           final name=fileName(picked.name);
-          if(!await confirm('رفع ملف إلى Drive','رفع الملف '+name+' إلى حساب '+_drive!.email+'؟'))return {'cancelled':true};
-          return await _upload(picked.bytes,name,'application/octet-stream',parent:parent);
+          if(!await confirm('رفع ملف إلى Drive','تشفير الملف '+name+' محليًا ثم رفعه إلى حساب '+_drive!.email+'؟'))return {'cancelled':true};
+          _ensureDrive(pickerAccount);
+          return await _upload(picked.bytes,name,parent:parent);
         case 'restoreNative':
         case 'saveFile':
           validateKeys(args,{'fileId'});
           final id=fileId(args['fileId']);
-          final meta=await _metadata(id);
-          final name=fileName(meta['name']);
-          final mime=meta['mimeType'];
-          if(mime is! String||mime.startsWith('application/vnd.google-apps.'))
-            throw const NativeCloudException('تنزيل مستندات Google الأصلية غير مدعوم؛ اختر ملفًا عاديًا.');
-          final size=int.tryParse(meta['size']?.toString()??'');
-          if(size==null||size<1||size>maxBytes)throw const NativeCloudException('حجم الملف غير مدعوم (الحد 32 ميغابايت).');
-          final bytes=(await _request('GET',Uri.https('www.googleapis.com','/drive/v3/files/$id',{'alt':'media'}),limit:maxBytes)).bytes;
-          if(bytes.length!=size||(meta['md5Checksum'] is String&&md5.convert(bytes).toString()!=meta['md5Checksum']))
-            throw const NativeCloudException('لم يكتمل تنزيل الملف أو فشل التحقق منه.');
-          if(operation=='restoreNative'&&!await confirm('استعادة نسخة احتياطية','استعادة الملف '+name+' من حساب '+_drive!.email+' قد تستبدل بيانات العمل الحالية. هل تريد المتابعة؟'))return {'completed':false,'cancelled':true,'name':name};
-          final ok=operation=='restoreNative'?await restoreWorkspace(bytes,name):await saveFile(bytes,name);
-          return {'completed':ok,'name':name};
+          final account=_requireDrive();
+          final downloaded=await _download(id);
+          final name=downloaded.name,bytes=downloaded.bytes;
+          _ensureDrive(account);
+          if(operation=='saveFile'&&!BackupEncryption.hasEnvelopeHeader(bytes)){
+            // Preserve access to historical plaintext files without allowing
+            // silent downgrade of the authenticated restore path.
+            if(!await confirm('تنزيل نسخة قديمة','هذا الملف لا يحمل رأس النسخة المشفّرة المعتمد. سيُحفظ كما هو دون تحقق تشفيري. لا تستعد ملفًا غير موثوق.'))return {'completed':false,'cancelled':true,'name':name};
+            _ensureDrive(account);
+            return {'completed':await saveFile(bytes,name),'name':name};
+          }
+          if(!await confirm(operation=='restoreNative'?'استعادة نسخة احتياطية':'حفظ نسخة محلية',
+              operation=='restoreNative'?'استعادة الملف '+name+' من حساب '+account.email+' قد تستبدل بيانات العمل الحالية. هل تريد المتابعة؟':
+              'سيُفك تشفير الملف '+name+' ويُحفظ محليًا دون تشفير. اختر مكانًا آمنًا.'))return {'completed':false,'cancelled':true,'name':name};
+          final ok=await _protection.recover<bool>(bytes,(plain)async{
+            _ensureDrive(account);
+            return operation=='restoreNative'?await restoreWorkspace(plain,name):await saveFile(plain,name);
+          });
+          return {'completed':ok==true,'cancelled':ok==null,'name':name};
         case 'trashFile':
           validateKeys(args,{'fileId'});
           final id=fileId(args['fileId']),meta=await _metadata(id);
@@ -190,7 +204,7 @@ class NativeCloudSession {
           if(!RegExp(r'^[A-Za-z0-9.+_-]+/[A-Za-z0-9.+_-]+$').hasMatch(mime))throw ArgumentError('Invalid mime type');
           _uploads.clear();
           final uploadId=DateTime.now().microsecondsSinceEpoch.toString();
-          _uploads[uploadId]=_PendingUpload(fileName(args['name']),mime,size,
+          _uploads[uploadId]=_PendingUpload(fileName(args['name']),size,
             args['parentId']==null?null:fileId(args['parentId']),args['fileId']==null?null:fileId(args['fileId']));
           return {'uploadId':uploadId};
         case 'appendUpload':
@@ -211,13 +225,19 @@ class NativeCloudSession {
           validateKeys(args,{'uploadId'});
           final upload=_uploads.remove(boundedText(args['uploadId'],max:64));
           if(upload==null||upload.bytes.length!=upload.size)throw ArgumentError('Incomplete upload');
-          if(!await confirm('رفع ملف إلى Drive','رفع '+upload.name+' إلى '+_drive!.email+(upload.existing==null?'؟':' مع استبدال الملف المحدد؟')))return {'cancelled':true};
-          return await _upload(upload.bytes.takeBytes(),upload.name,upload.mime,parent:upload.parent,existing:upload.existing);
+          final account=_requireDrive();
+          if(!await confirm('رفع ملف إلى Drive','تشفير '+upload.name+' محليًا ثم رفعه إلى '+account.email+(upload.existing==null?'؟':' مع استبدال الملف المحدد؟')))return {'cancelled':true};
+          _ensureDrive(account);
+          return await _upload(upload.bytes.takeBytes(),upload.name,parent:upload.parent,existing:upload.existing);
         default:
           throw const NativeCloudException('هذا الإجراء غير مفعّل في Drive المحلي.',code:'VALIDATION_ERROR');
       }
     }on NativeCloudException{rethrow;}
-    on FirebaseAuthException catch(e){
+    on SecretBoxAuthenticationError{
+      throw const NativeCloudException('مفتاح الاسترداد غير صحيح أو تغير محتوى النسخة. لم تُعتمد الاستعادة أو عملية الاستبدال.',code:'VALIDATION_ERROR');
+    }on FormatException{
+      throw const NativeCloudException('تنسيق البيانات غير صالح أو النسخة غير مشفّرة بالتنسيق المعتمد. للنسخ القديمة استخدم التنزيل المحلي بحذر.',code:'VALIDATION_ERROR');
+    }on FirebaseAuthException catch(e){
       throw NativeCloudException(e.code=='network-request-failed'?'لا يوجد اتصال بخدمة Firebase.':'تعذر تسجيل الدخول إلى Firebase. تحقق من تفعيل Google وإعداد التطبيق.');
     }on PlatformException catch(e){
       throw NativeCloudException(e.code=='network_error'?'لا يوجد اتصال بخدمة Google.':'تعذر إكمال مصادقة Google. تحقق من شهادة APK وإعداد OAuth.');
@@ -238,6 +258,28 @@ class NativeCloudSession {
       _clearDrive();throw const NativeCloudException('أعد ربط حساب Google Drive.',code:'UNAUTHORIZED_ACTION');
     }
     return account;
+  }
+
+  void _ensureDrive(GoogleSignInAccount account){
+    if(!identical(account,_requireDrive()))throw const NativeCloudException('تغير الحساب أثناء العملية.',code:'UNAUTHORIZED_ACTION');
+  }
+
+  Future<({Uint8List bytes,String name})> _download(String id)async{
+    final account=_requireDrive();
+    final meta=await _metadata(id);
+    final name=fileName(meta['name']);
+    final mime=meta['mimeType'];
+    if(meta['trashed']==true||mime is! String||mime.startsWith('application/vnd.google-apps.'))
+      throw const NativeCloudException('اختر ملفًا عاديًا غير محذوف.');
+    final size=int.tryParse(meta['size']?.toString()??'');
+    if(size==null||size<1||size>BackupEncryption.maxEnvelope)
+      throw const NativeCloudException('حجم الملف غير مدعوم (الحد 32 ميغابايت قبل التشفير).');
+    _ensureDrive(account);
+    final bytes=(await _request('GET',Uri.https('www.googleapis.com','/drive/v3/files/$id',{'alt':'media'}),limit:BackupEncryption.maxEnvelope)).bytes;
+    if(bytes.length!=size||(meta['md5Checksum'] is String&&md5.convert(bytes).toString()!=meta['md5Checksum']))
+      throw const NativeCloudException('لم يكتمل تنزيل الملف أو فشل التحقق منه.');
+    _ensureDrive(account);
+    return (bytes:bytes,name:name);
   }
 
   Future<({Uint8List bytes,String? location})> _request(String method,Uri uri,
@@ -298,8 +340,25 @@ class NativeCloudSession {
     }
     return _json('POST','/drive/v3/files',query:{'fields':fields},body:{'name':name,'mimeType':folderMime,if(parent!=null)'parents':[parent]});
   }
-  Future<Map<String,dynamic>> _upload(Uint8List bytes,String name,String mime,{String? parent,String? existing})async{
+  Future<Map<String,dynamic>> _upload(Uint8List bytes,String name,{String? parent,String? existing})async{
     if(bytes.isEmpty||bytes.length>maxBytes)throw const NativeCloudException('حجم الملف غير مدعوم.');
+    final account=_requireDrive();
+    final result=await _protection.upload<Map<String,dynamic>>(bytes,
+      readExisting:existing==null?null:()async{
+        _ensureDrive(account);
+        return (await _download(existing)).bytes;
+      },
+      send:(encrypted)async{
+        _ensureDrive(account);
+        return _sendEncrypted(encrypted,name,parent:parent,existing:existing);
+      });
+    return result??{'cancelled':true};
+  }
+
+  Future<Map<String,dynamic>> _sendEncrypted(Uint8List bytes,String name,{String? parent,String? existing})async{
+    if(!BackupEncryption.hasEnvelopeHeader(bytes)||bytes.length>BackupEncryption.maxEnvelope)
+      throw const NativeCloudException('لا يسمح برفع نسخة غير مشفّرة.',code:'VALIDATION_ERROR');
+    const mime='application/octet-stream';
     final meta={'name':name,'mimeType':mime,if(existing==null&&parent!=null)'parents':[parent]};
     final session=await _request(existing==null?'POST':'PATCH',Uri.https('www.googleapis.com',
       existing==null?'/upload/drive/v3/files':'/upload/drive/v3/files/$existing',{'uploadType':'resumable','fields':fields}),
@@ -320,8 +379,8 @@ class NativeCloudSession {
 }
 
 class _PendingUpload {
-  _PendingUpload(this.name,this.mime,this.size,this.parent,this.existing);
-  final String name,mime;
+  _PendingUpload(this.name,this.size,this.parent,this.existing);
+  final String name;
   final int size;
   final String? parent,existing;
   final bytes=BytesBuilder(copy:false);
