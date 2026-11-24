@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'local_document_commands.dart';
+import 'stock_quantity.dart';
 
 /// Cash/credit stock invoice engine. Money is integer minor units; stock uses
-/// whole base units. Linked returns use the original invoice's prices and costs.
+/// integer thousandths internally. Linked returns use original prices and costs.
 class StockInvoiceCommands {
   StockInvoiceCommands(this.local);
   final LocalDatabase local;
@@ -30,7 +31,7 @@ class StockInvoiceCommands {
     return v;
   }
   static int valuation(Map<String,Object?> row) {
-    final q = qty(row['quantity']);
+    final q = StockQuantity.normalized(row['quantity']);
     final cost = row['avgCost'];
     if (cost is! num || !cost.isFinite || cost < 0 ||
         cost * q * 100 > _max || (q == 0 && cost != 0)) {
@@ -119,11 +120,11 @@ class StockInvoiceCommands {
     for(final row in raw){
       if(row is! Map<String,dynamic>) throw ArgumentError('Invalid line');
       final item=identity(row['inventoryItemId']);
-      final q=qty(row['quantity']);
+      final q=StockQuantity.ticks(row['quantity']);
       final price=money(row['price']);
       final discount=money(row['discount']??0);
       final unitNum=qty(row['unitNum']??1);
-      final gross=bounded(q*price);
+      final gross=StockQuantity.lineGrossMinor(q,price);
       if(!seen.add(item)||q==0||price==0||discount>gross||
           unitNum<1||unitNum>3||(row['bonus']??0)!=0||
           (row['warehouseId']??warehouse)!=warehouse||
@@ -131,7 +132,7 @@ class StockInvoiceCommands {
       final total=gross-discount;
       if(money(row['total'])!=total) throw ArgumentError('Line total mismatch');
       net=bounded(net+total);
-      lines.add({'item_id':item,'sold_quantity':q,'unit_num':unitNum,'price_minor':price,'discount_minor':discount,'net_minor':total});
+      lines.add({'item_id':item,'sold_quantity':StockQuantity.units(q),'unit_num':unitNum,'price_minor':price,'discount_minor':discount,'net_minor':total});
     }
     if(rate is int && proportional(net,rate,10000)!=tax) throw ArgumentError('Calculated tax mismatch');
     final total=bounded(net+tax);
@@ -160,7 +161,7 @@ class StockInvoiceCommands {
         await t.insert('stock_posting_documents',{'id':id,'document_json':jsonEncode(request)});
         var costTotal=0;
         for(var i=0;i<lines.length;i++){
-          final l=lines[i],item=l['item_id'] as String,sold=l['sold_quantity'] as int;
+          final l=lines[i],item=l['item_id'] as String,sold=StockQuantity.ticks(l['sold_quantity']);
           final unitNum=l['unit_num'] as int;
           final rows=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,warehouse]);
           if(rows.length!=1) throw StateError('Stock item not in selected warehouse');
@@ -172,21 +173,22 @@ class StockInvoiceCommands {
           final factor=unitNum==1?1:unitNum==2?qty(units['count2']):qty(qty(units['count2'])*qty(units['count3']));
           final unit=unitNum==1?row['unit']:units['unit$unitNum'];
           if(factor<1||unit is! String||unit.isEmpty) throw ArgumentError('Undefined item unit');
-          final q=qty(sold*factor);
-          final before=qty(row['quantity']),value=valuation(row);
+          final q=StockQuantity.boundedTicks(sold*factor);
+          final before=StockQuantity.ticks(row['quantity']),value=valuation(row);
           if(sale && before<q) throw StateError('Insufficient stock');
           final after=sale?before-q:before+q;
-          qty(after);
+          StockQuantity.boundedTicks(after);
           final cost=sale?proportional(value,q,before):l['net_minor'] as int;
           final next=bounded(sale?value-cost:value+cost);
           costTotal=bounded(costTotal+cost);
           final lineId='$id:$i';
-          await t.update('inventory_items',{'quantity':after,'avgCost':after==0?0:next/after/100},where:'id = ?',whereArgs:[item]);
-          await t.insert('invoice_lines',{'id':lineId,'ledger_id':id,'item_id':item,'quantity':q,'unit_price_minor':l['price_minor']});
-          final detail={...l,'quantity':q,'unit_factor':factor,'itemName':row['name'],'unit':unit,'cost_minor':cost};
-          await t.insert('stock_posting_lines',{'id':lineId,'document_id':id,'item_id':item,'quantity':q,
-            'before_quantity':before,'after_quantity':after,'before_value':value,'after_value':next,'line_json':jsonEncode(detail)});
-          await t.insert('stock_movements',{'id':lineId,'item_id':item,'quantity_delta':sale?-q:q,'operation_id':key});
+          final actual=StockQuantity.units(q),afterUnits=StockQuantity.units(after);
+          await t.update('inventory_items',{'quantity':afterUnits,'avgCost':after==0?0:next/afterUnits/100},where:'id = ?',whereArgs:[item]);
+          await t.insert('invoice_lines',{'id':lineId,'ledger_id':id,'item_id':item,'quantity':actual,'unit_price_minor':l['price_minor']});
+          final detail={...l,'quantity':actual,'unit_factor':factor,'itemName':row['name'],'unit':unit,'cost_minor':cost};
+          await t.insert('stock_posting_lines',{'id':lineId,'document_id':id,'item_id':item,'quantity':actual,
+            'before_quantity':StockQuantity.units(before),'after_quantity':afterUnits,'before_value':value,'after_value':next,'line_json':jsonEncode(detail)});
+          await t.insert('stock_movements',{'id':lineId,'item_id':item,'quantity_delta':StockQuantity.units(sale?-q:q),'operation_id':key});
         }
         final legs=<Map<String,dynamic>>[leg(primary,total,sale),leg(counterpart,net,!sale),
           if(taxAccount!=null)leg(taxAccount,tax,!sale),
@@ -209,14 +211,14 @@ class StockInvoiceCommands {
       if(requested is! List||requested.isEmpty||requested.length>100) throw ArgumentError('Invalid return lines');
       for(final l in requested){
         if(l is! Map) throw ArgumentError('Invalid return line');
-        final item=identity(l['itemId']),q=qty(l['quantity']);
+        final item=identity(l['itemId']),q=StockQuantity.ticks(l['quantity']);
         if(q==0||selection.containsKey(item)) throw ArgumentError('Invalid return quantity');
         selection[item]=q;
       }
     }
     await local.commitOperation(workspaceId:w,operationId:key,operationType:'stock.invoice.reverse',
       payload:{'id':id,'originalInvoiceId':original,'entryNumber':entryNumber,'entryDate':entryDate,
-        if(requested!=null)'returnLines':selection},
+        if(requested!=null)'returnLines':{for(final e in selection.entries)e.key:StockQuantity.units(e.value)}},
       apply:(t)async{
         await workspace(t,w);await numberAvailable(t,entryNumber);
         final headers=await t.query('stock_posting_documents',where:'id = ? AND original_id IS NULL AND return_original_id IS NULL',whereArgs:[original]);
@@ -228,8 +230,12 @@ class StockInvoiceCommands {
         final sale=details['sale']==true;
         final source=await t.query('stock_posting_lines',where:'document_id = ?',whereArgs:[original],orderBy:'rowid');
         if(source.isEmpty) throw StateError('Original lines missing');
-        final already=await t.rawQuery('SELECT l.item_id, SUM(l.quantity) AS quantity FROM stock_posting_lines l JOIN stock_posting_documents d ON d.id=l.document_id WHERE d.return_original_id = ? GROUP BY l.item_id',[original]);
-        final used={for(final row in already)row['item_id'] as String:qty(row['quantity'])};
+        final already=await t.rawQuery('SELECT l.item_id,l.quantity FROM stock_posting_lines l JOIN stock_posting_documents d ON d.id=l.document_id WHERE d.return_original_id = ?',[original]);
+        final used=<String,int>{};
+        for(final row in already){
+          final item=row['item_id'] as String;
+          used[item]=(used[item]??0)+StockQuantity.ticks(row['quantity']);
+        }
         final remainingSelection=Map<String,int>.from(selection);
         final changes=<Map<String,dynamic>>[];
         var net=0,tax=0,cost=0,netPrefix=0;
@@ -238,8 +244,8 @@ class StockInvoiceCommands {
           final item=line['item_id'] as String;
           final data=jsonDecode(line['line_json'] as String) as Map<String,dynamic>;
           final factor=(data['unit_factor'] as int?)??1;
-          final originalBase=qty(line['quantity']);
-          final sold=(data['sold_quantity'] as int?)??originalBase;
+          final originalBase=StockQuantity.ticks(line['quantity']);
+          final sold=data['sold_quantity']==null?originalBase:StockQuantity.ticks(data['sold_quantity']);
           final usedBase=used[item]??0;
           if(factor<1||sold*factor!=originalBase||usedBase%factor!=0||usedBase>originalBase) throw StateError('Invalid return history');
           final prev=usedBase~/factor;
@@ -251,19 +257,19 @@ class StockInvoiceCommands {
           if(q<0||q>sold-prev) throw StateError('Return exceeds original quantity');
           int portion(int value)=>proportional(value,prev+q,sold)-proportional(value,prev,sold);
           final netPart=portion(lineNet),taxPart=portion(lineTax),costPart=portion(data['cost_minor'] as int);
-          final discountPart=q*(data['price_minor'] as int)-netPart;
+          final discountPart=portion((data['discount_minor'] as int?)??0);
           final base=q*factor;
           final stock=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,entry['warehouseId']]);
           if(stock.length!=1) throw StateError('Stock item missing');
           await LocalDatabase.requireVerifiedStock(t,item);
           await LocalDatabase.requireOpeningStockAccount(t,item,identity(details['inventoryAccountId']),entryDate);
-          final before=qty(stock.single['quantity']),beforeValue=valuation(stock.single);
+          final before=StockQuantity.ticks(stock.single['quantity']),beforeValue=valuation(stock.single);
           final after=sale?before+base:before-base;
           final afterValue=sale?beforeValue+costPart:beforeValue-costPart;
           if(after<0||afterValue<0||(after==0&&afterValue!=0)) throw StateError('Purchase return needs stock or cost variance reconciliation');
-          qty(after);bounded(afterValue);
+          StockQuantity.boundedTicks(after);bounded(afterValue);
           net=bounded(net+netPart);tax=bounded(tax+taxPart);cost=bounded(cost+costPart);
-          final lineData=<String,dynamic>{...data,'quantity':base,'sold_quantity':q,'unit_factor':factor,
+          final lineData=<String,dynamic>{...data,'quantity':StockQuantity.units(base),'sold_quantity':StockQuantity.units(q),'unit_factor':factor,
             'net_minor':netPart,'tax_minor':taxPart,'cost_minor':costPart,'discount_minor':discountPart};
           changes.add({'item':item,'before':before,'after':after,'beforeValue':beforeValue,'afterValue':afterValue,'data':lineData});
         }
@@ -290,11 +296,12 @@ class StockInvoiceCommands {
           final c=changes[i],item=c['item'] as String,d=c['data'] as Map<String,dynamic>;
           final before=c['before'] as int,after=c['after'] as int,afterValue=c['afterValue'] as int;
           final lineId='$id:$i';
-          await t.update('inventory_items',{'quantity':after,'avgCost':after==0?0:afterValue/after/100},where:'id = ?',whereArgs:[item]);
+          final afterUnits=StockQuantity.units(after);
+          await t.update('inventory_items',{'quantity':afterUnits,'avgCost':after==0?0:afterValue/afterUnits/100},where:'id = ?',whereArgs:[item]);
           await t.insert('invoice_lines',{'id':lineId,'ledger_id':id,'item_id':item,'quantity':d['quantity'],'unit_price_minor':d['price_minor']});
           await t.insert('stock_posting_lines',{'id':lineId,'document_id':id,'item_id':item,'quantity':d['quantity'],
-            'before_quantity':before,'after_quantity':after,'before_value':c['beforeValue'],'after_value':afterValue,'line_json':jsonEncode(d)});
-          await t.insert('stock_movements',{'id':lineId,'item_id':item,'quantity_delta':after-before,'operation_id':key});
+            'before_quantity':StockQuantity.units(before),'after_quantity':afterUnits,'before_value':c['beforeValue'],'after_value':afterValue,'line_json':jsonEncode(d)});
+          await t.insert('stock_movements',{'id':lineId,'item_id':item,'quantity_delta':StockQuantity.units(after-before),'operation_id':key});
         }
         await journal(t,id,entry['currency'] as String,legs);
         return {'id':id};

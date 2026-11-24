@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 9;
+  static const int dbVersion = 10;
 
   Database? _db;
 
@@ -53,6 +53,7 @@ class LocalDatabase {
         if (oldVersion < 7) await createBackupReviewSchema(db);
         if (oldVersion < 8) await createLegacyOperationalSchema(db);
         if (oldVersion < 9) await createLegacyStockOpeningSchema(db);
+        if (oldVersion < 10) await migrateFractionalStockSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -187,7 +188,11 @@ class LocalDatabase {
 
   static Future<void> createStockPostingSchema(DatabaseExecutor db) async {
     await db.execute('CREATE TABLE stock_posting_documents (id TEXT PRIMARY KEY REFERENCES ledger_entries(id), original_id TEXT UNIQUE REFERENCES stock_posting_documents(id), document_json TEXT NOT NULL)');
-    await db.execute('CREATE TABLE stock_posting_lines (id TEXT PRIMARY KEY REFERENCES invoice_lines(id), document_id TEXT NOT NULL REFERENCES stock_posting_documents(id), item_id TEXT NOT NULL REFERENCES inventory_items(id), quantity INTEGER NOT NULL CHECK(quantity > 0), before_quantity INTEGER NOT NULL, after_quantity INTEGER NOT NULL, before_value INTEGER NOT NULL, after_value INTEGER NOT NULL, line_json TEXT NOT NULL)');
+    await createStockPostingLinesSchema(db);
+  }
+
+  static Future<void> createStockPostingLinesSchema(DatabaseExecutor db) async {
+    await db.execute('CREATE TABLE stock_posting_lines (id TEXT PRIMARY KEY REFERENCES invoice_lines(id), document_id TEXT NOT NULL REFERENCES stock_posting_documents(id), item_id TEXT NOT NULL REFERENCES inventory_items(id), quantity REAL NOT NULL CHECK(quantity > 0), before_quantity REAL NOT NULL, after_quantity REAL NOT NULL, before_value INTEGER NOT NULL, after_value INTEGER NOT NULL, line_json TEXT NOT NULL)');
     await db.execute('CREATE INDEX stock_posting_item ON stock_posting_lines(item_id)');
   }
 
@@ -216,7 +221,7 @@ class LocalDatabase {
       source_item_id TEXT NOT NULL REFERENCES inventory_items(id),
       warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
       item_id TEXT NOT NULL UNIQUE REFERENCES inventory_items(id),
-      quantity INTEGER NOT NULL CHECK(quantity>=0),
+      quantity REAL NOT NULL CHECK(quantity>=0),
       value_minor INTEGER NOT NULL CHECK(value_minor>=0),
       inventory_account_id TEXT NOT NULL REFERENCES accounts(id),
       offset_account_id TEXT NOT NULL REFERENCES accounts(id),
@@ -228,6 +233,24 @@ class LocalDatabase {
       CHECK((quantity=0 AND value_minor=0 AND ledger_id IS NULL) OR (quantity>0 AND value_minor>0 AND ledger_id IS NOT NULL)),
       PRIMARY KEY(source_item_id,warehouse_id)
     )''');
+  }
+
+  // Neither detail table has incoming foreign keys. Rebuild only the old
+  // INTEGER-affinity layout; keep every stored value and constraint.
+  static Future<void> migrateFractionalStockSchema(DatabaseExecutor db) async {
+    for(final name in ['stock_posting_lines','legacy_stock_openings']){
+      final columns=await db.rawQuery('PRAGMA table_info("$name")');
+      if(columns.firstWhere((c)=>c['name']=='quantity')['type']=='REAL')continue;
+      await db.execute('ALTER TABLE "$name" RENAME TO "${name}_v9"');
+      if(name=='stock_posting_lines'){
+        await db.execute('DROP INDEX stock_posting_item');
+        await createStockPostingLinesSchema(db);
+      }else{await createLegacyStockOpeningSchema(db);}
+      final keys=columns.map((c)=>'"'+(c['name'] as String)+'"').join(',');
+      await db.execute('INSERT INTO "$name" ($keys) SELECT $keys FROM "${name}_v9"');
+      await db.execute('DROP TABLE "${name}_v9"');
+    }
+    if((await db.rawQuery('PRAGMA foreign_key_check')).isNotEmpty)throw StateError('Fractional stock migration relation check failed');
   }
 
   static Future<void> requireOpeningStockAccount(DatabaseExecutor db,String id,String accountId,String entryDate) async {

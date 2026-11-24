@@ -1,4 +1,5 @@
 import 'stock_invoice_commands.dart';
+import 'stock_quantity.dart';
 
 /// The draft is only a calculation aid. No database write occurs here.
 class LegacyStockBatch {
@@ -26,7 +27,7 @@ class LegacyStockBatch {
       if(!ids.contains(id)||!seen.add(id))throw FormatException('السطر ${i+1}: الصنف مفقود أو مكرر');
       final q=num.tryParse(normalize(cells[1])),v=num.tryParse(normalize(cells[2]));
       try{
-        final qty=StockInvoiceCommands.qty(q),minor=StockInvoiceCommands.money(v);
+        final qty=StockQuantity.normalized(q),minor=StockInvoiceCommands.money(v);
         if((qty==0&&minor!=0)||(qty>0&&minor<=0))throw ArgumentError('Invalid value');
         rows.add({...shared,'sourceItemId':id,'warehouseId':warehouse,'quantity':qty,'totalValue':minor/100});
       }catch(_){throw FormatException('السطر ${i+1}: الكمية أو إجمالي التكلفة غير صالح');}
@@ -49,13 +50,14 @@ class LegacyStockBatch {
       }
       final q=(invoices is Map?(invoices[warehouse] as num? ??0):0)+(transfers is Map?(transfers[warehouse] as num? ??0):0);
       final cost=p['avgCost'];
-      if(!q.isFinite||q<0||q!=q.round()||q>10000000||(q>0&&(cost is! num||!cost.isFinite||cost<=0))){
+      if(!q.isFinite||q<0||q>10000000||(q>0&&(cost is! num||!cost.isFinite||cost<=0))){
         skipped++;continue;
       }
       try{
+        final normalized=StockQuantity.normalized(q);
         final total=q==0?0:StockInvoiceCommands.money((q*(cost as num)*100).round()/100);
         if(q>0&&total<=0){skipped++;continue;}
-        output.add("${p['id']}\t${q.toInt()}\t${(total/100).toStringAsFixed(2)}");
+        output.add("${p['id']}\t$normalized\t${(total/100).toStringAsFixed(2)}");
       }catch(_){skipped++;}
     }
     return (draft:output.join('\n'),skipped:skipped);

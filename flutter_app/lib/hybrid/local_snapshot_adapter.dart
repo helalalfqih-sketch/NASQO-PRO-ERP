@@ -3,6 +3,7 @@ import '../models/erp_models.dart';
 import '../services/local_database.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
+import '../services/stock_quantity.dart';
 
 /// Adapts the existing on-device SQLite schema to the React Hybrid snapshot.
 /// No network calls, no automatic import, no fabricated customer/invoice rows.
@@ -52,7 +53,7 @@ class HybridLocalSnapshotAdapter {
         entry['stockCostMinor']=((entry['stockCostMinor'] as int?)??0)+(line['cost_minor'] as int);
         final original=entry['originalInvoiceId'];
         final item=row['item_id'] as String;
-        final q=(row['quantity'] as num).toInt();
+        final q=StockQuantity.ticks(row['quantity']);
         if(original is String){
           final perItem=returned.putIfAbsent(original,()=> <String,int>{});
           perItem[item]=(perItem[item]??0)+q;
@@ -66,9 +67,9 @@ class HybridLocalSnapshotAdapter {
         for(final line in item.value){
           final id=line['item_id'] as String;
           final factor=(line['unit_factor'] as int?)??1;
-          final original=line['quantity'] as int;
+          final original=StockQuantity.ticks(line['quantity']);
           final used=originals.containsKey(item.key)?original:(returned[item.key]?[id]??0);
-          final remaining=(original-used)~/factor;
+          final remaining=StockQuantity.units((original-used)~/factor);
           if(remaining>0) lines.add({'itemId':id,'itemName':line['itemName'],'unit':line['unit'],'quantity':remaining});
         }
         entry['returnableLines']=lines;

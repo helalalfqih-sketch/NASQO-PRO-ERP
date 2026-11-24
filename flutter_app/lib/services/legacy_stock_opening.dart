@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'stock_invoice_commands.dart';
+import 'stock_quantity.dart';
 import 'local_document_commands.dart';
 import 'local_backup_restore.dart';
 import 'legacy_stock_projection.dart';
@@ -76,7 +77,7 @@ class LegacyStockOpening {
     final wh=StockInvoiceCommands.identity(input['warehouseId']);
     final asset=StockInvoiceCommands.identity(input['inventoryAccountId']);
     final offset=StockInvoiceCommands.identity(input['offsetAccountId']);
-    final quantity=StockInvoiceCommands.qty(input['quantity']);
+    final quantity=StockQuantity.normalized(input['quantity']);
     final value=StockInvoiceCommands.money(input['totalValue']);
     final date=StockInvoiceCommands.date(input);
     final evidence=LocalDocumentCommands.field(input,'evidence',300).trim();

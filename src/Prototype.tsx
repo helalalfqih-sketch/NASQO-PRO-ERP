@@ -6267,6 +6267,12 @@ function InvoiceModal({
     ? computeAccountSummary(selectedAccount, ctx.ledger, currency)
     : null;
 
+  const validLocalQuantity = (q: number) => Number.isFinite(q) && q >= 0 && q <= 10000000 && Math.abs(q * 1000 - Math.round(q * 1000)) <= 0.00001;
+  const localGross = (q: number, p: number) => {
+    const ticks = Math.round(q * 1000), cents = Math.round(p * 100);
+    return validLocalQuantity(q) && Number.isSafeInteger(cents) && cents >= 0
+      ? Number((BigInt(ticks) * BigInt(cents) + 500n) / 1000n) / 100 : q * p;
+  };
   const validLines: InvoiceLineInput[] = rows
     .filter((r) => r.itemName.trim().length > 0 && parseArabicNumber(r.quantity) > 0)
     .map((r) => {
@@ -6282,7 +6288,7 @@ function InvoiceModal({
         quantity: qty,
         price,
         discount,
-        total: Math.round(Math.max(0, qty * price - discount) * 100) / 100,
+        total: Math.round(Math.max(0, (hybridLocal ? localGross(qty, price) : qty * price) - discount) * 100) / 100,
       };
     });
 
@@ -6464,7 +6470,7 @@ function InvoiceModal({
       const original=eligibleLocalReturns.find(e=>e.id===localOriginalId);
       if(!original){focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر الفاتورة المخزنية الأصلية للمرتجع."});return;}
       const returnLines=(original.returnableLines??[]).map(l=>({itemId:l.itemId,quantity:parseArabicNumber(localReturnQty[l.itemId]??"0")}));
-      if(!returnLines.some(l=>l.quantity>0)||returnLines.some(l=>!Number.isInteger(l.quantity)||l.quantity<0||l.quantity>(original.returnableLines?.find(x=>x.itemId===l.itemId)?.quantity??0))){
+      if(!returnLines.some(l=>l.quantity>0)||returnLines.some(l=>!validLocalQuantity(l.quantity)||l.quantity<0||l.quantity>(original.returnableLines?.find(x=>x.itemId===l.itemId)?.quantity??0))){
         focusInvalid(accountSelectRef.current,{field:"submit",message:"حدد الكميات المراد إرجاعها ضمن الكمية المتبقية بالفاتورة."});return;
       }
       setSaving(true);setFormError(null);keyboard.hide();
@@ -6504,8 +6510,8 @@ function InvoiceModal({
       if(currency!=="ريال" || !selectedWarehouse || roleIds.some(id=>!id) ||
         new Set(roleIds).size!==roleIds.length || !validLines.length ||
         (localTaxMode==="rate"&&!validTaxRate) || (localTaxMode==="amount"&&parsedTax<0) ||
-        validLines.some(l=>!l.inventoryItemId || !Number.isInteger(l.quantity) || ![1,2,3].includes(l.unitNum??1))){
-        focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن والحسابات المختلفة ووحدات الأصناف المعتمدة وكميات صحيحة وضريبة صالحة؛ العملة المحلية ريال."});
+        validLines.some(l=>!l.inventoryItemId || !validLocalQuantity(l.quantity) || ![1,2,3].includes(l.unitNum??1))){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن والحسابات المختلفة ووحدات الأصناف المعتمدة وكميات حتى ثلاث منازل عشرية وضريبة صالحة؛ العملة المحلية ريال."});
         return;
       }
     }
@@ -6888,7 +6894,7 @@ function InvoiceModal({
               </select>
               {localOriginal?.returnableLines?.map(l=><label className="invoice-field-box" key={l.itemId}>
                 <span>{l.itemName} — المتبقي {l.quantity} {l.unit}</span>
-                <KeyboardInput aria-label={"كمية إرجاع "+l.itemName} inputMode="numeric"
+                <KeyboardInput aria-label={"كمية إرجاع "+l.itemName} inputMode="decimal"
                   value={localReturnQty[l.itemId]??""} onChange={e=>setLocalReturnQty(prev=>({...prev,[l.itemId]:e.target.value}))}/>
               </label>)}
               {localOriginal&&<button type="button" onClick={()=>setLocalReturnQty(Object.fromEntries((localOriginal.returnableLines??[]).map(l=>[l.itemId,String(l.quantity)])))}>إرجاع كامل الكمية المتبقية</button>}

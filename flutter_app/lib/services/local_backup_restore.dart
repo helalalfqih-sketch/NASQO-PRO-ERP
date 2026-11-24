@@ -217,10 +217,10 @@ class LocalBackupRestore {
       final payload=root['payload'];
       if(payload is! String||sha256.convert(utf8.encode(payload)).toString()!=root['sha256'])throw const FormatException('Backup checksum mismatch');
       final body=object(jsonDecode(payload));
-      if(![7,8,LocalDatabase.dbVersion].contains(body['schemaVersion']))throw const FormatException('Native backup schema version mismatch');
+      if(![7,8,9,LocalDatabase.dbVersion].contains(body['schemaVersion']))throw const FormatException('Native backup schema version mismatch');
       final data=object(body['tables']);
       final version=body['schemaVersion'];
-      final required=tables.where((n)=>(version!=7||!legacyOperationalTables.contains(n))&&(version==LocalDatabase.dbVersion||n!='legacy_stock_openings'));
+      final required=tables.where((n)=>(version!=7||!legacyOperationalTables.contains(n))&&(version==9||version==LocalDatabase.dbVersion||n!='legacy_stock_openings'));
       if(data.keys.toSet().difference(tables.toSet()).isNotEmpty||!data.keys.toSet().containsAll(required))throw const FormatException('Incomplete native backup');
       return BackupCandidate(name,nativeFormat,bytes,hash,{}, {},{for(final n in tables)n:rows(data[n]??[])});
     }

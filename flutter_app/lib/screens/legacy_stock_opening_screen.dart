@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/legacy_stock_opening.dart';
 import '../services/local_database.dart';
+import '../services/stock_quantity.dart';
 import 'legacy_stock_batch_screen.dart';
 
 class LegacyStockOpeningScreen extends StatefulWidget {
@@ -52,6 +53,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     for(var i=0;i<10;i++){out=out.replaceAll(arabic[i],i.toString()).replaceAll(persian[i],i.toString());}
     return out;
   }
+  bool validQuantity(num q){try{StockQuantity.ticks(q);return true;}catch(_){return false;}}
   void clearCount(){quantity.clear();value.clear();evidence.clear();confirmed=false;error=null;}
   Future<void> _chooseDate() async {
     final picked=await showDatePicker(context:context,initialDate:DateTime.parse(date),firstDate:DateTime(2000),lastDate:DateTime.now());
@@ -60,9 +62,9 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
   Future<void> _approve() async {
     if(busy||!confirmed||product==null||warehouse==null||asset==null||offset==null||approved!=null)return;
     final q=num.tryParse(normalize(quantity.text)),v=num.tryParse(normalize(value.text));
-    if(q==null||v==null||!q.isFinite||!v.isFinite||q<0||q!=q.round()||v<0||asset==offset||
+    if(q==null||v==null||!q.isFinite||!v.isFinite||!validQuantity(q)||v<0||asset==offset||
         (q==0&&v!=0)||(q>0&&v<=0)||evidence.text.trim().isEmpty){
-      setState(()=>error='أدخل كمية صحيحة بالوحدة الأساسية، وقيمة إجمالية صحيحة، ومرجع الجرد وحسابين مختلفين.');return;
+      setState(()=>error='أدخل كمية غير سالبة حتى ثلاث منازل عشرية بالوحدة الأساسية، وقيمة إجمالية صحيحة، ومرجع الجرد وحسابين مختلفين.');return;
     }
     final name=selected?['name']??'';
     final yes=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
@@ -135,12 +137,12 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
               Text('صافي التحويلات المعروفة: ${transfers[warehouse]}'),
             if(hasHistory)Text('صافي التاريخ بعد التحويلات المعروفة: $historical'),
             if(p['legacyTransferIncomplete']==true)const Text('هذا الصنف مرتبط بتحويل غير مكتمل؛ راجع سجله قبل اعتماد الكمية.'),
-            if(hasHistory&&historical>=0&&historical==historical.round()&&p['legacyTransferIncomplete']!=true)
+            if(hasHistory&&validQuantity(historical)&&p['legacyTransferIncomplete']!=true)
               TextButton(onPressed:busy?null:()=>setState((){
-                quantity.text=historical.round().toString();confirmed=false;
+                quantity.text=StockQuantity.normalized(historical).toString();confirmed=false;
               }),child:const Text('استخدام الكمية المحسوبة كاقتراح للجرد')),
             if(p['avgCost'] is num)Text('سعر التكلفة المسجل تاريخيًا: ${p['avgCost']} ريال (مرجع فقط).'),
-            TextField(controller:quantity,enabled:!busy,keyboardType:TextInputType.number,onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية',border:OutlineInputBorder())),
+            TextField(controller:quantity,enabled:!busy,keyboardType:const TextInputType.numberWithOptions(decimal:true),onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية',border:OutlineInputBorder())),
             const SizedBox(height:12),
             TextField(controller:value,enabled:!busy,keyboardType:const TextInputType.numberWithOptions(decimal:true),onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'إجمالي تكلفة الكمية بالريال',border:OutlineInputBorder())),
             if(avg!=null)Text('متوسط التكلفة: $avg ريال'),
