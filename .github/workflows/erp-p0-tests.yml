@@ -3,6 +3,9 @@ on:
   push:
     branches: [agent/cloud-session-hardening-v1118]
   workflow_dispatch:
+concurrency:
+  group: erp-p0-tests-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -21,6 +24,16 @@ jobs:
         run: |
           mkdir -p assets/web/assets
           flutter pub get
-      - name: Run P0 regression tests
+      - name: Run Dart analysis (errors are fatal)
         working-directory: flutter_app
-        run: flutter test test/offline_transaction_test.dart test/stock_invoice_commands_test.dart test/local_backup_restore_test.dart test/backup_encryption_test.dart test/native_cloud_session_test.dart
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Run full Flutter regression suite
+        working-directory: flutter_app
+        run: flutter test --reporter expanded
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.12.0"
+      - name: Run hybrid bridge regression tests
+        run: |
+          npm install --no-audit --no-fund
+          npx tsx --test tests/hybrid.test.ts
