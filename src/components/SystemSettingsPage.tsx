@@ -58,6 +58,7 @@ interface SystemSettingsPageProps {
   onOpenStockReconciliation?: () => void;
   onOpenTrash?: () => void;
   onSignOut: () => void;
+  onCloudIdentity?: () => void;
   onNotify: (msg: string) => void;
   onBack: () => void;
   onSaveWorkspaceSettings?: (next: WorkspaceSettings) => Promise<void>;
@@ -89,6 +90,7 @@ export function SystemSettingsPage({
   onOpenInvoiceRoles,
   onOpenStockReconciliation,
   onSignOut,
+  onCloudIdentity,
   onNotify,
   onBack,
   onSaveWorkspaceSettings,
@@ -1807,6 +1809,7 @@ export function SystemSettingsPage({
 
             <section className="sys-card">
               <div className="sys-card-heading">الجلسة والإرشادات</div>
+              {onCloudIdentity && <button type="button" className="ref-btn" onClick={onCloudIdentity}>حساب Google</button>}
               <div className="sys-faq-row" style={{ justifyContent: "space-between", display: "flex", alignItems: "center" }}>
                 <button
                   type="button"

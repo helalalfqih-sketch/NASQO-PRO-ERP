@@ -12999,6 +12999,9 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
           .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون."));
       } : undefined}
       onOpenTrash={ctx.openTrash}
+      onCloudIdentity={import.meta.env.VITE_NASQO_HYBRID === "1" ? () => {
+        void signInWithGoogle().then(user=>ctx.showToast(user.email ? "تم ربط حساب Google: "+user.email : "تم ربط حساب Google" )).catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر تسجيل الدخول"));
+      } : undefined}
       onSignOut={ctx.handleSignOut}
       onNotify={ctx.showToast}
       onBack={flow.pop}

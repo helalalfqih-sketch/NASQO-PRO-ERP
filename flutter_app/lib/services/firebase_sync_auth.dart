@@ -36,6 +36,16 @@ class FirebaseSyncAuth {
     return result;
   }
 
+  static Future<Map<String,dynamic>> identity(String operation) async {
+    if(!configured)throw StateError('Firebase configuration required');
+    if(operation=='connect')await signInWithGoogle();
+    else if(operation=='disconnect')await signOut();
+    else if(operation!='status')throw ArgumentError('Unsupported identity operation');
+    await initialize();
+    final user=FirebaseAuth.instance.currentUser;
+    return {'connected':user!=null,'email':user?.email,'displayName':user?.displayName};
+  }
+
   static Future<void> initialize() async {
     if (Firebase.apps.isNotEmpty) return;
     const apiKey = String.fromEnvironment('NASQO_FIREBASE_API_KEY');

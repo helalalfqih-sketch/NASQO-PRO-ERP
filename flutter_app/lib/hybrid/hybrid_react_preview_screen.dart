@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
-import '../screens/cloud_identity_screen.dart';
+import '../services/firebase_sync_auth.dart';
 import '../screens/legacy_stock_opening_screen.dart';
 import '../screens/legacy_history_screen.dart';
 import '../screens/local_invoice_roles_screen.dart';
@@ -58,6 +58,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     shareText: _shareText,
     pickBackup: _restoreBackup,
     openInvoiceRoles: _openInvoiceRoles,
+    cloudIdentity: FirebaseSyncAuth.identity,
     openStockReconciliation: _openStockReconciliation,
     exportBackup: _exportBackup,
   );
@@ -495,18 +496,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('نسقو — واجهة React المحلية'),
+      appBar: _review ? AppBar(
+        title: const Text('مراجعة النسخة الاحتياطية'),
         actions: [
-          IconButton(
-            tooltip: 'الحساب السحابي',
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: _backupBusy || _review || !_backupStateLoaded ? null : () {
-              Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const CloudIdentityScreen(),
-              ));
-            },
-          ),
           IconButton(tooltip:'استيراد نسخة احتياطية',icon:const Icon(Icons.file_open),
             onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
           IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
@@ -528,10 +520,10 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
               child: const Text('واجهة Flutter'),
             ),
         ],
-      ),
-      body: Column(
+      ) : null,
+      body: SafeArea(child: Column(
         children: [
-          Container(
+          if(_review) Container(
             width: double.infinity,
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.all(10),
@@ -557,7 +549,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
                   ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

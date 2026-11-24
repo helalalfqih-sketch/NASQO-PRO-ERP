@@ -123,7 +123,9 @@ export function getConnectedGoogleAccountInfo(): {
 }
 
 export async function signInWithGoogle(): Promise<User> {
-  return cachedHybridUser;
+  const result = await hybridBridge.invoke<"cloudIdentity", {connected: boolean; email?: string; displayName?: string}>("cloudIdentity",{operation:"connect"},{timeoutMs:180000});
+  if (!result.connected) throw new Error("لم يكتمل تسجيل الدخول.");
+  return {...cachedHybridUser,email:result.email ?? null,displayName:result.displayName ?? null};
 }
 
 export async function connectGoogleDrive(): Promise<{ user: User; accessToken: string }> {

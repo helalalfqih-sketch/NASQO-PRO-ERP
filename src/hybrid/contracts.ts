@@ -77,6 +77,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "restoreWorkspace",
   "resetWorkspace",
   "googleDriveAction",
+  "cloudIdentity",
 ] as const;
 
 export type HybridCommandAction = (typeof HYBRID_ALLOWED_COMMANDS)[number];
@@ -304,6 +305,7 @@ export interface HybridCommandPayloadMap {
   restoreWorkspace: { workspaceId: string; fileName: string; format: "json" | "sqlite" | "sql"; base64Content: string };
   resetWorkspace: { workspaceId: string; mode: "empty" | "demo" };
   googleDriveAction: { operation: string; args?: Record<string, unknown> };
+  cloudIdentity: { operation: 'connect' | 'disconnect' | 'status' };
 }
 
 export interface HybridRequestEnvelope<A extends HybridCommandAction = HybridCommandAction> {

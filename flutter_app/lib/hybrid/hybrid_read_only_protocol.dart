@@ -27,6 +27,7 @@ class HybridReadOnlyProtocol {
     this.shareText,
     this.pickBackup,
     this.openInvoiceRoles,
+    this.cloudIdentity,
     this.openStockReconciliation,
     this.exportBackup,
   });
@@ -48,6 +49,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? shareText;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
+  final Future<Map<String,dynamic>> Function(String)? cloudIdentity;
   final Future<bool> Function(String?,String?)? openStockReconciliation;
   final Future<bool> Function()? exportBackup;
   static const String version = '1.0.0';
@@ -78,6 +80,15 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='cloudIdentity'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.length!=1||!['connect','disconnect','status'].contains(p['operation'])||cloudIdentity==null)
+        return _error(id,actionName,'VALIDATION_ERROR','طلب الحساب غير صالح.');
+      try{
+        final result=await cloudIdentity!(p['operation'] as String);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر الاتصال بحساب Google. تحقق من الإنترنت وإعدادات Firebase.');}
     }
     const outputActions=['beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport'];
     if(actionName!=null&&outputActions.contains(actionName)&&documentOutput!=null){
