@@ -133,13 +133,16 @@ class LegacyOperationalRestore {
       byCollection.putIfAbsent(key,()=> <String,Map<String,dynamic>>{})[r['record_id'] as String]=row;
     }
     final unverified=(await db.query('legacy_unverified_stock',columns:['item_id'])).map((r)=>r['item_id']).toSet();
+    final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o};
     for(final c in ['currencies','accountGroups','cashboxes']){
       data[c]=(byCollection[c]??{}).values.toList();
     }
     for(final c in ['accounts','warehouses','inventory','ledger']){
       for(final row in (data[c] as List).cast<Map<String,dynamic>>()){
-        final old=byCollection[c]?[row['id']];
+        final opening=c=='inventory'?openings[row['id']]:null;
+        final old=byCollection[c]?[opening?['source_item_id']??row['id']];
         if(old==null)continue;
+        if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
         final keys=c=='accounts'?['groupId','sortOrder']:c=='warehouses'?['codeNumber']:c=='inventory'?['currencyCode','legacyWarehouseCount']:['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency'];
         for(final key in keys){if(old[key]!=null)row[key]=old[key];}
         if(c=='inventory'&&unverified.contains(row['id'])){

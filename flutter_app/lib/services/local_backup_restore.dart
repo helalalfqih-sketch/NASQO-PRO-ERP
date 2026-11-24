@@ -30,6 +30,7 @@ class LocalBackupRestore {
     'stock_posting_documents','stock_posting_lines','inventory_unit_settings',
     'sync_outbox','bridge_idempotency_keys','sync_state','sync_inbox','sync_conflicts',
     ...legacyOperationalTables,
+    'legacy_stock_openings',
   ];
   static const legacyOperationalTables=['legacy_operational_source','legacy_operational_chunks','legacy_operational_rows','legacy_unverified_stock'];
   static const collections=['currencies','accountGroups','cashboxes','accounts','warehouses','inventory','ledger'];
@@ -99,8 +100,8 @@ class LocalBackupRestore {
           if((count.single['n'] as int)>100000)throw const FormatException('Too many records');
           return (await source.query(table)).map((r)=>Map<String,dynamic>.from(r)).toList();
         }
-        if(names.containsAll(tables.where((n)=>!legacyOperationalTables.contains(n)))&&!names.contains('workspaces')){
-          if(legacyOperationalTables.any(names.contains)&&!names.containsAll(legacyOperationalTables))throw const FormatException('Incomplete operational archive');
+        if(names.containsAll(tables.where((n)=>!legacyOperationalTables.contains(n)&&n!='legacy_stock_openings'))&&!names.contains('workspaces')){
+          if((legacyOperationalTables.any(names.contains)||names.contains('legacy_stock_openings'))&&!names.containsAll(legacyOperationalTables))throw const FormatException('Incomplete operational archive');
           if(names.contains('backup_review_sources')&&(await get('backup_review_sources')).isNotEmpty)throw const FormatException('Use the native export option for operational data or export the archived original separately');
           final core={for(final table in tables)table:await get(table)};
           return BackupCandidate(name,'native-sqlite',bytes,hash,{}, {},core);
@@ -133,9 +134,10 @@ class LocalBackupRestore {
       final payload=root['payload'];
       if(payload is! String||sha256.convert(utf8.encode(payload)).toString()!=root['sha256'])throw const FormatException('Backup checksum mismatch');
       final body=object(jsonDecode(payload));
-      if(![7,LocalDatabase.dbVersion].contains(body['schemaVersion']))throw const FormatException('Native backup schema version mismatch');
+      if(![7,8,LocalDatabase.dbVersion].contains(body['schemaVersion']))throw const FormatException('Native backup schema version mismatch');
       final data=object(body['tables']);
-      final required=body['schemaVersion']==7?tables.where((n)=>!legacyOperationalTables.contains(n)):tables;
+      final version=body['schemaVersion'];
+      final required=tables.where((n)=>(version!=7||!legacyOperationalTables.contains(n))&&(version==LocalDatabase.dbVersion||n!='legacy_stock_openings'));
       if(data.keys.toSet().difference(tables.toSet()).isNotEmpty||!data.keys.toSet().containsAll(required))throw const FormatException('Incomplete native backup');
       return BackupCandidate(name,nativeFormat,bytes,hash,{}, {},{for(final n in tables)n:rows(data[n]??[])});
     }
@@ -374,7 +376,9 @@ class LocalBackupRestore {
           out.add(base64Decode(chunks[i]['data_base64'] as String));
         }
         if(sha256.convert(out.takeBytes()).toString()!=sources.single['sha'])throw StateError('Original source checksum mismatch');
-      }else if(chunks.isNotEmpty||(await txn.query('legacy_operational_rows',limit:1)).isNotEmpty||(await txn.query('legacy_unverified_stock',limit:1)).isNotEmpty){throw StateError('Missing imported source metadata');}
+      }else if(chunks.isNotEmpty||(await txn.query('legacy_operational_rows',limit:1)).isNotEmpty||(await txn.query('legacy_unverified_stock',limit:1)).isNotEmpty||(await txn.query('legacy_stock_openings',limit:1)).isNotEmpty){throw StateError('Missing imported source metadata');}
+      final invalidOpenings=await txn.rawQuery('''SELECT o.item_id FROM legacy_stock_openings o LEFT JOIN inventory_items i ON i.id=o.item_id LEFT JOIN legacy_operational_rows r ON r.collection='inventory' AND r.record_id=o.source_item_id LEFT JOIN legacy_unverified_stock u ON u.item_id=o.item_id WHERE i.warehouseId<>o.warehouse_id OR r.record_id IS NULL OR u.item_id IS NOT NULL OR (o.ledger_id IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.inventory_account_id AND j.debit_minor=o.value_minor AND j.credit_minor=0) OR NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.offset_account_id AND j.credit_minor=o.value_minor AND j.debit_minor=0))) LIMIT 1''');
+      if(invalidOpenings.isNotEmpty)throw StateError('Invalid stock opening audit');
     });
   }
 

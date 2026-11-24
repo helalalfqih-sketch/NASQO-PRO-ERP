@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 8;
+  static const int dbVersion = 9;
 
   Database? _db;
 
@@ -52,6 +52,7 @@ class LocalDatabase {
         if (oldVersion < 6) await createStockUnitsAndReturnsSchema(db);
         if (oldVersion < 7) await createBackupReviewSchema(db);
         if (oldVersion < 8) await createLegacyOperationalSchema(db);
+        if (oldVersion < 9) await createLegacyStockOpeningSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -129,6 +130,7 @@ class LocalDatabase {
         await createStockUnitsAndReturnsSchema(db);
         await createBackupReviewSchema(db);
         await createLegacyOperationalSchema(db);
+        await createLegacyStockOpeningSchema(db);
       },
     );
     return _db!;
@@ -209,6 +211,33 @@ class LocalDatabase {
     await db.execute('CREATE TABLE legacy_unverified_stock (item_id TEXT PRIMARY KEY REFERENCES inventory_items(id))');
   }
 
+  static Future<void> createLegacyStockOpeningSchema(DatabaseExecutor db) async {
+    await db.execute('''CREATE TABLE legacy_stock_openings (
+      source_item_id TEXT NOT NULL REFERENCES inventory_items(id),
+      warehouse_id TEXT NOT NULL REFERENCES warehouses(id),
+      item_id TEXT NOT NULL UNIQUE REFERENCES inventory_items(id),
+      quantity INTEGER NOT NULL CHECK(quantity>=0),
+      value_minor INTEGER NOT NULL CHECK(value_minor>=0),
+      inventory_account_id TEXT NOT NULL REFERENCES accounts(id),
+      offset_account_id TEXT NOT NULL REFERENCES accounts(id),
+      ledger_id TEXT UNIQUE REFERENCES ledger_entries(id),
+      operation_id TEXT NOT NULL UNIQUE,
+      entry_date TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      CHECK(inventory_account_id<>offset_account_id),
+      CHECK((quantity=0 AND value_minor=0 AND ledger_id IS NULL) OR (quantity>0 AND value_minor>0 AND ledger_id IS NOT NULL)),
+      PRIMARY KEY(source_item_id,warehouse_id)
+    )''');
+  }
+
+  static Future<void> requireOpeningStockAccount(DatabaseExecutor db,String id,String accountId,String entryDate) async {
+    final rows=await db.query('legacy_stock_openings',where:'item_id = ?',whereArgs:[id]);
+    if(rows.isEmpty)return;
+    final row=rows.single;
+    if(row['inventory_account_id']!=accountId)throw StateError('Select the inventory account used at stock opening');
+    if(entryDate.compareTo(row['entry_date'] as String)<0)throw StateError('Stock posting predates the approved opening count');
+  }
+
   static Future<bool> hasLegacyOperational(DatabaseExecutor db) async =>
     (await db.query('legacy_operational_source',limit:1)).isNotEmpty;
 
@@ -274,6 +303,7 @@ class LocalDatabase {
         final line = normalized[i];
         final itemId = line['item_id'] as String;
         await requireVerifiedStock(txn,itemId);
+        if((await txn.query('legacy_stock_openings',where:'item_id = ?',whereArgs:[itemId],limit:1)).isNotEmpty)throw StateError('Use balanced stock posting for migrated stock');
         final quantity = line['quantity'] as num;
         final changed = await txn.rawUpdate(
             'UPDATE inventory_items SET quantity = quantity - ? WHERE id = ? AND warehouseId = ? AND quantity >= ?',
