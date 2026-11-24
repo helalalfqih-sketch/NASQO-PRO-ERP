@@ -1,0 +1,11 @@
+name: nasqo_original_web
+description: Isolated Android host for the original NASQO web engine
+publish_to: "none"
+version: 0.1.0+1
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  uses-material-design: true

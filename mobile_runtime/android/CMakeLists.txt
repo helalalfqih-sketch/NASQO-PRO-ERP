@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(nasqo_original_web LANGUAGES CXX)
+add_library(node SHARED IMPORTED)
+set_target_properties(node PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/node-sdk/lib/${ANDROID_ABI}/libnode.so")
+add_library(nasqo_node_host SHARED node_host.cpp)
+target_include_directories(nasqo_node_host PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/node-sdk/include/node")
+target_compile_features(nasqo_node_host PRIVATE cxx_std_17)
+target_link_libraries(nasqo_node_host PRIVATE node log)

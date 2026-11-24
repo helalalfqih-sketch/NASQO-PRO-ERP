@@ -1,0 +1,25 @@
+name: Original web engine offline transport check
+on:
+  push:
+    branches: [dev/original-web-offline-runtime]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - run: npm ci --no-audit --no-fund
+      - run: node mobile_runtime/acceptance.mjs
+      - run: node mobile_runtime/prepare-bundle.mjs
+      - name: Check isolated package startup
+        run: |
+          cd dist/original-web-runtime
+          node --input-type=module -e 'import fs from "node:fs"; import os from "node:os"; import path from "node:path"; import assert from "node:assert/strict"; import {startLocalWeb} from "./mobile_runtime/host.mjs"; const dir=fs.mkdtempSync(path.join(os.tmpdir(),"nasqo-package-")); const h=await startLocalWeb({dataDir:dir,port:0}); try { const res=await fetch(h.origin+"/",{headers:{cookie:h.cookie}}); assert.equal(res.status,200); assert.match(await res.text(),/id="root"/); const api=await fetch(h.origin+"/api/health",{headers:{cookie:h.cookie}}); assert.equal((await api.json()).engine,"node:sqlite"); } finally { await h.close(); fs.rmSync(dir,{recursive:true,force:true}); }'
