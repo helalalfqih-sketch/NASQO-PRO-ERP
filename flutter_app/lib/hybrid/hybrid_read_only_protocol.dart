@@ -90,9 +90,18 @@ class HybridReadOnlyProtocol {
         p['operation'] is! String||(p['operation'] as String).length>50||
         (p['args']!=null&&p['args'] is! Map<String,dynamic>))
         return _error(id,actionName,'VALIDATION_ERROR','طلب Google غير صالح.');
+      const identityOps={'status','signIn','signOut'};
+      const driveOps={'status','connect','disconnect','getAbout','listFiles','createFolder','findOrCreateFolder',
+        'backupNative','overwriteNative','uploadLocal','restoreNative','saveFile','trashFile',
+        'beginUpload','appendUpload','finishUpload','abortUpload'};
+      if(!(actionName=='cloudIdentityAction'?identityOps:driveOps).contains(p['operation']))
+        return _error(id,actionName,'VALIDATION_ERROR','إجراء Google غير مسموح.');
+      final args=p['args'] as Map<String,dynamic>? ??{};
+      if(args.keys.any((k)=>['accessToken','idToken','refreshToken','url','path','headers','password','clientSecret'].contains(k)))
+        return _error(id,actionName,'VALIDATION_ERROR','لا يسمح بإرسال بيانات اعتماد أو مسارات عبر الجسر.');
       if(cloudAction==null)return _error(id,actionName,'UNAUTHORIZED_ACTION','خدمة Google غير متاحة.');
       try{
-        final result=await cloudAction!(actionName!,p['operation'] as String,p['args'] as Map<String,dynamic>? ??{});
+        final result=await cloudAction!(actionName!,p['operation'] as String,args);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
       }on NativeCloudException catch(e){return _error(id,actionName,e.code,e.message);}
       catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر إكمال طلب Google.');}

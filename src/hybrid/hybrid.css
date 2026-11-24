@@ -192,4 +192,5 @@ body,
 }
 
 /* Only the React shell is visible on Android; show a warning only in review. */
-.hybrid-review-notice { padding: 8px 12px; text-align:center; font-size:12px; background:#fff3d6; color:#674200; border-bottom:1px solid #e1c58a; }
+.hybrid-review-notice { flex:0 0 auto; padding: 8px 12px; text-align:center; font-size:12px; background:#fff3d6; color:#674200; border-bottom:1px solid #e1c58a; }
+.hybrid-review-notice + .nasqo-app { flex:1 1 auto; min-height:0; }

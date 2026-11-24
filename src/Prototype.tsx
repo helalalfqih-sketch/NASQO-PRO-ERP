@@ -10428,7 +10428,7 @@ function AppDrawer({
     {
       title: "الجلسة",
       items: [
-        { label: "تسجيل الخروج", icon: LockClosedIcon, action: ctx.handleSignOut },
+        { label: import.meta.env.VITE_NASQO_HYBRID === "1" ? "تسجيل الخروج من Google" : "تسجيل الخروج", icon: LockClosedIcon, action: ctx.handleSignOut },
       ],
     },
   ];

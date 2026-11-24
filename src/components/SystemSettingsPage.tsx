@@ -246,7 +246,7 @@ export function SystemSettingsPage({
                   </span>
                 </>
               ) : null}
-              {userEmail ? (
+              {userEmail && !(import.meta.env.VITE_NASQO_HYBRID === "1" && userEmail === "offline@nasqo.local") ? (
                 <>
                   <span aria-hidden="true">·</span>
                   <bdi>{userEmail}</bdi>
@@ -1820,7 +1820,7 @@ export function SystemSettingsPage({
                 >
                   {faqOpen ? "إخفاء الإرشادات" : "إرشادات النسخ الاحتياطي والحفظ"}
                 </button>
-                <button
+                {import.meta.env.VITE_NASQO_HYBRID !== "1" ? <button
                   type="button"
                   className="sys-signout-btn"
                   onClick={() => {
@@ -1828,8 +1828,8 @@ export function SystemSettingsPage({
                     onSignOut();
                   }}
                 >
-                  {import.meta.env.VITE_NASQO_HYBRID === "1" ? "تسجيل الخروج من Google" : "تسجيل الخروج"}
-                </button>
+                  تسجيل الخروج
+                </button> : null}
               </div>
               {faqOpen ? (
                 <div className="sys-faq-card">

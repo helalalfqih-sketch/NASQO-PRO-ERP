@@ -7,6 +7,16 @@ export type NativeCloudProfile = {
 export const NATIVE_DRIVE_MARKER = "flutter-managed-drive-session";
 let driveProfile: NativeCloudProfile = { connected: false };
 const listeners = new Set<(marker: string | null) => void>();
+let identityProfile:NativeCloudProfile|null=null;
+const identityListeners=new Set<(profile:NativeCloudProfile|null)=>void>();
+function setIdentity(profile:NativeCloudProfile){
+  identityProfile=profile;
+  for(const listener of identityListeners)listener(profile);
+}
+export function subscribeNativeIdentity(listener:(profile:NativeCloudProfile|null)=>void){
+  identityListeners.add(listener);listener(identityProfile);
+  return ()=>{identityListeners.delete(listener);};
+}
 let queue: Promise<unknown> = Promise.resolve();
 let statusRequest: Promise<string | null> | null = null;
 
@@ -54,7 +64,11 @@ export async function connectNativeDrive(chooseAccount=false): Promise<NativeClo
   clearNativeDriveMarker();
   const result=await nativeDriveCall<NativeCloudProfile>("connect",{chooseAccount});
   setDriveProfile(result);
-  if (!result.connected) throw new Error(result.cancelled ? "أُلغي ربط Google Drive." : "تعذر ربط Google Drive.");
+  if (!result.connected){
+    await nativeIdentity("status").catch(()=>undefined);
+    throw new Error(result.cancelled ? "أُلغي ربط Google Drive." : "تعذر ربط Google Drive.");
+  }
+  setIdentity({configured:true,signedIn:true,email:result.email,displayName:result.displayName});
   return result;
 }
 export async function disconnectNativeDrive() {
@@ -64,7 +78,8 @@ export async function disconnectNativeDrive() {
 export function nativeIdentity(operation: "status"|"signIn"|"signOut",chooseAccount=false): Promise<NativeCloudProfile> {
   return enqueue(async () => {
     if(operation!=="status")clearNativeDriveMarker();
-    return hybridBridge.invoke<"cloudIdentityAction", NativeCloudProfile>("cloudIdentityAction",
+    const result=await hybridBridge.invoke<"cloudIdentityAction", NativeCloudProfile>("cloudIdentityAction",
       {operation,args:operation==="signIn"?{chooseAccount}:{}},{timeoutMs:180_000});
+    setIdentity(result);return result;
   });
 }

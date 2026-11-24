@@ -34,7 +34,7 @@ class NativeCloudSession {
   final Map<String,_PendingUpload> _uploads={};
 
   static String boundedText(Object? value,{int max=240,bool optional=false}){
-    if(value==null&&optional)return '';
+    if(optional&&(value==null||value is String&&value.trim().isEmpty))return '';
     if(value is! String||value.trim().isEmpty||value.length>max||
       value.runes.any((v)=>v<32||v==127))throw const NativeCloudException('قيمة الطلب غير صالحة.',code:'VALIDATION_ERROR');
     return value.trim();
@@ -302,7 +302,8 @@ class NativeCloudSession {
     if(location==null)throw const NativeCloudException('لم تبدأ جلسة رفع Drive.');
     final uri=Uri.parse(location);
     if(!uri.path.startsWith('/upload/drive/v3/files'))throw const NativeCloudException('جلسة رفع غير صالحة.');
-    final saved=await _request('PUT',uri,body:bytes,contentType:mime);
+    final saved=await _request('PUT',uri,body:bytes,contentType:mime,
+      headers:{'Content-Range':'bytes 0-${bytes.length-1}/${bytes.length}'});
     final result=Map<String,dynamic>.from(jsonDecode(utf8.decode(saved.bytes)) as Map);
     if(result['id'] is! String||int.tryParse(result['size']?.toString()??'')!=bytes.length||
         result['md5Checksum']!=md5.convert(bytes).toString())

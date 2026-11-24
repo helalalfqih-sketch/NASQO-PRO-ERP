@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { GoogleSignInButton } from "./GoogleSignInButton";
-import { nativeIdentity, type NativeCloudProfile } from "../hybrid/cloudSession";
+import { nativeIdentity, subscribeNativeIdentity, type NativeCloudProfile } from "../hybrid/cloudSession";
 import { hybridBridge } from "../hybrid/bridge";
 
 type ToolsStatus={review:boolean;imported:boolean};
@@ -10,8 +10,9 @@ export function HybridCloudAccount({onNotify,onOpenGoogleDrive}:{onNotify:(s:str
   const [error,setError]=useState("");
   useEffect(()=>{
     let active=true;
-    void nativeIdentity("status").then(p=>{if(active)setProfile(p);}).catch(e=>{if(active)setError(e instanceof Error?e.message:"تعذر قراءة الحساب.");});
-    return ()=>{active=false;};
+    const unsubscribe=subscribeNativeIdentity(p=>{if(active)setProfile(p);});
+    void nativeIdentity("status").catch(e=>{if(active)setError(e instanceof Error?e.message:"تعذر قراءة الحساب.");});
+    return ()=>{active=false;unsubscribe();};
   },[]);
   async function change(operation:"signIn"|"signOut",chooseAccount=false){
     setBusy(true);setError("");
