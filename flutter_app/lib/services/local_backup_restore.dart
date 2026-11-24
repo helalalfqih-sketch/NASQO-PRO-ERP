@@ -6,9 +6,10 @@ import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'legacy_stock_projection.dart';
 import 'legacy_sql_dump.dart';
+import 'stock_quantity.dart';
 
-/// Native backups restore all operational tables. Older web/SmartPro backups
-/// are imported into isolated, persistent, read-only SQLite review tables.
+/// Native backups restore operational tables. Recognized SmartPro and unified
+/// web backups support explicit operational activation or isolated review.
 class BackupCandidate {
   const BackupCandidate(this.name,this.format,this.bytes,this.sha,this.collections,
     this.meta,this.nativeTables);
@@ -19,6 +20,8 @@ class BackupCandidate {
   final Map<String,List<Map<String,dynamic>>>? nativeTables;
   bool get native => nativeTables!=null;
   bool get legacy => format=='legacy-sqlite'||format=='legacy-sql';
+  bool get unified => LocalBackupRestore.knownFormats.contains(format);
+  bool get operational => native||legacy||unified;
   Map<String,int> get counts => (nativeTables??collections).map((k,v)=>MapEntry(k,v.length));
 }
 
@@ -198,12 +201,12 @@ class LocalBackupRestore {
           if(workspace.length!=1)throw const FormatException('Select a single-workspace backup');
           final ws=ident(workspace.single['id']);
           final core=<String,List<Map<String,dynamic>>>{};
-          for(final n in ['accounts','warehouses','inventory_items','ledger_entries','currencies','account_groups','cashboxes','invoice_lines']){
+          for(final n in ['accounts','warehouses','inventory_items','ledger_entries','currencies','account_groups','cashboxes','invoice_lines','stock_transfers','stock_transfer_lines','price_offers','price_offer_lines']){
             final data=await get(n);
             if(data.any((r)=>r['workspace_id']!=ws))throw const FormatException('Mixed workspaces');
             core[n]=data;
           }
-          return _serverSqlite(name,bytes,hash,workspace.single,core);
+          return _serverSqlite(name,bytes,hash,workspace.single,core,hasTransfers:names.containsAll(['stock_transfers','stock_transfer_lines']));
         }
         throw const FormatException('Unknown SQLite backup schema');
       }finally{await source.close();}
@@ -231,7 +234,8 @@ class LocalBackupRestore {
   BackupCandidate _web(String name,Uint8List bytes,String hash,Map<String,dynamic> root){
     final ws=object(root['workspace']);
     if(str(ws['companyName']).trim().isEmpty)throw const FormatException('Company name missing');
-    final data={for(final k in collections)k:rows(root[k]??[])};
+    final data={for(final k in collections)k:rows(root[k]??[]).map((r)=>Map<String,dynamic>.from(r)).toList()};
+    final defaultCurrency=currency(ws['defaultCurrency']??ws['baseCurrency']);
     if(!['accounts','warehouses','inventory','ledger'].every(root.containsKey))throw const FormatException('Incomplete core backup');
     final accountIds=<String>{};
     final warehouseIds=<String>{};
@@ -240,18 +244,41 @@ class LocalBackupRestore {
     for(final row in data['accounts']!){
       final id=ident(row['id']);
       if(!accountIds.add(id)||str(row['name']).trim().isEmpty)throw const FormatException('Invalid account');
+      row['id']=id;
+      row['currency']=currency(row['currency']??defaultCurrency);
       numValue(row['openingBalance']);numValue(row['creditLimit']);
       if(!['purchases','sales','clients','employees','transfers','shop'].contains(row['category']))throw const FormatException('Unknown account category');
     }
-    for(final row in data['warehouses']!){if(!warehouseIds.add(ident(row['id']))||str(row['name']).trim().isEmpty)throw const FormatException('Invalid warehouse');}
+    for(final row in data['warehouses']!){
+      final id=ident(row['id']);
+      if(!warehouseIds.add(id)||str(row['name']).trim().isEmpty)throw const FormatException('Invalid warehouse');
+      row['id']=id;
+    }
     for(final row in data['inventory']!){
       if(!inventoryIds.add(ident(row['id']))||str(row['name']).trim().isEmpty)throw const FormatException('Invalid inventory row');
-      numValue(row['quantity']);numValue(row['avgCost']);
+      row['id']=ident(row['id']);
+      row['warehouseId']=str(row['warehouseId']);
+      row['currencyCode']=currency(row['currencyCode']??defaultCurrency);
+      final q=numValue(row['quantity']),cost=numValue(row['avgCost']);
+      // Only an explicitly verified, representable base-currency quantity
+      // from the unified source may be used as live stock without replay.
+      var verified=row['quantityUnverified']==false&&row['quantity']!=null&&row['avgCost']!=null&&
+        row['currencyCode']=='ريال'&&cost>=0&&(q!=0||cost==0);
+      if(verified){
+        try{StockQuantity.ticks(q);}catch(_){verified=false;}
+        if(q*cost*100>1000000000000)verified=false;
+      }
+      row['quantityUnverified']=!verified;
     }
     var missingRefs=0;
     var lineCount=0;
     for(final row in data['ledger']!){
-      if(!ledgerIds.add(ident(row['id'])))throw const FormatException('Duplicate ledger identity');
+      final id=ident(row['id']);
+      if(!ledgerIds.add(id))throw const FormatException('Duplicate ledger identity');
+      row['id']=id;
+      row['accountId']=str(row['accountId']);
+      row['counterpartAccountId']=str(row['counterpartAccountId']);
+      row['currency']=currency(row['currency']??defaultCurrency);
       numValue(row['amount']);numValue(row['rawDain']);numValue(row['rawMadin']);
       if(!accountIds.contains(row['accountId']))missingRefs++;
       if(str(row['counterpartAccountId']).isNotEmpty&&!accountIds.contains(row['counterpartAccountId']))missingRefs++;
@@ -260,14 +287,49 @@ class LocalBackupRestore {
       lineCount+=ls.length;
       // Preserve historical raw amount semantics, never manufacture journal legs.
     }
-    final other={for(final k in ['stockTransfers','priceOffers'])k:rows(root[k]??[]).length};
+    final extra=<String,List<Map<String,dynamic>>>{for(final k in [
+      'store_trans','trans_details','offers','offer_bill_details','offer_sbill_details',
+      'bin','bin_bill_details','bin_bill_details2','alerts'
+    ])k:<Map<String,dynamic>>[]};
+    // Normalized web IDs are not raw SmartPro numeric IDs. Keep the exact
+    // references and flatten only for the existing historical record viewer.
+    final transfers=rows(root['stockTransfers']??[]),offers=rows(root['priceOffers']??[]);
+    for(var j=0;j<transfers.length;j++){
+      final tx=transfers[j],id='unified-transfer-$j';
+      extra['store_trans']!.add({...tx,'id':id,'originalId':tx['id'],'normalizedRefs':true,
+        'store_id1':tx['fromWarehouseId'],'store_id2':tx['toWarehouseId'],'date':tx['transferDate'],'type':tx['transferType']}..remove('lines'));
+      final lines=rows(tx['lines']??[]);
+      for(var k=0;k<lines.length;k++){
+        final l=lines[k];
+        extra['trans_details']!.add({...l,'id':'$id:$k','originalId':l['id'],'bill_id':id,'normalizedRefs':true,
+          'prod_id':l['inventoryItemId'],'amount':l['quantity'],'unitnum':l['unitNum'],'exdate':l['expiryDate']});
+      }
+    }
+    for(var j=0;j<offers.length;j++){
+      final offer=offers[j],id='unified-offer-$j';
+      extra['offers']!.add({...offer,'id':id,'originalId':offer['id'],'per_id':offer['accountId'],
+        'date':offer['offerDate'],'type':offer['offerType']}..remove('lines'));
+      final lines=rows(offer['lines']??[]);
+      for(var k=0;k<lines.length;k++){
+        final l=lines[k];
+        extra[l['lineKind']=='free'?'offer_sbill_details':'offer_bill_details']!.add({
+          ...l,'id':'$id:$k','originalId':l['id'],'bill_id':id,'prod_id':l['inventoryItemId'],
+          'amount':l['quantity'],'unitnum':l['unitNum']});
+      }
+    }
+    for(final e in extra.entries){data['source_${e.key}']=e.value;}
     return BackupCandidate(name,str(root['format']),bytes,hash,data,{
-      'workspace':ws,'invoiceLines':lineCount,'missingReferences':missingRefs,
-      'extraCollections':other,'historicalReview':true,
+      'workspace':{'companyName':str(ws['companyName']),'defaultCurrency':defaultCurrency},
+      'invoiceLines':lineCount,'missingReferences':missingRefs,
+      'extraCollections':{'stockTransfers':transfers.length,'priceOffers':offers.length},
+      'sourceExtraCounts':extra.map((k,v)=>MapEntry(k,v.length)),
+      'unifiedTransferEvidence':root['stockTransfers'] is List,
+      'unifiedSource':true,'historicalReview':true,
+      'erpDataArchivedOnly':root['erpData'] is Map&&(root['erpData'] as Map).isNotEmpty,
     },null);
   }
 
-  BackupCandidate _serverSqlite(String name,Uint8List bytes,String hash,Map<String,dynamic> ws,Map<String,List<Map<String,dynamic>>> t){
+  BackupCandidate _serverSqlite(String name,Uint8List bytes,String hash,Map<String,dynamic> ws,Map<String,List<Map<String,dynamic>>> t,{required bool hasTransfers}){
     final ls=<String,List<Map<String,dynamic>>>{};
     final entries={for(final e in t['ledger_entries']!)str(e['id']):e};
     final items={for(final i in t['inventory_items']!)str(i['id']):i};
@@ -297,15 +359,37 @@ class LocalBackupRestore {
         'details':row['details'],'expiryDate':row['expiry_date'],'unitCostAtSale':row['unit_cost_at_sale'],'legacyId':row['legacy_id'],
       });
     }
+    final txLines=<String,List<Map<String,dynamic>>>{},offerLines=<String,List<Map<String,dynamic>>>{};
+    for(final l in t['stock_transfer_lines']!){
+      txLines.putIfAbsent(str(l['transfer_id']),()=>[]).add({'id':l['id'],'inventoryItemId':l['inventory_item_id'],
+        'rawProdId':l['raw_prod_id'],'quantity':l['quantity'],'unit':l['unit'],'unitNum':l['unit_num'],
+        'details':l['details'],'expiryDate':l['expiry_date'],'legacyId':l['legacy_id']});
+    }
+    for(final l in t['price_offer_lines']!){
+      offerLines.putIfAbsent(str(l['offer_id']),()=>[]).add({'id':l['id'],'lineKind':l['line_kind'],'inventoryItemId':l['inventory_item_id'],
+        'rawProdId':l['raw_prod_id'],'price':l['price'],'quantity':l['quantity'],'total':l['total'],'unit':l['unit'],
+        'unitNum':l['unit_num'],'details':l['details'],'legacyId':l['legacy_id']});
+    }
+    if(txLines.keys.any((id)=>!t['stock_transfers']!.any((r)=>str(r['id'])==id))||
+       offerLines.keys.any((id)=>!t['price_offers']!.any((r)=>str(r['id'])==id))||
+       ls.keys.any((id)=>!entries.containsKey(id)))throw const FormatException('Orphaned document details');
     return _web(name,bytes,hash,{
       'format':'nasqo-unified-sqlite-export-v2','version':2,
+      if(hasTransfers)'stockTransfers':t['stock_transfers']!.map((r)=>{'id':r['id'],'fromWarehouseId':r['from_warehouse_id'],
+        'toWarehouseId':r['to_warehouse_id'],'rawFromStoreId':r['raw_from_store_id'],'rawToStoreId':r['raw_to_store_id'],
+        'details':r['details'],'transferDate':r['transfer_date'],'transferType':r['transfer_type'],
+        'legacyId':r['legacy_id'],'lines':txLines[str(r['id'])]??[]}).toList(),
+      'priceOffers':t['price_offers']!.map((r)=>{'id':r['id'],'accountId':r['account_id'],'rawAccId':r['raw_acc_id'],
+        'name':r['name'],'offerType':r['offer_type'],'dain':r['dain'],'madin':r['madin'],'currency':r['currency'],
+        'offerDate':r['offer_date'],'details':r['details'],'bonus':r['bonus'],'discount':r['discount'],
+        'legacyId':r['legacy_id'],'lines':offerLines[str(r['id'])]??[]}).toList(),
       'workspace':{'companyName':str(ws['company_name'],'نسقو برو'),'defaultCurrency':currency(ws['default_currency'])},
       'currencies':t['currencies']!.map((r)=>{'id':r['id'],'name':r['name'],'code':r['code'],'symbol':r['symbol'],'ratePrimary':r['rate_primary'],'rateSecondary':r['rate_secondary'],'nameSecondary':r['name_secondary']}).toList(),
       'accountGroups':t['account_groups']!.map((r)=>{'id':r['id'],'name':r['name'],'category':r['category'],'currencyCode':r['currency_code'],'sortOrder':r['sort_order'],'hasBill':flag(r['has_bill']),'isEmployee':flag(r['is_employee']),'legacyId':r['legacy_id']}).toList(),
       'cashboxes':t['cashboxes']!.map((r)=>{'id':r['id'],'name':r['name'],'details':r['details'],'currencyCode':r['currency_code'],'isActive':flag(r['state']),'state':r['state'],'boxType':r['box_type'],'sortOrder':r['sort_order'],'legacyId':r['legacy_id']}).toList(),
       'accounts':t['accounts']!.map((r)=>{'id':r['id'],'name':r['name'],'groupId':r['group_id'],'category':r['category'],'phone':r['phone'],'creditLimit':r['credit_limit'],'currency':currency(r['currency']),'isCashAccount':flag(r['is_cash_account']),'openingBalance':r['opening_balance'],'openingDirection':r['opening_direction'],'note':r['note'],'codeNumber':r['code_number'],'sortOrder':r['sort_order'],'accountImage':r['account_image'],'settlement':flag(r['settlement']),'documentNumberRequired':flag(r['document_number_required']),'messageMethod':r['message_method'],'sendMode':r['send_mode'],'legacyRef':r['legacy_ref']}).toList(),
       'warehouses':t['warehouses']!.map((r)=>{'id':r['id'],'name':r['name'],'details':r['details'],'isDefault':flag(r['is_default']),'codeNumber':r['code_number'],'legacyRef':r['legacy_ref']}).toList(),
-      'inventory':t['inventory_items']!.map((r)=>{'id':r['id'],'name':r['name'],'unit':r['unit'],'quantity':r['quantity'],'avgCost':r['avg_cost'],'sellingPrice':r['selling_price'],'sku':r['sku'],'minThreshold':r['min_threshold'],'warehouseId':r['warehouse_id'],'currencyCode':r['currency_code'],'quantityUnverified':flag(r['quantity_unverified']),'unit2':r['unit2'],'count2':r['count2'],'sprice2':r['sprice2'],'unit3':r['unit3'],'count3':r['count3'],'sprice3':r['sprice3'],'defaultUnit':r['default_unit'],'isActive':r['bstate']!=0,'expiryDate':r['expiry_date'],'legacyId':r['legacy_id'],'legacyRef':r['legacy_ref'],if(flag(r['quantity_unverified'])&&computed.containsKey(str(r['id'])))'computedQuantity':computed[str(r['id'])]}).toList(),
+      'inventory':t['inventory_items']!.map((r)=>{'id':r['id'],'name':r['name'],'unit':r['unit'],'quantity':r['quantity'],'avgCost':r['avg_cost'],'sellingPrice':r['selling_price'],'sku':r['sku'],'minThreshold':r['min_threshold'],'warehouseId':r['warehouse_id'],'currencyCode':r['currency_code'],'quantityUnverified':r['quantity_unverified']==null?true:flag(r['quantity_unverified']),'unit2':r['unit2'],'count2':r['count2'],'sprice2':r['sprice2'],'unit3':r['unit3'],'count3':r['count3'],'sprice3':r['sprice3'],'defaultUnit':r['default_unit'],'isActive':r['bstate']!=0,'expiryDate':r['expiry_date'],'legacyId':r['legacy_id'],'legacyRef':r['legacy_ref'],if(flag(r['quantity_unverified'])&&computed.containsKey(str(r['id'])))'computedQuantity':computed[str(r['id'])]}).toList(),
       'ledger':t['ledger_entries']!.map((r)=>{'id':r['id'],'accountId':r['account_id'],'accountName':r['account_name'],'counterpartAccountId':r['counterpart_account_id'],'counterpartAccountName':r['counterpart_account_name'],'cashboxId':r['cashbox_id'],'kind':r['kind'],'typeLabel':r['type_label'],'payment':r['payment'],'direction':r['direction'],'amount':r['amount'],'rawDain':r['raw_dain'],'rawMadin':r['raw_madin'],'settledOnReceipt':flag(r['settled_on_receipt']),'currency':currency(r['currency']),'exchangeRate':r['exchange_rate'],'details':r['details'],'documentNumber':r['document_number'],'warehouseId':r['warehouse_id'],'warehouseName':r['warehouse_name'],'invoiceContent':r['invoice_content'],'entryNumber':r['entry_number'],'deleted':flag(r['deleted']),'entryDate':r['entry_date'],'createdAtMs':r['created_at_ms'],'postingStatus':r['posting_status'],'taxAmount':r['tax_amount'],'discount':r['discount'],'docType':r['doc_type'],'sourceOrigin':r['source_origin'],'dueDate':r['due_date'],'expenseCategory':r['expense_category'],'paidAmount':r['paid_amount'],'legacyRef':r['legacy_ref'],'lineCount':(ls[str(r['id'])]??[]).length,'lines':ls[str(r['id'])]??[]}).toList(),
     });
   }

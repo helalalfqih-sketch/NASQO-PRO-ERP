@@ -14,14 +14,18 @@ class LegacyStockProjection {
     for(final entry in ledger){
       if(entry['deleted']==true||entry['postingStatus']=='draft')continue;
       final type=entry['docType'];
-      final direction=[3,9,4].contains(type)?1:[2,7,5].contains(type)?-1:0;
+      final direction=[3,9,4].contains(type)?1:[2,7,5].contains(type)?-1:
+        type==null&&['invoice','return'].contains(entry['kind'])?
+          (entry['direction']=='credit'?1:entry['direction']=='debit'?-1:0):0;
       if(direction==0)continue;
       final lines=entry['lines'];
       if(lines is! List)continue;
       for(final raw in lines){
         if(raw is! Map||raw['lineKind']!='item')continue;
-        final id=raw['inventoryItemId'],wh=raw['warehouseId'];
-        final item=catalog[id];
+        final id=raw['inventoryItemId'],item=catalog[id];
+        final lineWh=raw['warehouseId'],entryWh=entry['warehouseId'];
+        final wh=lineWh is String&&lineWh.isNotEmpty?lineWh:
+          entryWh is String&&entryWh.isNotEmpty?entryWh:item?['warehouseId'];
         if(id is! String||item==null||wh is! String||wh.isEmpty)continue;
         final c2=number(item['count2'],1),c3=number(item['count3'],1);
         final f2=c2==0?1:c2,f3=c3==0?1:c3;

@@ -24,7 +24,7 @@ class LegacyHistoryArchive {
         ?await t.query('backup_review_sources',where:'sha = ?',whereArgs:[review.single['sha']])
         :await t.query('legacy_operational_source',limit:1);
       if(source.isEmpty)throw StateError('No legacy source');
-      if(isReview&&!['legacy-sqlite','legacy-sql'].contains(source.single['source_format']))throw StateError('This backup is not a legacy SQLite archive');
+      if(isReview&&!['legacy-sqlite','legacy-sql',...LocalBackupRestore.knownFormats].contains(source.single['source_format']))throw StateError('This backup is not a legacy SQLite archive');
       final meta=LocalBackupRestore.object(jsonDecode(source.single['meta_json'] as String));
       final counts=meta['sourceExtraCounts'];
       final result=<String,List<Map<String,dynamic>>>{};
@@ -54,7 +54,7 @@ class LegacyHistoryArchive {
     try{
       final file=await File('${dir.path}/source.back').writeAsBytes(bytes,flush:true);
       final candidate=await LocalBackupRestore(local).inspect(file,'source.back');
-      if(!candidate.legacy||candidate.sha!=state.sha)throw StateError('Source archive mismatch');
+      if((!candidate.legacy&&!candidate.unified)||candidate.sha!=state.sha)throw StateError('Source archive mismatch');
       return {for(final key in collections)key:candidate.collections[key]??[]};
     }finally{await dir.delete(recursive:true);}
 

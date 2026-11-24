@@ -14,16 +14,21 @@ class LegacyHistoryReports {
   ){
     final items={for(final p in products)s(p['legacyId']??s(p['id']).replaceFirst('legacy-prod-','')):p};
     final stores={for(final w in warehouses)s(w['id']).replaceFirst('legacy-wh-',''):s(w['id'])};
+    final normalizedItems={for(final p in products)s(p['id']):p};
+    final normalizedStores={for(final w in warehouses)s(w['id']):s(w['id'])};
     final byHeader={for(final h in headers)s(h['id']):h};
     final unresolved=<String>{},affected=<String>{};
     var skippedLines=0;
     final balances=<String,Map<String,num>>{};
     for(final h in headers){
-      if(!stores.containsKey(s(h['store_id1']))||!stores.containsKey(s(h['store_id2'])))unresolved.add(s(h['id']));
+      final map=h['normalizedRefs']==true?normalizedStores:stores;
+      if(!map.containsKey(s(h['store_id1']))||!map.containsKey(s(h['store_id2'])))unresolved.add(s(h['id']));
     }
     for(final line in lines){
-      final headerId=s(line['bill_id']),h=byHeader[headerId],p=items[s(line['prod_id'])];
-      final from=h==null?null:stores[s(h['store_id1'])],to=h==null?null:stores[s(h['store_id2'])];
+      final headerId=s(line['bill_id']),h=byHeader[headerId];
+      final p=(line['normalizedRefs']==true?normalizedItems:items)[s(line['prod_id'])];
+      final map=h?['normalizedRefs']==true?normalizedStores:stores;
+      final from=h==null?null:map[s(h['store_id1'])],to=h==null?null:map[s(h['store_id2'])];
       final unit=line['unitnum']==null?1:num.tryParse(s(line['unitnum']));
       final amount=num.tryParse(s(line['amount']).replaceAll(',',''));
       final c2=LegacyStockProjection.number(p?['count2'],1),c3=LegacyStockProjection.number(p?['count3'],1);
@@ -63,8 +68,8 @@ class LegacyHistoryReports {
     for(final raw in snapshot['ledger'] as List){
       final e=Map<String,dynamic>.from(raw as Map);
       // The legacy source register is the sole scope of this report.
-      if(e['rawDain']==null||e['rawMadin']==null||e['deleted']==true||
-          e['postingStatus']=='draft'||(!review&&e['postingStatus']!='posted'))continue;
+      if((e['importedRegister']!=true&&(e['rawDain']==null||e['rawMadin']==null))||e['deleted']==true||
+          e['postingStatus']=='draft'||(!review&&e['postingStatus']!='posted'&&e['postingStatus']!='reversed'))continue;
       if(e['settledOnReceipt']!=true&&e['payment']!='cash')continue;
       final kind=s(e['kind']),date=s(e['entryDate']);
       if(!['voucher','invoice','return'].contains(kind)&&e['cashboxId']==null)continue;
