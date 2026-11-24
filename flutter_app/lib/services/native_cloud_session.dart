@@ -169,6 +169,7 @@ class NativeCloudSession {
           final bytes=(await _request('GET',Uri.https('www.googleapis.com','/drive/v3/files/$id',{'alt':'media'}),limit:maxBytes)).bytes;
           if(bytes.length!=size||(meta['md5Checksum'] is String&&md5.convert(bytes).toString()!=meta['md5Checksum']))
             throw const NativeCloudException('لم يكتمل تنزيل الملف أو فشل التحقق منه.');
+          if(operation=='restoreNative'&&!await confirm('استعادة نسخة احتياطية','استعادة الملف '+name+' من حساب '+_drive!.email+' قد تستبدل بيانات العمل الحالية. هل تريد المتابعة؟'))return {'completed':false,'cancelled':true,'name':name};
           final ok=operation=='restoreNative'?await restoreWorkspace(bytes,name):await saveFile(bytes,name);
           return {'completed':ok,'name':name};
         case 'trashFile':
