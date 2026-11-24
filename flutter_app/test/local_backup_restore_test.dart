@@ -32,6 +32,16 @@ void main(){
       final liveCandidate=await backup.inspect(liveFile,'live.back');
       expect(liveCandidate.counts['accounts'],1);
       await expectLater(backup.restoreNative(liveCandidate),throwsStateError);
+      // Test-only empty destination simulation. The production restore never deletes these rows.
+      await db.transaction((t)async{
+        await t.delete('bridge_idempotency_keys');
+        await t.delete('sync_outbox');
+        await t.delete('accounts');
+      });
+      await backup.restoreNative(liveCandidate);
+      expect((await db.query('accounts')).single['id'],id);
+      expect(await local.pendingOperations(w),hasLength(1));
+      expect(await account.save(w,'live-account',{'name':'Live account','category':'clients','currency':'ريال'}),id);
       final damaged=Map<String,dynamic>.from(jsonDecode(utf8.decode(live)) as Map);
       damaged['sha256']='bad';
       final corrupt=await File('${dir.path}/bad.back').writeAsString(jsonEncode(damaged));

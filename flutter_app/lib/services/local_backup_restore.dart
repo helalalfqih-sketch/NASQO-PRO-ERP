@@ -86,8 +86,6 @@ class LocalBackupRestore {
     if(sqlite(bytes)){
       final source=await openDatabase(file.path,readOnly:true,singleInstance:false);
       try{
-        await source.execute('PRAGMA query_only = ON');
-        await source.execute('PRAGMA trusted_schema = OFF');
         final check=await source.rawQuery('PRAGMA integrity_check(1)');
         if(check.length!=1||check.single.values.single!='ok')throw const FormatException('SQLite integrity check failed');
         final schema=await source.rawQuery("SELECT name,sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
@@ -386,7 +384,28 @@ class LocalBackupRestore {
             'settlement':row['settlement']??false,'documentNumberRequired':row['documentNumberRequired']??false,
             'messageMethod':row['messageMethod']??'sms','sendMode':row['sendMode']??'never'});
         }
-        if(key=='ledger')row.remove('lines'); // Details are read independently, not sent in the initial snapshot.
+        if(key=='ledger'){
+          row.remove('lines');
+          row['counterpartAccountId']??='';
+          row['counterpartAccountName']??='';
+          row['details']??='';
+          row['documentNumber']??='';
+          row['warehouseId']??='';
+          row['warehouseName']??='';
+        }
+        // Imported source bytes remain exact. Only known presentation fields
+        // are exposed to JavaScript; arbitrary object keys never cross the bridge.
+        const allowed=<String,Set<String>>{
+          'accounts':{'id','ownerId','groupId','name','category','phone','creditLimit','currency','isCashAccount',
+            'accountImage','sortOrder','settlement','documentNumberRequired','messageMethod','sendMode','note','openingBalance','openingDirection','codeNumber','legacyRef'},
+          'warehouses':{'id','ownerId','name','details','isDefault','codeNumber','legacyRef'},
+          'inventory':{'id','ownerId','name','unit','quantity','avgCost','sellingPrice','minThreshold','sku','unit2','count2','sprice2','unit3','count3','sprice3','defaultUnit','currencyCode','isActive','expiryDate','legacyId','warehouseId','computedQuantity','quantityUnverified','legacyRef'},
+          'ledger':{'id','ownerId','accountId','accountName','counterpartAccountId','counterpartAccountName','cashboxId','kind','typeLabel','payment','direction','amount','rawDain','rawMadin','settledOnReceipt','currency','exchangeRate','taxAmount','discount','details','documentNumber','warehouseId','warehouseName','invoiceContent','entryNumber','deleted','entryDate','dueDate','expenseCategory','sourceOrigin','postingStatus','paidAmount','docType','lineCount','createdAtMs','legacyRef'},
+          'currencies':{'id','name','code','symbol','ratePrimary','rateSecondary','nameSecondary','legacyId'},
+          'accountGroups':{'id','name','category','currencyCode','hasBill','isEmployee','sortOrder','legacyId'},
+          'cashboxes':{'id','name','details','currencyCode','state','boxType','sortOrder','isActive','legacyId'},
+        };
+        row.removeWhere((k,v)=>!allowed[key]!.contains(k)||v is Map||v is List);
         row.removeWhere((k,v)=>v==null);
         return row;
       }).toList();
@@ -395,7 +414,8 @@ class LocalBackupRestore {
     return {...data,'workspaceId':'local-erp-workspace','userEmail':'offline@nasqo.local',
       'workspace':{'id':'local-erp-workspace','ownerId':'local-erp-workspace','companyName':str(ws['companyName']),
         'defaultCurrency':str(ws['defaultCurrency'],'ريال'),'whatsappProvider':'nasqo','whatsappInstantEnabled':false,'whatsappPhone':''},
-      'capabilities':{'offlineReady':true,'readOnlyFinancial':true,'filePickerSupported':true},
+      'capabilities':{'offlineReady':true,'readOnlyFinancial':true,'filePickerSupported':true,
+        'printingSupported':false,'pdfExportSupported':false,'googleDriveConfigured':false,'whatsappShareSupported':false},
       'snapshotVersion':1,'activeCurrency':str(ws['defaultCurrency'],'ريال'),'backupReview':true};
   }
   static Future<Map<String,dynamic>?> reviewInvoice(DatabaseExecutor txn,String id)async{

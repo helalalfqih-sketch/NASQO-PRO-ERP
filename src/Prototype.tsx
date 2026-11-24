@@ -1607,8 +1607,14 @@ export function AuthenticatedWorkspace({
 
   const openFullSqliteImport = useCallback(() => {
     dismissKeyboard();
+    if(hybrid.isHybrid){
+      void hybrid.pickFile({purpose:"restore-backup",accept:[".back",".db",".sqlite",".sqlite3",".json"]})
+        .then(picked=>{if(picked?.nativeRestored) window.location.reload();})
+        .catch(err=>showToast(err instanceof Error?err.message:"تعذر فتح النسخة المحلية."));
+      return;
+    }
     setOverlay("full-sqlite-import");
-  }, [dismissKeyboard]);
+  }, [dismissKeyboard,hybrid,showToast]);
 
   const setCategoryCurrency = useCallback(
     (category: AccountCategory, currency: string) => {

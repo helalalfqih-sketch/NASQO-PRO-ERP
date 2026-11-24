@@ -70,7 +70,10 @@ class _NasqoProErpAppState extends State<NasqoProErpApp> {
                     defaultTargetPlatform == TargetPlatform.android &&
                     !_showNativeInDebug
                 ? HybridReactPreviewScreen(
-                    onShowNative: () => setState(() => _showNativeInDebug = true),
+                    onShowNative: kDebugMode && !androidPreviewChannel ? () async {
+                      await _controller.initDatabase();
+                      if (mounted) setState(() => _showNativeInDebug = true);
+                    } : null,
                   )
                 : NasqoMainShell(controller: _controller),
           )),
