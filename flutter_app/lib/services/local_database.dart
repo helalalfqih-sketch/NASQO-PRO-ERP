@@ -30,7 +30,7 @@ class LocalDatabase {
   static final LocalDatabase instance = LocalDatabase._();
 
   static const String dbName = 'nasqo_pro_erp.db';
-  static const int dbVersion = 4;
+  static const int dbVersion = 5;
 
   Database? _db;
 
@@ -48,6 +48,7 @@ class LocalDatabase {
         if (oldVersion < 2) await createSyncSchema(db);
         if (oldVersion < 3) await createAccountingSchema(db);
         if (oldVersion < 4) await createDocumentSchema(db);
+        if (oldVersion < 5) await createStockPostingSchema(db);
       },
       onCreate: (db, version) async {
         await db.execute('''
@@ -121,6 +122,7 @@ class LocalDatabase {
         await createSyncSchema(db);
         await createAccountingSchema(db);
         await createDocumentSchema(db);
+        await createStockPostingSchema(db);
       },
     );
     return _db!;
@@ -173,6 +175,12 @@ class LocalDatabase {
     await db.execute("ALTER TABLE ledger_entries ADD COLUMN counterpartAccountName TEXT NOT NULL DEFAULT ''");
     await db.execute("ALTER TABLE ledger_entries ADD COLUMN invoiceContent TEXT NOT NULL DEFAULT 'none'");
     await db.execute("ALTER TABLE ledger_entries ADD COLUMN postingStatus TEXT");
+  }
+
+  static Future<void> createStockPostingSchema(DatabaseExecutor db) async {
+    await db.execute('CREATE TABLE stock_posting_documents (id TEXT PRIMARY KEY REFERENCES ledger_entries(id), original_id TEXT UNIQUE REFERENCES stock_posting_documents(id), document_json TEXT NOT NULL)');
+    await db.execute('CREATE TABLE stock_posting_lines (id TEXT PRIMARY KEY REFERENCES invoice_lines(id), document_id TEXT NOT NULL REFERENCES stock_posting_documents(id), item_id TEXT NOT NULL REFERENCES inventory_items(id), quantity INTEGER NOT NULL CHECK(quantity > 0), before_quantity INTEGER NOT NULL, after_quantity INTEGER NOT NULL, before_value INTEGER NOT NULL, after_value INTEGER NOT NULL, line_json TEXT NOT NULL)');
+    await db.execute('CREATE INDEX stock_posting_item ON stock_posting_lines(item_id)');
   }
 
   Future<Map<String, dynamic>> createAccountAtomic(
@@ -473,6 +481,8 @@ class LocalDatabase {
       if (history.isNotEmpty) throw StateError('Transactional history exists');
       await txn.delete('journal_lines');
       await txn.delete('journal_entries');
+      await txn.delete('stock_posting_lines');
+      await txn.delete('stock_posting_documents');
       await txn.delete('invoice_lines');
       await txn.delete('stock_movements');
       await txn.delete('ledger_entries');
