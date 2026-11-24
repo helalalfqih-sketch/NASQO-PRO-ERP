@@ -330,13 +330,26 @@ class LocalDatabase {
     required Future<Map<String, dynamic>> Function(Transaction txn) apply,
     Map<String, dynamic> Function(Map<String, dynamic>)? syncPayload,
   }) async {
-    if (workspaceId.isEmpty || operationId.isEmpty || operationType.isEmpty) {
-      throw ArgumentError('Missing operation identity');
-    }
-    final encoded = jsonEncode(payload);
     final db = await database;
-    return db.transaction((txn) async {
-      await requireLiveWorkspace(txn);
+    return db.transaction((txn) => commitOperationInTransaction(txn,
+      workspaceId:workspaceId,operationId:operationId,operationType:operationType,
+      payload:payload,apply:apply,syncPayload:syncPayload));
+  }
+
+  /// Reuse the exact operation identity and outbox semantics for an atomic
+  /// multi-operation batch. The caller owns the outer SQLite transaction.
+  Future<Map<String,dynamic>> commitOperationInTransaction(Transaction txn,{
+    required String workspaceId,
+    required String operationId,
+    required String operationType,
+    required Map<String,dynamic> payload,
+    required Future<Map<String,dynamic>> Function(Transaction txn) apply,
+    Map<String,dynamic> Function(Map<String,dynamic>)? syncPayload,
+  }) async {
+    if(workspaceId.isEmpty||operationId.isEmpty||operationType.isEmpty)
+      throw ArgumentError('Missing operation identity');
+    final encoded=jsonEncode(payload);
+    await requireLiveWorkspace(txn);
       final prior = await txn.query('bridge_idempotency_keys',
           where: 'workspace_id = ? AND operation_id = ?',
           whereArgs: [workspaceId, operationId]);
@@ -364,7 +377,6 @@ class LocalDatabase {
         'result_json': jsonEncode(result),
       });
       return result;
-    });
   }
 
   Future<List<Map<String, Object?>>> pendingOperations(String workspaceId,

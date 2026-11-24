@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'stock_invoice_commands.dart';
 import 'local_document_commands.dart';
@@ -46,7 +47,31 @@ class LegacyStockOpening {
     return {...data,'unresolvedTransfers':report['unresolvedIds']};
   }
 
-  Future<String> approve(String workspace, Map<String,dynamic> input) async {
+  Future<String> approve(String workspace,Map<String,dynamic> input)async{
+    final db=await local.database;
+    return db.transaction((t)=>_approve(t,workspace,input));
+  }
+
+  /// Every row uses the existing individual opening idempotency key and
+  /// balanced posting rules. A failure rolls back every row in the batch.
+  Future<List<String>> approveBatch(String workspace,List<Map<String,dynamic>> inputs)async{
+    if(workspace!='local-erp-workspace'||inputs.isEmpty||inputs.length>2000)
+      throw ArgumentError('Invalid stock count batch');
+    final seen=<String>{};
+    for(final row in inputs){
+      final source=StockInvoiceCommands.identity(row['sourceItemId']);
+      final warehouse=StockInvoiceCommands.identity(row['warehouseId']);
+      if(!seen.add('$source|$warehouse'))throw ArgumentError('Duplicate product and warehouse in batch');
+    }
+    final db=await local.database;
+    return db.transaction((t)async{
+      final ids=<String>[];
+      for(final row in inputs){ids.add(await _approve(t,workspace,row));}
+      return ids;
+    });
+  }
+
+  Future<String> _approve(Transaction txn,String workspace,Map<String,dynamic> input)async{
     final source=StockInvoiceCommands.identity(input['sourceItemId']);
     final wh=StockInvoiceCommands.identity(input['warehouseId']);
     final asset=StockInvoiceCommands.identity(input['inventoryAccountId']);
@@ -63,7 +88,7 @@ class LegacyStockOpening {
     final key='legacy-opening-$digest';
     final request=<String,dynamic>{'sourceItemId':source,'warehouseId':wh,'quantity':quantity,'valueMinor':value,
       'inventoryAccountId':asset,'offsetAccountId':offset,'entryDate':date,'evidence':evidence};
-    final result=await local.commitOperation(workspaceId:workspace,operationId:key,operationType:'legacy.stock.opening',
+    final result=await local.commitOperationInTransaction(txn,workspaceId:workspace,operationId:key,operationType:'legacy.stock.opening',
       payload:request,apply:(t)async{
         await StockInvoiceCommands.workspace(t,workspace);
         if(!await LocalDatabase.hasLegacyOperational(t))throw StateError('Imported workspace required');
