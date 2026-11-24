@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
-import '../screens/cloud_identity_screen.dart';
+import '../services/native_cloud_session.dart';
+import '../services/firebase_sync_auth.dart';
 import '../screens/legacy_stock_opening_screen.dart';
 import '../screens/legacy_history_screen.dart';
 import '../screens/local_invoice_roles_screen.dart';
@@ -40,8 +42,70 @@ class HybridReactPreviewScreen extends StatefulWidget {
 
 class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   final _documentOutput=LocalDocumentOutput();
+  late final NativeCloudSession _cloud=NativeCloudSession(
+    confirm:_confirmCloud,exportWorkspace:_exportCloudWorkspace,restoreWorkspace:_restoreCloudFile,
+    pickFile:_pickCloudFile,saveFile:_saveCloudFile);
+  Future<bool> _confirmCloud(String title,String message)async{
+    if(!mounted||_backupBusy)return false;
+    return await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text(title),content:Text(message),actions:[
+        TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('تأكيد'))]))==true;
+  }
+  Future<Uint8List> _exportCloudWorkspace()async{
+    if(_review||_backupBusy)throw StateError('Local working database required');
+    return _backups.exportNative();
+  }
+  Future<({Uint8List bytes,String name})?> _pickCloudFile()async{
+    if(_backupBusy)return null;
+    final choice=await _backupChannel.invokeMapMethod<String,dynamic>('pickBackup');
+    if(choice==null)return null;
+    final file=File(choice['path'] as String);
+    try{return (bytes:await file.readAsBytes(),name:choice['fileName'] as String);}
+    finally{try{await file.delete();}catch(_){}}
+  }
+  Future<File> _stageCloudFile(Uint8List bytes)async{
+    final cache=await _backupChannel.invokeMethod<String>('cachePath');
+    if(cache==null)throw StateError('Cache unavailable');
+    final file=File('$cache/nasqo-drive-${DateTime.now().microsecondsSinceEpoch}.back');
+    return file.writeAsBytes(bytes,flush:true);
+  }
+  Future<bool> _saveCloudFile(Uint8List bytes,String name)async{
+    final file=await _stageCloudFile(bytes);
+    try{return await _backupChannel.invokeMethod<bool>('exportBackup',{'path':file.path,'fileName':name})==true;}
+    finally{try{await file.delete();}catch(_){}}
+  }
+  Future<bool> _restoreCloudFile(Uint8List bytes,String name)async{
+    if(_backupBusy)return false;
+    final file=await _stageCloudFile(bytes);
+    try{return (await _restoreBackup(sourceFile:file,sourceName:name))?['nativeRestored']==true;}
+    finally{if(await file.exists()){try{await file.delete();}catch(_){}}}
+  }
+  Future<Map<String,dynamic>> _readWorkspaceSnapshot()async{
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final capabilities=Map<String,dynamic>.from(snapshot['capabilities'] as Map? ??{});
+    capabilities['googleDriveConfigured']=FirebaseSyncAuth.configured;
+    return {...snapshot,'capabilities':capabilities};
+  }
+  Future<Map<String,dynamic>> _localTools(String operation)async{
+    if(!_backupStateLoaded||_backupBusy)throw StateError('Database busy');
+    switch(operation){
+      case 'status':break;
+      case 'history':
+        if(!_legacyOperational&&!_review)throw StateError('No historical records');
+        await Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const LegacyHistoryScreen()));
+        break;
+      case 'readiness':if(!_review)throw StateError('No review');await _showRestoreReadiness();break;
+      case 'activate':if(!_review)throw StateError('No review');await _activateReviewed(refreshView:false);break;
+      case 'leaveReview':if(!_review)throw StateError('No review');await _leaveReview(refreshView:false);break;
+      default:throw ArgumentError('Invalid tool');
+    }
+    return {'review':_review,'imported':_legacyOperational};
+  }
   late final HybridReadOnlyProtocol _protocol = HybridReadOnlyProtocol(
-    readSnapshot: HybridLocalSnapshotAdapter.readFromDevice,
+    readSnapshot: _readWorkspaceSnapshot,
+    cloudAction: _cloud.handle,
+    localToolsAction: _localTools,
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
     saveWorkspaceSettings: _saveWorkspaceSettings,
     createAccount: (key,payload) => _saveAccount(key,payload),
@@ -243,16 +307,20 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const LocalInvoiceRolesScreen()));
   }
 
-  Future<Map<String,dynamic>?> _restoreBackup({bool refreshView=false})async{
+  Future<Map<String,dynamic>?> _restoreBackup({bool refreshView=false,File? sourceFile,String? sourceName})async{
     if(_backupBusy)return null;
     setState(()=>_backupBusy=true);
-    File? picked;
+    File? picked=sourceFile;
     try{
-      final choice=await _backupChannel.invokeMapMethod<String,dynamic>('pickBackup');
-      if(choice==null||!mounted)return null;
-      picked=File(choice['path'] as String);
-      final name=choice['fileName'] as String;
-      final candidate=await _backups.inspect(picked,name);
+      String name;
+      if(sourceFile!=null){name=sourceName??'drive.back';}
+      else{
+        final choice=await _backupChannel.invokeMapMethod<String,dynamic>('pickBackup');
+        if(choice==null||!mounted)return null;
+        picked=File(choice['path'] as String);
+        name=choice['fileName'] as String;
+      }
+      final candidate=await _backups.inspect(picked!,name);
       if(!mounted)return null;
       const labels={'accounts':'الحسابات','warehouses':'المخازن','inventory':'الأصناف','inventory_items':'الأصناف','ledger':'الحركات','ledger_entries':'الحركات','journal_entries':'القيود','invoice_lines':'بنود الفواتير'};
       final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
@@ -280,7 +348,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final legacy=await LocalDatabase.hasLegacyOperational(await LocalDatabase.instance.database);
       if(!mounted)return null;
       setState((){_review=accept=='review';_legacyOperational=legacy;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
-      await _message(accept=='live'?'تمت استعادة الحسابات والحركات في قاعدة العمل المحلية. إعداد حسابات الترحيل مرة واحدة من الإعدادات؛ المخزون المستورد يحتاج اعتمادًا، والعملات المفقودة خارج الأرصدة.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من شريط التطبيق.');
+      await _message(accept=='live'?'تمت استعادة الحسابات والحركات في قاعدة العمل المحلية. إعداد حسابات الترحيل مرة واحدة من الإعدادات؛ المخزون المستورد يحتاج اعتمادًا، والعملات المفقودة خارج الأرصدة.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من إعدادات قاعدة البيانات.');
       return {'fileName':name,'mimeType':'application/octet-stream','sizeBytes':candidate.bytes.length,
         'base64Content':'','nativeRestored':true,'restoreMode':accept=='review'?'review':'operational','counts':candidate.counts};
     }on FormatException catch(e){
@@ -307,7 +375,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('تفعيل الحسابات'))]))==true;
   }
 
-  Future<void> _activateReviewed()async{
+  Future<void> _activateReviewed({bool refreshView=true})async{
     if(_backupBusy)return;
     setState(()=>_backupBusy=true);
     File? temp;
@@ -324,7 +392,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final protection=await _protectExistingData();
       if(!protection.proceed)return;
       await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha);
-      if(mounted)setState((){_review=false;_legacyOperational=true;_viewGeneration++;});
+      if(mounted)setState((){_review=false;_legacyOperational=true;if(refreshView)_viewGeneration++;});
       await _message('تم تفعيل الحسابات للعمل المحلي؛ المخزون يحتاج مطابقة.');
     }on StateError catch(e){await _message('لم يتم تغيير قاعدة العمل: ${e.message}');}
     catch(_){await _message('تعذر تفعيل النسخة؛ لم يتم تأكيد أي تغيير للبيانات.');}
@@ -437,10 +505,10 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     finally{if(mounted)setState(()=>_backupBusy=false);}
   }
 
-  Future<void> _leaveReview()async{
+  Future<void> _leaveReview({bool refreshView=true})async{
     if(_backupBusy)return;
     await _backups.closeReview();
-    if(mounted)setState((){_review=false;_viewGeneration++;});
+    if(mounted)setState((){_review=false;if(refreshView)_viewGeneration++;});
   }
 
   Future<bool> _printCurrentPage(String title)async{
@@ -495,68 +563,11 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('نسقو — واجهة React المحلية'),
-        actions: [
-          IconButton(
-            tooltip: 'الحساب السحابي',
-            icon: const Icon(Icons.account_circle_outlined),
-            onPressed: _backupBusy || _review || !_backupStateLoaded ? null : () {
-              Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const CloudIdentityScreen(),
-              ));
-            },
-          ),
-          IconButton(tooltip:'استيراد نسخة احتياطية',icon:const Icon(Icons.file_open),
-            onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
-          IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
-            onPressed:_backupBusy?null:_exportBackup),
-          if(_legacyOperational||_review) IconButton(tooltip:'السجلات التاريخية',icon:const Icon(Icons.history),onPressed:_backupBusy?null:()async{
-            await Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const LegacyHistoryScreen()));
-          }),
-          if(_legacyOperational&&!_review) IconButton(tooltip:'اعتماد جرد المخازن',icon:const Icon(Icons.inventory_2_outlined),onPressed:_backupBusy?null:()async{
-            final changed=await _openStockReconciliation(null,null);
-            if(mounted&&changed)setState(()=>_viewGeneration++);
-          }),
-          if(_review) IconButton(tooltip:'تفعيل الحسابات المستوردة',icon:const Icon(Icons.play_circle_outline),onPressed:_backupBusy?null:_activateReviewed),
-          if(_review) IconButton(tooltip:'تقرير جاهزية الاستعادة',icon:const Icon(Icons.fact_check_outlined),
-            onPressed:_backupBusy?null:_showRestoreReadiness),
-          if(_review) TextButton(onPressed:_backupBusy?null:_leaveReview,child:const Text('العودة للبيانات الحالية')),
-          if (widget.onShowNative != null && !_review && !_legacyOperational && _backupStateLoaded && !_backupBusy)
-            TextButton(
-              onPressed: widget.onShowNative,
-              child: const Text('واجهة Flutter'),
-            ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            padding: const EdgeInsets.all(10),
-            child: Text(
-              _review?'نسخة تاريخية مستوردة — للقراءة فقط. اضغط أيقونة تقرير جاهزية الاستعادة لمعرفة ما يحتاج إلى تسوية.':
-              _legacyOperational?'حسابات مستوردة للعمل المحلي — سجل تاريخي؛ المخزون والعملات غير المعتمدة بحاجة إلى تسوية.':
-              'نسقو المحلي: استيراد وتصدير النسخ الاحتياطية من شريط التطبيق؛ المزامنة قيد التطوير.',
-              textAlign: TextAlign.center,
-            ),
-          ),
-          Expanded(
-            child: _error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Text(_error!, textAlign: TextAlign.center),
-                    ),
-                  )
-                : !_backupStateLoaded ? const Center(child:CircularProgressIndicator()) : AndroidView(
-                    key:ValueKey(_viewGeneration),
-                    viewType: 'nasqo/offline_hybrid',
-                    onPlatformViewCreated: _attach,
-                  ),
-          ),
-        ],
+      body: SafeArea(
+        child: _error!=null
+          ? Center(child:Padding(padding:const EdgeInsets.all(18),child:Text(_error!,textAlign:TextAlign.center)))
+          : !_backupStateLoaded ? const Center(child:CircularProgressIndicator()) : AndroidView(
+              key:ValueKey(_viewGeneration),viewType:'nasqo/offline_hybrid',onPlatformViewCreated:_attach),
       ),
     );
   }

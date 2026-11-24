@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../services/legacy_history_reports.dart';
 import '../services/local_invoice_roles.dart';
+import '../services/native_cloud_session.dart';
 
 /// Minimal, fail-closed protocol endpoint for the offline React -> Flutter
 /// bridge. It never accepts raw SQL, filesystem, or financial write commands.
@@ -29,6 +30,8 @@ class HybridReadOnlyProtocol {
     this.openInvoiceRoles,
     this.openStockReconciliation,
     this.exportBackup,
+    this.cloudAction,
+    this.localToolsAction,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
@@ -50,6 +53,8 @@ class HybridReadOnlyProtocol {
   final Future<void> Function()? openInvoiceRoles;
   final Future<bool> Function(String?,String?)? openStockReconciliation;
   final Future<bool> Function()? exportBackup;
+  final Future<dynamic> Function(String,String,Map<String,dynamic>)? cloudAction;
+  final Future<Map<String,dynamic>> Function(String)? localToolsAction;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -78,6 +83,29 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='cloudIdentityAction'||actionName=='googleDriveAction'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.keys.any((k)=>!['operation','args'].contains(k))||
+        p['operation'] is! String||(p['operation'] as String).length>50||
+        (p['args']!=null&&p['args'] is! Map<String,dynamic>))
+        return _error(id,actionName,'VALIDATION_ERROR','طلب Google غير صالح.');
+      if(cloudAction==null)return _error(id,actionName,'UNAUTHORIZED_ACTION','خدمة Google غير متاحة.');
+      try{
+        final result=await cloudAction!(actionName!,p['operation'] as String,p['args'] as Map<String,dynamic>? ??{});
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }on NativeCloudException catch(e){return _error(id,actionName,e.code,e.message);}
+      catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر إكمال طلب Google.');}
+    }
+    if(actionName=='localToolsAction'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.length!=2||p['workspaceId']!='local-erp-workspace'||
+        !['status','history','readiness','activate','leaveReview'].contains(p['operation'])||localToolsAction==null)
+        return _error(id,actionName,'VALIDATION_ERROR','طلب أدوات البيانات غير صالح.');
+      try{
+        final result=await localToolsAction!(p['operation'] as String);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح أدوات البيانات.');}
     }
     const outputActions=['beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport'];
     if(actionName!=null&&outputActions.contains(actionName)&&documentOutput!=null){
