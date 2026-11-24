@@ -6041,6 +6041,8 @@ function InvoiceModal({
   const initialKind: "purchase" | "sale" =
     kindOverride ?? (initialAccount?.category === "sales" ? "sale" : "purchase");
 
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const [localCounterpartId,setLocalCounterpartId] = useState(editingEntry?.counterpartAccountId ?? "");
   const [content, setContent] = useState<"items" | "free">(initialContent);
   const [payment, setPayment] = useState<"cash" | "credit">(initialPayment);
   const [kind, setKind] = useState<"purchase" | "sale">(initialKind);
@@ -6430,6 +6432,15 @@ function InvoiceModal({
       return;
     }
 
+    if (hybridLocal && (editingEntry || content !== "free" || payment !== "credit" ||
+        isReturn || intent === "quote" || intent === "order" ||
+        !ctx.accounts.some(a => a.id === localCounterpartId && a.id !== selectedAccount.id &&
+          a.currency === currency && !a.isCashAccount))) {
+      focusInvalid(accountSelectRef.current, {
+        field:"submit",message:"الوضع المحلي يدعم حاليًا الفاتورة الحرة الآجلة الجديدة بحساب مقابل محدد.",
+      });
+      return;
+    }
     if (content === "free") {
       if (parseArabicNumber(amount) <= 0) {
         focusInvalid(freeAmountInputRef.current, {
@@ -6520,6 +6531,8 @@ function InvoiceModal({
       const payload: Partial<LedgerEntryRecord> & { accountId: string; accountName: string } = {
         accountId: selectedAccount.id,
         accountName: selectedAccount.name,
+        ...(hybridLocal ? {counterpartAccountId:localCounterpartId,
+          counterpartAccountName:ctx.accounts.find(a=>a.id===localCounterpartId)?.name ?? ""} : {}),
         ...(payment === "cash" && cashboxId ? { cashboxId } : { cashboxId: undefined }),
         kind: entryKind,
         typeLabel,
@@ -6785,6 +6798,15 @@ function InvoiceModal({
               addAccountAriaLabel="إضافة حساب للفاتورة"
               triggerRef={accountSelectRef}
             />
+            {hybridLocal && !editingEntry && <label className="invoice-field-box">
+              <span>الحساب المقابل (إيراد أو مصروف الخدمة)</span>
+              <select aria-label="الحساب المقابل للفاتورة" value={localCounterpartId}
+                onChange={e=>setLocalCounterpartId(e.target.value)}>
+                <option value="">اختر الحساب المقابل</option>
+                {ctx.accounts.filter(a=>a.id!==selectedAccount?.id && a.currency===currency && !a.isCashAccount)
+                  .map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </label>}
 
             {formError?.field === "account" ? (
               <div className="field-inline-error" role="alert" data-testid="invoice-account-error">
@@ -10584,6 +10606,9 @@ function TransactionModal({
   const [accountId, setAccountId] = useState(
     editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
   );
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const [localCounterpartId,setLocalCounterpartId] = useState(editingEntry?.counterpartAccountId ?? "");
+  const localDraftId = useRef("");
   const [cashboxId, setCashboxId] = useState<number | undefined>(
     editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
   );
@@ -10602,7 +10627,9 @@ function TransactionModal({
   const amountInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!open) { localDraftId.current = ''; return; }
     if (open) {
+      if (!localDraftId.current) localDraftId.current = `voucher_${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
       setTxError(null);
       setAccountId(editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "");
       setCashboxId(editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id);
@@ -10632,6 +10659,11 @@ function TransactionModal({
       setTxError({ field: "account", message: msg });
       ctx.showToast(msg, 4500);
       return;
+    }
+    if (hybridLocal && (editingEntry || !ctx.accounts.some(a => a.id===localCounterpartId &&
+        a.id!==selectedAccount.id && a.currency===currency && (payment!=="cash" || a.isCashAccount)))) {
+      const msg = "اختر حسابًا مقابلًا من نفس العملة؛ للسند النقدي اختر حساب صندوق. تعديل السند المرحل غير متاح.";
+      setTxError({field:"submit",message:msg}); ctx.showToast(msg); return;
     }
     const parsedAmount = parseArabicNumber(amount);
     if (parsedAmount <= 0) {
@@ -10667,6 +10699,8 @@ function TransactionModal({
         ctx.showToast(`تم تعديل السند #${editingEntry.entryNumber}`);
       } else {
         targetEntryId = await createLedgerEntry(ctx.uid, {
+          ...(hybridLocal ? {id:localDraftId.current,counterpartAccountId:localCounterpartId,
+            counterpartAccountName:ctx.accounts.find(a=>a.id===localCounterpartId)?.name ?? ""} : {}),
           accountId: selectedAccount.id,
           accountName: selectedAccount.name,
           ...(cashboxId ? { cashboxId } : {}),
@@ -10756,6 +10790,15 @@ function TransactionModal({
           invalid={txError?.field === "account"}
           compact
         />
+        {hybridLocal && !editingEntry && <label className="invoice-field-box">
+          <span>الحساب المقابل للسند</span>
+          <select aria-label="الحساب المقابل للسند" value={localCounterpartId}
+            onChange={e=>setLocalCounterpartId(e.target.value)}>
+            <option value="">اختر الحساب المقابل</option>
+            {ctx.accounts.filter(a=>a.id!==selectedAccount?.id && a.currency===currency &&
+              (payment!=="cash" || a.isCashAccount)).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </label>}
         <div className="transaction-cashbox-row">
           {ctx.cashboxes.length > 0 || editingEntry?.cashboxId ? (
             <select
@@ -10985,7 +11028,7 @@ function AccountCreateModal({
         initialAccount?.id,
       );
       triggerHaptic("success");
-      ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : "تم إنشاء الحساب وحفظه في السحابة");
+      ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : import.meta.env.VITE_NASQO_HYBRID === "1" ? "تم إنشاء الحساب وحفظه محليًا" : "تم إنشاء الحساب وحفظه في السحابة");
       onClose();
     } finally {
       setSaving(false);
