@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../services/stock_invoice_commands.dart';
+import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
 import 'hybrid_read_only_protocol.dart';
 import '../services/local_account_commands.dart';
@@ -27,6 +30,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     createAccount: (key,payload) => _saveAccount(key,payload),
     updateAccount: (key,id,payload) => _saveAccount(key,payload,accountId:id),
     postDocument: _postDocument,
+    createStockRecord: _createStockRecord,
+    readInvoiceDetail: _readInvoiceDetail,
   );
 
   static Future<Map<String,dynamic>> _saveAccount(
@@ -40,12 +45,42 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   }
 
   static Future<Map<String,dynamic>> _postDocument(String key,Map<String,dynamic> payload) async {
-    final id = await LocalDocumentCommands(LocalDatabase.instance).post(
-      HybridLocalSnapshotAdapter.workspaceId,key,payload);
+    final local=LocalDatabase.instance;
+    final isStock=payload['invoiceContent']=='items'||payload['kind']=='return';
+    final id=isStock
+      ? await StockInvoiceCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,payload)
+      : await LocalDocumentCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,payload);
     final snapshot = await HybridLocalSnapshotAdapter.readFromDevice();
     final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
         .firstWhere((e) => e['id'] == id);
     return {'entry':entry,'snapshot':snapshot};
+  }
+
+  static Future<Map<String,dynamic>> _createStockRecord(String action,String key,Map<String,dynamic> payload)async{
+    final catalog=LocalStockCatalog(LocalDatabase.instance);
+    final warehouse=action=='saveWarehouse';
+    final id=warehouse?await catalog.createWarehouse(HybridLocalSnapshotAdapter.workspaceId,key,payload)
+      :await catalog.createItem(HybridLocalSnapshotAdapter.workspaceId,key,payload);
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final row=(snapshot[warehouse?'warehouses':'inventory'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
+    return {warehouse?'warehouse':'item':row,'snapshot':snapshot};
+  }
+  static Future<Map<String,dynamic>> _readInvoiceDetail(String id)async{
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
+    final db=await LocalDatabase.instance.database;
+    final stored=await db.query('stock_posting_lines',where:'document_id = ?',whereArgs:[id],orderBy:'rowid');
+    final lines=<Map<String,dynamic>>[];
+    for(var i=0;i<stored.length;i++){
+      final d=jsonDecode(stored[i]['line_json'] as String) as Map<String,dynamic>;
+      lines.add({'id':i+1,'lineKind':'item','inventoryItemId':d['item_id'],
+        'itemName':d['itemName'],'sku':'','warehouseName':entry['warehouseName'],
+        'price':(d['price_minor'] as int)/100,'quantity':d['quantity'],
+        'total':(d['net_minor'] as int)/100,'discount':(d['discount_minor'] as int)/100,
+        'bonus':0,'unit':d['unit'],'unitNum':1,'details':'','expiryDate':''});
+    }
+    if(entry['stockPosting']!=true&&entry['invoiceContent']=='items') throw StateError('Historical stock lines unavailable');
+    return {'entry':entry,'lines':lines};
   }
 
   MethodChannel? _channel;
@@ -104,7 +139,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             padding: const EdgeInsets.all(10),
             child: const Text(
               'وضع محلي تجريبي: إنشاء الحسابات وتعديل بياناتها متاحان. '
-              'السندات والقيود البسيطة والفواتير الحرة الآجلة مدعومة؛ المزامنة والفواتير المخزنية قيد التطوير.',
+              'السندات والفواتير الآجلة والمخزون المحلي مدعومة ضمن القيود التجريبية؛ المزامنة قيد التطوير.',
               textAlign: TextAlign.center,
             ),
           ),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../models/erp_models.dart';
 import '../services/local_database.dart';
 
@@ -7,8 +8,37 @@ class HybridLocalSnapshotAdapter {
   static const String workspaceId = 'local-erp-workspace';
 
   static Future<Map<String, dynamic>> readFromDevice() async {
-    final snapshot = await LocalDatabase.instance.loadSnapshot();
-    return fromSnapshot(snapshot);
+    final local=LocalDatabase.instance;
+    final db=await local.database;
+    return db.transaction((txn) async {
+      final data=fromSnapshot(await local.loadSnapshot(executor:txn));
+      final ledger=(data['ledger'] as List).cast<Map<String,dynamic>>();
+      final byId={for(final entry in ledger) entry['id']:entry};
+      for(final row in await txn.query('journal_lines',orderBy:'rowid')){
+        final entry=byId[row['journal_id']];
+        if(entry==null) continue;
+        final lines=entry.putIfAbsent('journalLines',()=> <Map<String,dynamic>>[]) as List;
+        lines.add({'accountId':row['account_id'],'debitMinor':row['debit_minor'],'creditMinor':row['credit_minor']});
+      }
+      final originals=<String,String>{};
+      for(final row in await txn.query('stock_posting_documents')){
+        final entry=byId[row['id']];
+        if(entry==null) continue;
+        final info=jsonDecode(row['document_json'] as String) as Map<String,dynamic>;
+        entry['stockPosting']=true;
+        entry['taxAmount']=(info['taxMinor'] as int)/100;
+        entry['netBeforeTax']=(info['netMinor'] as int)/100;
+        entry['stockSale']=info['sale']==true;
+        if(row['original_id'] is String){
+          entry['originalInvoiceId']=row['original_id'];
+          originals[row['original_id'] as String]=row['id'] as String;
+        }
+      }
+      for(final item in originals.entries){
+        byId[item.key]?['returnedById']=item.value;
+      }
+      return data;
+    });
   }
 
   static Map<String, dynamic> fromSnapshot(
@@ -75,6 +105,7 @@ class HybridLocalSnapshotAdapter {
         'readOnlyFinancial': true,
         'localAccountCreation': true,
         'localDocumentPosting': true,
+        'localStockPosting': true,
       },
       'activeRoute': 'dashboard',
       'activeCurrency': currencyLabel,

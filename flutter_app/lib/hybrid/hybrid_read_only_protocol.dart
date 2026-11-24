@@ -13,6 +13,8 @@ class HybridReadOnlyProtocol {
     this.createAccount,
     this.updateAccount,
     this.postDocument,
+    this.createStockRecord,
+    this.readInvoiceDetail,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
@@ -20,6 +22,8 @@ class HybridReadOnlyProtocol {
   final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
   final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
+  final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
+  final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -123,6 +127,33 @@ class HybridReadOnlyProtocol {
       }
     }
 
+    if ((actionName=='saveWarehouse'||actionName=='createInventoryItem') && createStockRecord!=null) {
+      final params=request['payload'],key=request['idempotencyKey'];
+      if(key is! String||key.isEmpty||key.length>120||params is! Map<String,dynamic>||
+          params['workspaceId']!='local-erp-workspace'||params['warehouseId']!=null||
+          params['payload'] is! Map<String,dynamic>||
+          params.keys.any((k)=>!['workspaceId','payload','warehouseId'].contains(k))){
+        return _error(id,actionName,'VALIDATION_ERROR','طلب إنشاء المخزن أو الصنف غير صالح.');
+      }
+      try{
+        final result=await createStockRecord!(actionName!,key,params['payload'] as Map<String,dynamic>);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      } on ArgumentError {
+        return _error(id,actionName,'VALIDATION_ERROR','يدعم المخزون المحلي إنشاء أصناف بوحدة أساسية ورصيد وتكلفة صفر قبل الشراء.');
+      } catch(_){
+        return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر حفظ بيانات المخزون محليًا.');
+      }
+    }
+    if(actionName=='getInvoiceDetail'&&readInvoiceDetail!=null){
+      final params=request['payload'];
+      if(params is! Map<String,dynamic>||params['workspaceId']!='local-erp-workspace'||params['entryId'] is! String||params.length!=2){
+        return _error(id,actionName,'VALIDATION_ERROR','طلب الفاتورة غير صالح.');
+      }
+      try{
+        final result=await readInvoiceDetail!(params['entryId'] as String);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'NOT_FOUND','تعذر العثور على تفاصيل الفاتورة المحلية.');}
+    }
     if (actionName == 'createLedgerEntry' && postDocument != null) {
       final params = request['payload'];
       final key = request['idempotencyKey'];
@@ -136,7 +167,7 @@ class HybridReadOnlyProtocol {
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,
           'action':actionName,'ok':true,'data':result});
       } on ArgumentError {
-        return _error(id,actionName,'VALIDATION_ERROR','اختر حسابين وعملة متطابقة؛ المدعوم حاليًا السند والقيد البسيط والفاتورة الحرة الآجلة.');
+        return _error(id,actionName,'VALIDATION_ERROR','تحقق من الحسابات والعملة والكمية وإجمالي الفاتورة والضرائب والخصومات والمرتجع المرتبط.');
       } catch (_) {
         return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تأكيد الترحيل المحلي؛ تحقق من السجل قبل المحاولة.');
       }

@@ -176,6 +176,16 @@ export type LedgerEntryRecord = {
   deliveryDays?: number;
   sourceOrigin?: "native" | "smartpro_sql" | "legacy_sqlite";
   postingStatus?: "draft" | "posted" | "reversed";
+  /** Explicit balanced SQLite journal legs; authoritative when present. */
+  journalLines?: {accountId:string;debitMinor:number;creditMinor:number}[];
+  stockPosting?: boolean;
+  stockSale?: boolean;
+  netBeforeTax?: number;
+  originalInvoiceId?: string;
+  returnedById?: string;
+  inventoryAccountId?: string;
+  costAccountId?: string;
+  taxAccountId?: string;
   idempotencyKey?: string;
   reversedEntryId?: string;
   reversalEntryId?: string;

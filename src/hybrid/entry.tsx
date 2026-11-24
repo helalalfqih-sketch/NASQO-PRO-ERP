@@ -129,6 +129,7 @@ function HybridRootApp() {
     hybridBridge.setReadOnlyFinancialMode(Boolean(snap.capabilities?.readOnlyFinancial));
     hybridBridge.setLocalAccountCreation(snap.capabilities?.localAccountCreation === true);
     hybridBridge.setLocalDocumentPosting(snap.capabilities?.localDocumentPosting === true);
+    hybridBridge.setLocalStockPosting(snap.capabilities?.localStockPosting === true);
     if (snap.uiPreferences) {
       hydrateUiPreferencesFromHost(snap.uiPreferences);
       if (snap.uiPreferences.themeMode) {

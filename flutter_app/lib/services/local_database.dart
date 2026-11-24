@@ -338,8 +338,8 @@ class LocalDatabase {
     return count > 0;
   }
 
-  Future<LocalDbSnapshot> loadSnapshot() async {
-    final db = await database;
+  Future<LocalDbSnapshot> loadSnapshot({DatabaseExecutor? executor}) async {
+    final db = executor ?? await database;
     final accRows = await db.query('accounts', orderBy: 'codeNumber ASC');
     final ledRows = await db.query('ledger_entries', orderBy: 'entryNumber DESC');
     final whRows = await db.query('warehouses');

@@ -81,6 +81,7 @@ export class NasqoHybridBridge {
   private readOnlyFinancialMode = false;
   private localAccountCreation = false;
   private localDocumentPosting = false;
+  private localStockPosting = false;
 
   constructor() {
     this.bindGlobalReceiver();
@@ -121,6 +122,10 @@ export class NasqoHybridBridge {
 
   setLocalDocumentPosting(enabled: boolean): void {
     this.localDocumentPosting = enabled;
+  }
+
+  setLocalStockPosting(enabled: boolean): void {
+    this.localStockPosting = enabled;
   }
 
   isReadOnlyFinancialMode(): boolean {
@@ -192,7 +197,7 @@ export class NasqoHybridBridge {
     }
 
     const isFinancial = isFinancialMutationCommand(action);
-    if (isFinancial && this.readOnlyFinancialMode && !(action === "saveAccount" && this.localAccountCreation) && !(action === "createLedgerEntry" && this.localDocumentPosting)) {
+    if (isFinancial && this.readOnlyFinancialMode && !(action === "saveAccount" && this.localAccountCreation) && !(action === "createLedgerEntry" && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
         "في هذه الدفعة تبقى العمليات المالية للقراءة والعرض فقط؛ الترحيل يتم حصريًا عبر Flutter وSQLite.",
@@ -366,6 +371,7 @@ export class NasqoHybridBridge {
     this.readOnlyFinancialMode = false;
     this.localAccountCreation = false;
     this.localDocumentPosting = false;
+    this.localStockPosting = false;
   }
 }
 

@@ -157,6 +157,7 @@ export interface HybridCapabilities {
   readOnlyFinancial?: boolean;
   localAccountCreation?: boolean;
   localDocumentPosting?: boolean;
+  localStockPosting?: boolean;
 }
 
 export interface HybridWorkspaceSnapshot {
