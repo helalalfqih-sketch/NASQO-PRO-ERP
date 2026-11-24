@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/legacy_stock_opening.dart';
 import '../services/local_database.dart';
+import 'legacy_stock_batch_screen.dart';
 
 class LegacyStockOpeningScreen extends StatefulWidget {
   const LegacyStockOpeningScreen({super.key});
@@ -106,6 +107,11 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       appBar:AppBar(title:const Text('اعتماد جرد المخازن'),actions:[IconButton(tooltip:'تم',onPressed:busy?null:()=>Navigator.pop(context,changed),icon:const Icon(Icons.check))]),
       body:ListView(padding:const EdgeInsets.all(16),children:[
         Text('اعتمادات المخازن المسجلة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
+        FilledButton.icon(onPressed:busy||products.isEmpty?null:()async{
+          final result=await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockBatchScreen(
+            products:products,warehouses:warehouses,accounts:accounts,openings:openings)));
+          if(result==true&&mounted){changed=true;setState(()=>busy=true);await _load();}
+        },icon:const Icon(Icons.playlist_add_check),label:const Text('اعتماد جرد جماعي')),
         const Text('أدخل الكمية الفعلية والتكلفة الإجمالية بعد الجرد. كل صنف ومخزن يُعتمد مستقلًا. التاريخ السابق محفوظ، وليس جردًا مؤكدًا.'),
         if(unresolvedTransfers>0)Text('تحويلات تحتاج مطابقة مخزن: $unresolvedTransfers. لم تُضم كمياتها الملتبسة إلى التقدير.'),
         if(busy)const LinearProgressIndicator(),

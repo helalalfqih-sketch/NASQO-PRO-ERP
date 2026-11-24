@@ -114,10 +114,18 @@ void main(){
       final cost=await LocalAccountCommands(local).save(w,'cost-account',{'name':'Cost','category':'shop','currency':'ريال'});
       final req=<String,dynamic>{'sourceItemId':'legacy-prod-1','warehouseId':'legacy-wh-1','inventoryAccountId':a,
         'offsetAccountId':b,'quantity':10,'totalValue':30,'entryDate':'2026-11-24','evidence':'Synthetic count','confirmed':true};
-      expect(await opening.approve(w,req),'legacy-prod-1');
+      final secondReq=<String,dynamic>{...req,'warehouseId':'legacy-wh-2','quantity':4,'totalValue':20};
+      final beforeBatch=await backup.exportNative();
+      await expectLater(opening.approveBatch(w,[req,{...secondReq,'totalValue':0}]),throwsArgumentError);
+      expect(await backup.exportNative(),orderedEquals(beforeBatch));
+      await expectLater(opening.approveBatch(w,[req,req]),throwsArgumentError);
+      final batchIds=await opening.approveBatch(w,[req,secondReq]);
+      expect(batchIds,hasLength(2));
+      expect(batchIds.first,'legacy-prod-1');
+      final second=batchIds.last;
+      expect(await opening.approveBatch(w,[req,secondReq]),batchIds);
       expect(await opening.approve(w,req),'legacy-prod-1');
       await expectLater(opening.approve(w,{...req,'quantity':11}),throwsStateError);
-      final second=await opening.approve(w,{...req,'warehouseId':'legacy-wh-2','quantity':4,'totalValue':20});
       expect(second,isNot('legacy-prod-1'));
       expect(await db.query('legacy_stock_openings'),hasLength(2));
       expect(await db.query('legacy_unverified_stock'),isEmpty);
