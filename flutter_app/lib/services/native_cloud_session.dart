@@ -146,6 +146,7 @@ class NativeCloudSession {
           if(!await confirm('حفظ نسخة في Google Drive','ستُرفع نسخة كاملة غير مشفّرة من قاعدة العمل إلى حساب '+_drive!.email+
               (existing==null?'':' مع استبدال الملف المحدد.')))return {'cancelled':true};
           final bytes=await exportWorkspace();
+          _requireDrive();
           return await _upload(bytes,name,'application/octet-stream',parent:parent,existing:existing);
         case 'uploadLocal':
           validateKeys(args,{'parentId'});
