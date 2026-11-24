@@ -25,6 +25,8 @@ class SyncRuntime {
       await db.transaction((txn) async {
         await LocalDatabase.requireLiveWorkspace(txn);
         if(await LocalDatabase.hasLegacyOperational(txn))throw StateError('Imported workspace needs separate server migration');
+        if((await txn.query('sync_outbox',where:"operation_type = 'account.delete'",limit:1)).isNotEmpty)
+          throw StateError('Workspace contains local-only account deletions; migrate before synchronization');
         final rows = await txn.query('erp_state', where: 'stateKey = ?',
             whereArgs: ['sync_workspace_binding']);
         if (rows.isEmpty) {

@@ -79,13 +79,13 @@ class HybridLocalSnapshotAdapter {
         entry['returnableLines']=lines;
         if(lines.isEmpty) entry['returnedById']=originals[item.key]??'complete';
       }
+      await LegacyOperationalRestore.merge(txn,data);
       final inventory=(data['inventory'] as List).cast<Map<String,dynamic>>();
       final items={for(final row in inventory)row['id']:row};
       for(final row in await txn.query('inventory_unit_settings')){
         final item=items[row['item_id']];
         if(item!=null) item.addAll(jsonDecode(row['settings_json'] as String) as Map<String,dynamic>);
       }
-      await LegacyOperationalRestore.merge(txn,data);
       await LocalMasterCatalog.attach(txn,data);
       await LocalMasterCatalog.attachAccountMeta(txn,data);
       await LocalWorkspaceSettings.attach(txn,data);

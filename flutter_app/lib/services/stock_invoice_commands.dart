@@ -176,6 +176,7 @@ class StockInvoiceCommands {
           final savedUnits=await t.query('inventory_unit_settings',where:'item_id = ?',whereArgs:[item]);
           final units=savedUnits.isEmpty?<String,dynamic>{}:jsonDecode(savedUnits.single['settings_json'] as String) as Map<String,dynamic>;
           final factor=unitNum==1?1:unitNum==2?qty(units['count2']):qty(qty(units['count2'])*qty(units['count3']));
+          if(units['isActive']==false)throw StateError('Stock item is inactive');
           final unit=unitNum==1?row['unit']:units['unit$unitNum'];
           if(factor<1||unit is! String||unit.isEmpty) throw ArgumentError('Undefined item unit');
           final q=StockQuantity.boundedTicks(sold*factor);
