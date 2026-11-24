@@ -11,11 +11,13 @@ class HybridReadOnlyProtocol {
     required this.readSnapshot,
     this.saveUiPreferences,
     this.createAccount,
+    this.updateAccount,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
   final Future<void> Function(Map<String, dynamic>)? saveUiPreferences;
   final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
+  final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -90,19 +92,24 @@ class HybridReadOnlyProtocol {
       }
     }
 
-    if (actionName == 'saveAccount' && createAccount != null) {
+    if (actionName == 'saveAccount' && (createAccount != null || updateAccount != null)) {
       final params = request['payload'];
       final key = request['idempotencyKey'];
       if (key is! String || key.isEmpty || key.length > 150 ||
           params is! Map<String, dynamic> ||
           params['workspaceId'] != 'local-erp-workspace' ||
-          params['accountId'] != null ||
+          (params['accountId'] != null && (params['accountId'] is! String || updateAccount == null)) ||
+          (params['accountId'] == null && createAccount == null) ||
           params.keys.any((k) => !const ['workspaceId', 'payload', 'accountId'].contains(k)) ||
           params['payload'] is! Map<String, dynamic>) {
         return _error(id, actionName, 'VALIDATION_ERROR', 'طلب إنشاء الحساب غير صالح.');
       }
       try {
-        final result = await createAccount!(key, params['payload'] as Map<String, dynamic>);
+        final data = params['payload'] as Map<String, dynamic>;
+        final accountId = params['accountId'];
+        final result = accountId == null
+            ? await createAccount!(key,data)
+            : await updateAccount!(key,accountId as String,data);
         return jsonEncode({
           'protocolVersion': version, 'kind': 'response',
           'requestId': id, 'action': actionName, 'ok': true, 'data': result,
