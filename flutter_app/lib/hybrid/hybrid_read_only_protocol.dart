@@ -19,6 +19,7 @@ class HybridReadOnlyProtocol {
     this.readInvoiceDetail,
     this.pickBackup,
     this.openInvoiceRoles,
+    this.openStockReconciliation,
     this.exportBackup,
   });
 
@@ -31,6 +32,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
   final Future<void> Function()? openInvoiceRoles;
+  final Future<bool> Function(String?,String?)? openStockReconciliation;
   final Future<bool> Function()? exportBackup;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
@@ -60,6 +62,18 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='openStockReconciliation'&&openStockReconciliation!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace'||
+          p.keys.any((k)=>!['workspaceId','warehouseId','productId'].contains(k))||
+          ['warehouseId','productId'].any((k)=>p[k]!=null&&(p[k] is! String||(p[k] as String).length>150)))
+        return _error(id,actionName,'VALIDATION_ERROR','طلب مطابقة المخزون غير صالح.');
+      try{
+        final changed=await openStockReconciliation!(p['warehouseId'] as String?,p['productId'] as String?);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
+          'ok':true,'data':{'changed':changed}});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح مطابقة المخزون المستورد.');}
     }
     if(actionName=='restoreLocalBackup'||actionName=='openInvoiceRoles'){
       final p=request['payload'];

@@ -55,6 +55,7 @@ interface SystemSettingsPageProps {
   onOpenFullSqliteImport?: () => void;
   onRestoreJson: () => void;
   onOpenInvoiceRoles?: () => void;
+  onOpenStockReconciliation?: () => void;
   onOpenTrash?: () => void;
   onSignOut: () => void;
   onNotify: (msg: string) => void;
@@ -86,6 +87,7 @@ export function SystemSettingsPage({
   onOpenFullSqliteImport,
   onRestoreJson,
   onOpenInvoiceRoles,
+  onOpenStockReconciliation,
   onSignOut,
   onNotify,
   onBack,
@@ -1695,6 +1697,11 @@ export function SystemSettingsPage({
                 >
                   استعادة نسخة من ملف
                 </button>
+                {onOpenStockReconciliation ? (
+                  <button type="button" className="ref-btn" onClick={onOpenStockReconciliation} data-testid="settings-stock-reconciliation-btn">
+                    مطابقة مخزون النسخة المستوردة
+                  </button>
+                ) : null}
                 {onOpenInvoiceRoles ? (
                   <button type="button" className="ref-btn" onClick={onOpenInvoiceRoles} data-testid="settings-invoice-roles-btn">
                     حسابات الترحيل التلقائي

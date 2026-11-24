@@ -6187,6 +6187,8 @@ function InvoiceModal({
     const q = normalizeArabicSearch(itemSearch);
     if (!q) return [];
     const sorted = [...ctx.inventory].filter((item) =>
+      (!hybridLocal || !warehouseId || item.warehouseId === warehouseId ||
+        item.legacyHistoricalQtyByWarehouse?.[warehouseId] !== undefined) &&
       matchesArabicSearch(
         `${item.name} ${item.sku ?? ""} ${item.legacyId ?? ""} ${item.id} ${item.unit} ${item.unit2 ?? ""} ${item.unit3 ?? ""}`,
         q,
@@ -6204,7 +6206,7 @@ function InvoiceModal({
       return aWh - bWh;
     });
     return sorted.slice(0, 10);
-  }, [ctx.inventory, itemSearch, open, warehouseId]);
+  }, [ctx.inventory, itemSearch, open, warehouseId, hybridLocal]);
 
   const parsedLegacyRows = useMemo<DraftInvoiceRow[]>(() => {
     if (!open) return [];
@@ -6299,7 +6301,27 @@ function InvoiceModal({
     ctx.showToast(`تم استخراج ${parsedLegacyRows.length} صنف من البيان؛ راجع الأسعار ثم احفظ.`);
   };
 
+  const historicalStockPending = (item: InventoryItemRecord) =>
+    hybridLocal && (item.quantityUnverified === true ||
+      (item.warehouseId !== warehouseId && item.legacyHistoricalQtyByWarehouse?.[warehouseId] !== undefined));
+  const invoiceStockQty = (item: InventoryItemRecord) => hybridLocal
+    ? (historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
+    : (item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0));
+  const historicalStockLabel = (item: InventoryItemRecord) => {
+    const q = item.legacyHistoricalQtyByWarehouse?.[warehouseId] ?? item.legacyInvoiceQtyByWarehouse?.[warehouseId];
+    return q === undefined ? "غير معتمد" : `تاريخي غير معتمد: ${formatAmount(q)}${item.legacyTransferIncomplete ? " (غير مكتمل)" : ""}`;
+  };
   const pickProductIntoInvoice = (item: InventoryItemRecord) => {
+    if (historicalStockPending(item)) {
+      if (!warehouseId) { ctx.showToast("اختر المخزن أولًا"); return; }
+      void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{
+        workspaceId:ctx.uid,warehouseId,productId:item.legacySourceItemId ?? item.id,
+      }).then(async result=>{
+        if(result?.changed){await refreshWorkspaceFromServer(ctx.uid);ctx.showToast("تم تحديث المخزون؛ اختر الصنف المعتمد");}
+      }).catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون"));
+      return;
+    }
+    if (hybridLocal && item.warehouseId!==warehouseId) {ctx.showToast("الصنف غير متاح في المخزن المختار");return;}
     const defUnit: 1 | 2 | 3 =
       item.defaultUnit === 2 && item.unit2
         ? 2
@@ -6484,6 +6506,10 @@ function InvoiceModal({
       return;
     }
     if(hybridLocal && content==="items"){
+      if(validLines.some(l=>{const item=l.inventoryItemId?inventoryById.get(l.inventoryItemId):undefined;return !item||historicalStockPending(item)||item.warehouseId!==warehouseId;})){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"اعتمد مخزون الأصناف وحدد المخزن الصحيح قبل ترحيل الفاتورة."});
+        return;
+      }
       if(currency!=="ريال" || !selectedWarehouse || !validLines.length ||
         (localTaxMode==="rate"&&!validTaxRate) || (localTaxMode==="amount"&&parsedTax<0) ||
         validLines.some(l=>!l.inventoryItemId || !validLocalQuantity(l.quantity) || ![1,2,3].includes(l.unitNum??1))){
@@ -7087,7 +7113,7 @@ function InvoiceModal({
                     <p className="instant-search-empty">لا توجد أصناف مطابقة لـ «{itemSearch.trim()}»</p>
                   ) : (
                     matchingInventory.map((item) => {
-                      const stockQty = item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0);
+                      const stockQty = invoiceStockQty(item);
                       return (
                         <button
                           type="button"
@@ -7097,7 +7123,7 @@ function InvoiceModal({
                         >
                           <span>
                             <strong>{item.name}</strong>
-                            <small> · كمية المخزن: {formatAmount(stockQty)}</small>
+                            <small> · {stockQty === null ? historicalStockLabel(item) + " — مطابقة المخزون" : "كمية المخزن: " + formatAmount(stockQty)}</small>
                             {item.sku ? <small> · باركود: {item.sku}</small> : null}
                           </span>
                           <b>
@@ -7144,11 +7170,7 @@ function InvoiceModal({
                           ? inventoryById.get(row.inventoryItemId)
                           : undefined;
                         const hasMultiUnit = Boolean(linkedItem && (linkedItem.unit2 || linkedItem.unit3));
-                        const stockQty = linkedItem
-                          ? linkedItem.quantity !== 0
-                            ? linkedItem.quantity
-                            : (linkedItem.computedQuantity ?? linkedItem.quantity ?? 0)
-                          : null;
+                        const stockQty = linkedItem ? invoiceStockQty(linkedItem) : null;
                         const isRowInvalid =
                           formError?.rowId === row.rowId &&
                           (formError.field === "items" ||
@@ -7222,6 +7244,8 @@ function InvoiceModal({
                                   <span className="invoice-erp-stock-meta" title={`المتاح بالمخزن: ${formatAmount(stockQty)}`}>
                                     متاح: <bdi>{formatAmount(stockQty)}</bdi>
                                   </span>
+                                ) : linkedItem && historicalStockPending(linkedItem) ? (
+                                  <button type="button" onClick={()=>pickProductIntoInvoice(linkedItem)} className="invoice-erp-stock-meta">مطابقة مخزون الصنف</button>
                                 ) : null}
                                 <button
                                   type="button"
@@ -12924,6 +12948,11 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
       onOpenInvoiceRoles={import.meta.env.VITE_NASQO_HYBRID === "1" ? () => {
         void hybridBridge.invoke("openInvoiceRoles",{workspaceId:ctx.uid})
           .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح إعدادات الترحيل."));
+      } : undefined}
+      onOpenStockReconciliation={import.meta.env.VITE_NASQO_HYBRID === "1" && ctx.inventory.some(i=>i.quantityUnverified||i.legacyStockPending) ? () => {
+        void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{workspaceId:ctx.uid})
+          .then(async result=>{if(result?.changed)await refreshWorkspaceFromServer(ctx.uid);})
+          .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون."));
       } : undefined}
       onOpenTrash={ctx.openTrash}
       onSignOut={ctx.handleSignOut}

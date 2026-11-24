@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'local_backup_restore.dart';
 import 'local_database.dart';
 import 'legacy_stock_projection.dart';
+import 'legacy_history_reports.dart';
 import 'local_invoice_roles.dart';
 
 /// Explicit migration of the legacy single-sided account register. Never
@@ -138,6 +139,14 @@ class LegacyOperationalRestore {
     final sourceItems=(byCollection['inventory']??{}).values;
     final sourceLedger=(byCollection['ledger']??{}).values;
     final projected=LegacyStockProjection.invoiceQuantities(sourceItems,sourceLedger);
+    final metaRow=(await db.query('legacy_operational_source',columns:['meta_json'],limit:1)).single;
+    final counts=LocalBackupRestore.object(jsonDecode(metaRow['meta_json'] as String))['sourceExtraCounts'];
+    final headers=(byCollection['source_store_trans']??{}).values;
+    final transferLines=(byCollection['source_trans_details']??{}).values;
+    final transferComplete=counts is Map&&counts['store_trans']==headers.length&&counts['trans_details']==transferLines.length;
+    final transferReport=LegacyHistoryReports.transfers(sourceItems,(byCollection['warehouses']??{}).values,headers,transferLines);
+    final transferNets=transferReport['netByItem'] as Map;
+    final incomplete=(transferReport['affectedItemIds'] as List).toSet();
     final unverified=(await db.query('legacy_unverified_stock',columns:['item_id'])).map((r)=>r['item_id']).toSet();
     final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o};
     final approvedWarehouses=<String,Set<String>>{};
@@ -153,6 +162,19 @@ class LegacyOperationalRestore {
         if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
         final keys=c=='accounts'?['groupId','sortOrder']:c=='warehouses'?['codeNumber']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate']:['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId'];
         for(final key in keys){if(old[key]!=null)row[key]=old[key];}
+        if(c=='inventory'&&opening==null||c=='inventory'&&opening?['source_item_id']==row['id']){
+          final sourceId=row['id'];
+          final invoices=projected[sourceId]??<String,num>{};
+          final transfers=transferComplete?(transferNets[sourceId] as Map<String,num>? ??<String,num>{}):<String,num>{};
+          final approved=approvedWarehouses[sourceId]??<String>{};
+          final known={...invoices.keys,...transfers.keys};
+          final pending=<String,num>{for(final wh in known)
+            if(!approved.contains(wh))wh:(invoices[wh]??0)+(transfers[wh]??0)};
+          row['legacyHistoricalQtyByWarehouse']=pending;
+          row['legacyStockPending']=pending.isNotEmpty||unverified.contains(sourceId);
+          row['legacyTransferIncomplete']=!transferComplete||incomplete.contains(sourceId);
+          row['legacyHistoryIncludesTransfers']=transferComplete;
+        }
         if(c=='inventory'&&unverified.contains(row['id'])){
           row['quantityUnverified']=true;
           row['legacyCatalogCost']=old['avgCost'];

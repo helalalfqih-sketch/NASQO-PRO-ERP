@@ -44,6 +44,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "pickFile",
   "restoreLocalBackup",
   "openInvoiceRoles",
+  "openStockReconciliation",
   "showMessage",
   // Accounting, accounts, inventory, and reports (persisted exclusively by Dart/SQLite)
   "saveWorkspaceSettings",
@@ -233,6 +234,7 @@ export interface HybridCommandPayloadMap {
   pickFile: HybridPickFileRequest;
   restoreLocalBackup: { workspaceId: string };
   openInvoiceRoles: { workspaceId: string };
+  openStockReconciliation: { workspaceId: string; warehouseId?: string; productId?: string };
   showMessage: { message: string; level?: "info" | "success" | "warning" | "error" };
   saveWorkspaceSettings: { workspaceId: string; updates: Partial<WorkspaceSettings> };
   saveAccountGroup: { workspaceId: string; payload: Partial<AccountGroupRecord> & { name: string } };

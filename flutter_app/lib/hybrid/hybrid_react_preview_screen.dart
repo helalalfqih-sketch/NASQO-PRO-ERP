@@ -43,6 +43,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     readInvoiceDetail: _readInvoiceDetail,
     pickBackup: _restoreBackup,
     openInvoiceRoles: _openInvoiceRoles,
+    openStockReconciliation: _openStockReconciliation,
     exportBackup: _exportBackup,
   );
 
@@ -123,6 +124,17 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       title:const Text('النسخ الاحتياطية المحلية'),content:Text(message),
       actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('موافق'))]));
   }
+  bool _stockReconciliationOpen=false;
+  Future<bool> _openStockReconciliation(String? warehouse,String? product)async{
+    if(!mounted||_backupBusy||_review||!_legacyOperational||_stockReconciliationOpen)
+      throw StateError('Local imported workspace required');
+    _stockReconciliationOpen=true;
+    try{
+      return await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockOpeningScreen(
+        initialWarehouseId:warehouse,initialProductId:product)))==true;
+    }finally{_stockReconciliationOpen=false;}
+  }
+
   Future<void> _openInvoiceRoles()async{
     if(!mounted||_backupBusy||_review)throw StateError('Local working database required');
     await Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const LocalInvoiceRolesScreen()));
@@ -385,8 +397,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             await Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>const LegacyHistoryScreen()));
           }),
           if(_legacyOperational&&!_review) IconButton(tooltip:'اعتماد جرد المخازن',icon:const Icon(Icons.inventory_2_outlined),onPressed:_backupBusy?null:()async{
-            await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>const LegacyStockOpeningScreen()));
-            if(mounted)setState(()=>_viewGeneration++);
+            final changed=await _openStockReconciliation(null,null);
+            if(mounted&&changed)setState(()=>_viewGeneration++);
           }),
           if(_review) IconButton(tooltip:'تفعيل الحسابات المستوردة',icon:const Icon(Icons.play_circle_outline),onPressed:_backupBusy?null:_activateReviewed),
           if(_review) IconButton(tooltip:'تقرير جاهزية الاستعادة',icon:const Icon(Icons.fact_check_outlined),

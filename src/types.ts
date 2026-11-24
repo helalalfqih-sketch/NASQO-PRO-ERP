@@ -238,6 +238,12 @@ export type InventoryItemRecord = {
   computedQuantity?: number;
   /** Unapproved historical invoice net by original warehouse, not an opening stock count. */
   legacyInvoiceQtyByWarehouse?: Record<string, number>;
+  /** Pending historical reference, never available stock. */
+  legacyHistoricalQtyByWarehouse?: Record<string, number>;
+  legacyStockPending?: boolean;
+  legacyTransferIncomplete?: boolean;
+  legacyHistoryIncludesTransfers?: boolean;
+  legacySourceItemId?: string;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
   legacyRef?: string;
