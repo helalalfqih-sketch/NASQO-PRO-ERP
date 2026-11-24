@@ -268,6 +268,7 @@ import { OutlinedAmountField } from "./components/OutlinedAmountField";
 import { GlobalNasqoBrandLoader, NasqoBrandLoader } from "./components/NasqoBrandLoader";
 import { runWithBrandLoader } from "./utils/brandLoaderBus";
 import { hybridBridge } from "./hybrid/bridge";
+import { outputNativeDocument, shareNativeText, usesNativeDocumentOutput } from "./hybrid/documentOutput";
 import { useHybridPresentation } from "./hybrid/presentationAdapter";
 import type { HybridUiPreferences } from "./hybrid/contracts";
 
@@ -447,7 +448,11 @@ function useWorkspace(): LiveWorkspaceState {
   return ctx;
 }
 
-function downloadFile(filename: string, content: string, mimeType: string) {
+async function downloadFile(filename: string, content: string, mimeType: string): Promise<boolean> {
+  if(usesNativeDocumentOutput()){
+    if(!mimeType.startsWith("text/csv"))throw new Error("استخدم تصدير النسخة الاحتياطية المحلية");
+    return outputNativeDocument(new TextEncoder().encode(content),filename,"text/csv");
+  }
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -457,16 +462,15 @@ function downloadFile(filename: string, content: string, mimeType: string) {
   link.click();
   document.body.removeChild(link);
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 function triggerPrintWithLoader(label = "جاري تجهيز الطباعة...") {
   if (typeof window !== "undefined" && window.__nasqoHybridReady) {
-    void runWithBrandLoader(label, async () => {
-      await hybridBridge.invoke("printDocument", {
-        title: label,
-        kind: "report",
-      });
-    });
+    void hybridBridge.invoke("printDocument", {
+      title: label,
+      kind: "report",
+    }).catch(err=>window.alert(err instanceof Error?err.message:"تعذر فتح معاينة الطباعة"));
     return;
   }
   void runWithBrandLoader(
@@ -482,6 +486,11 @@ async function shareOrCopyText(title: string, text: string, showToast: (msg: str
   await runWithBrandLoader(
     "جاري تجهيز المشاركة...",
     async () => {
+      if(usesNativeDocumentOutput()){
+        try{const result=await shareNativeText(title,text);if(result.opened)showToast("تم فتح قائمة المشاركة");}
+        catch(err){showToast(err instanceof Error?err.message:"تعذر فتح المشاركة");}
+        return;
+      }
       try {
         if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
           await navigator.share({ title, text });
@@ -514,6 +523,14 @@ async function openWhatsAppChat(
     account?.name ? `جاري فتح واتساب لمراسلة ${account.name}...` : "جاري فتح واتساب...",
     async () => {
       triggerHaptic("light");
+      if(usesNativeDocumentOutput()){
+        try{
+          const phone=new URL(buildWhatsAppMessageUrl(account?.phone,message)).pathname.replace(/^\//,"");
+          const result=await shareNativeText("نسقو برو",message,phone);
+          if(result.opened)showToast(result.targeted?"تم فتح واتساب؛ راجع الرسالة قبل الإرسال":"اختر واتساب وجهة الاتصال في قائمة المشاركة");
+        }catch(err){showToast(err instanceof Error?err.message:"تعذر فتح المشاركة");}
+        return;
+      }
       try {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(message);
@@ -1712,7 +1729,7 @@ export function AuthenticatedWorkspace({
             serverExport && typeof serverExport === "object"
               ? { ...(serverExport as Record<string, unknown>), name: backupName, exportedAt }
               : JSON.parse(buildBackupJsonString(backupName, exportedAt));
-          downloadFile(
+          await downloadFile(
             fileName,
             JSON.stringify(merged, null, 2),
             "application/json;charset=utf-8",
@@ -2427,14 +2444,14 @@ export function AuthenticatedWorkspace({
   const executeExcelExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
     void runWithBrandLoader(
       "جاري تصدير ملف Excel...",
-      () => {
+      async () => {
         if (kind === "inventory") {
           const csv = buildCsvContent(
             ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
             inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
           );
-          downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
-          showToast("تم تصدير تقرير المخزون بصيغة Excel");
+          const saved=await downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
+          showToast(saved?"تم حفظ تقرير المخزون بصيغة CSV":"تم إلغاء حفظ التقرير");
         } else if (kind === "purchases") {
           const csv = buildCsvContent(
             ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
@@ -2445,8 +2462,8 @@ export function AuthenticatedWorkspace({
                 return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
               }),
           );
-          downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
-          showToast("تم تصدير حسابات المشتريات بصيغة Excel");
+          const saved=await downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
+          showToast(saved?"تم حفظ حسابات المشتريات بصيغة CSV":"تم إلغاء حفظ التقرير");
         } else {
           const targetAcc = targetAccount ?? accounts[0];
           const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
@@ -2454,22 +2471,23 @@ export function AuthenticatedWorkspace({
             ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
             (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
           );
-          downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
-          showToast("تم تصدير كشف الحساب بصيغة Excel");
+          const saved=await downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
+          showToast(saved?"تم حفظ كشف الحساب بصيغة CSV":"تم إلغاء حفظ التقرير");
         }
       },
       { minDurationMs: 420 },
-    );
+    ).catch(err=>showToast(err instanceof Error?err.message:"تعذر حفظ التقرير"));
   };
 
   const handlePrintPngExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
     void runWithBrandLoader(
       "جاري تصدير التقرير كصورة...",
-      () => {
+      async () => {
+        let saved=false;
         const company = workspace?.companyName || "نسقو برو";
         if (kind === "inventory") {
           const invSummary = computeInventorySummary(inventory);
-          exportSummaryAsPngImage({
+          saved=await exportSummaryAsPngImage({
             filename: "nasqo-inventory-report.png",
             companyName: company,
             title: "تقرير حركة المخزون",
@@ -2480,7 +2498,7 @@ export function AuthenticatedWorkspace({
           });
         } else if (kind === "purchases") {
           const list = accounts.filter((a) => a.category === "purchases");
-          exportSummaryAsPngImage({
+          saved=await exportSummaryAsPngImage({
             filename: "nasqo-purchases-summary.png",
             companyName: company,
             title: "ملخص حسابات المشتريات والموردين",
@@ -2495,7 +2513,7 @@ export function AuthenticatedWorkspace({
         } else {
           const targetAcc = targetAccount ?? accounts[0];
           const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-          exportSummaryAsPngImage({
+          saved=await exportSummaryAsPngImage({
             filename: `statement-${targetAcc?.codeNumber ?? "all"}.png`,
             companyName: company,
             title: `كشف حساب: ${targetAcc?.name ?? ""}`,
@@ -2508,10 +2526,10 @@ export function AuthenticatedWorkspace({
             footerNote: extendedSettings.statementFooterNote,
           });
         }
-        showToast("تم تصدير التقرير كصورة PNG بنجاح");
+        showToast(saved?"تم حفظ التقرير كصورة PNG":"تم إلغاء حفظ التقرير");
       },
       { minDurationMs: 420 },
-    );
+    ).catch(err=>showToast(err instanceof Error?err.message:"تعذر حفظ التقرير"));
   };
 
   const handleExportAction = (kind: ExportKind, action: "pdf-print" | "pdf-share" | "excel" | "excel-share" | "balance" | "import") => {
@@ -2712,7 +2730,7 @@ export function AuthenticatedWorkspace({
                 })
                 .then((ok) => {
                   if (ok) {
-                    showToast(allCurrencies ? "تم إرسال PDF لجميع العملات إلى Flutter" : "تم إرسال PDF إلى خدمة الطباعة في Flutter");
+                    showToast("تم فتح معاينة التقرير المعروض؛ اختر طابعة أو حفظ PDF. غيّر فلتر العملة قبل الطباعة عند الحاجة.");
                   }
                 })
                 .catch((err) => {
@@ -2810,8 +2828,8 @@ export function AuthenticatedWorkspace({
           onGenerateImage={(data) => {
             void runWithBrandLoader(
               "جاري تصدير صورة سند الحوالة...",
-              () => {
-                exportSummaryAsPngImage({
+              async () => {
+                const saved=await exportSummaryAsPngImage({
                   filename: `nasqo-transfer-${Date.now()}.png`,
                   companyName: workspace?.companyName || "نسقو برو",
                   title: data.title,
@@ -2820,10 +2838,10 @@ export function AuthenticatedWorkspace({
                   rows: data.rows,
                   footerNote: extendedSettings.statementFooterNote,
                 });
-                showToast("تم تنزيل صورة سند الحوالة بنجاح");
+                showToast(saved?"تم حفظ صورة سند الحوالة":"تم إلغاء حفظ الصورة");
               },
               { minDurationMs: 420 },
-            );
+            ).catch(err=>showToast(err instanceof Error?err.message:"تعذر حفظ صورة الحوالة"));
           }}
         />
         <NotificationCenter
@@ -13386,13 +13404,14 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     triggerHaptic("light");
     try {
       await ctx.runWithLoader("جاري إنشاء ملف PDF للفاتورة...", async () => {
-        const { filename } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
+        const { filename,result } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
           companyName: ctx.workspace?.companyName || "نسقو برو",
           footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
           fallbackEntry: entry,
         });
+        if(result==="cancelled"){ctx.showToast("تم إلغاء حفظ الفاتورة");return;}
         triggerHaptic("success");
-        ctx.showToast(`تم تنزيل ملخص الفاتورة (${filename})`);
+        ctx.showToast(`تم حفظ ملخص الفاتورة (${filename})`);
       });
     } catch {
       triggerHaptic("warning");
