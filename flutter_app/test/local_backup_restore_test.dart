@@ -38,8 +38,13 @@ void main(){
         await t.delete('sync_outbox');
         await t.delete('accounts');
       });
+      // Preview mutations must not alter the verified backup payload.
+      liveCandidate.nativeTables!['accounts']!.single['name']='QA mutated preview';
       await backup.restoreNative(liveCandidate);
       expect((await db.query('accounts')).single['id'],id);
+      expect((await db.query('accounts')).single['name'],'Live account');
+      expect((await db.rawQuery('PRAGMA integrity_check')).single.values.single,'ok');
+      expect(await db.rawQuery('PRAGMA foreign_key_check'),isEmpty);
       expect(await local.pendingOperations(w),hasLength(1));
       expect(await account.save(w,'live-account',{'name':'Live account','category':'clients','currency':'ريال'}),id);
       final damaged=Map<String,dynamic>.from(jsonDecode(utf8.decode(live)) as Map);
