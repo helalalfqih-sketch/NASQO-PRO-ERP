@@ -73,6 +73,7 @@ class HybridLocalSnapshotAdapter {
         'googleDriveConfigured': false,
         'whatsappShareSupported': false,
         'readOnlyFinancial': true,
+        'localAccountCreation': true,
       },
       'activeRoute': 'dashboard',
       'activeCurrency': currencyLabel,
