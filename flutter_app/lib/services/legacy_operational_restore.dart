@@ -17,7 +17,7 @@ class LegacyOperationalRestore {
   static int i(Object? x,[int fallback=0])=>LocalBackupRestore.integer(x,fallback);
   static String? currency(Object? x)=>const {'ريال':'sar','دولار':'usd','يورو':'eur'}[x];
 
-  Future<void> activate(BackupCandidate candidate) async {
+  Future<void> activate(BackupCandidate candidate,{String? replacementSha}) async {
     if(candidate.format!='legacy-sqlite'||candidate.native||
       sha256.convert(candidate.bytes).toString()!=candidate.sha)throw const FormatException('Not an intact legacy SQLite backup');
     if((candidate.meta['missingReferences']??0)!=0||(candidate.meta['orphanDetailBills']??0)!=0)
@@ -34,13 +34,10 @@ class LegacyOperationalRestore {
     ids(items);ids(ledger);
     final db=await local.database;
     await db.transaction((t) async {
-      for(final table in LocalBackupRestore.tables.where((v)=>v!='erp_state')){
-        if((await t.query(table,limit:1)).isNotEmpty)throw StateError('Destination must be empty; existing data was not replaced');
-      }
-      if((await t.query('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding'])).isNotEmpty)
-        throw StateError('Destination is enrolled');
       final review=await t.query('backup_review_active',limit:1);
-      if(review.isNotEmpty&&review.single['sha']!=candidate.sha)throw StateError('Different review is active');
+      if(review.isNotEmpty&&review.single['sha']!=candidate.sha&&replacementSha==null)
+        throw StateError('Different review is active');
+      await LocalBackupRestore.prepareRestoreDestination(t,replacementSha:replacementSha);
       final batch=t.batch();
       batch.insert('legacy_operational_source',{'singleton':1,'sha':candidate.sha,'file_name':candidate.name,'meta_json':jsonEncode(candidate.meta)});
       for(var offset=0;offset<candidate.bytes.length;offset+=49152){

@@ -7,6 +7,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.Executors
+import java.security.MessageDigest
 import android.net.Uri
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.embedding.android.FlutterActivity
@@ -31,6 +32,20 @@ class MainActivity : FlutterActivity() {
         }
         require(total > 0)
         return total
+    }
+    private fun digest(input: InputStream): ByteArray {
+        val sha = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(65536)
+        var total = 0L
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            total += n
+            require(total <= maxBackupBytes)
+            sha.update(buffer, 0, n)
+        }
+        require(total > 0)
+        return sha.digest()
     }
     private fun backupPicker(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
         if (backupResult != null) {
@@ -97,6 +112,12 @@ class MainActivity : FlutterActivity() {
                     contentResolver.openOutputStream(uri, "w")?.use { out ->
                         file.inputStream().use { input -> boundedCopy(input, out) }
                     } ?: throw IllegalStateException()
+                    // A provider accepting a write is not enough for safe
+                    // replacement. Reopen the saved document and check bytes.
+                    val expected = file.inputStream().use { digest(it) }
+                    val saved = contentResolver.openInputStream(uri)?.use { digest(it) }
+                        ?: throw IllegalStateException()
+                    require(MessageDigest.isEqual(expected, saved))
                     true
                 }
                 runOnUiThread { backupResult = null; exportFile = null; result.success(value) }

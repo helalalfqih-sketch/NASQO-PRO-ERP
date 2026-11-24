@@ -68,12 +68,19 @@ class LocalBackupRestore {
   }
   static bool sqlite(Uint8List b)=>b.length>=16&&ascii.decode(b.sublist(0,15),allowInvalid:true)=='SQLite format 3'&&b[15]==0;
 
+  static Future<Map<String,dynamic>> _readNative(DatabaseExecutor db)async =>
+    <String,dynamic>{for(final name in tables)name:await db.query(name,orderBy:'rowid')};
+
   Future<Uint8List> exportNative()async{
     final db=await local.database;
     final data=await db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
-      return <String,dynamic>{for(final name in tables)name:await t.query(name)};
+      return _readNative(t);
     });
+    return _encodeNative(data);
+  }
+
+  static Uint8List _encodeNative(Map<String,dynamic> data){
     final payload=jsonEncode({'schemaVersion':LocalDatabase.dbVersion,'tables':data});
     final bytes=Uint8List.fromList(utf8.encode(jsonEncode({
       'format':nativeFormat,'sha256':sha256.convert(utf8.encode(payload)).toString(),'payload':payload,
@@ -82,11 +89,81 @@ class LocalBackupRestore {
     return bytes;
   }
 
+  static Future<void> _requireLocalReplacement(DatabaseExecutor db)async{
+    if((await db.query('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding'],limit:1)).isNotEmpty)
+      throw StateError('قاعدة العمل مرتبطة بالمزامنة؛ لا يمكن استبدالها محليًا');
+    if((await db.query('sync_outbox',where:'acknowledged_at IS NOT NULL OR server_revision IS NOT NULL',limit:1)).isNotEmpty||
+       (await db.query('sync_state',limit:1)).isNotEmpty||
+       (await db.query('sync_inbox',limit:1)).isNotEmpty||
+       (await db.query('sync_conflicts',limit:1)).isNotEmpty){
+      throw StateError('توجد آثار مزامنة سابقة؛ لا يمكن استبدال قاعدة العمل بهذه الطريقة');
+    }
+  }
+
+  /// Return the exact working database export even if an isolated archive is
+  /// being reviewed. The caller must save and verify it before replacement.
+  /// No mutations occur while preparing the export.
+  Future<Uint8List?> replacementBackup()async{
+    final db=await local.database;
+    return db.transaction((t)async{
+      await _requireLocalReplacement(t);
+      final data=await _readNative(t);
+      if(data.values.every((rows)=>(rows as List).isEmpty))return null;
+      return _encodeNative(data);
+    });
+  }
+
+  /// Call inside the same transaction as restoration. An explicitly exported
+  /// snapshot is a compare-and-swap lease: changed data invalidates the lease.
+  /// Foreign keys stay enabled; the child tables are deleted before parents.
+  static Future<void> prepareRestoreDestination(Transaction txn,{String? replacementSha})async{
+    await _requireLocalReplacement(txn);
+    if(replacementSha==null){
+      for(final name in tables.where((n)=>n!='erp_state')){
+        if((await txn.query(name,limit:1)).isNotEmpty)
+          throw StateError('قاعدة العمل ليست فارغة؛ يجب تصدير نسخة منها أولًا وتأكيد الاستبدال');
+      }
+      return;
+    }
+    final current=_encodeNative(await _readNative(txn));
+    if(sha256.convert(current).toString()!=replacementSha)
+      throw StateError('تغيرت البيانات بعد التصدير؛ أعد حفظ نسخة منها قبل الاستبدال');
+    for(final name in tables.reversed){await txn.delete(name);}
+  }
+
   Future<BackupCandidate> inspect(File file,String name)async{
+    final length=await file.length();
+    if(length<1||length>maxBytes)throw const FormatException('Unsupported file size');
+    final head=await file.openRead(0,length>=2?2:1).first;
+    if(head.length==2&&head[0]==0x1f&&head[1]==0x8b){
+      final dir=await Directory.systemTemp.createTemp('nasqo-gzip-');
+      try{
+        final decoded=File('${dir.path}/decoded.back');
+        final sink=decoded.openWrite();
+        var size=0;
+        try{
+          await for(final chunk in file.openRead().transform(gzip.decoder)){
+            size+=chunk.length;
+            if(size>maxBytes)throw const FormatException('Decompressed backup exceeds 32 MB');
+            sink.add(chunk);
+          }
+          await sink.flush();
+        }finally{await sink.close();}
+        // Only one compression layer is accepted. Archive the decoded
+        // original SQLite/JSON payload, matching the web restore path.
+        return await _inspectUncompressed(decoded,name);
+      }finally{await dir.delete(recursive:true);}
+    }
+    return _inspectUncompressed(file,name);
+  }
+
+  Future<BackupCandidate> _inspectUncompressed(File file,String name)async{
     final length=await file.length();
     if(length<1||length>maxBytes)throw const FormatException('Unsupported file size');
     final bytes=await file.readAsBytes();
     final hash=sha256.convert(bytes).toString();
+    if(bytes.length>=2&&bytes[0]==0x50&&bytes[1]==0x4b)
+      throw const FormatException('فك ضغط ZIP أولًا ثم اختر ملف النسخة الداخلية');
     if(sqlite(bytes)){
       final source=await openDatabase(file.path,readOnly:true,singleInstance:false);
       try{
@@ -349,17 +426,19 @@ class LocalBackupRestore {
     },null);
   }
 
-  Future<void> restoreNative(BackupCandidate candidate)async{
+  Future<void> restoreNative(BackupCandidate candidate,{String? replacementSha})async{
     final data=candidate.nativeTables;
-    if(data==null)throw ArgumentError('Not a native backup');
+    if(data==null||sha256.convert(candidate.bytes).toString()!=candidate.sha)throw ArgumentError('Not an intact native backup');
+    // Never use the local replacement workflow to enroll a different
+    // synchronized database or restore acknowledged remote history.
+    if(replacementSha!=null&&(data['erp_state']!.any((r)=>r['stateKey']=='sync_workspace_binding')||
+        data['sync_outbox']!.any((r)=>r['acknowledged_at']!=null||r['server_revision']!=null)||
+        ['sync_state','sync_inbox','sync_conflicts'].any((n)=>data[n]!.isNotEmpty))){
+      throw StateError('لا يمكن استبدال قاعدة العمل المحلية بنسخة مرتبطة بمزامنة سابقة');
+    }
     final db=await local.database;
     await db.transaction((txn)async{
-      await LocalDatabase.requireLiveWorkspace(txn);
-      // No implicit replacement of business data, pending sync or enrollment.
-      for(final n in tables.where((n)=>n!='erp_state')){
-        if((await txn.query(n,limit:1)).isNotEmpty)throw StateError('Destination contains live data; export it first and restore to an empty installation');
-      }
-      if((await txn.query('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding'])).isNotEmpty)throw StateError('Destination is enrolled');
+      await prepareRestoreDestination(txn,replacementSha:replacementSha);
       await txn.delete('erp_state');
       for(final n in tables){
         final expected=(await txn.rawQuery('PRAGMA table_info("$n")')).map((r)=>r['name'] as String).toSet();
@@ -392,6 +471,7 @@ class LocalBackupRestore {
       }else if(chunks.isNotEmpty||(await txn.query('legacy_operational_rows',limit:1)).isNotEmpty||(await txn.query('legacy_unverified_stock',limit:1)).isNotEmpty||(await txn.query('legacy_stock_openings',limit:1)).isNotEmpty){throw StateError('Missing imported source metadata');}
       final invalidOpenings=await txn.rawQuery('''SELECT o.item_id FROM legacy_stock_openings o LEFT JOIN inventory_items i ON i.id=o.item_id LEFT JOIN legacy_operational_rows r ON r.collection='inventory' AND r.record_id=o.source_item_id LEFT JOIN legacy_unverified_stock u ON u.item_id=o.item_id WHERE i.warehouseId<>o.warehouse_id OR r.record_id IS NULL OR u.item_id IS NOT NULL OR (o.ledger_id IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.inventory_account_id AND j.debit_minor=o.value_minor AND j.credit_minor=0) OR NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.offset_account_id AND j.credit_minor=o.value_minor AND j.debit_minor=0))) LIMIT 1''');
       if(invalidOpenings.isNotEmpty)throw StateError('Invalid stock opening audit');
+      await txn.delete('backup_review_active');
     });
   }
 

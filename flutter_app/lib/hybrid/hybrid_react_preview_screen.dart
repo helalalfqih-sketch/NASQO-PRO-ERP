@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
 import 'package:flutter/material.dart';
@@ -135,17 +136,23 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final accept=await showDialog<String>(context:context,builder:(context)=>AlertDialog(
         title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.format=='legacy-sqlite'?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
         content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
-          (candidate.native?'تُستعاد السجلات والقيود وطابور المزامنة في قاعدة محلية فارغة فقط. لن تُمسح بياناتك الحالية.':
-          candidate.format=='legacy-sqlite'?'الاستعادة التشغيلية تنقل الحسابات والحركات إلى قاعدة عمل فارغة وتحفظ الملف الأصلي. المخزون يحتاج اعتمادًا مستقلًا. يمكنك اختيار المراجعة فقط بدلًا منها.':
+          (candidate.native?'تُستعاد السجلات والقيود وطابور العمليات محليًا. إذا كانت هناك بيانات حالية، يجب حفظ نسخة متحقق منها وتأكيد الاستبدال أولًا.':
+          candidate.format=='legacy-sqlite'?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. المخزون يحتاج اعتمادًا مستقلًا. يمكنك اختيار المراجعة فقط.':
           'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
         actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
           if(candidate.format=='legacy-sqlite')OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
           FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.format=='legacy-sqlite'?'live':'review'),child:Text(candidate.native?'استعادة':candidate.format=='legacy-sqlite'?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
       if(accept==null||!mounted)return null;
-      if(accept=='live'){
-        if(!await _confirmActivation(candidate))return null;
-        await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate);
-      }else if(candidate.native){await _backups.restoreNative(candidate);}else{await _backups.openReview(candidate);}
+      if(accept=='live'||candidate.native){
+        if(accept=='live'&&!await _confirmActivation(candidate))return null;
+        final protection=await _protectExistingData();
+        if(!protection.proceed)return null;
+        if(accept=='live'){
+          await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha);
+        }else{
+          await _backups.restoreNative(candidate,replacementSha:protection.sha);
+        }
+      }else{await _backups.openReview(candidate);}
       final legacy=await LocalDatabase.hasLegacyOperational(await LocalDatabase.instance.database);
       if(!mounted)return null;
       setState((){_review=accept=='review';_legacyOperational=legacy;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
@@ -167,7 +174,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     if(!mounted)return false;
     return await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
       title:const Text('استعادة تشغيلية للحسابات'),
-      content:SingleChildScrollView(child:Text('تحتاج قاعدة عمل فارغة. ستُنقل الحسابات والحركات الأصلية وبنود الفواتير دون إعادة ترحيل القيود القديمة.\n'
+      content:SingleChildScrollView(child:Text('ستُنقل الحسابات والحركات الأصلية وبنود الفواتير دون إعادة ترحيل القيود القديمة. إن وُجدت بيانات عمل حالية فستحتاج إلى نسخة أمان وتأكيد منفصل.\n'
         'عملات غير معرّفة: ${candidate.meta['unknownCurrencies']??0}. تبقى خارج الأرصدة.\n'
         'ستُسجّل السندات الجديدة بقيود مزدوجة. أرصدة الصناديق والتكاليف التاريخية ليست قيودًا مزدوجة مؤكدة.\n'
         'لا يمكن البيع أو الشراء من الأصناف المستوردة قبل اعتماد الجرد والتكلفة. لن ترفع البيانات للسحابة.')),
@@ -189,12 +196,45 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       final candidate=await _backups.inspect(temp,'legacy-original.back');
       if(candidate.format!='legacy-sqlite')throw StateError('هذه الصيغة تحتاج مسار ترحيل آخر');
       if(!await _confirmActivation(candidate))return;
-      await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate);
+      final protection=await _protectExistingData();
+      if(!protection.proceed)return;
+      await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha);
       if(mounted)setState((){_review=false;_legacyOperational=true;_viewGeneration++;});
       await _message('تم تفعيل الحسابات للعمل المحلي؛ المخزون يحتاج مطابقة.');
     }on StateError catch(e){await _message('لم يتم تغيير قاعدة العمل: ${e.message}');}
     catch(_){await _message('تعذر تفعيل النسخة؛ لم يتم تأكيد أي تغيير للبيانات.');}
     finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
+  }
+
+  /// Protect the underlying working database, not the selected review.
+  /// The save picker returns success only after reading back and verifying
+  /// the file. A second explicit confirmation authorizes the replacement.
+  Future<({bool proceed,String? sha})> _protectExistingData()async{
+    final bytes=await _backups.replacementBackup();
+    if(bytes==null)return (proceed:true,sha:null);
+    if(!mounted)return (proceed:false,sha:null);
+    final save=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('توجد بيانات عمل محلية'),
+      content:const Text('لاستبدال البيانات الحالية، احفظ أولًا نسخة احتياطية كاملة منها، بما فيها العمليات المحلية غير المزامنة. لن تُحذف أي بيانات إذا ألغيت الحفظ أو فشل التحقق من النسخة.'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حفظ نسخة الأمان'))]));
+    if(save!=true||!mounted)return (proceed:false,sha:null);
+    File? temp;
+    try{
+      final cache=await _backupChannel.invokeMethod<String>('cachePath');
+      if(cache==null)throw StateError('Cache unavailable');
+      temp=File('$cache/nasqo-before-restore-${DateTime.now().microsecondsSinceEpoch}.back');
+      await temp.writeAsBytes(bytes,flush:true);
+      final saved=await _backupChannel.invokeMethod<bool>('exportBackup',{'path':temp.path,
+        'fileName':'nasqo-before-restore-${DateTime.now().microsecondsSinceEpoch}.back'});
+      if(saved!=true||!mounted)return (proceed:false,sha:null);
+      final approved=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('تأكيد استبدال قاعدة العمل'),
+        content:const Text('تم حفظ نسخة الأمان والتحقق من تطابقها. سيستبدل التطبيق الآن الحسابات والحركات والأصناف والعمليات المحلية بالنسخة المحددة. عند الفشل ستُسترجع البيانات الحالية تلقائيًا من المعاملة. احتفظ بنسخة الأمان.'),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('استبدال واستعادة'))]));
+      return (proceed:approved==true&&mounted,sha:sha256.convert(bytes).toString());
+    }finally{if(temp!=null){try{await temp.delete();}catch(_){}}}
   }
 
   Future<bool> _exportBackup()async{
