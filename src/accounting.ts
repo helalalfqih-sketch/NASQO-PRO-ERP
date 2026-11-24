@@ -220,7 +220,7 @@ export function affectsAccountBalance(
   entry: Pick<LedgerEntryRecord, "deleted" | "kind" | "postingStatus">,
 ): boolean {
   if (entry.deleted) return false;
-  if (entry.postingStatus === "draft") return false;
+  if (entry.postingStatus === "draft" || entry.postingStatus === "historical_unposted") return false;
   return entry.kind !== "quote" && entry.kind !== "order";
 }
 

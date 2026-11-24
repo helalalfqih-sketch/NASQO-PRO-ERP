@@ -1800,9 +1800,13 @@ export function AuthenticatedWorkspace({
       void hybrid
         .pickFile({
           purpose: "restore-backup",
-          accept: [".json", ".db", ".sqlite", ".sqlite3", ".sql", ".backup", ".gz"],
+          accept: [".back", ".json", ".db", ".sqlite", ".sqlite3", ".backup"],
         })
         .then(async (picked) => {
+          if (picked?.nativeRestored) {
+            window.location.reload();
+            return;
+          }
           if (!picked || !picked.base64Content) return;
           const binary = atob(picked.base64Content);
           const bytes = new Uint8Array(binary.length);

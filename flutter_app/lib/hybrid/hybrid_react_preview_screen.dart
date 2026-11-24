@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import '../services/local_backup_restore.dart';
 import 'package:flutter/material.dart';
 import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
@@ -24,7 +26,7 @@ class HybridReactPreviewScreen extends StatefulWidget {
 }
 
 class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
-  final HybridReadOnlyProtocol _protocol = HybridReadOnlyProtocol(
+  late final HybridReadOnlyProtocol _protocol = HybridReadOnlyProtocol(
     readSnapshot: HybridLocalSnapshotAdapter.readFromDevice,
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
     createAccount: (key,payload) => _saveAccount(key,payload),
@@ -32,6 +34,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     postDocument: _postDocument,
     createStockRecord: _createStockRecord,
     readInvoiceDetail: _readInvoiceDetail,
+    pickBackup: _restoreBackup,
   );
 
   static Future<Map<String,dynamic>> _saveAccount(
@@ -66,9 +69,11 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     return {(warehouse?'warehouse':'item'):row,'snapshot':snapshot};
   }
   static Future<Map<String,dynamic>> _readInvoiceDetail(String id)async{
+    final db=await LocalDatabase.instance.database;
+    final archived=await db.transaction((txn)=>LocalBackupRestore.reviewInvoice(txn,id));
+    if(archived!=null)return archived;
     final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
     final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
-    final db=await LocalDatabase.instance.database;
     final stored=await db.query('stock_posting_lines',where:'document_id = ?',whereArgs:[id],orderBy:'rowid');
     final lines=<Map<String,dynamic>>[];
     for(var i=0;i<stored.length;i++){
@@ -81,6 +86,90 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
     }
     if(entry['stockPosting']!=true&&entry['invoiceContent']=='items') throw StateError('Historical stock lines unavailable');
     return {'entry':entry,'lines':lines};
+  }
+
+  static const _backupChannel=MethodChannel('nasqo/local_backup');
+  final _backups=LocalBackupRestore(LocalDatabase.instance);
+  bool _backupBusy=false;
+  bool _review=false;
+  bool _backupStateLoaded=false;
+  int _viewGeneration=0;
+
+  @override
+  void initState(){
+    super.initState();
+    _backups.isReview().then((value){
+      if(mounted)setState((){_review=value;_backupStateLoaded=true;});
+    }).catchError((Object _){
+      if(mounted)setState(()=>_error='تعذر التحقق من حالة قاعدة البيانات المحلية.');
+    });
+  }
+  Future<void> _message(String message)async{
+    if(!mounted)return;
+    await showDialog<void>(context:context,builder:(context)=>AlertDialog(
+      title:const Text('النسخ الاحتياطية المحلية'),content:Text(message),
+      actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('موافق'))]));
+  }
+  Future<Map<String,dynamic>?> _restoreBackup({bool refreshView=false})async{
+    if(_backupBusy)return null;
+    setState(()=>_backupBusy=true);
+    File? picked;
+    try{
+      final choice=await _backupChannel.invokeMapMethod<String,dynamic>('pickBackup');
+      if(choice==null||!mounted)return null;
+      picked=File(choice['path'] as String);
+      final name=choice['fileName'] as String;
+      final candidate=await _backups.inspect(picked,name);
+      if(!mounted)return null;
+      const labels={'accounts':'الحسابات','warehouses':'المخازن','inventory':'الأصناف','inventory_items':'الأصناف','ledger':'الحركات','ledger_entries':'الحركات','journal_entries':'القيود','invoice_lines':'بنود الفواتير'};
+      final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
+        .map((e)=>'${labels[e.key]}: ${e.value}').join('\n');
+      final accept=await showDialog<bool>(context:context,builder:(context)=>AlertDialog(
+        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':'استيراد نسخة للمراجعة المحلية'),
+        content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
+          (candidate.native?'تُستعاد السجلات والقيود وطابور المزامنة في قاعدة محلية فارغة فقط. لن تُمسح بياناتك الحالية.':
+          'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
+        actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(context,true),child:Text(candidate.native?'استعادة':'استيراد وعرض'))]));
+      if(accept!=true||!mounted)return null;
+      if(candidate.native){await _backups.restoreNative(candidate);}else{await _backups.openReview(candidate);}
+      if(!mounted)return null;
+      setState((){_review=!candidate.native;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
+      await _message(candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من شريط التطبيق.');
+      return {'fileName':name,'mimeType':'application/octet-stream','sizeBytes':candidate.bytes.length,
+        'base64Content':'','nativeRestored':true};
+    }on FormatException catch(e){
+      await _message('رُفضت النسخة دون تعديل البيانات: ${e.message}');return null;
+    }on StateError catch(e){
+      await _message('تعذرت الاستعادة دون تعديل البيانات: ${e.message}');return null;
+    }catch(_){
+      await _message('تعذر قراءة النسخة أو استعادتها. لم يتم تأكيد أي استبدال للبيانات.');return null;
+    }finally{
+      if(picked!=null){try{await picked.delete();}catch(_){}}
+      if(mounted)setState(()=>_backupBusy=false);
+    }
+  }
+  Future<void> _exportBackup()async{
+    if(_backupBusy)return;
+    setState(()=>_backupBusy=true);
+    File? temp;
+    try{
+      final bytes=_review?await _backups.exportReviewSource():await _backups.exportNative();
+      if(bytes==null)throw StateError('No archive');
+      final cache=await _backupChannel.invokeMethod<String>('cachePath');
+      if(cache==null)throw StateError('Cache unavailable');
+      temp=File('$cache/nasqo-export-${DateTime.now().microsecondsSinceEpoch}.back');
+      await temp.writeAsBytes(bytes,flush:true);
+      final ok=await _backupChannel.invokeMethod<bool>('exportBackup',{'path':temp.path,'fileName':
+        _review?'nasqo-original-source.back':'nasqo-android-${DateTime.now().toIso8601String().substring(0,10)}.back'});
+      if(ok==true)await _message('تم تصدير الملف. احتفظ به في مكان آمن؛ النسخة غير مشفرة.');
+    }catch(_){await _message('تعذر تصدير النسخة المحلية.');}
+    finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
+  }
+  Future<void> _leaveReview()async{
+    if(_backupBusy)return;
+    await _backups.closeReview();
+    if(mounted)setState((){_review=false;_viewGeneration++;});
   }
 
   MethodChannel? _channel;
@@ -124,7 +213,12 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
       appBar: AppBar(
         title: const Text('نسقو — واجهة React المحلية'),
         actions: [
-          if (widget.onShowNative != null)
+          IconButton(tooltip:'استيراد نسخة احتياطية',icon:const Icon(Icons.file_open),
+            onPressed:_backupBusy?null:()=>_restoreBackup(refreshView:true)),
+          IconButton(tooltip:'تصدير نسخة احتياطية',icon:const Icon(Icons.save_alt),
+            onPressed:_backupBusy?null:_exportBackup),
+          if(_review) TextButton(onPressed:_backupBusy?null:_leaveReview,child:const Text('العودة للبيانات الحالية')),
+          if (widget.onShowNative != null && !_review && _backupStateLoaded && !_backupBusy)
             TextButton(
               onPressed: widget.onShowNative,
               child: const Text('واجهة Flutter'),
@@ -137,9 +231,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
             width: double.infinity,
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             padding: const EdgeInsets.all(10),
-            child: const Text(
-              'وضع محلي تجريبي: إنشاء الحسابات وتعديل بياناتها متاحان. '
-              'السندات والفواتير الآجلة والمخزون المحلي مدعومة ضمن القيود التجريبية؛ المزامنة قيد التطوير.',
+            child: Text(
+              _review?'مراجعة نسخة احتياطية تاريخية — القراءة فقط؛ لا تعتمد الأرصدة أو الكميات التاريخية قبل التسوية.':
+              'نسقو المحلي: استيراد وتصدير النسخ الاحتياطية من شريط التطبيق؛ المزامنة قيد التطوير.',
               textAlign: TextAlign.center,
             ),
           ),
@@ -151,7 +245,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
                       child: Text(_error!, textAlign: TextAlign.center),
                     ),
                   )
-                : AndroidView(
+                : !_backupStateLoaded ? const Center(child:CircularProgressIndicator()) : AndroidView(
+                    key:ValueKey(_viewGeneration),
                     viewType: 'nasqo/offline_hybrid',
                     onPlatformViewCreated: _attach,
                   ),

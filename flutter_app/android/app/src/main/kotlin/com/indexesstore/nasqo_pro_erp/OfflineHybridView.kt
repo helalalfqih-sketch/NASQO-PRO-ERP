@@ -21,6 +21,7 @@ import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.util.UUID
 
 /**
  * Serves the bundled React ES modules from a local HTTPS origin.
@@ -61,16 +62,14 @@ private class OfflineHybridView(
         }
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                Log.w("NASQO_HYBRID", "console ${message.messageLevel()} ${message.sourceId()}:${message.lineNumber()} ${message.message()}")
+                // Never log financial records or restored backup content.
                 return true
             }
         }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 Log.i("NASQO_HYBRID", "pageFinished url=$url")
-                view.evaluateJavascript(
-                    "(function(){return JSON.stringify({title:document.title,ready:document.readyState,root:document.getElementById('root')?.innerText?.slice(0,200) || '',scripts:document.scripts.length});})()"
-                ) { answer -> Log.i("NASQO_HYBRID", "pageState=$answer") }
+
             }
             override fun onReceivedError(
                 view: WebView,
@@ -148,15 +147,27 @@ private class OfflineHybridView(
                 }
                 "respond" -> {
                     val response = call.arguments as? String
-                    if (response == null || response.length > 4000000) {
+                    if (response == null || response.length > 24000000) {
                         result.error("INVALID_RESPONSE", "Invalid bridge response", null)
-                    } else {
-                        // Quote as a JavaScript *string*, never interpolate executable source.
-                        webView.evaluateJavascript(
-                            "window.__nasqoHybridReceive(${JSONObject.quote(response)});",
-                            null
-                        )
+                    } else if (response.length <= 64000) {
+                        webView.evaluateJavascript("window.__nasqoHybridReceive(${JSONObject.quote(response)});", null)
                         result.success(null)
+                    } else {
+                        val key = JSONObject.quote(UUID.randomUUID().toString())
+                        fun send(offset: Int) {
+                            if (offset >= response.length) {
+                                webView.evaluateJavascript("(function(){var m=window.__nasqoNativeChunks;var s=m[$key].join('');delete m[$key];window.__nasqoHybridReceive(s);})()", null)
+                                result.success(null)
+                                return
+                            }
+                            val end = minOf(response.length, offset + 64000).let {
+                                if (it < response.length && Character.isHighSurrogate(response[it-1])) it-1 else it
+                            }
+                            val quoted = JSONObject.quote(response.substring(offset,end))
+                            val script = "(function(){var m=window.__nasqoNativeChunks||(window.__nasqoNativeChunks=Object.create(null));(m[$key]||(m[$key]=[])).push($quoted);})()"
+                            webView.evaluateJavascript(script) { send(end) }
+                        }
+                        send(0)
                     }
                 }
                 else -> result.notImplemented()

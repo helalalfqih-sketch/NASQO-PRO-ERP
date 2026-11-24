@@ -111,6 +111,7 @@ export function createFlutterPresentationAdapter(
       const result = await hybridBridge.invoke<"pickFile", HybridPickFileResult | null>(
         "pickFile",
         request,
+        {timeoutMs:300_000},
       );
       if (!result || result.cancelled) return null;
       return result;

@@ -175,7 +175,7 @@ export type LedgerEntryRecord = {
   expenseCategory?: string;
   deliveryDays?: number;
   sourceOrigin?: "native" | "smartpro_sql" | "legacy_sqlite";
-  postingStatus?: "draft" | "posted" | "reversed";
+  postingStatus?: "draft" | "posted" | "reversed" | "historical_unposted";
   /** Explicit balanced SQLite journal legs; authoritative when present. */
   journalLines?: {accountId:string;debitMinor:number;creditMinor:number}[];
   stockPosting?: boolean;

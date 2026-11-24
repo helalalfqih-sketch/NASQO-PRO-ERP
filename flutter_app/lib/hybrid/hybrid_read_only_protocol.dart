@@ -15,6 +15,7 @@ class HybridReadOnlyProtocol {
     this.postDocument,
     this.createStockRecord,
     this.readInvoiceDetail,
+    this.pickBackup,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
@@ -24,6 +25,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
+  final Future<Map<String,dynamic>?> Function()? pickBackup;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -52,6 +54,17 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='pickFile'&&pickBackup!=null){
+      final params=request['payload'];
+      if(params is! Map<String,dynamic>||params['purpose']!='restore-backup'){
+        return _error(id,actionName,'UNAUTHORIZED_ACTION','منتقي النسخ الاحتياطية مخصص للاستعادة.');
+      }
+      try{
+        final result=await pickBackup!();
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
+          'ok':true,'data':result??{'cancelled':true,'fileName':'','mimeType':'','sizeBytes':0,'base64Content':''}});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح أو استعادة النسخة المحلية.');}
     }
     if (actionName == 'saveUiPreferences') {
       final params = request['payload'];

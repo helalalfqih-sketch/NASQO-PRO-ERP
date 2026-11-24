@@ -155,7 +155,7 @@ function HybridRootApp() {
       const rawSnap = await hybridBridge.invoke<"getSnapshot", unknown>(
         "getSnapshot",
         { workspaceId: LOCAL_WORKSPACE_UID, forceRefresh: true },
-        { timeoutMs: 12_000 },
+        { timeoutMs: 120_000 },
       );
       applyValidatedSnapshot(rawSnap);
       setBootState("ready");

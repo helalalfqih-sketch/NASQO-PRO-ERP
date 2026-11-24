@@ -205,6 +205,7 @@ export interface HybridPickFileRequest {
 
 export interface HybridPickFileResult {
   cancelled?: boolean;
+  nativeRestored?: boolean;
   fileName: string;
   mimeType: string;
   sizeBytes: number;

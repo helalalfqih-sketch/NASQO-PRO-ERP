@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../models/erp_models.dart';
 import '../services/local_database.dart';
+import '../services/local_backup_restore.dart';
 
 /// Adapts the existing on-device SQLite schema to the React Hybrid snapshot.
 /// No network calls, no automatic import, no fabricated customer/invoice rows.
@@ -11,6 +12,8 @@ class HybridLocalSnapshotAdapter {
     final local=LocalDatabase.instance;
     final db=await local.database;
     return db.transaction((txn) async {
+      final review=await LocalBackupRestore.reviewSnapshot(txn);
+      if(review!=null)return review;
       final data=fromSnapshot(await local.loadSnapshot(executor:txn));
       final ledger=(data['ledger'] as List).cast<Map<String,dynamic>>();
       final byId={for(final entry in ledger) entry['id']:entry};
@@ -138,7 +141,7 @@ class HybridLocalSnapshotAdapter {
         'offlineReady': true,
         'printingSupported': false,
         'pdfExportSupported': false,
-        'filePickerSupported': false,
+        'filePickerSupported': true,
         'googleDriveConfigured': false,
         'whatsappShareSupported': false,
         'readOnlyFinancial': true,

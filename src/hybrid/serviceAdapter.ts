@@ -418,7 +418,7 @@ function mapBridgeError(err: unknown): Error {
 export async function refreshWorkspaceFromServer(
   uid: string = LOCAL_WORKSPACE_UID,
   _displayName?: string | null,
-  timeoutMs = 15_000,
+  timeoutMs = 120_000,
 ): Promise<WorkspaceBundle> {
   ensureHostSnapshotSubscription();
   try {
