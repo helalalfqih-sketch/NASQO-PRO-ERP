@@ -187,7 +187,7 @@ export class NasqoHybridBridge {
     }
 
     const isFinancial = isFinancialMutationCommand(action);
-    if (isFinancial && this.readOnlyFinancialMode && !(action === "saveAccount" && this.localAccountCreation && !(payload as HybridCommandPayloadMap["saveAccount"]).accountId)) {
+    if (isFinancial && this.readOnlyFinancialMode && !(action === "saveAccount" && this.localAccountCreation)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
         "في هذه الدفعة تبقى العمليات المالية للقراءة والعرض فقط؛ الترحيل يتم حصريًا عبر Flutter وSQLite.",
