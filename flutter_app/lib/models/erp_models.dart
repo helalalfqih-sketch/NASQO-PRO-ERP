@@ -124,6 +124,10 @@ class LedgerEntryRecord {
     required this.id,
     required this.accountId,
     required this.accountName,
+    this.counterpartAccountId = '',
+    this.counterpartAccountName = '',
+    this.invoiceContent = 'none',
+    this.postingStatus,
     required this.kind,
     required this.typeLabel,
     required this.payment,
@@ -144,6 +148,10 @@ class LedgerEntryRecord {
   final String id;
   final String accountId;
   final String accountName;
+  final String counterpartAccountId;
+  final String counterpartAccountName;
+  final String invoiceContent;
+  final String? postingStatus;
   final LedgerKind kind;
   final String typeLabel;
   final PaymentMethod payment;
