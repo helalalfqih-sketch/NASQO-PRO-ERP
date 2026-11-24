@@ -114,7 +114,7 @@ void main(){
       final cost=await LocalAccountCommands(local).save(w,'cost-account',{'name':'Cost','category':'shop','currency':'ريال'});
       final req=<String,dynamic>{'sourceItemId':'legacy-prod-1','warehouseId':'legacy-wh-1','inventoryAccountId':a,
         'offsetAccountId':b,'quantity':10,'totalValue':30,'entryDate':'2026-11-24','evidence':'Synthetic count','confirmed':true};
-      final secondReq=<String,dynamic>{...req,'warehouseId':'legacy-wh-2','quantity':4,'totalValue':20};
+      final secondReq=<String,dynamic>{...req,'warehouseId':'legacy-wh-2','quantity':4.5,'totalValue':22.5};
       final beforeBatch=await backup.exportNative();
       await expectLater(opening.approveBatch(w,[req,{...secondReq,'totalValue':0}]),throwsArgumentError);
       expect(await backup.exportNative(),orderedEquals(beforeBatch));
@@ -144,7 +144,7 @@ void main(){
       final inv=await db.query('inventory_items',where:'id = ?',whereArgs:['legacy-prod-1']);
       final inv2=await db.query('inventory_items',where:'id = ?',whereArgs:[second]);
       expect(inv.single['quantity'],12);
-      expect(inv2.single['quantity'],3);
+      expect(inv2.single['quantity'],3.5);
       expect((inv.single['avgCost'] as num),closeTo(40/12,0.000001));
       expect(inv2.single['avgCost'],5);
       expect((await db.query('journal_entries')),hasLength(5));

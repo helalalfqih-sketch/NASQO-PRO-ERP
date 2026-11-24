@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nasqo_pro_erp/services/legacy_stock_batch.dart';
 
 void main(){
-  test('bulk suggestions omit incomplete, fractional, negative and approved stock',(){
+  test('bulk suggestions accept precise fractions and omit incomplete, negative and approved stock',(){
     final products=<Map<String,dynamic>>[
       {'id':'legacy-prod-1','currencyCode':'ريال','avgCost':2,'legacyInvoiceQtyByWarehouse':{'wh':4},'legacyTransferNetByWarehouse':{'wh':1}},
       {'id':'legacy-prod-2','currencyCode':'ريال','avgCost':2,'legacyInvoiceQtyByWarehouse':{'wh':-1}},
@@ -11,12 +11,14 @@ void main(){
       {'id':'legacy-prod-5','currencyCode':'ريال','avgCost':2,'legacyInvoiceQtyByWarehouse':{'wh':4}},
     ];
     final draft=LegacyStockBatch.suggestions(products,[{'source_item_id':'legacy-prod-5','warehouse_id':'wh'}],'wh');
-    expect(draft.draft,'legacy-prod-1\t5\t10.00');
-    expect(draft.skipped,3);
+    expect(draft.draft,'legacy-prod-1\t5\t10.00\nlegacy-prod-3\t2.5\t5.00');
+    expect(draft.skipped,2);
     final rows=LegacyStockBatch.parse(draft.draft,products,'wh',{'confirmed':true});
-    expect(rows.single['quantity'],5);expect(rows.single['totalValue'],10);
+    expect(rows.first['quantity'],5);expect(rows.first['totalValue'],10);
+    expect(rows.last['quantity'],2.5);expect(rows.last['totalValue'],5);
     expect(()=>LegacyStockBatch.parse('legacy-prod-1,1,2\nlegacy-prod-1,1,2',products,'wh',{}),throwsFormatException);
-    expect(()=>LegacyStockBatch.parse('legacy-prod-2,1.5,3',products,'wh',{}),throwsFormatException);
+    expect(LegacyStockBatch.parse('legacy-prod-2,1.5,3',products,'wh',{}).single['quantity'],1.5);
+    expect(()=>LegacyStockBatch.parse('legacy-prod-2,1.5001,3',products,'wh',{}),throwsFormatException);
     expect(()=>LegacyStockBatch.parse('legacy-prod-2,1,0',products,'wh',{}),throwsFormatException);
   });
 }

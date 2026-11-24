@@ -5,6 +5,8 @@ import 'package:nasqo_pro_erp/services/local_database.dart';
 import 'package:nasqo_pro_erp/services/local_account_commands.dart';
 import 'package:nasqo_pro_erp/services/stock_invoice_commands.dart';
 import 'package:nasqo_pro_erp/services/local_stock_catalog.dart';
+import 'package:nasqo_pro_erp/services/local_backup_restore.dart';
+import 'package:nasqo_pro_erp/hybrid/local_snapshot_adapter.dart';
 
 void main(){
   test('stock purchase, sale, discount, tax and full linked reversal are atomic',()async{
@@ -79,6 +81,48 @@ void main(){
       await s.post(w,'carton-return',{'id':'carton-ret','kind':'return','originalInvoiceId':'cash-sale','entryNumber':7,'entryDate':'2026-11-24',
         'returnLines':[{'itemId':carton,'quantity':1}]});
       expect((await db.query('inventory_items',where:'id = ?',whereArgs:[carton])).single['quantity'],24);
+
+      final fractional=await catalog.createItem(w,'fractional-op',{'name':'Fractional item','warehouseId':'wh','unit':'kg','unit2':'pack','count2':4});
+      Map<String,dynamic> fractionalInvoice(String id,int n,bool sale,num q,num price,num amount,int unitNum)=>{
+        ...invoice(id,n,sale,1,1,0,0),'amount':amount,
+        'lines':[{'inventoryItemId':fractional,'quantity':q,'unitNum':unitNum,'price':price,'discount':0,'total':amount}],
+      };
+      Future<Map<String,Object?>> fractionalStock()async=>(await db.query('inventory_items',where:'id = ?',whereArgs:[fractional])).single;
+      // 1.125 packs = 4.5 kg. 1.125 * 8 = 9.
+      await s.post(w,'fraction-buy',fractionalInvoice('fraction-buy',8,false,1.125,8,9,2));
+      expect((await fractionalStock())['quantity'],4.5);
+      expect((await fractionalStock())['avgCost'],2);
+      // Half-up line rounding: 0.375 * 3 = 1.125 -> 1.13.
+      final fractionSale=fractionalInvoice('fraction-sale',9,true,0.375,3,1.13,1);
+      await s.post(w,'fraction-sale',fractionSale);
+      await s.post(w,'fraction-sale',fractionSale);
+      expect((await fractionalStock())['quantity'],4.125);
+      final beforeInvalid=await LocalBackupRestore(local).exportNative();
+      await expectLater(s.post(w,'too-precise',fractionalInvoice('too-precise',10,true,0.0001,100,0.01,1)),throwsArgumentError);
+      await expectLater(s.post(w,'too-much',fractionalInvoice('too-much',10,true,4.126,10,41.26,1)),throwsStateError);
+      expect(await LocalBackupRestore(local).exportNative(),orderedEquals(beforeInvalid));
+      final partial={'kind':'return','originalInvoiceId':'fraction-sale','entryDate':'2026-11-24'};
+      await s.post(w,'fraction-return-1',{...partial,'id':'fraction-return-1','entryNumber':10,
+        'returnLines':[{'itemId':fractional,'quantity':0.125}]});
+      expect((await fractionalStock())['quantity'],4.25);
+      final snap=await HybridLocalSnapshotAdapter.readFromDevice();
+      final sold=(snap['ledger'] as List).firstWhere((x)=>x['id']=='fraction-sale');
+      expect((sold['returnableLines'] as List).single['quantity'],0.25);
+      await expectLater(s.post(w,'fraction-over',{...partial,'id':'fraction-over','entryNumber':11,
+        'returnLines':[{'itemId':fractional,'quantity':0.251}]}),throwsStateError);
+      await s.post(w,'fraction-return-2',{...partial,'id':'fraction-return-2','entryNumber':11});
+      expect((await fractionalStock())['quantity'],4.5);
+      expect((await fractionalStock())['avgCost'],2);
+      final refunds=await db.rawQuery("SELECT SUM(amount) AS total FROM ledger_entries WHERE id IN ('fraction-return-1','fraction-return-2')");
+      expect(refunds.single['total'],closeTo(1.13,0.000001));
+      final balances=await db.rawQuery('SELECT journal_id,SUM(debit_minor) AS d,SUM(credit_minor) AS c FROM journal_lines GROUP BY journal_id');
+      for(final row in balances){expect(row['d'],row['c']);}
+      final backup=LocalBackupRestore(local),bytes=await backup.exportNative();
+      final file=await File('${dir.path}/fractions.back').writeAsBytes(bytes);
+      final inspected=await backup.inspect(file,'fractions.back');
+      expect(inspected.native,true);
+      final lines=inspected.nativeTables!['stock_posting_lines']!;
+      expect(lines.firstWhere((x)=>x['document_id']=='fraction-sale')['quantity'],0.375);
     }finally{await db.close();await dir.delete(recursive:true);}
   });
 }
