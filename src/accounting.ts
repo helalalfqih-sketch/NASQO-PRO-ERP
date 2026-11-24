@@ -282,6 +282,15 @@ function journalAmounts(entry:LedgerEntryRecord,accountId:string,convert=false):
   return {debit,credit};
 }
 
+// Historical register sides are not double-entry legs. Use the raw source
+// for the primary account and never synthesize a historical counterpart.
+function legacyRegisterAmounts(entry: LedgerEntryRecord, accountId: string, convert = false): {debit:number;credit:number}|null {
+  if (entry.sourceOrigin !== "legacy_sqlite" && entry.sourceOrigin !== "smartpro_sql") return null;
+  if (entry.accountId !== accountId || entry.journalLines?.length || (entry.rawDain === undefined && entry.rawMadin === undefined)) return null;
+  const rate = convert ? (entry.exchangeRate || 1) : 1;
+  return { debit: mulMoney(entry.rawDain ?? 0, rate, 2), credit: mulMoney(entry.rawMadin ?? 0, rate, 2) };
+}
+
 function getEntriesForAccount(
   entries: readonly LedgerEntryRecord[],
   accountId: string,
@@ -361,7 +370,7 @@ export function computeAccountSummary(
 
     entryCount += 1;
     if (!affectsAccountBalance(entry)) continue;
-    const explicit=journalAmounts(entry,account.id,currencyFilter==="مصارفة الكل بعملة ريال");
+    const explicit=journalAmounts(entry,account.id,currencyFilter==="مصارفة الكل بعملة ريال") ?? legacyRegisterAmounts(entry,account.id,currencyFilter==="مصارفة الكل بعملة ريال");
     if(explicit){debitTotal=addMoney(debitTotal,explicit.debit);creditTotal=addMoney(creditTotal,explicit.credit);continue;}
 
     const effectiveAmount =
@@ -467,6 +476,15 @@ export function computeCategoryTotals(
       continue;
     }
     const primary = accMap.get(entry.accountId);
+    const historical = legacyRegisterAmounts(entry,entry.accountId,convertAllToRiyal);
+    if (historical) {
+      if (primary) {
+        const bucket = result[primary.category];
+        bucket.debitTotal = addMoney(bucket.debitTotal,historical.debit);
+        bucket.creditTotal = addMoney(bucket.creditTotal,historical.credit);
+      }
+      continue;
+    }
     if (primary) {
       const bucket = result[primary.category];
       const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
@@ -553,7 +571,8 @@ export function computeStatementRows(
     .sort((a, b) => a.createdAtMs - b.createdAtMs || a.entryNumber - b.entryNumber);
 
   const signedEffect = (entry: LedgerEntryRecord): { debit: number; credit: number; netDelta: number } => {
-    const explicit=journalAmounts(entry,account.id,currency==="مصارفة الكل بعملة ريال");
+    if (!affectsAccountBalance(entry)) return { debit: 0, credit: 0, netDelta: 0 };
+    const explicit=journalAmounts(entry,account.id,currency==="مصارفة الكل بعملة ريال") ?? legacyRegisterAmounts(entry,account.id,currency==="مصارفة الكل بعملة ريال");
     if(explicit) return {...explicit,netDelta:subMoney(explicit.credit,explicit.debit)};
     const isPrimary = entry.accountId === account.id;
     const amount =

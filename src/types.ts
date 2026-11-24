@@ -236,6 +236,8 @@ export type InventoryItemRecord = {
   warehouseId: string;
   /** Live quantity computed from invoice_lines/transfers when static count is unverified */
   computedQuantity?: number;
+  /** Unapproved historical invoice net by original warehouse, not an opening stock count. */
+  legacyInvoiceQtyByWarehouse?: Record<string, number>;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
   legacyRef?: string;

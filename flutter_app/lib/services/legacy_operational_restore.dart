@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 import 'local_backup_restore.dart';
 import 'local_database.dart';
+import 'legacy_stock_projection.dart';
 
 /// Explicit migration of the legacy single-sided account register. Never
 /// manufactures counterpart accounts, opening stock quantities or cost legs.
@@ -72,14 +73,15 @@ class LegacyOperationalRestore {
       for(final e in ledger){
         final aid=s(e['accountId']),c=currency(e['currency']),d=n(e['rawDain']),m=n(e['rawMadin']);
         if(!accountIds.contains(aid)||d<0||m<0)throw const FormatException('Invalid historical account or sides');
-        // Only the exact single-sided or settled raw register is admitted to
-        // account statements; unsupported currencies and mixed sides are excluded.
-        final supported=c!=null&&[1,2,3,4,5,7,9].contains(e['docType'])&&n(e['exchangeRate'],1)>0&&(d==0||m==0||d==m);
+        // The original register has explicit debit and credit values. Both
+        // sides are retained even when unequal; no counterpart is invented.
+        // Unknown currency amounts remain outside the operational register.
+        final supported=c!=null&&[1,2,3,4,5,7,9].contains(e['docType'])&&n(e['exchangeRate'],1)>0;
         final kind=s(e['kind']);
         batch.insert('ledger_entries',{'id':s(e['id']),'accountId':aid,'accountName':s(e['accountName']),
           'counterpartAccountId':'','counterpartAccountName':'','kind':kind=='return'?'returnEntry':kind,
           'typeLabel':s(e['typeLabel']),'payment':s(e['payment']),'direction':s(e['direction']),
-          'amount':d>=m?d:m,'currency':c??'currency2','exchangeRate':n(e['exchangeRate'],1),
+          'amount':n(e['amount']),'currency':c??'currency2','exchangeRate':n(e['exchangeRate'],1),
           'details':s(e['details']),'documentNumber':s(e['documentNumber']),
           'warehouseId':s(e['warehouseId']),'warehouseName':s(e['warehouseName']),'expenseCategory':'',
           'entryNumber':i(e['entryNumber']),'deleted':0,'entryDate':s(e['entryDate']),
@@ -132,8 +134,13 @@ class LegacyOperationalRestore {
       final key=r['collection'] as String,row=LocalBackupRestore.object(jsonDecode(r['row_json'] as String));
       byCollection.putIfAbsent(key,()=> <String,Map<String,dynamic>>{})[r['record_id'] as String]=row;
     }
+    final sourceItems=(byCollection['inventory']??{}).values;
+    final sourceLedger=(byCollection['ledger']??{}).values;
+    final projected=LegacyStockProjection.invoiceQuantities(sourceItems,sourceLedger);
     final unverified=(await db.query('legacy_unverified_stock',columns:['item_id'])).map((r)=>r['item_id']).toSet();
     final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o};
+    final approvedWarehouses=<String,Set<String>>{};
+    for(final o in openings.values){approvedWarehouses.putIfAbsent(o['source_item_id'] as String,()=> <String>{}).add(o['warehouse_id'] as String);}
     for(final c in ['currencies','accountGroups','cashboxes']){
       data[c]=(byCollection[c]??{}).values.toList();
     }
@@ -143,11 +150,16 @@ class LegacyOperationalRestore {
         final old=byCollection[c]?[opening?['source_item_id']??row['id']];
         if(old==null)continue;
         if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
-        final keys=c=='accounts'?['groupId','sortOrder']:c=='warehouses'?['codeNumber']:c=='inventory'?['currencyCode','legacyWarehouseCount']:['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency'];
+        final keys=c=='accounts'?['groupId','sortOrder']:c=='warehouses'?['codeNumber']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate']:['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId'];
         for(final key in keys){if(old[key]!=null)row[key]=old[key];}
         if(c=='inventory'&&unverified.contains(row['id'])){
           row['quantityUnverified']=true;
           row['legacyCatalogCost']=old['avgCost'];
+          final quantities=projected[row['id']]??<String,num>{};
+          final approved=approvedWarehouses[row['id']]??<String>{};
+          final remaining={for(final e in quantities.entries)if(!approved.contains(e.key))e.key:e.value};
+          row['legacyInvoiceQtyByWarehouse']=remaining;
+          if(remaining.isNotEmpty)row['computedQuantity']=remaining.values.fold<num>(0,(s,v)=>s+v);
         }
       }
     }

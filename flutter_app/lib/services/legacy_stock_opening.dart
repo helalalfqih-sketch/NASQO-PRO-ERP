@@ -4,6 +4,7 @@ import 'local_database.dart';
 import 'stock_invoice_commands.dart';
 import 'local_document_commands.dart';
 import 'local_backup_restore.dart';
+import 'legacy_stock_projection.dart';
 
 /// One-time opening count per imported product and warehouse. Opening stock
 /// is NOT calculated from historical movements. The operator must substantiate
@@ -20,6 +21,9 @@ class LegacyStockOpening {
       final items=(await t.query('legacy_operational_rows',where:'collection = ?',whereArgs:['inventory']))
         .map((r)=>LocalBackupRestore.object(jsonDecode(r['row_json'] as String))).toList()
         ..sort((a,b)=>a['name'].toString().compareTo(b['name'].toString()));
+      final ledger=(await t.query('legacy_operational_rows',where:'collection = ?',whereArgs:['ledger']))
+        .map((r)=>LocalBackupRestore.object(jsonDecode(r['row_json'] as String)));
+      LegacyStockProjection.attach(items,ledger);
       return {
         'products':items,
         'warehouses':await t.query('warehouses',orderBy:'name'),

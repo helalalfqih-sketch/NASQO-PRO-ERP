@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
+import 'legacy_stock_projection.dart';
 
 /// Native backups restore all operational tables. Older web/SmartPro backups
 /// are imported into isolated, persistent, read-only SQLite review tables.
@@ -229,6 +230,7 @@ class LocalBackupRestore {
 
   BackupCandidate _legacy(String name,Uint8List bytes,String hash,Map<String,List<Map<String,dynamic>>> t){
     final cur={for(final r in t['currencies']!)integer(r['id']):str(r['name'],'ريال')};
+    final cashIds=t['cboxes']!.map((r)=>integer(r['id'])).toSet();
     String getCurrency(Object? id)=>cur[integer(id,1)]??'عملة غير معرّفة (${str(id)})';
     String category(String group,int type){
       if(group.contains('رأس المال')||group.contains('راس المال')||group.contains('أصول')||group.contains('اصول')||group.contains('سحبيات'))return 'shop';
@@ -245,7 +247,7 @@ class LocalBackupRestore {
     for(final r in t['customers']!){
       final id=integer(r['id']),type=integer(r['type'],1),group=groups[type];
       accounts.add({'id':'legacy-acc-$id','name':str(r['name'],'حساب $id'),'category':category(str(group?['name']),type),
-        'phone':str(r['phone']??r['phon']),'creditLimit':numValue(r['lim']),'currency':getCurrency(group?['cur']??1),
+        'phone':str(r['phone']).isEmpty?str(r['phon']):str(r['phone']),'creditLimit':numValue(r['lim']),'currency':getCurrency(group?['cur']??1),
         'isCashAccount':str(r['name']).contains('نقد')||str(r['name']).contains('صندوق'),'openingBalance':0,'openingDirection':'debit',
         'note':str(r['details']),'codeNumber':id,'sortOrder':id,if(group!=null)'groupId':type});
     }
@@ -256,7 +258,8 @@ class LocalBackupRestore {
       'sku':str(r['barcode']),'warehouseId':warehouses.isEmpty?'':warehouses.first['id'],
       'unit2':str(r['unit2']),'count2':numValue(r['count2']),'sprice2':numValue(r['sprice2']),
       'unit3':str(r['unit3']),'count3':numValue(r['count3']),'sprice3':numValue(r['sprice3']),
-      'defaultUnit':integer(r['defunit'],1),'currencyCode':getCurrency(r['cur']),
+      'defaultUnit':integer(r['defunit'],1),'currencyCode':getCurrency(r['cur']),'legacyId':integer(r['id']),
+      'isActive':integer(r['bstate'],1)!=0,'expiryDate':str(r['exdate']),
     }).toList();
     final names={for(final a in accounts)a['id']:a['name']};
     final prodNames={for(final a in inventory)a['id']:a['name']};
@@ -305,9 +308,11 @@ class LocalBackupRestore {
       final nd=str(r['ndate']);
       if(date.isEmpty&&RegExp(r'^[0-9]{8}$').hasMatch(nd)&&nd!='00000000')date='${nd.substring(0,4)}-${nd.substring(4,6)}-${nd.substring(6,8)}';
       ledger.add({'id':'legacy-ent-$id','accountId':aid,'accountName':names[aid]??'حساب غير مرتبط',
-        'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':settled||(doc==1&&cb>0)?'cash':d==0&&c==0?'balance':'credit',if(cb>0)'cashboxId':cb,
+        'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':d==0&&c==0?'balance':settled||(doc==1&&cb>0&&(d==0||c==0))?'cash':'credit',if(cashIds.contains(cb))'cashboxId':cb,
         'direction':settled?([2,5,7].contains(doc)?'debit':'credit'):(d>=c?'debit':'credit'),
-        'amount':d>=c?d:c,'rawDain':d,'rawMadin':c,'settledOnReceipt':settled,'currency':getCurrency(r['cur']??r['cur_id']),
+        'amount':settled?d:d>=c?d:c,'rawDain':d,'rawMadin':c,'settledOnReceipt':settled,'currency':getCurrency(r['cur']??r['cur_id']),
+        'legacyCurrencyId':integer(r['cur']??r['cur_id'],1),'discount':numValue(r['discount']),'bonus':numValue(r['bonus']),
+        'sender':str(r['sender']),'receiver':str(r['recever']),'companyName':str(r['comp']),'legacyId':id,
         'exchangeRate':numValue(r['curprice'],1)==0?1:numValue(r['curprice'],1),'details':str(r['details']),'documentNumber':str(r['bill']),
         'warehouseId':wh,'warehouseName':whNames[wh]??'','invoiceContent':[7,9].contains(doc)?'free':kind=='voucher'?'none':'items',
         'entryNumber':id,'entryDate':date,'createdAtMs':DateTime.tryParse(date)?.millisecondsSinceEpoch??0,
@@ -321,12 +326,20 @@ class LocalBackupRestore {
         item['legacyWarehouseCount']=v.length;
       }
     }
+    LegacyStockProjection.attach(inventory,ledger);
     final data=<String,List<Map<String,dynamic>>>{
       'accounts':accounts,'warehouses':warehouses,'inventory':inventory,'ledger':ledger,
       'currencies':t['currencies']!.map((r)=><String,dynamic>{'id':r['id'],'code':r['name'],'name':r['name'],'symbol':r['sympol'],'ratePrimary':numValue(r['amount'],1),'rateSecondary':numValue(r['amount2'],1),'nameSecondary':str(r['name2'])}).toList(),
-      'accountGroups':groups.entries.map((e)=><String,dynamic>{'id':e.key,'name':str(e.value['name']),'category':category(str(e.value['name']),e.key),'currencyCode':getCurrency(e.value['cur']),'sortOrder':e.key}).toList(),
-      'cashboxes':t['cboxes']!.map((r)=><String,dynamic>{'id':r['id'],'name':str(r['name']),'details':str(r['details']),'currencyCode':getCurrency(r['cur']),'isActive':flag(r['state'])}).toList(),
+      'accountGroups':groups.entries.map((e)=><String,dynamic>{'id':e.key,'name':str(e.value['name']),'category':category(str(e.value['name']),e.key),'currencyCode':getCurrency(e.value['cur']),'sortOrder':integer(e.value['ord'],e.key),'hasBill':flag(e.value['hasbill']),'isEmployee':flag(e.value['isemp']),'legacyId':e.key}).toList(),
+      'cashboxes':t['cboxes']!.map((r)=><String,dynamic>{'id':r['id'],'name':str(r['name']),'details':str(r['details']),'currencyCode':getCurrency(r['cur']),'isActive':integer(r['state'],1)==1,'state':integer(r['state'],1),'boxType':integer(r['type'],1),'sortOrder':integer(r['ord']),'legacyId':r['id']}).toList(),
     };
+    // Preserve the source tables as structured historical records too. No raw
+    // SQL is executed, and binary/unknown fields remain in the exact source file.
+    for(final table in ['store_trans','trans_details','offers','offer_bill_details','offer_sbill_details','bin','bin_bill_details','bin_bill_details2','alerts']){
+      data['source_$table']=[for(final row in t[table]??<Map<String,dynamic>>[])<String,dynamic>{
+        for(final e in row.entries)if(e.value==null||e.value is String||e.value is num)e.key:e.value,
+      }];
+    }
     return BackupCandidate(name,'legacy-sqlite',bytes,hash,data,{
       'workspace':{'companyName':'مراجعة النسخة القديمة','defaultCurrency':cur.values.isEmpty?'ريال':cur.values.first},
       'invoiceLines':detail.values.fold<int>(0,(s,l)=>s+l.length),'ambiguousMoves':ambiguous,'missingReferences':missing,
@@ -570,6 +583,11 @@ class LocalBackupRestore {
         row.removeWhere((k,v)=>v==null);
         return row;
       }).toList();
+    }
+    if(source['source_format']=='legacy-sqlite'){
+      // Also repair review archives created before stock projection was added.
+      final raw=await txn.query('backup_review_rows',where:'sha = ? AND collection = ?',whereArgs:[hash,'ledger']);
+      LegacyStockProjection.attach((data['inventory'] as List).cast<Map<String,dynamic>>(),raw.map((r)=>object(jsonDecode(r['row_json'] as String))));
     }
     final ws=object(meta['workspace']);
     return {...data,'workspaceId':'local-erp-workspace','userEmail':'offline@nasqo.local',

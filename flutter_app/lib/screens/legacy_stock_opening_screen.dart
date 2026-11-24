@@ -116,6 +116,9 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
           const SizedBox(height:12),
           if(o!=null)Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('معتمد بتاريخ ${o['entry_date']}\nكمية الافتتاح: ${o['quantity']}\nقيمة الافتتاح: ${(o['value_minor'] as num)/100} ريال\nلا يمكن تكرار الافتتاح. هذه ليست الكمية الحالية.'))),
           if(o==null&&warehouse!=null)...[
+            if(p['legacyInvoiceQtyByWarehouse'] is Map&&(p['legacyInvoiceQtyByWarehouse'] as Map).containsKey(warehouse))
+              Text('صافي الفواتير التاريخية لهذا المخزن: ${(p['legacyInvoiceQtyByWarehouse'] as Map)[warehouse]} (ليس جردًا معتمدًا؛ لا يشمل التحويلات).'),
+            if(p['avgCost'] is num)Text('سعر التكلفة المسجل تاريخيًا: ${p['avgCost']} ريال (مرجع فقط).'),
             TextField(controller:quantity,enabled:!busy,keyboardType:TextInputType.number,onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية',border:OutlineInputBorder())),
             const SizedBox(height:12),
             TextField(controller:value,enabled:!busy,keyboardType:const TextInputType.numberWithOptions(decimal:true),onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'إجمالي تكلفة الكمية بالريال',border:OutlineInputBorder())),

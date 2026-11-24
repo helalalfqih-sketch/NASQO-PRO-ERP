@@ -4925,7 +4925,7 @@ function InventoryReportPage({
     const rawReportRows = movementReport?.itemRows ?? [];
     const seenIds = new Set(rawReportRows.map((r) => r.id));
     const missingFromReport: typeof rawReportRows = ctx.inventory
-      .filter((i) => !seenIds.has(i.id) && (!selectedWarehouseId || i.warehouseId === selectedWarehouseId))
+      .filter((i) => !seenIds.has(i.id) && (!selectedWarehouseId || i.warehouseId === selectedWarehouseId || (i.quantityUnverified && i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] !== undefined)))
       .map((i) => ({
         id: i.id,
         code: i.legacyId ?? null,
@@ -4943,7 +4943,7 @@ function InventoryReportPage({
         transferOutQty: 0,
         buyTotal: 0,
         sellTotal: 0,
-        availableQty: i.quantityUnverified ? 0 : i.quantity,
+        availableQty: i.quantityUnverified ? (selectedWarehouseId ? (i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] ?? 0) : (i.computedQuantity ?? 0)) : i.quantity,
         unitCost: i.avgCost,
         remainingValue: Math.round((i.quantityUnverified ? 0 : i.quantity) * i.avgCost * 100) / 100,
         profit: 0,
@@ -4951,7 +4951,7 @@ function InventoryReportPage({
         sellingPrice: i.sellingPrice,
         catalogQuantity: i.quantity,
         quantityUnverified: Boolean(i.quantityUnverified),
-        hasMovement: false,
+        hasMovement: Boolean(i.quantityUnverified && (selectedWarehouseId ? i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] !== undefined : i.computedQuantity !== undefined)),
       }));
     return [...rawReportRows, ...missingFromReport].sort((a, b) =>
       b.name.localeCompare(a.name, "ar"),
@@ -5344,7 +5344,7 @@ function InventoryReportPage({
                     const liveItem = inventoryById.get(row.id);
                     const checked = selectedIds.has(row.id);
                     const isActiveRow = activeRowId ? activeRowId === row.id : idx === 0;
-                    const shownAvailable = movementReport ? row.availableQty : (liveItem?.quantity ?? row.availableQty);
+                    const shownAvailable = movementReport || liveItem?.quantityUnverified ? row.availableQty : (liveItem?.quantity ?? row.availableQty);
                     const showSearchDetails = searchQuery.trim().length > 0;
                     return (
                       <tr
@@ -5386,7 +5386,7 @@ function InventoryReportPage({
                         <td>{formatAmount(row.sellTotal)}</td>
                         <td>
                           <b>{formatAmount(shownAvailable)}</b>
-                          {showSearchDetails && liveItem?.quantityUnverified ? (
+                          {liveItem?.quantityUnverified ? (
                             <small style={{ display: "block", color: "#b45309", fontSize: 9.5 }}>بحاجة إلى تسوية</small>
                           ) : null}
                         </td>
