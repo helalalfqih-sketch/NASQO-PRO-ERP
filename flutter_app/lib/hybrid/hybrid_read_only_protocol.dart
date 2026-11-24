@@ -12,12 +12,14 @@ class HybridReadOnlyProtocol {
     this.saveUiPreferences,
     this.createAccount,
     this.updateAccount,
+    this.postDocument,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
   final Future<void> Function(Map<String, dynamic>)? saveUiPreferences;
   final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
   final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
+  final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -118,6 +120,25 @@ class HybridReadOnlyProtocol {
         return _error(id, actionName, 'VALIDATION_ERROR', 'حقول الحساب غير مدعومة أو غير صالحة.');
       } catch (_) {
         return _error(id, actionName, 'SERVICE_UNAVAILABLE', 'تعذر تأكيد حفظ الحساب المحلي.');
+      }
+    }
+
+    if (actionName == 'createLedgerEntry' && postDocument != null) {
+      final params = request['payload'];
+      final key = request['idempotencyKey'];
+      if (key is! String || key.isEmpty || key.length > 150 ||
+          params is! Map<String,dynamic> || params['workspaceId'] != 'local-erp-workspace' ||
+          params.length != 2 || params['payload'] is! Map<String,dynamic>) {
+        return _error(id,actionName,'VALIDATION_ERROR','طلب الترحيل غير صالح.');
+      }
+      try {
+        final result = await postDocument!(key,params['payload'] as Map<String,dynamic>);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,
+          'action':actionName,'ok':true,'data':result});
+      } on ArgumentError {
+        return _error(id,actionName,'VALIDATION_ERROR','اختر حسابين وعملة متطابقة؛ المدعوم حاليًا السند والقيد البسيط والفاتورة الحرة الآجلة.');
+      } catch (_) {
+        return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تأكيد الترحيل المحلي؛ تحقق من السجل قبل المحاولة.');
       }
     }
 
