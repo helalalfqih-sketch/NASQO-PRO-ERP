@@ -52,9 +52,9 @@ def field(s,k):
     assert match,'Missing package field: '+k
     return match.group(1)
 assert field(old,'userId')==field(new,'userId'),'Android UID changed'
-assert int(field(old,'versionCode'))==1126
-assert int(field(new,'versionCode'))>1126
+assert int(field(old,'versionCode'))==1128
+assert int(field(new,'versionCode'))>1128
 assert 'Success' in (p/'install-update.txt').read_text()
 assert 'FATAL EXCEPTION' not in (p/'update-log.txt').read_text()
-(p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1126,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
+(p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1128,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
 PY

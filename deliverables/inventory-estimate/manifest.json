@@ -1,0 +1,15 @@
+{
+  "version": "1.0.130",
+  "versionCode": 1130,
+  "sourceSha": "fbc1adc19a7ed7acedcb22e74297afb8a01c7992",
+  "signedBuildRun": 45701693495,
+  "signedArtifact": 15062499956,
+  "apkSha256": "0165b4c93152cfbac7342079e298a071db7e76e79f6dd223bb1516f4e90acf40",
+  "flutterPassed": 91,
+  "bridgePassed": 18,
+  "apkSyntheticBrowserPassed": 15,
+  "privateComparison": "read-only exact match; private values and backup excluded",
+  "reportTestedOnPhysicalPhone": false,
+  "approvedValuationChanged": false,
+  "financialPostingGuardsChanged": false
+}
