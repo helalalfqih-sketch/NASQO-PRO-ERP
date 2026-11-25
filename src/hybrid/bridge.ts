@@ -202,7 +202,7 @@ export class NasqoHybridBridge {
     }
 
     const isFinancial = isFinancialMutationCommand(action);
-    const catalogAction = this.localCatalogEditing && ["saveAccountGroup","saveCurrency","deleteCurrency","deleteAccount",
+    const catalogAction = this.localCatalogEditing && ["saveCashbox","saveAccountGroup","saveCurrency","deleteCurrency","deleteAccount",
       "updateInventoryItem","deleteInventoryItem","importInventoryItems","batchUpdateInventoryItems","saveWarehouse"].includes(action);
     if (isFinancial && this.readOnlyFinancialMode && !catalogAction && !(action === "saveAccount" && this.localAccountCreation) && !((action === "createLedgerEntry" || action === "updateLedgerEntry" || action === "setLedgerDeleted" || action === "permanentlyDeleteLedger") && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
       throw new HybridBridgeError(

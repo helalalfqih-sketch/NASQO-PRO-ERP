@@ -7,7 +7,7 @@ import { chromium, expect } from '@playwright/test';
 import { createHybridHomeFixtureSnapshot } from '../src/hybrid/homeFixture';
 const out=process.env.REPAIR_OUT||path.resolve('deliverables/audit-repairs/browser'); fs.mkdirSync(out,{recursive:true});
 const bundle=process.env.REPAIR_BUNDLE||path.resolve('dist/hybrid');
-const s=createHybridHomeFixtureSnapshot();
+const s=createHybridHomeFixtureSnapshot();s.capabilities={...s.capabilities,localAccountCreation:true,localCatalogEditing:true};
 s.workspace!.companyName='اختبار اصطناعي للأزرار';s.workspace!.whatsappPhone='';
 s.accounts=s.accounts.map((a,i)=>({...a,name:`حساب اصطناعي ${i+1}`,phone:'',openingBalance:0}));
 s.ledger=Array.from({length:12},(_,i)=>({...s.ledger[0],id:`audit-${i}`,accountId:'acc_sup_usd',accountName:'حساب اصطناعي 2',entryNumber:2000+i,amount:10+i,currency:i===11?'ريال':'دولار',entryDate:i===11?'2025-01-01':'2026-11-25',details:`بند اصطناعي ${i+1}`,createdAtMs:1795564800000,invoiceContent:'free' as const}));
@@ -15,11 +15,13 @@ s.inventory=Array.from({length:12},(_,i)=>({...s.inventory[0],id:`item-${i}`,nam
 function host(state:any){
  const w=window as any;sessionStorage.clear();const erpKey="acceptance-erp:"+location.search;const keptErp=localStorage.getItem(erpKey);localStorage.clear();if(keptErp)localStorage.setItem(erpKey,keptErp);state.erpData=JSON.parse(localStorage.getItem(erpKey)||'{"employees":[],"leaveRequests":[],"deals":[],"purchaseOrders":[],"boms":[],"productionOrders":[],"costCenters":[]}');if(location.search.includes("empty"))state.inventory=[];if(location.search.includes("large"))state.ledger=Array.from({length:516},(_,i)=>({...state.ledger[0],id:"row-"+i,entryNumber:i+1,amount:1,details:"حركة عربية "+(i+1),currency:"دولار"}));w.auditCommands=[];w.auditFiles=[];w.canvasText=[];
  const fill=CanvasRenderingContext2D.prototype.fillText;CanvasRenderingContext2D.prototype.fillText=function(t:any,...args:any[]){w.canvasText.push(String(t));return (fill as any).call(this,t,...args)};
- const allowed=new Set(['saveAccount','saveCashbox','saveErpRecords','backupWorkspace','getSnapshot','navigate','goBack','showMessage','changeCurrency','saveUiPreferences','getProductPriceStats','getInventoryMovementsReport','getCashboxesReport','getInvoiceDetail','beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport','printDocument','exportPdf','shareText','cloudIdentityAction','googleDriveAction','localToolsAction','legacyArchiveAction']);
+ if(location.search.includes('settings-legacy-on'))state.uiPreferences.extendedSettings={passwordLock:true,backupReminderOnExit:true,sellWithoutBalance:true};
+ const allowed=new Set(['saveWorkspaceSettings','saveAccount','saveCashbox','saveErpRecords','backupWorkspace','getSnapshot','navigate','goBack','showMessage','changeCurrency','saveUiPreferences','getProductPriceStats','getInventoryMovementsReport','getCashboxesReport','getInvoiceDetail','beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport','printDocument','exportPdf','shareText','cloudIdentityAction','googleDriveAction','localToolsAction','legacyArchiveAction']);
  let doc:any;
  w.auditEmit=(event:string,payload:any)=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'event',event,payload,timestampMs:Date.now()});
  w.NasqoHome={postMessage(raw:string){const r=JSON.parse(raw);w.auditCommands.push(r);let data:any={ok:true};
   if(r.action==='getSnapshot')data=state;
+  if(r.action==='saveWorkspaceSettings')data={workspace:{...state.workspace,...r.payload.updates}};
   if(r.action==='saveErpRecords'){
     if(!w.rejectErp){for(const c of r.payload.changes){const row={...c.record,_revision:c.expectedRevision+1};if(c.collection==='vatConfig')state.erpData.vatConfig=row;else {const list=state.erpData[c.collection];const i=list.findIndex((x:any)=>x.id===row.id);if(i<0)list.push(row);else list[i]=row;}}localStorage.setItem(erpKey,JSON.stringify(state.erpData));data={erpData:state.erpData};}
   }
@@ -39,7 +41,7 @@ if(r.action==='saveAccount'){const a={...state.accounts[0],...r.payload.payload,
   if(r.action==='googleDriveAction')data={configured:false,connected:false,files:[]};
   if(r.action==='localToolsAction')data={review:false,imported:false};
   if(r.action==='legacyArchiveAction')data={available:false,items:[],totalCount:0};
-  setTimeout(()=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'response',requestId:r.requestId,action:r.action,ok:allowed.has(r.action)&&!(r.action==='saveErpRecords'&&w.rejectErp),...(allowed.has(r.action)&&!(r.action==='saveErpRecords'&&w.rejectErp)?{data}:{error:{code:'UNAUTHORIZED_ACTION',message:'Audit host rejects writes'}}),timestampMs:Date.now()}),0);
+  setTimeout(()=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'response',requestId:r.requestId,action:r.action,ok:allowed.has(r.action)&&!(r.action==='saveErpRecords'&&w.rejectErp)&&!(r.action==='saveUiPreferences'&&w.rejectPreferences),...(allowed.has(r.action)&&!(r.action==='saveErpRecords'&&w.rejectErp)&&!(r.action==='saveUiPreferences'&&w.rejectPreferences)?{data}:{error:{code:'UNAUTHORIZED_ACTION',message:'Audit host rejects writes'}}),timestampMs:Date.now()}),0);
  }};
 }
 const fixture=`(${host.toString()})(${JSON.stringify(s)});`;
@@ -53,7 +55,7 @@ const emit=(route:string,params={})=>page.evaluate(({route,params})=>(window as 
 const fresh=async()=>{await page.goto(url+"?case="+currentId);await expect(page.getByTestId('dashboard-screen')).toBeVisible();};
 const statement=async()=>{await emit('supplier',{accountId:'acc_sup_usd'});await expect(page.getByTestId('supplier-screen')).toBeVisible();};
 const prints=async()=>{await statement();await page.getByRole('button',{name:'طباعة الكشف',exact:true}).click();await expect(page.getByTestId('print-options-modal')).toBeVisible();};
-const run=async(id:string,fn:()=>Promise<any>)=>{if(only&&!only.includes(id))return;try{currentId=id;await fresh();const observed=await fn();results.push({id,execution:'observed',...observed});await page.screenshot({path:`${out}/${id}.png`});fs.writeFileSync(`${out}/${id}-commands.json`,JSON.stringify(await commands(),null,2));console.log('OBSERVED '+id);}catch(e){results.push({id,execution:'test-error',error:String(e)});await page.screenshot({path:`${out}/${id}-failure.png`});console.log('ERROR '+id+' '+String(e));}};
+const run=async(id:string,fn:()=>Promise<any>)=>{if(only&&!only.includes(id))return;try{currentId=id;await fresh();const observed=await fn();results.push({id,execution:'observed',...observed});await page.screenshot({path:`${out}/${id}.png`});fs.writeFileSync(`${out}/${id}-commands.json`,JSON.stringify(await commands(),null,2));console.log('OBSERVED '+id);}catch(e){results.push({id,execution:'test-error',error:String(e)});fs.writeFileSync(`${out}/${id}-failed-commands.json`,JSON.stringify(await commands(),null,2));await page.screenshot({path:`${out}/${id}-failure.png`});console.log('ERROR '+id+' '+String(e));}};
 const exported=async()=>{await expect.poll(()=>page.evaluate(()=>(window as any).auditFiles.length)).toBe(1);const d=await page.evaluate(()=>(window as any).auditFiles[0]);const bytes=Buffer.concat(d.base64.map((b:string)=>Buffer.from(b,'base64')));fs.writeFileSync(`${out}/${currentId}-${d.fileName}`,bytes);return {d,bytes};};const drawer=async(label:string)=>{await page.getByRole('button',{name:'فتح القائمة',exact:true}).click();await page.getByRole('complementary',{name:'قائمة نسقو'}).getByRole('button',{name:label,exact:true}).click();};
 const exportOptions=async()=>{await statement();await page.getByRole('button',{name:'طباعة الكشف',exact:true}).click();};
 try{
@@ -69,13 +71,18 @@ try{
  await page.getByRole('textbox',{name:'اسم الحساب',exact:true}).fill('حساب صندوق الرحلة');
  await page.getByTestId('account-form-extended').getByRole('button',{name:'حفظ واختيار',exact:true}).click();
  await expect(manager.getByLabel('اسم الصندوق الجديد',{exact:true})).toHaveValue('صندوق الرحلة');
- await expect(manager.getByRole('button',{name:'حساب ترحيل الصندوق',exact:true})).toContainText('حساب صندوق الرحلة');
+ await expect(manager.getByRole('combobox',{name:'حساب ترحيل الصندوق',exact:true})).toContainText('حساب صندوق الرحلة');
  await manager.getByRole('button',{name:'حفظ واختيار',exact:true}).click();
  await expect(manager).toHaveCount(0);
  await expect(page.getByTestId('transaction-amount')).toHaveValue('23');
  await expect(page.getByLabel('صندوق النقد',{exact:true})).toHaveValue('99');
  const writes=(await commands()).filter((r:any)=>['saveAccount','saveCashbox','createLedgerEntry','postStockInvoice'].includes(r.action));assert.deepEqual(writes.map((r:any)=>r.action),['saveAccount','saveCashbox']);return{correct:true,parentAmountPreserved:true,parentNotPosted:true};
  });
+ for(const mode of ['on','off'])await run('settings-legacy-'+mode,async()=>{
+ await emit('settings');await page.getByRole('tab',{name:'المنشأة',exact:true}).click();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).toBeDisabled();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).not.toBeChecked();
+ await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await expect(page.getByRole('switch')).toBeDisabled();await expect(page.getByRole('switch')).not.toBeChecked();await expect(page.getByLabel('التذكير عند الإغلاق — غير متاح؛ احفظ نسخة يدويًا',{exact:true})).toBeDisabled();return{correct:true,storedPreference:mode,actualProtection:false,negativeStockSupported:false};
+ });
+ await run('settings-save-failure-no-success',async()=>{await emit('settings');await page.evaluate(()=>(window as any).rejectPreferences=true);await page.getByRole('button',{name:'حفظ الإعدادات',exact:true}).click();await expect(page.getByText('Audit host rejects writes',{exact:true})).toBeVisible();assert(!(await commands()).some((r:any)=>r.action==='saveWorkspaceSettings'));await expect(page.getByText('تم حفظ جميع إعدادات النظام في قاعدة البيانات بنجاح',{exact:true})).toHaveCount(0);return{correct:true};});
  await run('baseline-catalog-empty',async()=>{await page.getByTestId('open-items-btn').click();return{captured:true};});
  await run('baseline-catalog-edit-textscale',async()=>{await page.getByTestId('open-items-btn').click();await page.getByTestId('items-catalog-table').getByText('صنف اصطناعي 1',{exact:true}).click();await page.addStyleTag({content:'html{font-size:24px!important}.items-default-unit-radios{font-size:20px!important}'});return{captured:true};});
  await run('crm-confirmed-record',async()=>{const open=async()=>{await drawer('نقطة البيع ومتابعة العملاء');await page.getByRole('tab',{name:'فرص المبيعات',exact:true}).click();};await open();await page.getByRole('button',{name:'صفقة جديدة',exact:true}).click();await page.getByPlaceholder('عنوان الفرصة البيعية أو المشروع').fill('فرصة اختبار مستقلة');await page.getByPlaceholder('القيمة المتوقعة').fill('30');await page.getByRole('button',{name:'حفظ الفرصة البيعية',exact:true}).click();await expect(page.getByPlaceholder('عنوان الفرصة البيعية أو المشروع')).toHaveCount(0);await page.reload();await expect(page.getByTestId('dashboard-screen')).toBeVisible();await open();await expect(page.getByText('فرصة اختبار مستقلة',{exact:true})).toBeVisible();return{correct:true};});

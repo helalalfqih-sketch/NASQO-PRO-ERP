@@ -1,3 +1,4 @@
+import { hybridBridge } from "../hybrid/bridge";
 import { usesNativeDocumentOutput } from "../hybrid/documentOutput";
 import { useRef, useState, type ChangeEvent } from "react";
 import { HybridCloudAccount, HybridLocalTools } from "./HybridCloudAccount";
@@ -187,17 +188,16 @@ export function SystemSettingsPage({
     reader.readAsDataURL(file);
   };
 
+  const saveGate = useRef(false);
   const handleSaveAll = async () => {
+    if(saveGate.current)return;
+    saveGate.current=true;
     keyboard.hide();
-    if (!workspace) {
-      onChangeExtended(draft);
-      triggerHaptic("success");
-      onNotify("تم حفظ الإعدادات");
-      return;
-    }
     setSaving(true);
     try {
+      if(usesNativeDocumentOutput())await hybridBridge.invoke("saveUiPreferences",{preferences:{extendedSettings:draft}});
       onChangeExtended(draft);
+      if(!workspace){onNotify("تم حفظ الإعدادات");return;}
       const nextWorkspace: WorkspaceSettings = {
         ...workspace,
         companyName: companyName.trim() || workspace.companyName,
@@ -217,6 +217,7 @@ export function SystemSettingsPage({
       triggerHaptic("warning");
       onNotify(err instanceof Error ? err.message : "تعذر حفظ الإعدادات في قاعدة البيانات.");
     } finally {
+      saveGate.current=false;
       setSaving(false);
     }
   };

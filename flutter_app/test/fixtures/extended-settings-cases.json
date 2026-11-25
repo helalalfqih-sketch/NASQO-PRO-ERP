@@ -1,0 +1,464 @@
+[
+  {
+    "key": "usageMode",
+    "base": "sync",
+    "value": "local",
+    "type": "\"sync\" | \"local\""
+  },
+  {
+    "key": "syncMode",
+    "base": "auto",
+    "value": "manual",
+    "type": "\"auto\" | \"manual\""
+  },
+  {
+    "key": "hideAds",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "logoDataUrl",
+    "base": "",
+    "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "type": "string"
+  },
+  {
+    "key": "companyNameEn",
+    "base": "Nasqo Pro Business",
+    "value": "اختبار companyNameEn",
+    "type": "string"
+  },
+  {
+    "key": "addressAr",
+    "base": "شارع بينون، صنعاء، اليمن",
+    "value": "اختبار addressAr",
+    "type": "string"
+  },
+  {
+    "key": "addressEn",
+    "base": "YEMEN SANAA",
+    "value": "اختبار addressEn",
+    "type": "string"
+  },
+  {
+    "key": "mobileEn",
+    "base": "771370740",
+    "value": "اختبار mobileEn",
+    "type": "string"
+  },
+  {
+    "key": "taxNumber",
+    "base": "",
+    "value": "اختبار taxNumber",
+    "type": "string"
+  },
+  {
+    "key": "drawSignature",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "autoWhatsapp",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "reportColor",
+    "base": "#4338ca",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "fontSize",
+    "base": 4,
+    "value": 5,
+    "type": "number"
+  },
+  {
+    "key": "yellowPaper",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "printTarget",
+    "base": "pdf",
+    "value": "printer",
+    "type": "\"pdf\" | \"printer\""
+  },
+  {
+    "key": "backupReminderOnExit",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "whatsappVariant",
+    "base": "business",
+    "value": "green",
+    "type": "WhatsAppClientVariant"
+  },
+  {
+    "key": "passwordLock",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "showBalanceInVoucher",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "showTimeInVoucher",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "hideCashboxesOnHome",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "hideVoucherSuggestions",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "useReceiptPaymentVoucher",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "useTwoDecimals",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "showAllCurrenciesToLocal",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "hideAllUsersOption",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "thermalPrintPdf",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "showGeneralEntryOnHome",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "useNotifMsgInPaymentReq",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "showDateInSms",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "showVoucherNoInSms",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "statementFooterNote",
+    "base": "الرصيد صحيح إذا لم تتم المراجعة خلال سبعة أيام من تاريخ صدور الكشف",
+    "value": "اختبار statementFooterNote",
+    "type": "string"
+  },
+  {
+    "key": "messageIntro",
+    "base": "",
+    "value": "اختبار messageIntro",
+    "type": "string"
+  },
+  {
+    "key": "messageOutro",
+    "base": "",
+    "value": "اختبار messageOutro",
+    "type": "string"
+  },
+  {
+    "key": "creditBalanceLabel",
+    "base": "الرصيد لكم",
+    "value": "اختبار creditBalanceLabel",
+    "type": "string"
+  },
+  {
+    "key": "debitBalanceLabel",
+    "base": "الرصيد عليكم",
+    "value": "اختبار debitBalanceLabel",
+    "type": "string"
+  },
+  {
+    "key": "salesInvoiceFooterNote",
+    "base": "البضاعة لا ترد إلا في حالة أي خلل مصنعي فقط",
+    "value": "اختبار salesInvoiceFooterNote",
+    "type": "string"
+  },
+  {
+    "key": "sellBelowCost",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "sellWithoutBalance",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "invoicePrintTemplate",
+    "base": "1",
+    "value": "2",
+    "type": "\"1\" | \"2\""
+  },
+  {
+    "key": "hidePriceIn80mm",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "useWeightedAverage",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "hideItemCost",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "showItemsInInvoiceDetails",
+    "base": true,
+    "value": false,
+    "type": "boolean"
+  },
+  {
+    "key": "hideExpiryInInvoice",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "useFreeBonusQty",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "hidePrintDateInInvoice",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "useLargestUnitAsMain",
+    "base": false,
+    "value": true,
+    "type": "boolean"
+  },
+  {
+    "key": "cardSize",
+    "base": "normal",
+    "value": "compact",
+    "type": "CardSizePreset"
+  },
+  {
+    "key": "cardPadding",
+    "base": 10,
+    "value": 11,
+    "type": "number"
+  },
+  {
+    "key": "cardGap",
+    "base": 9,
+    "value": 10,
+    "type": "number"
+  },
+  {
+    "key": "cardScale",
+    "base": 100,
+    "value": 101,
+    "type": "number"
+  },
+  {
+    "key": "cardShape",
+    "base": "rounded",
+    "value": "sharp",
+    "type": "CardShapePreset"
+  },
+  {
+    "key": "cardRadius",
+    "base": 12,
+    "value": 13,
+    "type": "number"
+  },
+  {
+    "key": "cardShadow",
+    "base": "soft",
+    "value": "none",
+    "type": "CardShadowPreset"
+  },
+  {
+    "key": "cardBorderStyle",
+    "base": "thin",
+    "value": "medium",
+    "type": "CardBorderStyle"
+  },
+  {
+    "key": "cardBorderWidth",
+    "base": 1,
+    "value": 2,
+    "type": "number"
+  },
+  {
+    "key": "cardColorPreset",
+    "base": "auto",
+    "value": "#0f766e",
+    "type": "CardColorPreset"
+  },
+  {
+    "key": "cardBgColor",
+    "base": "",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "cardBorderColor",
+    "base": "",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "cardTextColor",
+    "base": "",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "cardAccentColor",
+    "base": "",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeButtonStyle",
+    "base": "pill",
+    "value": "soft",
+    "type": "HomeButtonStyle"
+  },
+  {
+    "key": "homeColumns",
+    "base": "auto",
+    "value": "1",
+    "type": "HomeColumnsMode"
+  },
+  {
+    "key": "homeBannerStyle",
+    "base": "card",
+    "value": "tinted",
+    "type": "HomeBannerStyle"
+  },
+  {
+    "key": "homeButtonRadius",
+    "base": 26,
+    "value": 27,
+    "type": "number"
+  },
+  {
+    "key": "homeButtonHeight",
+    "base": 48,
+    "value": 49,
+    "type": "number"
+  },
+  {
+    "key": "homeGridGap",
+    "base": 9,
+    "value": 10,
+    "type": "number"
+  },
+  {
+    "key": "homeColorPreset",
+    "base": "indigo",
+    "value": "#0f766e",
+    "type": "HomeColorPreset"
+  },
+  {
+    "key": "homePrimaryBtnColor",
+    "base": "#4338ca",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeSecondaryBtnColor",
+    "base": "#0891b2",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeHeaderColor",
+    "base": "#312e81",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeBannerBgColor",
+    "base": "#eef2ff",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeCanvasBgColor",
+    "base": "#f5f7ff",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeBtnTextColor",
+    "base": "#ffffff",
+    "value": "#0f766e",
+    "type": "string"
+  },
+  {
+    "key": "homeFontFamily",
+    "base": "ibm-plex",
+    "value": "system",
+    "type": "AppFontFamily"
+  },
+  {
+    "key": "homeFontSize",
+    "base": 14,
+    "value": 15,
+    "type": "number"
+  }
+]

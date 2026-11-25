@@ -50,6 +50,14 @@ void main(){test('owner acceptance: money, stock, rollback, catalogs, backup and
  evidence('G02-report-trace',{'inventoryQuantity':8,'cashboxBalance':16,'snapshotLedgerCount':(snap['ledger'] as List).length});
  await Future.wait([posting.post(w,'golden-sale-op',resolved),posting.post(w,'golden-sale-op',resolved)]);expect(await qty(),8);expect(await db.query('stock_posting_documents'),hasLength(1));expect(await db.query('stock_movements'),hasLength(1));
  evidence('G03-duplicate-ack-loss',{'documentCount':1,'movementCount':1,'remainingQty':8,'note':'replay after committed result ignored + concurrent repeats; native SQLite only'});
+ for(final enabled in [false,true]){
+  await local.saveUiPreferences({'extendedSettings':{'sellWithoutBalance':enabled}});
+  final beforePolicy=await backup.exportNative();
+  final oversell={...sale('oversell-$enabled',99),'amount':7992,'lines':[{'inventoryItemId':'golden-item','quantity':999,'price':8,'total':7992}]};
+  await expectLater(posting.post(w,'oversell-$enabled',await roles.resolve(oversell)),throwsA(isA<StateError>().having((e)=>e.message,'reason','Insufficient stock')));
+  expect(await backup.exportNative(),orderedEquals(beforePolicy));
+ }
+ evidence('SET-sellWithoutBalance',{'storedFalseAndTrue':'both reject oversell with Insufficient stock','exportUnchangedAfterEachFailure':true});
  final beforeFailure=await backup.exportNative();await db.execute("CREATE TRIGGER test_save_failure BEFORE INSERT ON journal_lines WHEN NEW.journal_id='failed-sale' BEGIN SELECT RAISE(ABORT,'SYNTHETIC_FAILURE'); END");
  await expectLater(posting.post(w,'failed-sale-op',await roles.resolve(sale('failed-sale',2))),throwsA(anything));await db.execute('DROP TRIGGER test_save_failure');expect(await backup.exportNative(),orderedEquals(beforeFailure));
  evidence('G04-mid-save-rollback',{'nativeExportByteEqualBeforeAfter':true,'remainingQty':8});
