@@ -101,7 +101,8 @@ function installHost(state: typeof snapshot, lines: typeof invoiceLines) {
       itemRows: state.inventory.slice(0, 2).map((item, i) => ({ id: item.id, code: i + 1, name: item.name, sku: item.sku,
         unit: item.unit, warehouseId: "wh_main", openingQty: 0, periodNetQty: 5, buyQty: 5, sellQty: 0,
         transferInQty: 1, transferOutQty: 0, buyTotal: 50, sellTotal: 0, availableQty: 5, unitCost: 10,
-        remainingValue: 0, profit: 0, avgCost: 0, sellingPrice: 50, catalogQuantity: 0,
+        remainingValue: 0, estimatedRemainingValue: i===0?37.5:12.5,
+        profit: 0, avgCost: 0, sellingPrice: 50, catalogQuantity: 0,
         quantityUnverified: true, hasMovement: true })),
       totals: { totalSales: 0, totalPurchases: 50, totalProfit: 0, totalRemainingValue: 0, activeItemsCount: 2, profitBasis: "avg" },
       anomalies: { unverifiedItemsCount: 40, unresolvedTransfersCount: 0, negativeComputedItems: [] },
@@ -214,6 +215,27 @@ try {
     const search = page.getByTestId("items-catalog-screen").getByRole("textbox").first(); await search.fill("TEST-0041"); await search.blur();
     await expect(page.getByTestId("catalog-cost-synthetic-item-0041")).toContainText("22");
     await expect(page.getByTestId("catalog-cost-synthetic-item-0041")).not.toContainText("مرجعي");
+  });
+  await run("inventory-estimate-separated-from-approved-value", async () => {
+    await openReport();
+    await expect(page.getByTestId("inventory-estimated-value")).toContainText("50 ريال");
+    await expect(page.getByTestId("inventory-movements-footer")).toContainText("قيمة المتبقي المعتمدة : 66");
+    await expect(page.getByTestId("inventory-movements-table")).toContainText("37.5");
+    await expect(page.getByTestId("inventory-movements-table")).toContainText("تقديرية — غير معتمدة");
+    await page.getByTestId("inventory-movements-footer").scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(evidence,"inventory-estimated-value.png")});
+    await page.getByRole("button",{name:"طباعة التقرير",exact:true}).click();
+    await page.getByLabel("Excel",{exact:true}).check();
+    await page.getByRole("button",{name:"حفظ الملف",exact:true}).click();
+    await expect.poll(()=>page.evaluate(()=>(window as any).__exportFinished)).toBe(true);
+    const chunks=await page.evaluate(()=>(window as any).__exportChunks as string[]);
+    const bytes=Buffer.concat(chunks.map(c=>Buffer.from(c,"base64")));
+    const x=await import("xlsx");const book=x.read(bytes);
+    const rows=x.utils.sheet_to_json(book.Sheets["التقرير"],{header:1}) as any[][];
+    assert(rows[0].includes("قيمة المتبقي المعتمدة"));assert(rows[0].includes("قيمة المتبقي التقديرية"));
+    const first=rows.find(r=>r[1]==="صنف اصطناعي 0001")!;assert(first);
+    assert.equal(first[6],0);assert.equal(first[9],37.5);assert.equal(first[10],"كمية غير معتمدة");
+    fs.writeFileSync(path.join(evidence,"inventory-estimates.xlsx"),bytes);
   });
   await run("all-516-item-movements-without-duplicates", async () => {
     await openReport(); await openMovements();

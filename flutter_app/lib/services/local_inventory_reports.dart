@@ -254,6 +254,23 @@ class LocalInventoryReports {
       final openingQty=available-periodNet;
       final costPending=item['costUnverified']==true;
       final value=historicalOnly||costPending||rowCurrency!=c?0:round(available*catalogCost);
+      // A comparison estimate is not an approved balance. Keep remainingValue
+      // unchanged for financial consumers and never write an opening here.
+      final purchases=events.where((e)=>e['financial']==true&&e['currency']==rowCurrency);
+      num netPurchases(Iterable<Map<String,dynamic>> es,String field)=>
+        netRole(es,'buy',field)-netRole(es,'purchaseReturn',field);
+      final periodPurchases=purchases.where(period);
+      final globalQty=netPurchases(periodPurchases,'baseQuantity');
+      final allQty=netPurchases(purchases,'baseQuantity');
+      final referenceFallback=referenceCost>0?referenceCost:globalQty>0?
+        netPurchases(periodPurchases,'total')/globalQty:allQty>0?netPurchases(purchases,'total')/allQty:0;
+      final estimateAverage=buys!=0&&buyValue/buys>0?buyValue/buys:referenceFallback;
+      final pricedBuys=historicBuys.where((e)=>n(e['price'])>0).toList();
+      final estimateLast=pricedBuys.isEmpty?estimateAverage:
+        n(pricedBuys.first['price'])/factor(item,n(pricedBuys.first['unitNum'],1));
+      final estimateCost=basis=='cost'?referenceFallback:basis=='last'?estimateLast:estimateAverage;
+      final estimatedValue=(historicalOnly||costPending)&&known(rowCurrency)&&rowCurrency==c&&
+        (available==0||estimateCost>0)?round(available*estimateCost):null;
       if(historicalOnly)estimates++;
       final otherCurrencies=relevant.where((e)=>e['financial']==true&&e['currency']!=rowCurrency);
       if(otherCurrencies.isNotEmpty)mixed++;
@@ -270,6 +287,7 @@ class LocalInventoryReports {
         'buyQty':round(buys,1000),'sellQty':round(sells,1000),'transferInQty':round(txIn,1000),'transferOutQty':round(txOut,1000),
         'buyTotal':round(buyValue),'sellTotal':round(sellValue),'availableQty':round(available,1000),
         'unitCost':round(unitCost),'remainingValue':value,'profit':round(profit),'avgCost':catalogCost,
+        if(estimatedValue!=null)'estimatedRemainingValue':estimatedValue,
         'sellingPrice':item['sellingPrice'],'catalogQuantity':current,'quantityUnverified':historicalOnly,'costUnverified':costPending,
         'hasMovement':relevant.isNotEmpty,'balanceBasis':historicalOnly?'historical':'operational'});
       // Keep money in its own currency. The row shows one currency, while
@@ -326,7 +344,7 @@ class LocalInventoryReports {
       'totalRemainingQty':round(n(b['totalRemainingQty']),1000)}).toList();
     final one=buckets.length==1?buckets.single:<String,dynamic>{};
     final unresolved=data['unresolved'] as List;
-    final note='الرصيد المعتمد من SQLite ولا تُعاد إضافة الحركات القديمة إليه. الكميات التاريخية غير المعتمدة تقديرية ولا تدخل في قيمة المخزون. '
+    final note='الرصيد المعتمد من SQLite ولا تُعاد إضافة الحركات القديمة إليه. قيمة المتبقي التقديرية حسب أساس السعر المختار للعرض والمراجعة فقط، ولا تدخل القيمة المعتمدة أو تعتمد المخزون. الكميات التاريخية غير المعتمدة تقديرية ولا تدخل في قيمة المخزون. '
       'اعتماد الكمية مستقل عن التكلفة؛ الكمية المعتمدة بتكلفة غير معتمدة لا تدخل في قيمة المخزون. '
       'الأرباح التاريخية تقديرية حسب أساس السعر المختار؛ الربح المسجل متاح للفواتير المحلية. قيمة المتبقي بسعر التكلفة الحالي وليست تقييمًا تاريخيًا. '
       'استثناءات: ${unresolved.length} تحويل غير مكتمل، ${data['missingLines']} بند غير مرتبط، $unknownValue بند دون قيمة مالية معتمدة، $mixed صنف متعدد العملات.'

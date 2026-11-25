@@ -67,6 +67,14 @@ void main(){
       await expectLater(submit(review,[item]),throwsStateError);
       await db.delete('erp_state',where:'stateKey = ?',whereArgs:['sync_workspace_binding']);
       final beforeInvalid=await backups.exportNative();
+      final estimated=row(await report(wh),item);
+      expect(estimated['estimatedRemainingValue'],210.75);
+      expect(estimated['remainingValue'],0);
+      expect(row(await report(wh),'legacy-prod-3')['estimatedRemainingValue'],-3);
+      final referenceReport=await LocalInventoryReports.report(db,
+        await HybridLocalSnapshotAdapter.readFromDevice(),{'warehouseId':wh,'profitBasis':'cost'});
+      expect(row(referenceReport,item)['estimatedRemainingValue'],105.38);
+      expect(await backups.exportNative(),orderedEquals(beforeInvalid));
       await expectLater(submit(review,[item,'legacy-prod-3']),throwsArgumentError);
       expect(await backups.exportNative(),orderedEquals(beforeInvalid));
       await db.update('inventory_items',{'name':'changed'},where:'id = ?',whereArgs:[item]);
@@ -80,6 +88,7 @@ void main(){
       var current=row(await report(wh),item);
       expect(current['availableQty'],35.125);expect(current['quantityUnverified'],false);
       expect(current['costUnverified'],true);expect(current['remainingValue'],0);
+      expect(current['estimatedRemainingValue'],210.75);
       await expectLater(LocalDatabase.requireVerifiedStock(db,item),throwsStateError);
       final second=await approval.preview('legacy-wh-2');
       expect((second['rows'] as List).single['quantity'],5);
@@ -110,6 +119,7 @@ void main(){
       await opening.approve(w,valuation,expectedSourceSha:candidate.sha);
       current=row(await report(wh),item);
       expect(current['availableQty'],35.125);expect(current['costUnverified'],false);expect(current['remainingValue'],140.5);
+      expect(current.containsKey('estimatedRemainingValue'),false);
       expect(await db.query('stock_movements'),isEmpty);expect(await db.query('journal_entries'),hasLength(1));
       expect(await submit(review,[item,'legacy-prod-2']),2);
       expect(row(await report(wh,to:'2026-11-09'),item)['quantityUnverified'],true);

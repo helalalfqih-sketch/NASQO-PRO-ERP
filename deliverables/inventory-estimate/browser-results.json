@@ -1,0 +1,69 @@
+{
+  "environment": "Chromium built hybrid UI; synthetic host; NOT Android or SQLite",
+  "bundle": "/workspace/NASQO-audit-repairs/dist/hybrid",
+  "manifestSha256": "979ace4c93e5f22de27d88fe0e02827382a3164a044f38785e5c317458acc749",
+  "results": [
+    {
+      "name": "catalog-search-pages-and-reset",
+      "passed": true
+    },
+    {
+      "name": "catalog-reference-cost-does-not-approve-stock",
+      "passed": true
+    },
+    {
+      "name": "inventory-estimate-separated-from-approved-value",
+      "passed": true
+    },
+    {
+      "name": "all-516-item-movements-without-duplicates",
+      "passed": true
+    },
+    {
+      "name": "movement-date-filter-includes-dated-transfer-and-resets-page",
+      "passed": true
+    },
+    {
+      "name": "closed-item-late-response-cannot-replace-new-item",
+      "passed": true
+    },
+    {
+      "name": "movement-read-errors-retain-rows-and-retry-correct-offset",
+      "passed": true
+    },
+    {
+      "name": "rapid-load-more-sends-one-page-request",
+      "passed": true
+    },
+    {
+      "name": "invoice-full-note-reference-and-source-discounts",
+      "passed": true
+    },
+    {
+      "name": "invoice-pdf-contains-multiple-pages-for-full-source-details",
+      "passed": true
+    },
+    {
+      "name": "invoice-pdf-refuses-missing-line-details",
+      "passed": true
+    },
+    {
+      "name": "imported-quotes-in-normal-destination-page-and-durable-draft",
+      "passed": true
+    },
+    {
+      "name": "copied-draft-bound-to-source-sha-through-backup-aba-replacement",
+      "passed": true
+    },
+    {
+      "name": "imported-trash-keeps-original-deleted-when-copying-draft",
+      "passed": true
+    },
+    {
+      "name": "imported-alert-in-notifications-read-hide-and-show-again",
+      "passed": true
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": []
+}

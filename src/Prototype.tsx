@@ -5119,9 +5119,10 @@ function InventoryReportPage({
 
   useReportSource("inventory",()=>{
     if(!movementReport)throw new Error("انتظر اكتمال قراءة تقرير المخزون أو أعد المحاولة");
-    const rows=reportRows.map(r=>{const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");return {id:r.id,currency,cells:[r.code??r.id,r.name,r.unit,r.availableQty,r.buyTotal,r.sellTotal,r.remainingValue,r.profit,currency]};});
+    const estimates=reportRows.some(r=>r.estimatedRemainingValue!==undefined);
+    const rows=reportRows.map(r=>{const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");return {id:r.id,currency,cells:[r.code??r.id,r.name,r.unit,r.availableQty,r.buyTotal,r.sellTotal,r.remainingValue,r.profit,currency,...(estimates?[r.estimatedRemainingValue??"—",r.quantityUnverified?"كمية غير معتمدة":r.costUnverified?"تكلفة غير معتمدة":"معتمد"]:[])]};});
     const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[4]);t.credit+=Number(row.cells[5]);t.balance+=Number(row.cells[6]);return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
-    return {kind:"inventory",title:"حركة المخزون",scope:{warehouse:ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name||"جميع المخازن",from:fromDate,to:toDate,currency:selectedCurrency,search:searchQuery},columns:["الرقم","الصنف","الوحدة","المتوفر","الشراء","البيع","قيمة المتبقي","الربح","العملة"],rows,totals};
+    return {kind:"inventory",title:"حركة المخزون",scope:{warehouse:ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name||"جميع المخازن",from:fromDate,to:toDate,currency:selectedCurrency,search:searchQuery,...(estimates?{"التقييم":"التقدير حسب أساس السعر المختار، لا يدخل القيمة المعتمدة","أساس السعر":profitBasis==="cost"?"سعر التكلفة المرجعي":profitBasis==="last"?"آخر سعر شراء":"متوسط الشراء"}:{})},columns:["الرقم","الصنف","الوحدة","المتوفر","الشراء","البيع",estimates?"قيمة المتبقي المعتمدة":"قيمة المتبقي","الربح","العملة",...(estimates?["قيمة المتبقي التقديرية","حالة الاعتماد"]:[])],rows,totals};
   });
   const showOpeningCol = useMemo(
     () => Boolean(fromDate) || reportRows.some((r) => (r.openingQty ?? 0) !== 0),
@@ -5245,6 +5246,11 @@ function InventoryReportPage({
     t.totalSales+=r.sellTotal;t.totalPurchases+=r.buyTotal;t.totalProfit+=r.profit;t.totalRemainingValue+=r.remainingValue;t.activeItemsCount++;return out;
   },{} as Record<string,{currency:string;totalSales:number;totalPurchases:number;totalProfit:number;totalRemainingValue:number;activeItemsCount:number}>));
   const totals=scopedCurrencyTotals.length===1?scopedCurrencyTotals[0]:{totalSales:0,totalPurchases:0,totalProfit:0,totalRemainingValue:0,activeItemsCount:reportRows.length};
+  const estimatedCurrencyTotals=Object.values(reportRows.reduce((out,row)=>{
+    if(row.estimatedRemainingValue===undefined)return out;
+    const currency=row.currencyCode||inventoryById.get(row.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال";
+    out[currency]??={currency,value:0};out[currency].value+=row.estimatedRemainingValue;return out;
+  },{} as Record<string,{currency:string;value:number}>));
 
   const activeFiltersCount = countActiveFilters(
     {
@@ -5600,7 +5606,10 @@ function InventoryReportPage({
                           ) : row.costUnverified ? <small style={{ display: "block", color: isActiveRow ? "#fff" : "#b45309", fontSize: 9.5 }}>كمية معتمدة — التكلفة غير معتمدة</small> : null}
                         </td>
                         <td>{row.unit}</td>
-                        <td>{row.costUnverified ? "غير معتمدة" : formatAmount(row.remainingValue)}</td>
+                        <td>{row.estimatedRemainingValue!==undefined ? <>
+                          <bdi>{formatAmount(row.estimatedRemainingValue)}</bdi>
+                          <small style={{display:"block"}}>تقديرية — غير معتمدة</small>
+                        </> : row.costUnverified||row.quantityUnverified ? "غير معتمدة" : formatAmount(row.remainingValue)}</td>
                         <td>
                           {row.profit < 0 ? `${formatAmount(Math.abs(row.profit))}-` : formatAmount(row.profit)}
                         </td>
@@ -5673,7 +5682,7 @@ function InventoryReportPage({
             </div>
 
             {!searchActive ? (
-              <footer className="smart-mv-bottom-bar" data-testid="inventory-movements-footer">
+              <footer className={`smart-mv-bottom-bar${estimatedCurrencyTotals.length>0?" has-estimates":""}`} data-testid="inventory-movements-footer">
                 <label className="smart-mv-show-all-toggle">
                   <input
                     type="checkbox"
@@ -5684,16 +5693,20 @@ function InventoryReportPage({
                 </label>
                 <div className="smart-mv-bottom-center">
                   كمية المتبقي : <bdi>{formatQuantity(totalRemainingQty)}</bdi>
+                  {estimatedCurrencyTotals.length>0&&<div data-testid="inventory-estimated-value">
+                    قيمة المتبقي التقديرية : {estimatedCurrencyTotals.map(t=>`${formatAmount(t.value)} ${t.currency}`).join(" • ")}
+                    <small style={{display:"block"}}>للأرصدة غير المعتمدة — حسب أساس السعر المختار</small>
+                  </div>}
                   {multiCurrencyTotals ? (
                     <>
                       {" | "}
                       {multiCurrencyTotals
-                        .map((ct) => `${formatAmount(ct.totalRemainingValue)} ${ct.currency}`)
+                        .map((ct) => `${estimatedCurrencyTotals.length>0?"المعتمدة: ":""}${formatAmount(ct.totalRemainingValue)} ${ct.currency}`)
                         .join(" • ")}
                     </>
                   ) : (
                     <>
-                      {" | "}قيمة المتبقي : <bdi>{formatAmount(totals.totalRemainingValue)}</bdi>
+                      {" | "}{estimatedCurrencyTotals.length>0?"قيمة المتبقي المعتمدة":"قيمة المتبقي"} : <bdi>{formatAmount(totals.totalRemainingValue)}</bdi>
                     </>
                   )}
                 </div>

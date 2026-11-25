@@ -146,3 +146,9 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Use the supplied complete NASQO calculator/cube/Arabic wordmark image for the launcher icon and startup screen. The matching source is `public/assets/aistudio/NASQO_PRO_ERP_800_022d325f.png`. Preserve its artwork and transparency.
 - Keep it inside adaptive-icon safe margins. Configure native resources after `flutter create` so Flutter's default icon cannot return. Preserve package/signing identity.
 - The Android display name under the launcher icon and in system app information must be «نسقو برو» in Arabic. Keep the applicationId unchanged.
+
+## Imported inventory display estimates (user direction, 2026-11-25)
+
+- Android inventory reports must show the available estimated remaining value explicitly, separately from approved valuation. Never label an excluded, unapproved valuation as an ordinary zero stock value.
+- Use the selected price basis for comparison estimates, retaining signed quantities and separate currencies. A displayed estimate must not approve quantities/costs, post entries, or unlock invoice posting. Keep financial consumers on approved `remainingValue` only.
+- Keep estimate and approval status distinct in report exports as well as the on-screen footer. Private backup comparisons stay outside the repository.

@@ -9185,6 +9185,12 @@ button.currencies-footer-hint:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.smart-mv-bottom-bar.has-estimates .smart-mv-bottom-center {
+  flex: 0 0 100%;
+  order: -1;
+  line-height: 1.7;
+}
+
 /* --------------------------------------------------------------------------
  * UI Layout Audit Fixes: Header Mobile Spacing, Dropdown Menus, Statements & Modals
  * -------------------------------------------------------------------------- */

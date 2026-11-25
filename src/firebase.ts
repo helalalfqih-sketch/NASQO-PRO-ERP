@@ -808,6 +808,8 @@ export type InventoryMovementItemRow = {
   availableQty: number;
   unitCost: number;
   remainingValue: number;
+  /** Display-only estimate; never included in approved inventory valuation. */
+  estimatedRemainingValue?: number;
   profit: number;
   avgCost: number;
   sellingPrice?: number;

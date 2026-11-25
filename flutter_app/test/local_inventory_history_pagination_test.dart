@@ -119,6 +119,22 @@ void main(){
       expect(await db.query('legacy_operational_rows',orderBy:'collection,record_id'),original);
     });
 
+    test('valuation estimates retain signed warehouse quantities and never mix currencies or approved totals',()async{
+      await transfer(1,{'date':'2026-11-08'});
+      final before=await db.query('legacy_operational_rows',orderBy:'collection,record_id');
+      final from=await report({'warehouseId':'legacy-wh-1'});
+      final to=await report({'warehouseId':'legacy-wh-2'});
+      expect(from['itemRows'][0]['estimatedRemainingValue'],-6);
+      expect(to['itemRows'][0]['estimatedRemainingValue'],6);
+      expect(to['itemRows'][0]['remainingValue'],0);
+      expect(to['totals']['totalRemainingValue'],0);
+      final foreign=await report({'warehouseId':'legacy-wh-2','currency':'دولار'});
+      expect(foreign['itemRows'][0].containsKey('estimatedRemainingValue'),false);
+      final past=await report({'warehouseId':'legacy-wh-2','toDate':'2026-11-07'});
+      expect(past['itemRows'][0]['estimatedRemainingValue'],0);
+      expect(await db.query('legacy_operational_rows',orderBy:'collection,record_id'),before);
+    });
+
     test('report rejects invalid paging without broadening the requested result',()async{
       for(final options in <Map<String,dynamic>>[
         {'movementOffset':-1},{'movementOffset':1.5},{'movementOffset':'100'},
