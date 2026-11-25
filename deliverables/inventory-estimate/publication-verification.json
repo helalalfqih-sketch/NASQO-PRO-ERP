@@ -1,0 +1,26 @@
+{
+  "releases": [
+    {
+      "tag": "android-v1130",
+      "draft": false,
+      "prerelease": false,
+      "source": "fbc1adc19a7ed7acedcb22e74297afb8a01c7992",
+      "apk": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1130/NASQO-PRO-ERP.apk",
+      "digest": "sha256:0165b4c93152cfbac7342079e298a071db7e76e79f6dd223bb1516f4e90acf40",
+      "size": 59575168
+    },
+    {
+      "tag": "android-preview-v1130",
+      "draft": false,
+      "prerelease": true,
+      "source": "fbc1adc19a7ed7acedcb22e74297afb8a01c7992",
+      "apk": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-preview-v1130/NASQO-PRO-ERP.apk",
+      "digest": "sha256:0165b4c93152cfbac7342079e298a071db7e76e79f6dd223bb1516f4e90acf40",
+      "size": 59575168
+    }
+  ],
+  "latest": "android-v1130",
+  "publishRun": 45703174344,
+  "buildAttempt": 2,
+  "publishAttempt": 2
+}

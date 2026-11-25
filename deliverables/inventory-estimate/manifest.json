@@ -11,5 +11,12 @@
   "privateComparison": "read-only exact match; private values and backup excluded",
   "reportTestedOnPhysicalPhone": false,
   "approvedValuationChanged": false,
-  "financialPostingGuardsChanged": false
+  "financialPostingGuardsChanged": false,
+  "publishRun": 45703174344,
+  "nativeUpgradeEvidenceArtifact": 15063743878,
+  "upgradeFromVersionCode": 1128,
+  "nativeUpgradePassed": true,
+  "firstUpgradeAttempt": "exit 137 while collecting UI evidence; subsequent upgrade checks passed",
+  "buildAttempt": 2,
+  "publishAttempt": 2
 }
