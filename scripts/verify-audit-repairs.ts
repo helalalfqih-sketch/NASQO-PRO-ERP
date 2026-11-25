@@ -183,6 +183,13 @@ try{
  await emit('settings');await page.getByRole('tab',{name:'المنشأة',exact:true}).click();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).toBeDisabled();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).not.toBeChecked();
  await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await expect(page.getByRole('switch')).toBeDisabled();await expect(page.getByRole('switch')).not.toBeChecked();await expect(page.getByLabel('التذكير عند الإغلاق — غير متاح؛ احفظ نسخة يدويًا',{exact:true})).toBeDisabled();return{correct:true,storedPreference:mode,actualProtection:false,negativeStockSupported:false};
  });
+ await run('cashier-covered-settings-back',async()=>{
+  await drawer('إعدادات الكاشير');await page.getByLabel('المخزن الافتراضي',{exact:true}).selectOption('wh_branch');
+  await emit('settings');await page.locator('[data-flow-current="true"]').getByTestId('settings-cashier').click();
+  await page.getByTestId('flow-fixed-header').getByRole('button',{name:'رجوع',exact:true}).click();await expect(page.locator('[data-flow-current="true"]').getByTestId('system-settings-screen')).toBeVisible();
+  await page.getByTestId('flow-fixed-header').getByRole('button',{name:'رجوع',exact:true}).click();await expect(page.locator('[data-flow-current="true"]').getByTestId('cashier-settings-screen')).toHaveCount(1);await expect(page.locator('[data-flow-current="true"]').getByTestId('cashier-settings-screen')).toBeVisible();
+  await expect(page.getByLabel('المخزن الافتراضي',{exact:true})).toHaveValue('wh_branch');await page.getByTestId('flow-fixed-header').getByRole('button',{name:'رجوع',exact:true}).click();await expect(page.getByText('هناك تعديلات لم تحفظ.')).toBeVisible();await page.getByRole('button',{name:'تجاهل والعودة',exact:true}).click();await expect(page.getByTestId('dashboard-screen')).toBeVisible();return {correct:true,onlyTopScreenHandlesBack:true,coveredDraftRetained:true,discardWorks:true};
+ });
  await run('cashier-pages-back-dark',async()=>{
   await drawer('إعدادات الكاشير');const form=page.getByTestId('cashier-settings-screen');await form.getByRole('button',{name:'تخصيص الأصناف',exact:true}).click();await expect(form.getByRole('checkbox')).toHaveCount(30);await form.getByRole('button',{name:'التالي',exact:true}).click();await form.getByRole('button',{name:'التالي',exact:true}).click();await expect(form.getByRole('checkbox')).toHaveCount(5);
   await form.getByRole('checkbox').last().uncheck();await form.getByRole('button',{name:'إنهاء اختيار الأصناف'}).click();await page.getByRole('button',{name:'رجوع',exact:true}).click();await expect(form.getByText('هناك تعديلات لم تحفظ.')).toBeVisible();await form.getByRole('button',{name:'متابعة التعديل'}).click();

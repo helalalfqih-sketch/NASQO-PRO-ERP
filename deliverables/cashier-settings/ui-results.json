@@ -2,6 +2,14 @@
   "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
   "results": [
     {
+      "id": "cashier-covered-settings-back",
+      "execution": "observed",
+      "correct": true,
+      "onlyTopScreenHandlesBack": true,
+      "coveredDraftRetained": true,
+      "discardWorks": true
+    },
+    {
       "id": "cashier-pages-back-dark",
       "execution": "observed",
       "correct": true,

@@ -13801,12 +13801,13 @@ function ResetDatabaseConfirmModal({
 }
 
 function cashierSettingsScreen(): FlowScreen {
-  return { id: "cashier-settings", headerHeight: 50,
+  const screen: FlowScreen = { id: "cashier-settings", headerHeight: 50,
     header: () => <SimpleAppHeader title="إعدادات الكاشير" onBack={() => window.dispatchEvent(new Event("nasqo:cashier-back"))} />,
-    render: flow => <CashierSettingsBody flow={flow} /> };
+    render: flow => <CashierSettingsBody flow={flow} active={flow.current.render === screen.render} /> };
+  return screen;
 }
 
-function CashierSettingsBody({ flow }: { flow: FlowControls }) {
+function CashierSettingsBody({ flow, active }: { flow: FlowControls; active: boolean }) {
   const ctx = useWorkspace();
   const keyboard = useKeyboard();
   const [draft, setDraft] = useState(() => ctx.workspace?.cashierSettings ?? {
@@ -13824,14 +13825,16 @@ function CashierSettingsBody({ flow }: { flow: FlowControls }) {
   const dirty = JSON.stringify(draft) !== savedJson;
   const [leavePrompt, setLeavePrompt] = useState(false);
   const source = useRef({uid:ctx.uid, sha:ctx.workspace?.legacySourceSha});
-  useBackLayer(true, () => {
+  const allowLeave = useRef(false);
+  useBackLayer(active, () => {
+    if (allowLeave.current) return false;
     keyboard.hide();
     if (saving) return true;
     if (clearPrompt) setClearPrompt(false);
     else if (editingItems) setEditingItems(false);
     else if (leavePrompt) setLeavePrompt(false);
     else if (dirty) setLeavePrompt(true);
-    else flow.pop();
+    else return false;
     return true;
   }, 30);
   const accounts = ctx.accounts.filter(a => !a.isCashAccount && a.currency === draft.currency);
@@ -13856,7 +13859,7 @@ function CashierSettingsBody({ flow }: { flow: FlowControls }) {
     finally { setSaving(false); }
   };
   const requestBack = () => { keyboard.hide(); if (saving) return; if (dirty) setLeavePrompt(true); else flow.pop(); };
-  useEffect(() => { window.addEventListener("nasqo:cashier-back", requestBack); return () => window.removeEventListener("nasqo:cashier-back", requestBack); });
+  useEffect(() => { if (!active) return; window.addEventListener("nasqo:cashier-back", requestBack); return () => window.removeEventListener("nasqo:cashier-back", requestBack); });
   return <MobileScroll className="app-screen"><main className="cashier-settings-page" data-testid="cashier-settings-screen">
     <p>تهيئة الأصناف السريعة والمخزن والصندوق والعميل والعملة. حفظ الإعدادات لا يرحّل فاتورة ولا يغيّر رصيدًا.</p>
     <fieldset disabled={saving}>
@@ -13879,7 +13882,7 @@ function CashierSettingsBody({ flow }: { flow: FlowControls }) {
       {error ? <p role="alert" className="auth-error">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
       <div className="cashier-settings-actions"><button className="ref-btn green" onClick={() => void save()}>{saving ? "جارٍ الحفظ…" : "حفظ إعدادات الكاشير"}</button><button className="ref-btn" onClick={requestBack}>إلغاء والعودة</button></div>
       <button className="ref-btn" disabled={dirty} onClick={() => { keyboard.hide(); ctx.openCashier(); }}>فتح الكاشير</button>
-      {leavePrompt ? <div role="alert"><p>هناك تعديلات لم تحفظ.</p><button className="ref-btn" onClick={() => setLeavePrompt(false)}>متابعة التعديل</button><button className="ref-btn" onClick={() => flow.pop()}>تجاهل والعودة</button></div> : null}
+      {leavePrompt ? <div role="alert"><p>هناك تعديلات لم تحفظ.</p><button className="ref-btn" onClick={() => setLeavePrompt(false)}>متابعة التعديل</button><button className="ref-btn" onClick={() => { allowLeave.current = true; flow.pop(); }}>تجاهل والعودة</button></div> : null}
     </fieldset>
   </main></MobileScroll>;
 }
