@@ -80,16 +80,18 @@ public class DocumentInstrumentation extends Instrumentation {
       getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(activity.getFilesDir(),"employee-sqlite.png")));
       android.util.Log.i("NASQO_ACCEPTANCE","UI employee click -> React -> bridge -> SQLite exactly once PASS");
       status.putString("stream","Android receiver: PDF/XLSX/PNG exact bytes, names, MIME, independent opening; canceled save picker PASS\n");finish(Activity.RESULT_OK,status);
-    }catch(Throwable e){android.util.Log.e("NASQO_ACCEPTANCE","FAIL",e);status.putString("stream",e.toString());finish(Activity.RESULT_CANCELED,status);}
+    }catch(Throwable e){try{getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(getTargetContext().getFilesDir(),"failure.png")));StringBuilder tree=new StringBuilder();dumpTree(getUiAutomation().getRootInActiveWindow(),tree,0);try(FileOutputStream dump=new FileOutputStream(new File(getTargetContext().getFilesDir(),"failure-tree.txt"))){dump.write(tree.toString().getBytes("UTF-8"));}}catch(Throwable ignored){}android.util.Log.e("NASQO_ACCEPTANCE","FAIL",e);status.putString("stream",e.toString());finish(Activity.RESULT_CANCELED,status);}
   }
+  private boolean scrollForward(AccessibilityNodeInfo n){if(n==null)return false;for(int i=0;i<n.getChildCount();i++)if(scrollForward(n.getChild(i)))return true;return n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);}
+  private void dumpTree(AccessibilityNodeInfo n,StringBuilder s,int depth){if(n==null||depth>25||s.length()>50000)return;s.append(n.getClassName()).append(" text=").append(n.getText()).append(" desc=").append(n.getContentDescription()).append(" hint=").append(n.getHintText()).append(" clickable=").append(n.isClickable()).append(" scroll=").append(n.isScrollable()).append("\n");for(int i=0;i<n.getChildCount();i++)dumpTree(n.getChild(i),s,depth+1);}
   private AccessibilityNodeInfo findNode(AccessibilityNodeInfo n,String label,boolean editable){
     if(n==null)return null;
     String text=String.valueOf(n.getText())+" "+String.valueOf(n.getContentDescription())+" "+String.valueOf(n.getHintText());
-    if(text.contains(label)&&(!editable||n.isEditable()))return n;
+    if((label.equals(String.valueOf(n.getText()))||label.equals(String.valueOf(n.getContentDescription()))||label.equals(String.valueOf(n.getHintText())))&&(!editable||n.isEditable()))return n;
     for(int i=0;i<n.getChildCount();i++){AccessibilityNodeInfo found=findNode(n.getChild(i),label,editable);if(found!=null)return found;}return null;
   }
   private AccessibilityNodeInfo waitNode(String label,boolean editable)throws Exception{
-    for(int i=0;i<20;i++){AccessibilityNodeInfo n=findNode(getUiAutomation().getRootInActiveWindow(),label,editable);if(n!=null)return n;Thread.sleep(500);}
+    for(int i=0;i<20;i++){AccessibilityNodeInfo n=findNode(getUiAutomation().getRootInActiveWindow(),label,editable);if(n!=null)return n;if(i%4==3)scrollForward(getUiAutomation().getRootInActiveWindow());Thread.sleep(500);}
     throw new AssertionError("UI node missing: "+label);
   }
   private void clickText(String label)throws Exception{

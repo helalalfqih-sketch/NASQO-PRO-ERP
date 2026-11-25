@@ -31,6 +31,7 @@ jobs:
           node ../scripts/setup-android-hybrid.mjs
           flutter pub get
           flutter build apk --debug
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk > build/app/outputs/flutter-apk/SHA256SUMS.txt
           cd ..
           node scripts/setup-android-audit.mjs
           cd flutter_app/android
@@ -38,7 +39,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nasqo-audit-debug-apk
-          path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            flutter_app/build/app/outputs/flutter-apk/SHA256SUMS.txt
       - name: Emulator KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -62,6 +65,8 @@ jobs:
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-xlsx.png > qa/android-results/receiver-xlsx.png
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-png.png > qa/android-results/receiver-png.png
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/employee-sqlite.png > qa/android-results/employee-sqlite.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/failure.png > qa/android-results/failure.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/failure-tree.txt > qa/android-results/failure-tree.txt
             adb exec-out screencap -p > qa/android-results/final.png
             adb shell am start -n com.indexesstore.nasqo_pro_erp/.MainActivity
             adb shell input keyevent 3
