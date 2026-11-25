@@ -1,0 +1,12 @@
+{
+  "candidateApkSha256": "ccb8732eb4bd6f833229e4aa27380944a16a692670d7ef3ec1a193806ca03be3",
+  "sourceSha": "b607fa74925c8fc2c4662c6cb1e82f8164b1b25e",
+  "verified": true,
+  "permissionsUnchanged": true,
+  "featuresUnchanged": true,
+  "debuggable": false,
+  "webFiles": 64,
+  "identicalExecutableVisualWebFiles": 63,
+  "onlyWebDifference": "manifest builtAtIso timestamp",
+  "evidenceScope": "63 identical assets to prior Android/Chromium acceptance; signed APK install/launch tested separately"
+}

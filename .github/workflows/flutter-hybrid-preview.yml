@@ -13,6 +13,10 @@ on:
       - ".github/workflows/flutter-hybrid-preview.yml"
   workflow_dispatch:
     inputs:
+      publish_verified_candidate:
+        description: Publish the already verified 1.0.124 artifact (no rebuild)
+        type: boolean
+        default: false
       signed_candidate:
         description: Build a signed candidate artifact without automatic publication
         type: boolean
@@ -28,6 +32,7 @@ permissions:
 
 jobs:
   flutter-hybrid:
+    if: inputs.publish_verified_candidate != true
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -219,3 +224,94 @@ jobs:
         with:
           name: nasqo-signed-upgrade-evidence
           path: upgrade-evidence/
+
+
+  verify-signed-candidate:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+          run-id: 45682512587
+          github-token: ${{ github.token }}
+      - name: Get prior published APK and verify identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous-release upgrade-evidence
+          gh release download android-preview-v1123 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
+          "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
+          diff <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/previous-certificate.txt) <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/candidate-certificate.txt)
+          test -s upgrade-evidence/candidate-certificate.txt
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+      - name: Emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: bash scripts/verify-android-release-upgrade.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence/
+
+
+  publish-verified-candidate:
+    needs: verify-signed-candidate
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful signed build and upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/45682512587 > /tmp/release-run.json
+          gh api repos/${{ github.repository }}/actions/runs/45682512587/jobs > /tmp/release-jobs.json
+          test "$(jq -r '.jobs[] | select(.name == "flutter-hybrid") | .conclusion' /tmp/release-jobs.json)" = success
+          test "$(jq -r .head_sha /tmp/release-run.json)" = b607fa74925c8fc2c4662c6cb1e82f8164b1b25e
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+          run-id: 45682512587
+          github-token: ${{ github.token }}
+      - name: Publish the verified APK and compatibility alias
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+          test "$(sha256sum release-output/NASQO-PRO-ERP.apk | cut -d ' ' -f 1)" = ccb8732eb4bd6f833229e4aa27380944a16a692670d7ef3ec1a193806ca03be3
+          for tag in android-v1124 android-preview-v1124; do
+            gh release view "$tag" --json isDraft,targetCommitish > /tmp/release-draft.json
+            test "$(jq -r .isDraft /tmp/release-draft.json)" = true
+            test "$(jq -r .targetCommitish /tmp/release-draft.json)" = b607fa74925c8fc2c4662c6cb1e82f8164b1b25e
+            gh release upload "$tag" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 --clobber
+            gh release edit "$tag" --notes-file deliverables/production-1124/RELEASE-NOTES-AR.md
+          done
+          gh release edit android-v1124 --draft=false --prerelease=false --latest
+          gh release edit android-preview-v1124 --draft=false --prerelease --latest=false

@@ -23,7 +23,11 @@ python3 - <<'PY'
 import pathlib,re,json
 p=pathlib.Path('upgrade-evidence')
 old=(p/'previous-package.txt').read_text();new=(p/'update-package.txt').read_text()
-def field(s,k):return re.search(r'\b'+k+r'=(\d+)',s).group(1)
+def field(s,k):
+    key=r'(?:userId|appId)' if k=='userId' else k
+    match=re.search(r'\b'+key+r'=(\d+)',s)
+    assert match,'Missing package field: '+k
+    return match.group(1)
 assert field(old,'userId')==field(new,'userId'),'Android UID changed'
 assert int(field(old,'versionCode'))==1123
 assert int(field(new,'versionCode'))>1123
