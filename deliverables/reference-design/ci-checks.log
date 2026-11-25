@@ -4,6 +4,6 @@
 2026-11-25T21:40:56.1182282Z ℹ tests 18
 2026-11-25T21:40:56.1208947Z ℹ pass 18
 2026-11-25T21:40:56.1228556Z ℹ fail 0
-2026-11-25T21:41:28.9714470Z Analyzing flutter_app...                                        
+2026-11-25T21:41:28.9714470Z Analyzing flutter_app...
 2026-11-25T21:42:04.7343988Z 00:24 +91: All tests passed!
 2026-11-25T21:47:37.7140848Z ✓ Built build/app/outputs/flutter-apk/app-release.apk (59.6MB)

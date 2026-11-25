@@ -1,0 +1,5 @@
+--------- beginning of main
+11-25 21:53:15.311  3754  3754 I NASQO_LIFECYCLE: process=ebdd4b9a-d5f4-4486-98c7-e76598047568 instance=dbca7c9f-bb32-49cc-a82f-192653af3591 event=activity-created savedState=false
+11-25 21:53:15.314  3754  3754 I NASQO_LIFECYCLE: process=ebdd4b9a-d5f4-4486-98c7-e76598047568 instance=dbca7c9f-bb32-49cc-a82f-192653af3591 event=activity-resumed 
+11-25 21:53:17.453  3754  3754 I NASQO_LIFECYCLE: process=ebdd4b9a-d5f4-4486-98c7-e76598047568 instance=4e00a9c3-e274-4bf3-b621-fb2116e1419b event=webview-created 
+11-25 21:53:19.453  3754  3754 I NASQO_LIFECYCLE: process=ebdd4b9a-d5f4-4486-98c7-e76598047568 instance=4e00a9c3-e274-4bf3-b621-fb2116e1419b event=page-finished loads=1
