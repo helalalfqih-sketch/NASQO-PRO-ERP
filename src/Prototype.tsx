@@ -3772,7 +3772,7 @@ function ShopPage({ flow }: { flow: FlowControls }) {
             </div>
           ) : null}
           {ordered.slice(0, visibleCount).map((acc) => {
-            const s = computeAccountSummary(acc, periodLedger, activeCurrencyParam);
+            const s = buildStatementReport(acc,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true});
             return (
               <article className="shop-account-card" key={acc.id}>
                 <button
@@ -3783,7 +3783,7 @@ function ShopPage({ flow }: { flow: FlowControls }) {
                   <MobileIcon />
                 </button>
                 <strong>{acc.name}</strong>
-                <span>{formatAmount(s.netBalance)}</span>
+                <span>{reportTotalText(s,"balance")}</span>
                 <button aria-label={`إضافة سند لـ ${acc.name}`} onClick={() => ctx.openTransaction(acc)}>
                   <PlusIcon />
                 </button>
@@ -9144,6 +9144,8 @@ function PurchasesPage({
                   periodLedger,
                   activeCurrencyParam,
                 );
+                const scopedReport=buildStatementReport(vendor,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true});
+                const scopedBalance=reportTotalText(scopedReport,"balance");
                 return (
                   <article key={vendor.id} className="vendor-card" data-vendor-id={vendor.codeNumber}>
                     <button
@@ -9175,8 +9177,7 @@ function PurchasesPage({
                       </span>
                       <span className={`vendor-balance ${summary.tone}`}>
                         <strong>
-                          {formatAmount(summary.netBalance)}
-                          {summary.tone === "credit" ? "-" : ""}
+                          {scopedBalance}
                         </strong>
                       </span>
                     </button>
@@ -9192,7 +9193,7 @@ function PurchasesPage({
                         onClick={() =>
                           void shareOrCopyText(
                             vendor.name,
-                            `رصيد ${vendor.name}: ${formatAmount(summary.netBalance)} ${vendor.currency}`,
+                            `رصيد ${vendor.name}: ${scopedBalance}`,
                             ctx.showToast,
                           )
                         }
@@ -9207,13 +9208,7 @@ function PurchasesPage({
                         onClick={() =>
                           void openWhatsAppChat(
                             vendor,
-                            buildAccountBalanceMessage(
-                              vendor,
-                              summary.netBalance,
-                              summary.tone,
-                              ctx.workspace?.companyName,
-                              ctx.extendedSettings,
-                            ),
+                            `رصيد ${vendor.name}: ${scopedBalance}`,
                             ctx.showToast,
                           )
                         }
@@ -9810,7 +9805,8 @@ function CashSupplierPage({
   const ctx = useWorkspace();
   const { period, fromDate, toDate, docKind, sortOrder } = ctx.statementFilter;
   const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? false;
-  const [currency, setCurrency] = useWorkspaceUiState(`supplier:${account.id}:currency`, "ريال");
+  const [storedCurrency, setCurrency] = useWorkspaceUiState(`supplier:${account.id}:currency`, "ريال");
+  const currency=storedCurrency==="مصارفة الكل بعملة ريال"?"جميع العملات بدون مصارفة":storedCurrency;
   const [operationsOpen, setOperationsOpen] = useState(false);
   useBackLayer(operationsOpen, () => { setOperationsOpen(false); return true; });
   const [currencyOpen, setCurrencyOpen] = useState(false);
