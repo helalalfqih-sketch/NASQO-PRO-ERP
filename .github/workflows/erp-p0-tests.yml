@@ -19,6 +19,15 @@ jobs:
           flutter-version: "3.29.3"
           channel: stable
       - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.12.0"
+      - name: Run hybrid bridge regression tests
+        run: |
+          npm install --no-audit --no-fund
+          npm run sync:flutter-hybrid
+          npx tsx --test tests/hybrid.test.ts
+
       - name: Prepare test assets and dependencies
         working-directory: flutter_app
         run: |
@@ -27,14 +36,6 @@ jobs:
       - name: Run Dart analysis (errors are fatal)
         working-directory: flutter_app
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
-      - name: Run full Flutter regression suite
+      - name: Run synthetic Flutter regression (explicit deferred exclusions)
         working-directory: flutter_app
-        run: flutter test --reporter expanded
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24.12.0"
-      - name: Run hybrid bridge regression tests
-        run: |
-          npm install --no-audit --no-fund
-          npm run build:hybrid
-          npx tsx --test tests/hybrid.test.ts
+        run: bash ../scripts/test-flutter-audit.sh

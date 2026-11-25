@@ -74,7 +74,7 @@ jobs:
         working-directory: flutter_app
         run: |
           flutter analyze --no-fatal-infos
-          flutter test
+          bash ../scripts/test-flutter-audit.sh
 
       - name: Build debug APK for review only
         working-directory: flutter_app

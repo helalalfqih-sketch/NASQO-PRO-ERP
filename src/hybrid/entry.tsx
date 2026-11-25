@@ -34,6 +34,7 @@ import { hybridBridge } from "./bridge";
 import { observeHybridLifecycle } from "./lifecycleDiagnostics";
 import {
   validateHybridSnapshot,
+  createIdempotencyKey,
   type HybridCapabilities,
   type HybridUiPreferences,
   type HybridWorkspaceSnapshot,
@@ -183,13 +184,21 @@ function HybridRootApp() {
   useEffect(() => {
     const win = window as unknown as {
       __nasqoHybridReady?: boolean;
-      __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
+      __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => Promise<ErpWorkspaceData>;
     };
     win.__nasqoHybridReady = true;
-    win.__nasqoHybridSaveErp = (workspaceId, erpData) => {
-      void hybridBridge.invoke("saveErpData", { workspaceId, data: erpData }).catch(() => {
-        // Error surfaced through bridge or host event
-      });
+    const pendingErpKeys=new Map<string,string>();
+    win.__nasqoHybridSaveErp = async (workspaceId, erpData) => {
+      const { buildErpRecordChanges } = await import("./erpRecordChanges");
+      const { loadErpWorkspaceData } = await import("../erp");
+      const changes = buildErpRecordChanges(loadErpWorkspaceData(workspaceId), erpData);
+      if (!changes.length) return erpData;
+      const fingerprint=JSON.stringify({workspaceId,changes});
+      const key=pendingErpKeys.get(fingerprint)??createIdempotencyKey("saveErpRecords");
+      pendingErpKeys.set(fingerprint,key);
+      const result = await hybridBridge.invoke<"saveErpRecords", {erpData: ErpWorkspaceData}>("saveErpRecords", {workspaceId,changes},{idempotencyKey:key});
+      pendingErpKeys.delete(fingerprint);
+      return result.erpData;
     };
 
     const unsubSnapshot = hybridBridge.onHostEvent<unknown>("snapshotUpdated", (rawSnap) => {

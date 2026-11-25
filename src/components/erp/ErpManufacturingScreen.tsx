@@ -1,3 +1,4 @@
+import { usesNativeDocumentOutput } from "../../hybrid/documentOutput";
 import { useMemo, useState } from "react";
 import { CheckCircledIcon, PlusIcon } from "@radix-ui/react-icons";
 import { formatAmount } from "../../accounting";
@@ -40,7 +41,7 @@ export function ErpManufacturingScreen({
   warehouses: readonly WarehouseRecord[];
   inventory: readonly InventoryItemRecord[];
   erpData: ErpWorkspaceData;
-  onUpdateErpData: (next: ErpWorkspaceData) => void;
+  onUpdateErpData: (next: ErpWorkspaceData) => Promise<boolean>;
   onToast: (msg: string) => void;
 }) {
   const [tab, setTab] = useState<MfgTab>("bom");
@@ -60,7 +61,8 @@ export function ErpManufacturingScreen({
     [accounts, erpData.costCenters, ledger],
   );
 
-  const handleCreateProductionOrder = () => {
+  const handleCreateProductionOrder = async () => {
+    if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
     const bom = erpData.boms.find((b) => b.id === selectedBomId) ?? erpData.boms[0];
     if (!bom) {
@@ -82,15 +84,16 @@ export function ErpManufacturingScreen({
       createdDate: new Date().toISOString().slice(0, 10),
       costCenterId: erpData.costCenters[0]?.id,
     };
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       productionOrders: [order, ...erpData.productionOrders],
-    });
+    })) return;
     triggerHaptic("success");
     onToast(`تم إنشاء أمر التصنيع ${order.orderNumber}`);
   };
 
   const handleCompleteProduction = async (order: ErpProductionOrder) => {
+    if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
     if (order.status === "completed") return;
     const bom = erpData.boms.find((b) => b.id === order.bomId);
@@ -127,7 +130,7 @@ export function ErpManufacturingScreen({
       }
       await batchUpdateInventoryItems(uid, updates);
 
-      onUpdateErpData({
+      if (!await onUpdateErpData({
         ...erpData,
         productionOrders: erpData.productionOrders.map((o) =>
           o.id === order.id
@@ -138,7 +141,7 @@ export function ErpManufacturingScreen({
               }
             : o,
         ),
-      });
+      })) return;
       triggerHaptic("success");
       onToast(
         `تم إتمام الإنتاج ${order.orderNumber}: خصم الخامات وإضافة ${order.quantityToProduce} للمنتج التام`,
@@ -150,7 +153,7 @@ export function ErpManufacturingScreen({
     }
   };
 
-  const handleAddCostCenter = () => {
+  const handleAddCostCenter = async () => {
     keyboard.hide();
     if (!ccName.trim()) {
       onToast("أدخل اسم مركز التكلفة أولًا");
@@ -167,10 +170,10 @@ export function ErpManufacturingScreen({
       linkedCategories: ["مصروفات تشغيلية"],
       status: "active",
     };
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       costCenters: [...erpData.costCenters, cc],
-    });
+    })) return;
     setCcName("");
     setCcManager("");
     setAddingCc(false);
@@ -181,6 +184,7 @@ export function ErpManufacturingScreen({
   return (
     <MobileScroll className="app-screen erp-scroll">
       <main className="erp-page" data-testid="erp-manufacturing-screen">
+        {usesNativeDocumentOutput()?<p role="note" className="field-inline-error">حفظ السجلات الإدارية متاح محليًا. الترحيل المتقدم والاستلام والتصنيع غير متاحة هنا؛ استخدم شاشات الفاتورة والسند الأصلية.</p>:null}
         <div className="erp-segmented" role="tablist" aria-label="التصنيع ومراكز التكلفة">
           <button
             type="button"
@@ -237,7 +241,7 @@ export function ErpManufacturingScreen({
                     onChange={(e) => setNewOrderQty(e.target.value)}
                   />
                 </div>
-                <button type="button" className="erp-primary-btn full" onClick={handleCreateProductionOrder}>
+                <button type="button" className="erp-primary-btn full" disabled={usesNativeDocumentOutput()} onClick={handleCreateProductionOrder}>
                   <PlusIcon />
                   <span>إصدار أمر تصنيع</span>
                 </button>
@@ -287,7 +291,7 @@ export function ErpManufacturingScreen({
                           <button
                             type="button"
                             className="erp-primary-btn"
-                            disabled={completingOrderId === order.id}
+                            disabled={usesNativeDocumentOutput() || completingOrderId === order.id}
                             onClick={() => handleCompleteProduction(order)}
                             data-testid={`erp-complete-${order.id}`}
                           >

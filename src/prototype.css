@@ -16159,3 +16159,13 @@ button.currencies-footer-hint:hover {
 .invoice-free-line-values label { min-width: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
 .invoice-free-line-values b { padding: 10px 0; color: #08795e; }
 .invoice-free-line input { width: 100%; box-sizing: border-box; border: 1px solid #d3dce4; border-radius: 8px; padding: 10px 8px; font: inherit; background: white; color: inherit; }
+
+/* Touch acceptance: unit names remain intact even with enlarged Arabic text. */
+.items-default-unit-radios { flex-wrap: wrap; justify-content: flex-start; gap: 10px; min-width: 0; }
+.items-default-unit-radios label { white-space: nowrap; flex: 0 0 auto; min-height: 44px; }
+.items-catalog-table th { white-space: nowrap; }
+.items-touch-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; }
+.items-touch-actions button { min-height: 44px; padding: 8px 14px; }
+.items-catalog-actions-row button { min-height: 44px; }
+.items-catalog-form-card select { min-width: 0; max-width: 100%; }
+@media(max-width:380px) { .items-catalog-form-card .items-catalog-defaults-row { align-items: stretch; } .items-default-unit-radios { flex-basis: 100%; } }

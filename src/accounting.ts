@@ -535,6 +535,7 @@ export function computeStatementRows(
     sortOrder?: "asc" | "desc";
   } = {},
 ): {
+  currencyTotals?: Array<{currency:string;debit:number;credit:number;balance:number;previous:number}>;
   rows: StatementRowWithBalance[];
   debitTotal: number;
   creditTotal: number;
@@ -543,7 +544,16 @@ export function computeStatementRows(
   previousBalance: number;
   previousDirection: "credit" | "debit" | "neutral";
 } {
-  const currency = options.currency ?? "الكل";
+  // No approved conversion-rate source exists in this report. Keep currencies separate.
+  const currency = options.currency === "مصارفة الكل بعملة ريال" ? "جميع العملات بدون مصارفة" : options.currency ?? "الكل";
+  if (["الكل","جميع العملات بدون مصارفة"].includes(currency)) {
+    const currencies=Array.from(new Set([account.currency,...getEntriesForAccount(entries,account.id).filter(e=>!e.deleted).map(e=>e.currency)]));
+    if(currencies.length>1){
+      const parts=currencies.map(c=>({currency:c,result:computeStatementRows({...account,openingBalance:c===account.currency?account.openingBalance:0},entries,{...options,currency:c})}));
+      const rows=parts.flatMap(p=>p.result.rows).sort((a,b)=>(options.sortOrder==='asc'?1:-1)*(a.createdAtMs-b.createdAtMs||a.entryNumber-b.entryNumber));
+      return {rows,debitTotal:0,creditTotal:0,netBalance:0,netDirection:'neutral',previousBalance:0,previousDirection:'neutral',currencyTotals:parts.map(p=>({currency:p.currency,debit:p.result.debitTotal,credit:p.result.creditTotal,balance:p.result.netBalance,previous:p.result.previousBalance}))};
+    }
+  }
   const query = normalizeArabicSearch(options.searchQuery ?? "");
   const searchMode = options.searchMode ?? "الكل";
   const fromDate = options.fromDate?.trim() || "";
@@ -618,7 +628,7 @@ export function computeStatementRows(
   }
 
   const openingSigned =
-    account.openingDirection === "credit"
+    (currency!=="الكل"&&currency!=="جميع العملات بدون مصارفة"&&currency!=="مصارفة الكل بعملة ريال"&&currency!==account.currency) ? 0 : account.openingDirection === "credit"
       ? roundMoney(account.openingBalance, 2)
       : -roundMoney(account.openingBalance, 2);
   const previousBalanceSigned = addMoney(openingSigned, prePeriodSigned);

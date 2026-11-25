@@ -73,6 +73,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "getInvoiceDetail",
   "getProductPriceStats",
   "saveErpData",
+  "saveErpRecords",
   "backupWorkspace",
   "restoreWorkspace",
   "resetWorkspace",
@@ -240,7 +241,7 @@ export interface HybridCommandPayloadMap {
   openAccountStatement: { accountId: string; currency?: string };
   printDocument: HybridPrintPayload;
   exportPdf: HybridExportPdfPayload;
-  beginDocumentExport: { workspaceId: string; fileName: string; mimeType: string; sizeBytes: number; mode: 'save' | 'share' };
+  beginDocumentExport: { workspaceId: string; fileName: string; mimeType: string; sizeBytes: number; mode: 'save' | 'share' | 'print' };
   appendDocumentExport: { workspaceId: string; exportId: string; offset: number; base64: string };
   finishDocumentExport: { workspaceId: string; exportId: string };
   abortDocumentExport: { workspaceId: string; exportId: string };
@@ -304,6 +305,7 @@ export interface HybridCommandPayloadMap {
   };
   getInvoiceDetail: { workspaceId: string; entryId: string };
   getProductPriceStats: { workspaceId: string; itemId: string };
+  saveErpRecords: { workspaceId: string; changes: Array<{collection: string; record: Record<string, unknown>; expectedRevision: number}> };
   saveErpData: { workspaceId: string; data: ErpWorkspaceData };
   backupWorkspace: { workspaceId: string; backupName?: string; target: "local" | "cloud" };
   restoreWorkspace: { workspaceId: string; fileName: string; format: "json" | "sqlite" | "sql"; base64Content: string };

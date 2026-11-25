@@ -17,12 +17,12 @@ class LocalDocumentOutput {
   static const _output=MethodChannel('nasqo/document_output');
   static const maxBytes=16*1024*1024;
   static const maxChunk=20*1024;
-  static const types={'application/pdf':'.pdf','image/png':'.png','text/csv':'.csv'};
+  static const types={'application/pdf':'.pdf','image/png':'.png','text/csv':'.csv','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'.xlsx'};
   static Future<String> _nativeCache()async=>
     (await _channel.invokeMethod<String>('cachePath'))??(throw StateError('Private cache unavailable'));
   static Future<bool> _nativeDestination(File file,String name,String mime,String mode)async{
     final channel=mode=='save'?_channel:_output;
-    return await channel.invokeMethod<bool>(mode=='save'?'exportDocument':'shareDocument',
+    return await channel.invokeMethod<bool>(mode=='save'?'exportDocument':mode=='print'?'printDocumentFile':'shareDocument',
       {'path':file.path,'fileName':name,'mimeType':mime})==true;
   }
 
@@ -53,7 +53,7 @@ class LocalDocumentOutput {
         fields(p,['workspaceId','fileName','mimeType','sizeBytes','mode']);
         final name=p['fileName'],mime=p['mimeType'],size=p['sizeBytes'],mode=p['mode'];
         if(name is! String||mime is! String||!validName(name,mime)||size is! int||size<1||size>maxBytes||
-            !['save','share'].contains(mode))throw ArgumentError('Invalid document size or type');
+            !['save','share','print'].contains(mode)||(mode=='print'&&mime!='application/pdf'))throw ArgumentError('Invalid document size or type');
         if(_session!=null){
           if(DateTime.now().difference(_session!.created)<const Duration(minutes:10))throw StateError('Document export already open');
           await _clear();
@@ -104,6 +104,7 @@ class LocalDocumentOutput {
             throw const FormatException('Not a PDF');
           if(current.mime=='image/png'&&(header.length<8||base64Encode(header)!='iVBORw0KGgo='))
             throw const FormatException('Not a PNG');
+          if(current.mime=='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'&&(header.length<4||header[0]!=80||header[1]!=75||header[2]!=3||header[3]!=4))throw const FormatException('Not an XLSX container');
           final ok=await _destination(current.file,current.name,current.mime,current.mode);
           return {'completed':ok,'mode':current.mode};
         }finally{await _clear();}

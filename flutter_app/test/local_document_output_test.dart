@@ -46,4 +46,24 @@ void main(){
       expect(await Directory('${dir.path}/nasqo-document-export').list().toList(),isEmpty);
     }finally{await service.dispose();await dir.delete(recursive:true);}
   });
+  test('XLSX and PDF print use bounded native output with truthful cancellation',()async{
+    final dir=await Directory.systemTemp.createTemp('nasqo-formats-');
+    final observed=<String>[];
+    final service=LocalDocumentOutput(cachePath:()async=>dir.path,destination:(file,name,mime,mode)async{observed.add('$name|$mime|$mode');expect(await file.length(),greaterThan(0));return false;});
+    try{
+      for(final spec in [
+        ['synthetic.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','share',<int>[80,75,3,4,1,2,3]],
+        ['synthetic.pdf','application/pdf','print',utf8.encode('%PDF-1.4 synthetic')],
+      ]){
+        final bytes=spec[3] as List<int>;
+        final payload={'workspaceId':'local-erp-workspace','fileName':spec[0],'mimeType':spec[1],'mode':spec[2],'sizeBytes':bytes.length};
+        final id=(await service.handle('beginDocumentExport',payload))['exportId'];
+        await service.handle('appendDocumentExport',{'workspaceId':'local-erp-workspace','exportId':id,'offset':0,'base64':base64Encode(bytes)});
+        expect((await service.handle('finishDocumentExport',{'workspaceId':'local-erp-workspace','exportId':id}))['completed'],false);
+      }
+      expect(observed,hasLength(2));expect(observed.last,endsWith('|print'));
+      await expectLater(service.handle('beginDocumentExport',{'workspaceId':'local-erp-workspace','fileName':'invalid.xlsx','mimeType':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','mode':'print','sizeBytes':7}),throwsArgumentError);
+    }finally{await service.dispose();await dir.delete(recursive:true);}
+  });
+
 }

@@ -1533,7 +1533,7 @@ export async function rollbackLegacyLivePrefix(
 export async function downloadUnifiedSqliteFile(
   uid = LOCAL_WORKSPACE_UID,
   timeoutMs = 15_000,
-): Promise<void> {
+): Promise<boolean> {
   return runWithBrandLoader("جاري تصدير النسخة الاحتياطية الكاملة...", async () => {
     const controller = new AbortController();
     const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
@@ -1552,6 +1552,7 @@ export async function downloadUnifiedSqliteFile(
       link.click();
       document.body.removeChild(link);
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         throw new Error("انتهت مهلة تحميل النسخة الاحتياطية. يرجى إعادة المحاولة.");

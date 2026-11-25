@@ -1,3 +1,4 @@
+import { usesNativeDocumentOutput } from "../hybrid/documentOutput";
 import { useRef, useState, type ChangeEvent } from "react";
 import { HybridCloudAccount, HybridLocalTools } from "./HybridCloudAccount";
 import {
@@ -1751,26 +1752,28 @@ export function SystemSettingsPage({
               </div>
 
               <label className="sys-row sys-check-row" style={{ marginTop: 10 }}>
-                <span>التذكير بالنسخ الاحتياطي عند الإغلاق</span>
+                <span>التذكير عند الإغلاق — غير متاح؛ احفظ نسخة يدويًا</span>
                 <input
                   type="checkbox"
-                  checked={draft.backupReminderOnExit}
+                  disabled checked={false} aria-describedby="unavailable-security-note"
                   onChange={(e) => updateField("backupReminderOnExit", e.target.checked)}
                 />
               </label>
 
               <label className="sys-row sys-check-row">
-                <span>الحماية بكلمة مرور</span>
+                <span>الحماية بكلمة مرور — غير متاحة في هذه النسخة</span>
                 <input
                   type="checkbox"
                   className="account-form-switch"
                   role="switch"
-                  checked={draft.passwordLock}
+                  disabled checked={false} aria-describedby="unavailable-security-note"
                   onChange={(e) => updateField("passwordLock", e.target.checked)}
                 />
               </label>
             </section>
 
+            <p id="unavailable-security-note" role="note">{draft.passwordLock?"سبق حفظ تفضيل الحماية، لكنه لم ينفذ قفلًا فعليًا. ":""}التطبيق لا يطلب كلمة مرور عند الفتح. إعداد التذكير عند الإغلاق غير مطبق؛ استخدم النسخ اليدوي. هذه رسالة حالة وليست تفعيلًا للحماية.</p>
+            {usesNativeDocumentOutput()?<p role="note">تفريغ البيانات وتحميل بيانات تجريبية غير متاحين في Android لحماية قاعدة العمل.</p>:null}
             {onSeedDemoData || onResetDatabase ? (
               <section className="sys-card sys-danger-card">
                 <div className="sys-card-heading">صيانة وتهيئة قاعدة البيانات</div>

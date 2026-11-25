@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { usesNativeDocumentOutput } from "../../hybrid/documentOutput";
+import { useMemo, useState, useRef } from "react";
 import { CheckCircledIcon, PlusIcon } from "@radix-ui/react-icons";
 import { formatAmount } from "../../accounting";
 import {
@@ -30,11 +31,13 @@ export function ErpHrScreen({
   accounts: readonly AccountRecord[];
   warehouses: readonly WarehouseRecord[];
   erpData: ErpWorkspaceData;
-  onUpdateErpData: (next: ErpWorkspaceData) => void;
+  onUpdateErpData: (next: ErpWorkspaceData) => Promise<boolean>;
   onToast: (msg: string) => void;
 }) {
   const [tab, setTab] = useState<HrTab>("payroll");
   const [addingEmployee, setAddingEmployee] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<ErpEmployeeProfile | null>(null);
+  const employeeId = useRef<string | null>(null);
   const [name, setName] = useState("");
   const [roleTitle, setRoleTitle] = useState("");
   const [department, setDepartment] = useState("المبيعات");
@@ -47,53 +50,56 @@ export function ErpHrScreen({
   const payrollTotals = useMemo(() => computePayrollTotals(erpData.employees), [erpData.employees]);
   const currentMonthKey = new Date().toISOString().slice(0, 7);
 
-  const handleAddEmployee = () => {
+  const handleAddEmployee = async () => {
     keyboard.hide();
     if (!name.trim()) {
       onToast("أدخل اسم الموظف أولًا");
       return;
     }
     const newEmp: ErpEmployeeProfile = {
-      id: `emp_${Date.now()}`,
+      ...editingEmployee,
+      id: editingEmployee?.id ?? (employeeId.current ??= `emp_${Date.now()}`),
       name: name.trim(),
       roleTitle: roleTitle.trim() || "موظف",
       department: department.trim() || "الإدارة",
       basicSalary: parsePositiveNumber(basicSalary),
       allowances: parsePositiveNumber(allowances),
       deductions: parsePositiveNumber(deductions),
-      status: "active",
-      hireDate: new Date().toISOString().slice(0, 10),
-      leaveBalanceDays: 21,
-      attendanceToday: "present",
+      status: editingEmployee?.status ?? "active",
+      hireDate: editingEmployee?.hireDate ?? new Date().toISOString().slice(0, 10),
+      leaveBalanceDays: editingEmployee?.leaveBalanceDays ?? 21,
+      attendanceToday: editingEmployee?.attendanceToday ?? "present",
     };
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
-      employees: [newEmp, ...erpData.employees],
-    });
+      employees: editingEmployee ? erpData.employees.map(emp=>emp.id===newEmp.id?newEmp:emp) : [newEmp, ...erpData.employees],
+    })) return;
+    employeeId.current=null;
+    setEditingEmployee(null);
     setName("");
     setRoleTitle("");
     setAddingEmployee(false);
     triggerHaptic("success");
-    onToast(`تمت إضافة الموظف: ${newEmp.name}`);
+    onToast(`تم حفظ الموظف: ${newEmp.name}`);
   };
 
-  const cycleAttendance = (empId: string) => {
+  const cycleAttendance = async (empId: string) => {
     triggerHaptic("light");
     const order: ErpEmployeeProfile["attendanceToday"][] = ["present", "leave", "absent"];
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       employees: erpData.employees.map((emp) => {
         if (emp.id !== empId) return emp;
         const next = order[(order.indexOf(emp.attendanceToday) + 1) % order.length];
         return { ...emp, attendanceToday: next };
       }),
-    });
+    })) return;
   };
 
-  const handleLeaveDecision = (leaveId: string, status: ErpLeaveRequest["status"]) => {
+  const handleLeaveDecision = async (leaveId: string, status: ErpLeaveRequest["status"]) => {
     triggerHaptic(status === "approved" ? "success" : "warning");
     const targetLeave = erpData.leaveRequests.find((l) => l.id === leaveId);
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       leaveRequests: erpData.leaveRequests.map((lv) => (lv.id === leaveId ? { ...lv, status } : lv)),
       employees:
@@ -108,11 +114,12 @@ export function ErpHrScreen({
                 : emp,
             )
           : erpData.employees,
-    });
+    })) return;
     onToast(status === "approved" ? "تم اعتماد الإجازة وخصم الرصيد" : "تم رفض طلب الإجازة");
   };
 
   const handlePostPayrollToGl = async () => {
+    if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
     if (payrollTotals.totalNetPayroll <= 0) {
       onToast("لا توجد رواتب مستحقة للترحيل");
@@ -154,10 +161,10 @@ export function ErpHrScreen({
         expenseCategory: "رواتب وأجور",
       });
 
-      onUpdateErpData({
+      if (!await onUpdateErpData({
         ...erpData,
         lastPayrollRunMonth: currentMonthKey,
-      });
+      })) return;
       triggerHaptic("success");
       onToast(`تم ترحيل مسير الرواتب (${formatAmount(payrollTotals.totalNetPayroll)} ${currency}) للأستاذ العام`);
     } catch {
@@ -176,6 +183,7 @@ export function ErpHrScreen({
   return (
     <MobileScroll className="app-screen erp-scroll">
       <main className="erp-page" data-testid="erp-hr-screen">
+        {usesNativeDocumentOutput()?<p role="note" className="field-inline-error">حفظ السجلات الإدارية متاح محليًا. الترحيل المتقدم والاستلام والتصنيع غير متاحة هنا؛ استخدم شاشات الفاتورة والسند الأصلية.</p>:null}
         <div className="erp-segmented" role="tablist" aria-label="الموارد البشرية">
           <button
             type="button"
@@ -231,7 +239,7 @@ export function ErpHrScreen({
                 <button
                   type="button"
                   className="erp-primary-btn"
-                  disabled={postingPayroll}
+                  disabled={usesNativeDocumentOutput() || postingPayroll}
                   onClick={handlePostPayrollToGl}
                   data-testid="erp-post-payroll-btn"
                 >
@@ -249,6 +257,7 @@ export function ErpHrScreen({
                   className="erp-chip-btn"
                   onClick={() => {
                     keyboard.hide();
+                    setEditingEmployee(null);employeeId.current=null;setName("");setRoleTitle("");
                     setAddingEmployee((v) => !v);
                   }}
                 >
@@ -297,7 +306,7 @@ export function ErpHrScreen({
                     />
                   </div>
                   <button type="button" className="erp-primary-btn full" onClick={handleAddEmployee}>
-                    حفظ بيانات الموظف
+                    {editingEmployee?"حفظ تعديل الموظف":"حفظ بيانات الموظف"}
                   </button>
                 </div>
               ) : null}
@@ -317,6 +326,7 @@ export function ErpHrScreen({
                           <small>{currency} صافي</small>
                         </div>
                       </div>
+                      <button type="button" className="erp-chip-btn" onClick={()=>{keyboard.hide();setEditingEmployee(emp);setName(emp.name);setRoleTitle(emp.roleTitle);setDepartment(emp.department);setBasicSalary(String(emp.basicSalary));setAllowances(String(emp.allowances));setDeductions(String(emp.deductions));setAddingEmployee(true);}}>تعديل {emp.name}</button>
                       <div className="erp-row-meta">
                         <span>أساسي: <bdi>{formatAmount(emp.basicSalary)}</bdi></span>
                         <span>بدلات: <bdi>{formatAmount(emp.allowances)}</bdi></span>

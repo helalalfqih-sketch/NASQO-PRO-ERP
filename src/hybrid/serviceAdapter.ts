@@ -1559,14 +1559,15 @@ export async function rollbackLegacyLivePrefix(
   throw new Error("التراجع عن الدفعات التراثية يتم من خلال خدمة الاستعادة في Flutter.");
 }
 
-export async function downloadUnifiedSqliteFile(uid = LOCAL_WORKSPACE_UID): Promise<void> {
+export async function downloadUnifiedSqliteFile(uid = LOCAL_WORKSPACE_UID): Promise<boolean> {
   return runWithBrandLoader("جاري تصدير النسخة الاحتياطية المحلية عبر Flutter...", async () => {
     try {
-      await hybridBridge.invoke("backupWorkspace", {
+      const result=await hybridBridge.invoke<"backupWorkspace",{saved:boolean}>("backupWorkspace", {
         workspaceId: uid || LOCAL_WORKSPACE_UID,
         backupName: `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`,
         target: "local",
       });
+      return result.saved === true;
     } catch (err) {
       throw mapBridgeError(err);
     }

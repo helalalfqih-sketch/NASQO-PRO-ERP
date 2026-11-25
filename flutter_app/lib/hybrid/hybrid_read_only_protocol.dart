@@ -20,6 +20,7 @@ class HybridReadOnlyProtocol {
     this.manageDocument,
     this.createStockRecord,
     this.manageCatalog,
+    this.saveErpRecords,
     this.readInventoryReport,
     this.readProductPriceStats,
     this.readInvoiceDetail,
@@ -44,6 +45,7 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? manageDocument;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? createStockRecord;
   final Future<Map<String,dynamic>> Function(String,String,Map<String,dynamic>)? manageCatalog;
+  final Future<Map<String,dynamic>> Function(String,String,List<dynamic>)? saveErpRecords;
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? readInventoryReport;
   final Future<Map<String,dynamic>> Function(String)? readProductPriceStats;
   final Future<Map<String,dynamic>> Function(String)? readInvoiceDetail;
@@ -85,6 +87,16 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if(actionName=='saveErpRecords' && saveErpRecords!=null){
+      final p=request['payload'],key=request['idempotencyKey'];
+      if(p is! Map<String,dynamic>||p.keys.any((k)=>!['workspaceId','changes'].contains(k))||
+          p['workspaceId']!='local-erp-workspace'||p['changes'] is! List||key is! String||key.isEmpty||key.length>150)
+        return _error(id,actionName,'VALIDATION_ERROR','طلب حفظ إداري غير صالح.');
+      try{
+        final result=await saveErpRecords!(p['workspaceId'],key,p['changes']);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':{'erpData':result}});
+      }catch(e){return _error(id,actionName,'VALIDATION_ERROR',e is StateError?e.message.toString():e is ArgumentError?e.message.toString():'تعذر حفظ السجل المحلي؛ بقيت المدخلات لإعادة المحاولة.');}
     }
     if(actionName=='cloudIdentityAction'||actionName=='googleDriveAction'){
       final p=request['payload'];
@@ -245,7 +257,7 @@ class HybridReadOnlyProtocol {
         final ok=await exportBackup!();
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
           'ok':true,'data':{'saved':ok}});
-      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تصدير النسخة المحلية.');}
+      }catch(e){return _error(id,actionName,'SERVICE_UNAVAILABLE',e is StateError?e.message.toString():'تعذر تصدير النسخة المحلية؛ تحقق من مساحة التخزين.');}
     }
     if(actionName=='pickFile'&&pickBackup!=null){
       final params=request['payload'];

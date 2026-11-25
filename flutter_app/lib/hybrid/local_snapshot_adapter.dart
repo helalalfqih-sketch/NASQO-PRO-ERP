@@ -10,6 +10,7 @@ import '../services/stock_quantity.dart';
 import '../services/local_workspace_settings.dart';
 import '../services/local_invoice_roles.dart';
 import '../services/local_master_catalog.dart';
+import '../services/local_erp_records.dart';
 
 /// Adapts the existing on-device SQLite schema to the React Hybrid snapshot.
 /// No network calls, no automatic import, no fabricated customer/invoice rows.
@@ -101,6 +102,7 @@ class HybridLocalSnapshotAdapter {
       await LocalWorkspaceSettings.attach(txn,data);
       await LocalInvoiceRoles.attachCashboxes(txn,data);
       await LocalDocumentLifecycle.attach(txn,data);
+      data['erpData']=await LocalErpRecords.read(txn);
       return data;
   }
 

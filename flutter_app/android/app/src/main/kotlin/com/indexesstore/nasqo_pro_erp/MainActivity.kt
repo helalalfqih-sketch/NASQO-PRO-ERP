@@ -84,7 +84,7 @@ class MainActivity : FlutterActivity(), HybridCameraPermissionHost {
     private val openBackup = 7311
     private val saveBackup = 7312
     private val maxBackupBytes = 32L * 1024 * 1024
-    private val documentTypes = mapOf("application/pdf" to ".pdf", "image/png" to ".png", "text/csv" to ".csv")
+    private val documentTypes = mapOf("application/pdf" to ".pdf", "image/png" to ".png", "text/csv" to ".csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" to ".xlsx")
     private fun checkedDocument(call: io.flutter.plugin.common.MethodCall): Triple<File, String, String> {
         val mime = call.argument<String>("mimeType") ?: throw IllegalArgumentException()
         val extension = documentTypes[mime] ?: throw IllegalArgumentException()
@@ -99,6 +99,26 @@ class MainActivity : FlutterActivity(), HybridCameraPermissionHost {
     private fun documentOutput(call: io.flutter.plugin.common.MethodCall, result: MethodChannel.Result) {
         try {
             when (call.method) {
+                "printDocumentFile" -> {
+                    val (source, name, mime) = checkedDocument(call)
+                    require(mime == "application/pdf")
+                    val staged = File.createTempFile("nasqo-print-", ".pdf", cacheDir)
+                    source.inputStream().use { input -> staged.outputStream().use { out -> boundedCopy(input,out) } }
+                    val manager = getSystemService(android.content.Context.PRINT_SERVICE) as android.print.PrintManager
+                    manager.print(name, object : android.print.PrintDocumentAdapter() {
+                        override fun onLayout(old: android.print.PrintAttributes?, next: android.print.PrintAttributes?, signal: android.os.CancellationSignal, callback: LayoutResultCallback, extras: Bundle?) {
+                            if(signal.isCanceled) { callback.onLayoutCancelled(); return }
+                            callback.onLayoutFinished(android.print.PrintDocumentInfo.Builder(name).setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT).setPageCount(android.print.PrintDocumentInfo.PAGE_COUNT_UNKNOWN).build(),true)
+                        }
+                        override fun onWrite(pages: Array<android.print.PageRange>, destination: android.os.ParcelFileDescriptor, signal: android.os.CancellationSignal, callback: WriteResultCallback) {
+                            if(signal.isCanceled){callback.onWriteCancelled();return}
+                            try { staged.inputStream().use { input -> java.io.FileOutputStream(destination.fileDescriptor).use { out -> boundedCopy(input,out) } }; callback.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES)) }
+                            catch(e:Exception){callback.onWriteFailed("تعذر طباعة المستند")}
+                        }
+                        override fun onFinish(){staged.delete()}
+                    },null)
+                    result.success(true)
+                }
                 "shareDocument" -> {
                     val (source, name, mime) = checkedDocument(call)
                     val folder = File(cacheDir, "nasqo-shared-documents")

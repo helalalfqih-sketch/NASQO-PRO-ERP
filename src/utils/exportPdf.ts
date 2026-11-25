@@ -628,8 +628,10 @@ function createInvoiceSummaryPdfDoc(summary: InvoicePdfSummaryData): { pdf: jsPD
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const renderedHeight = (canvas.height * pageWidth) / canvas.width;
-  const fitHeight = Math.min(renderedHeight, pageHeight);
-  pdf.addImage(imgData, "PNG", 0, 0, pageWidth, fitHeight, undefined, "FAST");
+  for(let offset=0;offset<renderedHeight;offset+=pageHeight){
+    if(offset>0)pdf.addPage();
+    pdf.addImage(imgData,"PNG",0,-offset,pageWidth,renderedHeight,undefined,"FAST");
+  }
   appendInvoiceSourcePages(pdf, summary);
 
   const safeDate = (summary.entryDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, "");

@@ -1,3 +1,4 @@
+import { usesNativeDocumentOutput } from "../../hybrid/documentOutput";
 import { useMemo, useState } from "react";
 import { CheckCircledIcon, PlusIcon } from "@radix-ui/react-icons";
 import { formatAmount, normalizeArabicSearch } from "../../accounting";
@@ -51,7 +52,7 @@ export function ErpCrmPosScreen({
   warehouses: readonly WarehouseRecord[];
   inventory: readonly InventoryItemRecord[];
   erpData: ErpWorkspaceData;
-  onUpdateErpData: (next: ErpWorkspaceData) => void;
+  onUpdateErpData: (next: ErpWorkspaceData) => Promise<boolean>;
   onToast: (msg: string) => void;
 }) {
   const [tab, setTab] = useState<CrmPosTab>("pos");
@@ -132,6 +133,7 @@ export function ErpCrmPosScreen({
   };
 
   const handlePosCheckout = async () => {
+    if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
     if (cartLines.length === 0) {
       onToast("أضف صنفًا واحدًا على الأقل لسلة نقطة البيع");
@@ -189,7 +191,7 @@ export function ErpCrmPosScreen({
     }
   };
 
-  const handleCreateDeal = () => {
+  const handleCreateDeal = async () => {
     keyboard.hide();
     if (!dealTitle.trim()) {
       onToast("أدخل عنوان الصفقة أولًا");
@@ -209,19 +211,19 @@ export function ErpCrmPosScreen({
       expectedCloseDate: new Date().toISOString().slice(0, 10),
       assignedTo: erpData.employees[0]?.name ?? "فريق المبيعات",
     };
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       deals: [newDeal, ...erpData.deals],
-    });
+    })) return;
     setDealTitle("");
     setAddingDeal(false);
     triggerHaptic("success");
     onToast("تمت إضافة الفرصة البيعية إلى خط المبيعات");
   };
 
-  const handleAdvanceDeal = (dealId: string) => {
+  const handleAdvanceDeal = async (dealId: string) => {
     triggerHaptic("light");
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       deals: erpData.deals.map((d) => {
         if (d.id !== dealId) return d;
@@ -236,10 +238,11 @@ export function ErpCrmPosScreen({
         };
         return { ...d, stage: nextStage, probability: probMap[nextStage] };
       }),
-    });
+    })) return;
   };
 
   const handleConvertDealToInvoice = async (deal: ErpDealRecord) => {
+    if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
     if (deal.convertedInvoiceEntryId) return;
     const acc =
@@ -268,14 +271,14 @@ export function ErpCrmPosScreen({
         invoiceContent: "free",
         entryDate: new Date().toISOString().slice(0, 10),
       });
-      onUpdateErpData({
+      if (!await onUpdateErpData({
         ...erpData,
         deals: erpData.deals.map((d) =>
           d.id === deal.id
             ? { ...d, stage: "won", probability: 100, convertedInvoiceEntryId: entryId }
             : d,
         ),
-      });
+      })) return;
       triggerHaptic("success");
       onToast(`تم تحويل الصفقة إلى فاتورة مبيعات بقيمة ${formatAmount(deal.value)} ${deal.currency}`);
     } catch {
@@ -294,6 +297,7 @@ export function ErpCrmPosScreen({
   return (
     <MobileScroll className="app-screen erp-scroll">
       <main className="erp-page" data-testid="erp-crm-screen">
+        {usesNativeDocumentOutput()?<p role="note" className="field-inline-error">حفظ السجلات الإدارية متاح محليًا. الترحيل المتقدم والاستلام والتصنيع غير متاحة هنا؛ استخدم شاشات الفاتورة والسند الأصلية.</p>:null}
         <div className="erp-segmented" role="tablist" aria-label="المبيعات ونقطة البيع">
           <button
             type="button"
@@ -480,7 +484,7 @@ export function ErpCrmPosScreen({
               <button
                 type="button"
                 className="erp-primary-btn full"
-                disabled={checkingOut || cartLines.length === 0}
+                disabled={usesNativeDocumentOutput() || checkingOut || cartLines.length === 0}
                 onClick={handlePosCheckout}
                 data-testid="erp-pos-checkout-btn"
               >
@@ -581,7 +585,7 @@ export function ErpCrmPosScreen({
                         <button
                           type="button"
                           className="erp-primary-btn"
-                          onClick={() => handleConvertDealToInvoice(deal)}
+                          disabled={usesNativeDocumentOutput()} onClick={() => handleConvertDealToInvoice(deal)}
                         >
                           تحويل إلى فاتورة مبيعات
                         </button>

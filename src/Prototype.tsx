@@ -1,3 +1,4 @@
+import { useReportPreview, reportTotalText, reportSources, useReportSource, buildStatementReport, reportSummaryText, exportReport, type ReportSource, type ReportDocument, outputBytes } from "./utils/reportDocument";
 import { formatQuantity } from "./utils/quantityFormat";
 import {
   createContext,
@@ -384,7 +385,7 @@ type LiveWorkspaceState = {
         }),
   ) => void;
   erpData: ErpWorkspaceData;
-  updateErpData: (next: ErpWorkspaceData) => void;
+  updateErpData: (next: ErpWorkspaceData) => Promise<boolean>;
   openErpModule: (moduleId: ErpModuleId) => void;
   syncing: boolean;
   syncError: string | null;
@@ -395,17 +396,17 @@ type LiveWorkspaceState = {
   openSheet: (kind: Exclude<SheetKind, null>) => void;
   openAccountPicker: () => void;
   openQuickSearch: () => void;
-  openAccountEdit: (account?: AccountRecord) => void;
+  openAccountEdit: (account?: AccountRecord, sourceKey?: string) => void;
   openTransaction: (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => void;
   openAccountCreate: (mode?: AccountCreateMode, defaultCategory?: AccountCategory) => void;
   openInvoice: (defaultCategory?: AccountCategory, intent?: InvoiceIntent) => void;
   openVendorInvoice: (account?: AccountRecord, intent?: InvoiceIntent) => void;
-  openInvoiceEdit: (entry: LedgerEntryRecord, account?: AccountRecord) => void;
+  openInvoiceEdit: (entry: LedgerEntryRecord, account?: AccountRecord, sourceKey?: string) => void;
   openDashboardMenu: () => void;
   resetWorkspaceToEmptyNow: () => void;
   seedDemoWorkspaceNow: () => void;
-  openExportMenu: (kind?: ExportKind, account?: AccountRecord) => void;
-  openPrintOptions: (kind?: ExportKind, account?: AccountRecord) => void;
+  openExportMenu: (kind?: ExportKind, account?: AccountRecord, sourceKey?: string) => void;
+  openPrintOptions: (kind?: ExportKind, account?: AccountRecord, sourceKey?: string) => void;
   openBackupModal: () => void;
   openGoogleDriveModal: () => void;
   openFullSqliteImport: () => void;
@@ -1140,6 +1141,7 @@ export function AuthenticatedWorkspace({
     open: boolean;
     kind: ExportKind;
     account?: AccountRecord;
+    source?: ReportSource;
   }>({ open: false, kind: "statement" });
   const [dashboardMenuOpen, setDashboardMenuOpen] = useState(false);
   const [invoiceSeed, setInvoiceSeed] = useState<{
@@ -1161,6 +1163,7 @@ export function AuthenticatedWorkspace({
   const [printContext, setPrintContext] = useState<{
     kind: ExportKind;
     account?: AccountRecord;
+    source?: ReportSource;
   }>({ kind: "statement" });
   const [transferAccountId, setTransferAccountId] = useState<string | undefined>();
   const [extendedSettings, setExtendedSettingsState] = useState<ExtendedAppSettings>(() => {
@@ -1374,13 +1377,14 @@ export function AuthenticatedWorkspace({
     });
   }, [user.uid]);
 
-  const updateErpData = useCallback(
-    (next: ErpWorkspaceData) => {
-      setErpData(next);
-      saveErpWorkspaceData(user.uid, next);
-    },
-    [user.uid],
-  );
+  const erpSaving = useRef(false);
+  const updateErpData = useCallback(async (next: ErpWorkspaceData): Promise<boolean> => {
+    if (erpSaving.current) return false;
+    erpSaving.current=true;
+    try { await saveErpWorkspaceData(user.uid,next); return true; }
+    catch(error){showToast(error instanceof Error?error.message:"تعذر حفظ السجل");return false;}
+    finally {erpSaving.current=false;}
+  }, [user.uid]);
 
 
 
@@ -1693,23 +1697,18 @@ export function AuthenticatedWorkspace({
     returnOverlay.current = null;
   }, [dismissKeyboard]);
 
-  const openExportMenu = useCallback(
-    (kind: ExportKind = "statement", account?: AccountRecord) => {
-      dismissKeyboard();
-      setExportState((s) => ({ open: !s.open, kind, account }));
-    },
-    [dismissKeyboard],
-  );
-
-  const openPrintOptions = useCallback(
-    (kind: ExportKind = "statement", account?: AccountRecord) => {
-      dismissKeyboard();
-      setExportState((s) => ({ ...s, open: false }));
-      setPrintContext({ kind, account });
-      setOverlay("print-options");
-    },
-    [dismissKeyboard],
-  );
+  const findReportSource = (kind:ExportKind,account?:AccountRecord,key?:string) =>
+    reportSources.get(key ?? (kind === "statement" ? `statement:${account?.id ?? "missing"}` : kind));
+  const openExportMenu = useCallback((kind:ExportKind="statement",account?:AccountRecord,sourceKey?:string)=>{
+    dismissKeyboard();const source=findReportSource(kind,account,sourceKey);
+    if(!source){showToast("افتح التقرير وحدد حسابه أو نطاقه قبل التصدير");return;}
+    setExportState(s=>({open:!s.open,kind,account,source}));
+  },[dismissKeyboard]);
+  const openPrintOptions = useCallback((kind:ExportKind="statement",account?:AccountRecord,sourceKey?:string)=>{
+    dismissKeyboard();const source=findReportSource(kind,account,sourceKey);
+    if(!source){showToast("افتح التقرير وحدد حسابه أو نطاقه قبل الطباعة");return;}
+    setExportState(s=>({...s,open:false}));setPrintContext({kind,account,source});setOverlay("print-options");
+  },[dismissKeyboard]);
 
   const openBackupModal = useCallback(() => {
     dismissKeyboard();
@@ -2643,124 +2642,25 @@ export function AuthenticatedWorkspace({
     }
   };
 
-  const executeExcelExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
-    void runWithBrandLoader(
-      "جاري تصدير ملف Excel...",
-      async () => {
-        if (kind === "inventory") {
-          const csv = buildCsvContent(
-            ["الصنف", "الوحدة", "الكمية المعتمدة", "التكلفة المعتمدة", "سعر التكلفة المرجعي", "حالة المخزون"],
-            inventory.map((i) => [i.name, i.unit, i.quantityUnverified ? "" : i.quantity, (i.quantityUnverified || i.costUnverified) ? "" : i.avgCost,
-              getCatalogReferenceCost(i) ?? "", i.quantityUnverified ? "غير معتمد" : i.costUnverified ? "كمية معتمدة؛ تكلفة غير معتمدة" : "معتمد"]),
-          );
-          const saved=await downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
-          showToast(saved?"تم حفظ تقرير المخزون بصيغة CSV":"تم إلغاء حفظ التقرير");
-        } else if (kind === "purchases") {
-          const csv = buildCsvContent(
-            ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
-            accounts
-              .filter((a) => a.category === "purchases")
-              .map((a) => {
-                const s = computeAccountSummary(a, ledger);
-                return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
-              }),
-          );
-          const saved=await downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
-          showToast(saved?"تم حفظ حسابات المشتريات بصيغة CSV":"تم إلغاء حفظ التقرير");
-        } else {
-          const targetAcc = targetAccount ?? accounts[0];
-          const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-          const csv = buildCsvContent(
-            ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
-            (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
-          );
-          const saved=await downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
-          showToast(saved?"تم حفظ كشف الحساب بصيغة CSV":"تم إلغاء حفظ التقرير");
-        }
-      },
-      { minDurationMs: 420 },
-    ).catch(err=>showToast(err instanceof Error?err.message:"تعذر حفظ التقرير"));
+  const reportExportBusy=useRef(false);
+  const outputReport = async(source:ReportSource|undefined,format:"pdf"|"excel"|"image",mode:"save"|"share"|"print",all=false,confirmation=false)=>{
+    if(reportExportBusy.current)return;
+    reportExportBusy.current=true;
+    try{if(!source)throw new Error("سياق التقرير مفقود؛ افتح التقرير من جديد");
+      await runWithBrandLoader("جاري تجهيز التقرير المحدد...",async()=>{
+        let report=await source(all);
+        if(confirmation){if(report.kind!=="statement")throw new Error("مصادقة الرصيد تتطلب كشف حساب محدد");report={...report,title:"مصادقة الرصيد — "+report.scope.account,confirmation:true,rows:[]};}
+        const ok=await exportReport(report,format,mode);
+        showToast(!ok?"أُلغي الإجراء؛ قد تكون صفحات سابقة حُفظت بالفعل":mode==="share"?"فُتحت نافذة مشاركة المرفق؛ لم يُؤكّد إرساله":mode==="print"?"فُتحت معاينة طباعة المستند": "تم حفظ ملف التقرير");
+      });
+    }catch(error){showToast(error instanceof Error?error.message:"تعذر إنشاء التقرير");}
+    finally{reportExportBusy.current=false;}
   };
-
-  const handlePrintPngExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
-    void runWithBrandLoader(
-      "جاري تصدير التقرير كصورة...",
-      async () => {
-        let saved=false;
-        const company = workspace?.companyName || "نسقو برو";
-        if (kind === "inventory") {
-          const invSummary = computeInventorySummary(inventory);
-          saved=await exportSummaryAsPngImage({
-            filename: "nasqo-inventory-report.png",
-            companyName: company,
-            title: "تقرير حركة المخزون",
-            subtitle: `عدد الأصناف: ${invSummary.items.length} | إجمالي القيمة: ${formatAmount(invSummary.totalValue)}`,
-            accentColor: extendedSettings.reportColor || brandColor,
-            rows: inventory.slice(0, 10).map((i) => [i.name, `${formatQuantity(i.quantity)} ${i.unit}`]),
-            footerNote: extendedSettings.statementFooterNote,
-          });
-        } else if (kind === "purchases") {
-          const list = accounts.filter((a) => a.category === "purchases");
-          saved=await exportSummaryAsPngImage({
-            filename: "nasqo-purchases-summary.png",
-            companyName: company,
-            title: "ملخص حسابات المشتريات والموردين",
-            subtitle: `إجمالي الحسابات: ${list.length}`,
-            accentColor: extendedSettings.reportColor || brandColor,
-            rows: list.slice(0, 10).map((a) => {
-              const s = computeAccountSummary(a, ledger);
-              return [a.name, `${formatAmount(s.netBalance)} ${a.currency}`];
-            }),
-            footerNote: extendedSettings.statementFooterNote,
-          });
-        } else {
-          const targetAcc = targetAccount ?? accounts[0];
-          const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-          saved=await exportSummaryAsPngImage({
-            filename: `statement-${targetAcc?.codeNumber ?? "all"}.png`,
-            companyName: company,
-            title: `كشف حساب: ${targetAcc?.name ?? ""}`,
-            subtitle: `الصافي: ${formatAmount(statement?.netBalance ?? 0)} ${targetAcc?.currency ?? "ريال"}`,
-            accentColor: extendedSettings.reportColor || brandColor,
-            rows: (statement?.rows ?? []).slice(0, 10).map((r) => [
-              `${r.typeLabel} (#${r.entryNumber})`,
-              `${formatAmount(r.amount)} ${r.currency}`,
-            ]),
-            footerNote: extendedSettings.statementFooterNote,
-          });
-        }
-        showToast(saved?"تم حفظ التقرير كصورة PNG":"تم إلغاء حفظ التقرير");
-      },
-      { minDurationMs: 420 },
-    ).catch(err=>showToast(err instanceof Error?err.message:"تعذر حفظ التقرير"));
-  };
-
-  const handleExportAction = (kind: ExportKind, action: "pdf-print" | "pdf-share" | "excel" | "excel-share" | "balance" | "import") => {
-    setExportState((s) => ({ ...s, open: false }));
-    if (action === "import") {
-      triggerCsvImport();
-      return;
-    }
-    if (action === "pdf-print") {
-      openPrintOptions(kind, exportState.account);
-      return;
-    }
-    if (action === "balance") {
-      triggerPrintWithLoader("جاري تجهيز مصادقة الرصيد للطباعة...");
-      return;
-    }
-    if (action === "excel" || action === "excel-share") {
-      executeExcelExport(kind, exportState.account);
-      return;
-    }
-    if (action === "pdf-share") {
-      const targetAcc = exportState.account ?? accounts[0];
-      const summary = targetAcc ? computeAccountSummary(targetAcc, ledger) : null;
-      const text = targetAcc
-        ? `كشف حساب: ${targetAcc.name} | الرصيد: ${formatAmount(summary?.netBalance ?? 0)} ${targetAcc.currency}`
-        : `تقرير ${workspace?.companyName ?? "نسقو برو"}`;
-      void shareOrCopyText("كشف حساب - نسقو برو", text, showToast);
-    }
+  const handleExportAction = (kind:ExportKind,action:"pdf-print"|"pdf-share"|"excel"|"excel-share"|"balance"|"import")=>{
+    setExportState(s=>({...s,open:false}));
+    if(action==="import"){triggerCsvImport();return;}
+    if(action==="pdf-print"){setPrintContext({kind,account:exportState.account,source:exportState.source});setOverlay("print-options");return;}
+    void outputReport(exportState.source,action.startsWith("excel")?"excel":"pdf",action.endsWith("share")?"share":"save",false,action==="balance");
   };
 
   // Hardware/system Back closes transient UI before navigating the screen stack.
@@ -2928,77 +2828,9 @@ export function AuthenticatedWorkspace({
             setInventoryEditing(undefined);
           }}
         />
-        <PrintOptionsModal
-          open={overlay === "print-options"}
-          subjectLabel={
-            printContext.account
-              ? `كشف حساب: ${printContext.account.name}`
-              : printContext.kind === "inventory"
-                ? "تقرير حركة المخزون"
-                : printContext.kind === "purchases"
-                  ? "تقرير المشتريات والموردين"
-                  : undefined
-          }
-          onClose={() => setOverlay(null)}
-          onPrintPdf={(allCurrencies) => {
-            if (hybrid.isHybrid) {
-              const title = printContext.account
-                ? `كشف حساب: ${printContext.account.name}`
-                : printContext.kind === "inventory"
-                  ? "تقرير حركة المخزون"
-                  : printContext.kind === "purchases"
-                    ? "تقرير المشتريات والموردين"
-                    : "تقرير نسقو برو";
-              void hybrid
-                .exportPdf({
-                  filename: `nasqo-${printContext.kind}-${new Date().toISOString().slice(0, 10)}.pdf`,
-                  title,
-                  kind: printContext.kind,
-                  accountId: printContext.account?.id,
-                  allCurrencies,
-                })
-                .then((ok) => {
-                  if (ok) {
-                    showToast("تم فتح معاينة التقرير المعروض؛ اختر طابعة أو حفظ PDF. غيّر فلتر العملة قبل الطباعة عند الحاجة.");
-                  }
-                })
-                .catch((err) => {
-                  showToast(err instanceof Error ? err.message : "تعذر تصدير PDF عبر Flutter");
-                });
-              return;
-            }
-            triggerPrintWithLoader(
-              allCurrencies ? "جاري تجهيز طباعة جميع العملات..." : "جاري تجهيز معاينة الطباعة PDF...",
-            );
-            showToast(allCurrencies ? "تم فتح معاينة PDF لجميع العملات" : "تم فتح معاينة PDF");
-          }}
-          onExportExcel={() => executeExcelExport(printContext.kind, printContext.account)}
-          onExportImage={() => handlePrintPngExport(printContext.kind, printContext.account)}
-          onShare={() => {
-            const targetAcc = printContext.account ?? accounts[0];
-            const summary = targetAcc ? computeAccountSummary(targetAcc, ledger) : null;
-            const text = targetAcc
-              ? `كشف حساب: ${targetAcc.name} | الرصيد: ${formatAmount(summary?.netBalance ?? 0)} ${targetAcc.currency}`
-              : `تقرير ${workspace?.companyName ?? "نسقو برو"}`;
-            void shareOrCopyText("تقرير نسقو برو", text, showToast);
-          }}
-          onSendWhatsApp={() => {
-            const targetAcc = printContext.account ?? accounts[0];
-            if (targetAcc) {
-              const summary = computeAccountSummary(targetAcc, ledger);
-              const msg = buildAccountBalanceMessage(
-                targetAcc,
-                summary.netBalance,
-                summary.tone,
-                workspace?.companyName,
-                extendedSettings,
-              );
-              void openWhatsAppChat(targetAcc, msg, showToast);
-            } else {
-              void openWhatsAppChat(undefined, `تقرير ${workspace?.companyName ?? "نسقو برو"}`, showToast);
-            }
-          }}
-        />
+        <PrintOptionsModal open={overlay === "print-options"} subjectLabel={printContext.account?.name}
+          showAllCurrencies={printContext.kind === "statement"} onClose={closeOverlay}
+          onOutput={(format,mode,all)=>void outputReport(printContext.source,format,mode,all)} />
         <BackupNameModal
           open={overlay === "backup-name"}
           onClose={() => setOverlay(null)}
@@ -3522,7 +3354,7 @@ function purchasesScreen(
   return {
     id: `accounts-${category}-${groupId ?? "all"}`,
     headerHeight: 58,
-    header: (flow) => <PurchasesHeader flow={flow} category={category} groupTitle={groupTitle} />,
+    header: (flow) => <PurchasesHeader flow={flow} category={category} groupTitle={groupTitle} groupId={groupId} />,
     footerHeight: 54,
     footer: () => <CategoryFinancialFooter category={category} groupId={groupId} />,
     render: (flow) => <PurchasesPage flow={flow} category={category} groupId={groupId} />,
@@ -3533,10 +3365,12 @@ function PurchasesHeader({
   flow,
   category,
   groupTitle,
+  groupId,
 }: {
   flow: FlowControls;
   category: AccountCategory;
   groupTitle?: string;
+  groupId?: number;
 }) {
   const ctx = useWorkspace();
   return (
@@ -3545,9 +3379,9 @@ function PurchasesHeader({
       subtitle=""
       onBack={flow.pop}
       actions={[
-        { label: "طباعة", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("purchases") },
+        { label: "طباعة", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("purchases",undefined,`accounts:${category}:${groupId??"all"}`) },
         { label: "تصفية", icon: MixerHorizontalIcon, onClick: () => ctx.openSheet("filters") },
-        { label: "تصدير المشتريات", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases") },
+        { label: `تصدير ${categoryTitle(category)}`, icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases",undefined,`accounts:${category}:${groupId??"all"}`) },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: ctx.openAccountPicker },
       ]}
     />
@@ -3556,27 +3390,15 @@ function PurchasesHeader({
 
 function CategoryFinancialFooter({ category, groupId }: { category: AccountCategory; groupId?: number }) {
   const ctx = useWorkspace();
-  const activeCurrency = ctx.categoryCurrencies[category] ?? ctx.workspace?.defaultCurrency ?? "ريال";
-  const currencyFilter = activeCurrency === "الكل" ? undefined : activeCurrency;
-  const catAccounts = ctx.accounts.filter((a) =>
-    groupId !== undefined ? a.groupId === groupId : a.category === category,
-  );
-  let debit = 0;
-  let credit = 0;
-  for (const acc of catAccounts) {
-    const s = computeAccountSummary(acc, ctx.ledger, currencyFilter);
-    debit += s.debitTotal;
-    credit += s.creditTotal;
-  }
-  const balance = Math.abs(credit - debit);
+  const report=useReportPreview(`accounts:${category}:${groupId??"all"}`);
   return (
     <FinancialFooter
-      debit={formatAmount(debit)}
-      credit={formatAmount(credit)}
-      balance={formatAmount(balance)}
+      debit={reportTotalText(report,"debit")}
+      credit={reportTotalText(report,"credit")}
+      balance={reportTotalText(report,"balance")}
       hidePrimaryAction
       onPrimary={() => ctx.openAccountCreate("extended", category)}
-      onMenu={() => ctx.openExportMenu("purchases")}
+      onMenu={() => ctx.openExportMenu("purchases",undefined,`accounts:${category}:${groupId??"all"}`)}
     />
   );
 }
@@ -3624,11 +3446,11 @@ function SupplierHeader({
   onSearch: () => void;
 }) {
   const ctx = useWorkspace();
-  const account = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const account = ctx.accounts.find((a) => a.id === accountId);
   const isCashAccount = Boolean(account?.isCashAccount);
   return (
     <AppHeader
-      title={isCashAccount ? `مشتريات ${account.name}` : account?.name || "كشف الحساب"}
+      title={isCashAccount ? `مشتريات ${account?.name ?? ""}` : account?.name || "كشف الحساب"}
       subtitle={isCashAccount ? "" : "كشف حساب"}
       className={isCashAccount ? "cash-statement-header" : ""}
       onBack={flow.pop}
@@ -3642,6 +3464,11 @@ function SupplierHeader({
   );
 }
 
+function statementTotalText(statement:ReturnType<typeof computeStatementRows>,kind:"debit"|"credit"|"balance"|"previous"){
+ if(statement.currencyTotals)return statement.currencyTotals.map(t=>`${formatAmount(t[kind])} ${t.currency}`).join(" / ");
+ return formatAmount(kind==="debit"?statement.debitTotal:kind==="credit"?statement.creditTotal:kind==="previous"?statement.previousBalance:statement.netBalance);
+}
+
 function SupplierFooter({
   accountId,
   onCashMenu,
@@ -3650,7 +3477,8 @@ function SupplierFooter({
   onCashMenu: () => void;
 }) {
   const ctx = useWorkspace();
-  const account = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const report=useReportPreview(`statement:${accountId}`);
+  const account = ctx.accounts.find((a) => a.id === accountId);
   if (!account) return null;
   const activeCurrency = ctx.statementCurrencies[account.id] ?? account.currency ?? "ريال";
   const statement = computeStatementRows(account, ctx.ledger, {
@@ -3662,9 +3490,9 @@ function SupplierFooter({
   }
   return (
     <FinancialFooter
-      debit={formatAmount(statement.debitTotal)}
-      credit={formatAmount(statement.creditTotal)}
-      balance={formatAmount(statement.netBalance)}
+      debit={reportTotalText(report,"debit")}
+      credit={reportTotalText(report,"credit")}
+      balance={reportTotalText(report,"balance")}
       compact
       onPrimary={() => ctx.flowRef.current?.push(simpleEntryScreen(account.id))}
       onMenu={onCashMenu}
@@ -3685,7 +3513,7 @@ function SupplierScreenRouter({
 }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
-  const account = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const account = ctx.accounts.find((a) => a.id === accountId);
   if (!account) {
     return (
       <MobileScroll className="app-screen">
@@ -3720,7 +3548,7 @@ function ShopHeader({ flow }: { flow: FlowControls }) {
       onBack={flow.pop}
       actions={[
         { label: "تصفية", icon: MixerHorizontalIcon, onClick: () => ctx.openSheet("filters") },
-        { label: "تصدير", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases") },
+        { label: "تصدير", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases",undefined,"accounts:shop:all") },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: ctx.openAccountPicker },
       ]}
     />
@@ -3755,7 +3583,7 @@ function ShopFooter() {
         type="button"
         className="shop-totals-menu"
         aria-label="خيارات التصدير"
-        onClick={() => ctx.openExportMenu("purchases")}
+        onClick={() => ctx.openExportMenu("purchases",undefined,"accounts:shop:all")}
       >
         <HamburgerMenuIcon />
       </button>
@@ -3825,6 +3653,11 @@ function ShopPage({ flow }: { flow: FlowControls }) {
     { fromDate: "", toDate: "", sortBy: "date", sort: "تنازلي", byCurrency: false },
   );
 
+  useReportSource("accounts:shop:all",()=>{
+    const rows=ordered.flatMap(a=>{const report=buildStatementReport(a,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true},false);return report.totals.map(t=>({id:a.id+":"+t.currency,currency:t.currency,cells:[a.codeNumber,a.name,a.phone,t.debit,t.credit,t.balance,t.currency]}));});
+    const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[3]);t.credit+=Number(row.cells[4]);t.balance=t.credit-t.debit;return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
+    return {kind:"accounts",title:"حسابات المحل",scope:{from:fromDate,to:toDate,search:searchQuery,currency:byCurrency?currencyFilter:"الكل"},columns:["الرقم","الحساب","الهاتف","عليه","له","الرصيد","العملة"],rows,totals};
+  });
   return (
     <div className="nasqo-pinned-layout shop-layout" dir="rtl">
       <UnifiedSearchFilterBar
@@ -4225,15 +4058,9 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
   const downloadTemplate = () => {
     const csv = "\uFEFFالاسم,الرمز,الوحدة,متوسط التكلفة,سعر البيع,الوحدة 2,العبوة 2,سعر 2,الوحدة 3,العبوة 3,سعر 3\n";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "nasqo-items-template.csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    ctx.showToast("تم تحميل نموذج استيراد الأصناف");
+    void outputBytes(new TextEncoder().encode(csv),"nasqo-items-template.csv","text/csv","save")
+      .then(ok=>ctx.showToast(ok?"تم حفظ قالب الأصناف CSV":"أُلغي الحفظ"))
+      .catch(error=>ctx.showToast(error instanceof Error?error.message:"تعذر حفظ القالب"));
   };
 
   const runAction = (fn: () => void) => {
@@ -4298,7 +4125,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => runAction(() => ctx.openExportMenu("inventory"))}
+                  onClick={() => runAction(() => ctx.openExportMenu("inventory", undefined, "catalog"))}
                 >
                   <DownloadIcon />
                   <span>خيارات الطباعة والتصدير</span>
@@ -4346,6 +4173,9 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete,setPendingDelete]=useState<{id:string;name:string}|null>(null);
+  const deleteBusy=useRef(false);
+  useBackLayer(Boolean(pendingDelete),()=>{setPendingDelete(null);return true;},105);
   const [formError, setFormError] = useState("");
   const searchQuery = searchState.query;
   const searchActive = isSearchActiveMode(searchState);
@@ -4445,6 +4275,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         warehouseId: targetWh,
         quantityUnverified: false,
       });
+      removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
       triggerHaptic("success");
       ctx.showToast(`تم حفظ الصنف «${trimmedName}» في سجل الأصناف (بدون حركة مخزنية أو شراء)`);
       resetForm();
@@ -4490,6 +4321,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         isActive,
         expiryDate: expiryDate.trim(),
       });
+      removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
       triggerHaptic("success");
       ctx.showToast(`تم تعديل بطاقة الصنف «${trimmedName}» دون المساس بحركة المخزون`);
       resetForm();
@@ -4503,17 +4335,27 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     }
   };
 
-  const handleDeleteSelected = async () => {
-    if (!selectedId) {
+  const handleDeleteSelected = () => {
+    keyboard.hide();
+    const item=ctx.inventory.find(i=>i.id===selectedId);
+    if(item)setPendingDelete({id:item.id,name:item.name});
+    else ctx.showToast("حدد صنفًا لحذفه");
+  };
+  const confirmDeleteSelected = async () => {
+    if(deleteBusy.current||!pendingDelete)return;
+    const target=pendingDelete;
+    if (!target.id) {
       const msg = "حدد صنفًا من الجدول أولًا لحذفه.";
       setFormError(msg);
       ctx.showToast(msg);
       return;
     }
-    setSaving(true);
+    deleteBusy.current=true;setSaving(true);
     setFormError("");
     try {
-      await deleteInventoryCatalogItem(ctx.uid, selectedId);
+      await deleteInventoryCatalogItem(ctx.uid, target.id);
+      setPendingDelete(null);
+      removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
       triggerHaptic("success");
       ctx.showToast("تم حذف الصنف من سجل الأصناف");
       resetForm();
@@ -4523,10 +4365,24 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
       setFormError(msg);
       ctx.showToast(msg);
     } finally {
-      setSaving(false);
+      deleteBusy.current=false;setSaving(false);
     }
   };
 
+  useReportSource("catalog",()=>({kind:"catalog",title:"ملف الأصناف",scope:{search:searchQuery},columns:["الرقم","الصنف","الباركود","الوحدة","التكلفة المرجعية","سعر البيع","العملة"],rows:filteredItems.map(i=>({id:i.id,currency:i.currencyCode||"ريال",cells:[i.legacyId??i.id,i.name,i.sku??"",i.unit,getCatalogReferenceCost(i)??i.avgCost??0,i.sellingPrice??0,i.currencyCode||"ريال"]})),totals:[]}));
+  const catalogDraft={selectedId,name,sku,unit,avgCost,sellingPrice,unit2,count2,sprice2,unit3,count3,sprice3,defaultUnit,expiryDate,currencyCode,isActive};
+  const catalogScope=ctx.workspace?.id??ctx.uid;
+  const catalogGuard=useUnsavedForm({active:formOpen,dirty:Boolean(name.trim()||sku.trim()),
+    onClose:()=>{keyboard.hide();setFormOpen(false);},
+    saveDraft:()=>!saving&&writeUiState(catalogScope,"catalog-draft",catalogDraft),
+    discardDraft:()=>{if(saving)return false;const ok=removeUiState(catalogScope,"catalog-draft");if(ok)resetForm();return ok;}});
+  useEffect(()=>{
+    const d=readUiState<typeof catalogDraft|null>(catalogScope,"catalog-draft",null,v=>{if(!v||typeof v!=="object")return false;const d=v as Record<string,unknown>;return ["name","sku","unit","avgCost","sellingPrice","unit2","count2","sprice2","unit3","count3","sprice3","expiryDate","currencyCode"].every(k=>typeof d[k]==="string"&&String(d[k]).length<=2000)&&(d.selectedId===null||typeof d.selectedId==="string")&&[1,2,3].includes(Number(d.defaultUnit))&&typeof d.isActive==="boolean";});
+    if(!d)return;
+    if(d.selectedId&&!ctx.inventory.some(i=>i.id===d.selectedId)){ctx.showToast("الصنف في المسودة لم يعد موجودًا؛ لم تُفتح مسودة قديمة للتعديل");return;}
+    setSelectedId(d.selectedId);setName(d.name);setSku(d.sku);setUnit(d.unit);setAvgCost(d.avgCost);setSellingPrice(d.sellingPrice);setUnit2(d.unit2);setCount2(d.count2);setSprice2(d.sprice2);setUnit3(d.unit3);setCount3(d.count3);setSprice3(d.sprice3);setDefaultUnit(d.defaultUnit);setExpiryDate(d.expiryDate);setCurrencyCode(d.currencyCode);setIsActive(d.isActive);setFormOpen(true);
+  },[catalogScope]);
+  useBackLayer(formOpen&&saving,()=>{ctx.showToast("انتظر تأكيد حفظ الصنف");return true;},110);
   const showEditorForm = formOpen && !searchState.isFocused;
   const selectedCatalogItem = ctx.inventory.find((item) => item.id === selectedId);
   const selectedReferenceCost = (selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified)
@@ -4546,12 +4402,12 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         unitLabel="صنف"
         isFocused={searchState.isFocused}
         onFocus={() => {
-          setFormOpen(false);
+          if(formOpen){keyboard.hide();catalogGuard.requestClose();return;}
           setSearchState((prev) => onSearchFocus(prev));
         }}
         onBlur={() => setSearchState((prev) => onSearchBlur(prev))}
         onQueryChange={(next) => {
-          setFormOpen(false);
+          if(formOpen)return;
           setPageIndex(0);
           setSearchState((prev) => onSearchQueryChange(prev, next));
         }}
@@ -4572,7 +4428,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
             onClick={() => {
               keyboard.hide();
               if (showEditorForm) {
-                setFormOpen(false);
+                catalogGuard.requestClose();
               } else {
                 resetForm();
                 setFormOpen(true);
@@ -4590,22 +4446,23 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         }
       />
 
+      <UnsavedFormPrompt guard={catalogGuard}/>
+      {pendingDelete?<div className="center-modal-layer" data-testid="catalog-delete-confirm"><section className="ref-dialog-card" role="alertdialog" aria-label="تأكيد حذف الصنف"><h2>حذف الصنف «{pendingDelete.name}»؟</h2><p>لا يمكن حذف صنف مرتبط بحركات؛ لن تتغير القيود القديمة.</p><button disabled={saving} onClick={()=>void confirmDeleteSelected()}>تأكيد الحذف</button><button disabled={saving} onClick={()=>setPendingDelete(null)}>إلغاء</button></section></div>:null}
       <MobileScroll className="nasqo-flex-scroll app-screen">
         <main className="items-catalog-page" dir="rtl">
+          {!ctx.inventory.length&&!showEditorForm?<div className="nasqo-empty-card" data-testid="catalog-empty"><p>لا توجد أصناف بعد</p><button className="ref-btn green" onClick={()=>{keyboard.hide();resetForm();setFormOpen(true);}}>إضافة أول صنف</button></div>:null}
+          {filteredItems.length===0&&ctx.inventory.length>0?<p role="status">لا توجد أصناف تطابق البحث</p>:null}
           {showEditorForm ? (
             <section className="items-catalog-form-card" aria-label="بيانات الصنف" data-testid="catalog-form-card">
               <div className="items-catalog-form-header">
                 <div className="items-catalog-form-title">
-                  {selectedId ? "تعديل بيانات الصنف" : "إضافة صنف جديد"}
+                  {selectedId ? `تعديل الصنف: ${ctx.inventory.find(i=>i.id===selectedId)?.name??name}` : "إضافة صنف جديد"}
                 </div>
                 <button
                   type="button"
                   className="nasqo-inline-close-btn"
                   aria-label="إغلاق نموذج بيانات الصنف"
-                  onClick={() => {
-                    keyboard.hide();
-                    setFormOpen(false);
-                  }}
+                  onClick={() => {keyboard.hide();catalogGuard.requestClose();}}
                 >
                   <Cross2Icon />
                 </button>
@@ -4824,6 +4681,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     type="button"
                     className="items-btn save"
                     data-testid="catalog-save-btn"
+                    hidden={Boolean(selectedId)}
                     disabled={saving}
                     onClick={() => void handleSaveNew()}
                   >
@@ -4833,19 +4691,17 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     type="button"
                     className="items-btn edit"
                     data-testid="catalog-update-btn"
+                    hidden={!selectedId}
                     disabled={saving || !selectedId}
                     onClick={() => void handleUpdateSelected()}
                   >
-                    تعديل
+                    حفظ التعديل
                   </button>
                   <button
                     type="button"
                     className="items-btn cancel"
                     data-testid="catalog-cancel-btn"
-                    onClick={() => {
-                      resetForm();
-                      setFormOpen(false);
-                    }}
+                    onClick={() => {keyboard.hide();catalogGuard.requestClose();}}
                   >
                     الغاء الأمر
                   </button>
@@ -4939,7 +4795,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
           )}
 
             <footer className="items-catalog-footer">
-              <div className="items-pagination-bar">
+              {totalPages>1?<div className="items-pagination-bar">
                 <button
                   type="button"
                   className="items-page-btn"
@@ -4969,18 +4825,18 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                 >
                   {showAll ? "تقسيم صفحات" : "عرض الكل"}
                 </button>
-              </div>
-              {!searchActive ? <div className="items-shortcuts-strip">
-                <span>تعديل صنف: F2</span>
+              </div>:null}
+              {selectedId ? <div className="items-touch-actions">
+                <button type="button" className="items-page-btn" onClick={()=>{const item=ctx.inventory.find(i=>i.id===selectedId);if(item)selectItemForEdit(item);}}>تعديل الصنف المحدد</button>
                 <button
                   type="button"
                   className="currencies-footer-hint"
                   data-testid="catalog-delete-btn"
                   onClick={() => void handleDeleteSelected()}
                 >
-                  حذف صنف : DELETE
+                  حذف الصنف المحدد
                 </button>
-                <span>التنقل : TAB</span>
+
               </div> : null}
             </footer>
         </main>
@@ -5245,6 +5101,12 @@ function InventoryReportPage({
     return allScopeRows;
   }, [allScopeRows, inventoryById, onlyMoved, searchQuery]);
 
+  useReportSource("inventory",()=>{
+    if(!movementReport)throw new Error("انتظر اكتمال قراءة تقرير المخزون أو أعد المحاولة");
+    const rows=reportRows.map(r=>{const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");return {id:r.id,currency,cells:[r.code??r.id,r.name,r.unit,r.availableQty,r.buyTotal,r.sellTotal,r.remainingValue,r.profit,currency]};});
+    const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[4]);t.credit+=Number(row.cells[5]);t.balance+=Number(row.cells[6]);return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
+    return {kind:"inventory",title:"حركة المخزون",scope:{warehouse:ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name||"جميع المخازن",from:fromDate,to:toDate,currency:selectedCurrency,search:searchQuery},columns:["الرقم","الصنف","الوحدة","المتوفر","الشراء","البيع","قيمة المتبقي","الربح","العملة"],rows,totals};
+  });
   const showOpeningCol = useMemo(
     () => Boolean(fromDate) || reportRows.some((r) => (r.openingQty ?? 0) !== 0),
     [fromDate, reportRows],
@@ -5361,14 +5223,12 @@ function InventoryReportPage({
     }
   };
 
-  const totals = movementReport?.totals ?? {
-    totalSales: 0,
-    totalPurchases: 0,
-    totalProfit: 0,
-    totalRemainingValue: 0,
-    activeItemsCount: 0,
-    profitBasis,
-  };
+  const scopedCurrencyTotals=Object.values(reportRows.reduce((out,r)=>{
+    const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");
+    const t=out[currency]??={currency,totalSales:0,totalPurchases:0,totalProfit:0,totalRemainingValue:0,activeItemsCount:0};
+    t.totalSales+=r.sellTotal;t.totalPurchases+=r.buyTotal;t.totalProfit+=r.profit;t.totalRemainingValue+=r.remainingValue;t.activeItemsCount++;return out;
+  },{} as Record<string,{currency:string;totalSales:number;totalPurchases:number;totalProfit:number;totalRemainingValue:number;activeItemsCount:number}>));
+  const totals=scopedCurrencyTotals.length===1?scopedCurrencyTotals[0]:{totalSales:0,totalPurchases:0,totalProfit:0,totalRemainingValue:0,activeItemsCount:reportRows.length};
 
   const activeFiltersCount = countActiveFilters(
     {
@@ -5392,8 +5252,8 @@ function InventoryReportPage({
   const profitBasisLabel =
     profitBasis === "avg" ? "متوسط السعر" : profitBasis === "cost" ? "سعر التكلفة" : "آخر سعر";
   const multiCurrencyTotals =
-    selectedCurrency === "الكل" && (movementReport?.totalsByCurrency?.length ?? 0) > 1
-      ? movementReport!.totalsByCurrency!
+    scopedCurrencyTotals.length > 1
+      ? scopedCurrencyTotals
       : null;
 
   const movePortal = screenRef.current?.querySelector(".nasqo-app") ?? document.body;
@@ -9147,6 +9007,11 @@ function PurchasesPage({
     { fromDate: "", toDate: "", sortBy: "date", sortDirection: "تنازلي", byCurrency: false },
   );
 
+  useReportSource(`accounts:${category}:${groupId??"all"}`,()=>{
+    const rows=visibleVendors.flatMap(a=>{const report=buildStatementReport(a,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true},false);return report.totals.map(t=>({id:a.id+":"+t.currency,currency:t.currency,cells:[a.codeNumber,a.name,a.phone,t.debit,t.credit,t.balance,t.currency]}));});
+    const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[3]);t.credit+=Number(row.cells[4]);t.balance=t.credit-t.debit;return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
+    return {kind:"accounts",title:categoryTitle(category),scope:{from:fromDate,to:toDate,search:searchQuery,currency:byCurrency?currencyFilter:"الكل"},columns:["الرقم","الحساب","الهاتف","عليه","له","الرصيد","العملة"],rows,totals};
+  });
   return (
     <div className="purchases-layout">
       <UnifiedSearchFilterBar
@@ -9510,6 +9375,8 @@ function SupplierPage({
     [account, ctx.ledger, currency, docKind, fromDate, searchUi.query, showPreviousBalance, sortOrder, toDate],
   );
 
+  useReportSource(`statement:${account.id}`,(all)=>buildStatementReport(account,ctx.ledger,{currency,searchQuery:searchUi.query,showPreviousBalance,fromDate,toDate,docKind,sortOrder},all));
+
   const searchActive = isSearchActiveMode(searchUi);
   const defaultCurrency = account.currency ?? "ريال";
   const activeFilterCount = countActiveFilters(
@@ -9567,7 +9434,7 @@ function SupplierPage({
             <span>
               السابق:{" "}
               <strong>
-                <bdi>{formatAmount(statement.previousBalance)}</bdi>
+                <bdi>{statementTotalText(statement,"previous")}</bdi>
                 {statement.previousDirection === "credit"
                   ? " (له)"
                   : statement.previousDirection === "debit"
@@ -9705,7 +9572,7 @@ function SupplierPage({
                       : "صافي الرصيد الحالي"}
                 </span>
                 <strong>
-                  <bdi>{formatAmount(statement.netBalance)}</bdi> {displayCurrency}
+                  <bdi>{statementTotalText(statement,"balance")}</bdi> {statement.currencyTotals?"":displayCurrency}
                 </strong>
                 <small>
                   سقف المديونية: <bdi>{formatAmount(account.creditLimit)}</bdi> {account.currency}
@@ -9731,7 +9598,7 @@ function SupplierPage({
                   onClick={() =>
                     void openWhatsAppChat(
                       account,
-                      buildAccountBalanceMessage(
+                      statement.currencyTotals ? `كشف حساب ${account.name}: ${statementTotalText(statement,"balance")}` : buildAccountBalanceMessage(
                         account,
                         statement.netBalance,
                         statement.netDirection,
@@ -9904,6 +9771,7 @@ function CashStatementFooter({
   onMenu: () => void;
 }) {
   const ctx = useWorkspace();
+  const report=useReportPreview(`statement:${account.id}`);
   return (
     <div className="cash-statement-footer" data-testid="cash-statement-footer">
       <button
@@ -9914,13 +9782,13 @@ function CashStatementFooter({
       </button>
       <div>
         <span>
-          عليه: <bdi>{formatAmount(statement.debitTotal)}</bdi>
+          عليه: <bdi>{reportTotalText(report,"debit")}</bdi>
         </span>
         <span>
-          له: <bdi>{formatAmount(statement.creditTotal)}</bdi>
+          له: <bdi>{reportTotalText(report,"credit")}</bdi>
         </span>
         <span>
-          الرصيد عليه: <bdi className="cash-statement-total-balance">{formatAmount(statement.netBalance)}</bdi>
+          الرصيد عليه: <bdi className="cash-statement-total-balance">{reportTotalText(report,"balance")}</bdi>
         </span>
       </div>
       <button aria-label="خيارات الرصيد" onClick={onMenu}>
@@ -10001,6 +9869,8 @@ function CashSupplierPage({
       }),
     [account, ctx.ledger, currency, docKind, fromDate, query, searchMode, showPreviousBalance, sortOrder, toDate],
   );
+
+  useReportSource(`statement:${account.id}`,(all)=>buildStatementReport(account,ctx.ledger,{currency,searchQuery:query,showPreviousBalance,fromDate,toDate,docKind,sortOrder,searchMode},all));
 
   const searchPortal = screenRef.current?.querySelector(".nasqo-app");
   const startDate =
@@ -10137,7 +10007,7 @@ function CashSupplierPage({
           {showPreviousBalance ? (
             <div className="cash-statement-previous" role="status">
               <span>رصيد سابق</span>
-              <bdi>{formatAmount(statement.previousBalance)}</bdi>
+              <bdi>{statementTotalText(statement,"previous")}</bdi>
             </div>
           ) : null}
           {statement.rows.map((item) => (
@@ -10244,6 +10114,7 @@ function CashSupplierPage({
                 aria-selected={currency === option}
                 key={option}
                 onClick={() => {
+                  if(option==="مصارفة الكل بعملة ريال"){ctx.showToast("المصارفة غير متاحة دون سعر صرف معتمد؛ اختر العملة أو جميع العملات دون مصارفة");setCurrencyOpen(false);return;}
                   setCurrency(option);
                   setCurrencyOpen(false);
                 }}
@@ -13593,7 +13464,7 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
               if (target) loadRowForEdit(target);
             }}
           >
-            تعديل عملة: F2
+            تعديل العملة المحددة
           </button>
           <button
             type="button"
@@ -13601,9 +13472,9 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
             data-testid="currency-delete-btn"
             onClick={() => void handleDeleteSelected()}
           >
-            حذف عملة : DELETE
+            حذف العملة المحددة
           </button>
-          <span className="currencies-footer-hint">التنقل : TAB</span>
+
         </footer>
       </section>
     </div>
@@ -13825,7 +13696,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
       onOpenBackupModal={ctx.openBackupModal}
       onDownloadSqlite={() => {
         void downloadUnifiedSqliteFile(ctx.uid)
-          .then(() => ctx.showToast("تم حفظ وتحميل ملف قاعدة البيانات SQLite بنجاح"))
+          .then((saved) => ctx.showToast(saved?"تم حفظ نسخة قاعدة البيانات":"أُلغي الحفظ"))
           .catch((err) => {
             triggerHaptic("warning");
             ctx.showToast(
@@ -13852,12 +13723,8 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
             );
           });
       }}
-      onSeedDemoData={() => {
-        void ctx.seedDemoWorkspaceNow();
-      }}
-      onResetDatabase={() => {
-        ctx.resetWorkspaceToEmptyNow();
-      }}
+      onSeedDemoData={usesNativeDocumentOutput()?undefined:() => { void ctx.seedDemoWorkspaceNow(); }}
+      onResetDatabase={usesNativeDocumentOutput()?undefined:() => { ctx.resetWorkspaceToEmptyNow(); }}
       onOpenGoogleDrive={ctx.openGoogleDriveModal}
       onOpenFullSqliteImport={ctx.openFullSqliteImport}
       onRestoreJson={ctx.triggerJsonRestore}

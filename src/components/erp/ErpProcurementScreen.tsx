@@ -1,3 +1,4 @@
+import { usesNativeDocumentOutput } from "../../hybrid/documentOutput";
 import { useMemo, useState } from "react";
 import { CheckCircledIcon, PlusIcon } from "@radix-ui/react-icons";
 import { formatAmount } from "../../accounting";
@@ -35,7 +36,7 @@ export function ErpProcurementScreen({
   warehouses: readonly WarehouseRecord[];
   inventory: readonly InventoryItemRecord[];
   erpData: ErpWorkspaceData;
-  onUpdateErpData: (next: ErpWorkspaceData) => void;
+  onUpdateErpData: (next: ErpWorkspaceData) => Promise<boolean>;
   onToast: (msg: string) => void;
 }) {
   const keyboard = useKeyboard();
@@ -63,7 +64,7 @@ export function ErpProcurementScreen({
     [erpData.purchaseOrders],
   );
 
-  const handleCreatePo = () => {
+  const handleCreatePo = async () => {
     keyboard.hide();
     const supplier = suppliers.find((a) => a.id === supplierId) ?? suppliers[0];
     const wh = warehouses.find((w) => w.id === warehouseId) ?? warehouses[0];
@@ -102,28 +103,29 @@ export function ErpProcurementScreen({
       ],
       notes: notes.trim() || "طلب توريد مخزني",
     };
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       purchaseOrders: [newPo, ...erpData.purchaseOrders],
-    });
+    })) return;
     setCreatingPo(false);
     setNotes("");
     triggerHaptic("success");
     onToast(`تم إنشاء أمر الشراء ${newPo.poNumber}`);
   };
 
-  const handleApprovePo = (poId: string) => {
+  const handleApprovePo = async (poId: string) => {
     triggerHaptic("light");
-    onUpdateErpData({
+    if (!await onUpdateErpData({
       ...erpData,
       purchaseOrders: erpData.purchaseOrders.map((po) =>
         po.id === poId ? { ...po, status: "approved" } : po,
       ),
-    });
+    })) return;
     onToast("تم اعتماد أمر الشراء — جاهز للاستلام بالمخزن");
   };
 
   const handleReceivePo = async (po: ErpPurchaseOrder) => {
+    if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
     if (po.status === "received") return;
     // Validate every line before the first write. Never merge a new receipt
@@ -189,14 +191,14 @@ export function ErpProcurementScreen({
           })
         : undefined;
 
-      onUpdateErpData({
+      if (!await onUpdateErpData({
         ...erpData,
         purchaseOrders: erpData.purchaseOrders.map((item) =>
           item.id === po.id
             ? { ...item, status: "received", postedLedgerEntryId: ledgerId }
             : item,
         ),
-      });
+      })) return;
       triggerHaptic("success");
       onToast(`تم استلام ${po.poNumber} وتحديث المخزون وترحيل فاتورة المورد`);
     } catch {
@@ -215,6 +217,7 @@ export function ErpProcurementScreen({
   return (
     <MobileScroll className="app-screen erp-scroll">
       <main className="erp-page" data-testid="erp-procurement-screen">
+        {usesNativeDocumentOutput()?<p role="note" className="field-inline-error">حفظ السجلات الإدارية متاح محليًا. الترحيل المتقدم والاستلام والتصنيع غير متاحة هنا؛ استخدم شاشات الفاتورة والسند الأصلية.</p>:null}
         <section className="erp-summary-strip">
           <div>
             <small>أوامر الشراء المفتوحة</small>
@@ -352,7 +355,7 @@ export function ErpProcurementScreen({
                       <button
                         type="button"
                         className="erp-primary-btn"
-                        disabled={receivingPoId === po.id}
+                        disabled={usesNativeDocumentOutput() || receivingPoId === po.id}
                         onClick={() => handleReceivePo(po)}
                         data-testid={`erp-receive-${po.id}`}
                       >

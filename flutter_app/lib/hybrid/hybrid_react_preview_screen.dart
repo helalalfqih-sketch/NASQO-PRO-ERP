@@ -18,6 +18,7 @@ import '../screens/local_invoice_roles_screen.dart';
 import '../services/local_invoice_roles.dart';
 import '../services/local_workspace_settings.dart';
 import '../services/local_master_catalog.dart';
+import '../services/local_erp_records.dart';
 import '../services/local_inventory_reports.dart';
 import '../services/local_document_output.dart';
 import '../services/stock_invoice_commands.dart';
@@ -228,6 +229,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     manageDocument: _manageDocument,
     createStockRecord: _createStockRecord,
     manageCatalog: _manageCatalog,
+    saveErpRecords: (workspace,key,changes)=>LocalErpRecords(LocalDatabase.instance).save(workspace,key,changes),
     readInventoryReport: _readInventoryReport,
     readProductPriceStats: _readProductPriceStats,
     readInvoiceDetail: _readInvoiceDetail,
@@ -547,7 +549,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
   }
 
   Future<bool> _exportBackup()async{
-    if(_backupBusy)return false;
+    if(_backupBusy)throw StateError('يوجد حفظ نسخة قيد التنفيذ');
     setState(()=>_backupBusy=true);
     File? temp;
     try{
@@ -561,7 +563,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
         _review?'nasqo-original-source.back':'nasqo-android-${DateTime.now().toIso8601String().substring(0,10)}.back'});
       if(ok==true)await _message('تم تصدير الملف. احتفظ به في مكان آمن؛ النسخة غير مشفرة.');
       return ok==true;
-    }catch(_){await _message('تعذر تصدير النسخة المحلية.');return false;}
+    }on PlatformException catch(e){throw StateError('تعذر كتابة النسخة (${e.code})؛ تحقق من المساحة وصلاحية وجهة الحفظ.');}
     finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
   }
   Future<void> _showRestoreReadiness() async {

@@ -15,8 +15,8 @@ function encodeChunk(bytes: Uint8Array): string {
 }
 
 export async function outputNativeDocument(
-  bytes: Uint8Array, filename: string, mimeType: "application/pdf" | "image/png" | "text/csv",
-  mode: "save" | "share" = "save",
+  bytes: Uint8Array, filename: string, mimeType: "application/pdf" | "image/png" | "text/csv" | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  mode: "save" | "share" | "print" = "save",
 ): Promise<boolean> {
   if (!usesNativeDocumentOutput() || !hybridBridge.hasNativeTransport()) throw new Error("خدمة الملفات المحلية غير متاحة");
   if (bytes.byteLength < 1 || bytes.byteLength > MAX_BYTES) throw new Error("حجم المستند خارج الحد المدعوم (16 MB)");

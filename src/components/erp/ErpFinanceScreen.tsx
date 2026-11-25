@@ -1,3 +1,4 @@
+import { exportReport } from "../../utils/reportDocument";
 import { useEffect, useMemo, useState } from "react";
 import { DownloadIcon } from "@radix-ui/react-icons";
 import { buildCsvContent, formatAmount } from "../../accounting";
@@ -77,7 +78,7 @@ export function ErpFinanceScreen({
   inventory: readonly InventoryItemRecord[];
   cashboxes?: readonly CashboxRecord[];
   erpData?: ErpWorkspaceData;
-  onUpdateErpData?: (next: ErpWorkspaceData) => void;
+  onUpdateErpData?: (next: ErpWorkspaceData) => Promise<boolean>;
   onToast: (msg: string) => void;
 }) {
   const [tab, setTab] = useState<FinanceTab>("trial");
@@ -259,7 +260,7 @@ export function ErpFinanceScreen({
     }
   };
 
-  const saveVatSettings = () => {
+  const saveVatSettings = async () => {
     if (!erpData || !onUpdateErpData) {
       onToast("تم تطبيق إعداد الضريبة على العرض الحالي");
       return;
@@ -269,42 +270,18 @@ export function ErpFinanceScreen({
       ratePercent: numericVatRatePercent,
       basis: vatBasis,
     };
-    onUpdateErpData({ ...erpData, vatConfig: nextConfig });
+    if (!await onUpdateErpData({ ...erpData, vatConfig: nextConfig })) return;
     triggerHaptic("success");
     onToast("تم حفظ إعدادات الضريبة بنجاح");
   };
 
   const exportCsv = () => {
-    void runWithBrandLoader(
-      "جاري تصدير ميزان المراجعة بصيغة Excel...",
-      () => {
-        triggerHaptic("light");
-        const csv = buildCsvContent(
-          ["الرقم", "الحساب", "التصنيف", "العملة", "حركة مدين", "حركة دائن", "رصيد مدين", "رصيد دائن"],
-          trial.rows.map((r) => [
-            r.codeNumber,
-            r.accountName,
-            CATEGORY_LABELS[r.category],
-            selectedCurrency,
-            r.debitTurnover,
-            r.creditTurnover,
-            r.closingDebit,
-            r.closingCredit,
-          ]),
-        );
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `erp-trial-balance-${selectedCurrency}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.setTimeout(() => URL.revokeObjectURL(url), 800);
-        onToast("تم تصدير ميزان المراجعة بصيغة Excel");
-      },
-      { minDurationMs: 420 },
-    );
+    void runWithBrandLoader("جاري تجهيز مصنف ميزان المراجعة...",async()=>{
+      const ok=await exportReport({kind:"trial-balance",title:"ميزان المراجعة",scope:{currency:selectedCurrency,from:fromDate,to:toDate},
+        columns:["الرقم","الحساب","التصنيف","العملة","حركة مدين","حركة دائن","رصيد مدين","رصيد دائن"],
+        rows:trial.rows.map(r=>({id:r.accountId,currency:selectedCurrency,cells:[r.codeNumber,r.accountName,CATEGORY_LABELS[r.category],selectedCurrency,r.debitTurnover,r.creditTurnover,r.closingDebit,r.closingCredit]})),totals:[]},"excel","save");
+      onToast(ok?"تم حفظ مصنف Excel":"أُلغي الحفظ");
+    }).catch(error=>onToast(error instanceof Error?error.message:"تعذر تصدير ميزان المراجعة"));
   };
 
   const vatIsConfigured = vatJurisdiction !== "none" && Boolean(erpData?.vatConfig && erpData.vatConfig.jurisdiction !== "none");
