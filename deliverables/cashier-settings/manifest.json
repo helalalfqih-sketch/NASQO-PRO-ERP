@@ -1,0 +1,20 @@
+{
+  "version": "1.0.138",
+  "versionCode": 1138,
+  "sourceSha": "9187db1919993cec63c80a1d85fa48b537e8bfce",
+  "buildRun": 45718365749,
+  "artifactId": 15071810735,
+  "apkSha256": "24b199bff5bb065f5f4296d06dd4958a69b51e81ed1994fa07948617ad667350",
+  "bytes": 59580601,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "certificateSha256": [
+    "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197"
+  ],
+  "flutterTests": 93,
+  "localJavaScriptTests": 31,
+  "ciBridgeTests": 18,
+  "exactApkUiCases": 5,
+  "protectedFiles": 28,
+  "physicalAndroidUiTested": false,
+  "publication": "pending"
+}
