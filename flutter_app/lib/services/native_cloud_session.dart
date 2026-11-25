@@ -7,14 +7,10 @@ import 'package:cryptography/cryptography.dart';
 import 'backup_encryption.dart';
 import 'cloud_backup_protection.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'firebase_sync_auth.dart';
-
-class NativeCloudException implements Exception {
-  const NativeCloudException(this.message,{this.code='SERVICE_UNAVAILABLE'});
-  final String message,code;
-}
+import 'native_cloud_errors.dart';
+export 'native_cloud_errors.dart' show NativeCloudException;
 
 /// OAuth credentials stay in Dart and the official Google plugin.
 /// React receives a status/profile only, never an OAuth or Firebase token.
@@ -87,6 +83,12 @@ class NativeCloudSession {
 
   void _clearDrive(){_drive=null;_about=null;_uploads.clear();}
 
+  void _invalidateRejectedAuthorization(NativeCloudException error){
+    if(const {'GOOGLE_SCOPE_DENIED','GOOGLE_AUTH_EXPIRED','GOOGLE_ACCOUNT_MISMATCH'}.contains(error.code)){
+      _clearDrive();
+    }
+  }
+
   Future<dynamic> handle(String action,String operation,Map<String,dynamic> args)async{
     if(_busy)throw const NativeCloudException('توجد عملية Google جارية؛ انتظر اكتمالها.',code:'DUPLICATE_REQUEST');
     _busy=true;
@@ -100,7 +102,7 @@ class NativeCloudSession {
           return _identity(null);
         }
         if(operation=='signIn'){
-          if(!FirebaseSyncAuth.configured)throw const NativeCloudException('إعداد Firebase غير متاح في هذه النسخة.');
+          if(!FirebaseSyncAuth.configured)throw NativeCloudErrors.configMissing;
           if(args['chooseAccount']!=null&&args['chooseAccount'] is! bool)throw ArgumentError('Invalid account choice');
           _clearDrive();
           final u=await FirebaseSyncAuth.signInWithGoogle(chooseAccount:args['chooseAccount']==true);
@@ -115,15 +117,16 @@ class NativeCloudSession {
         validateKeys(args,{'chooseAccount'});
         if(args['chooseAccount']!=null&&args['chooseAccount'] is! bool)throw ArgumentError('Invalid account choice');
         _clearDrive();
-        if(!FirebaseSyncAuth.configured)throw const NativeCloudException('إعداد Firebase غير متاح في هذه النسخة.');
+        if(!FirebaseSyncAuth.configured)throw NativeCloudErrors.configMissing;
         final account=await FirebaseSyncAuth.authorizeDrive(chooseAccount:args['chooseAccount']==true);
         if(account==null)return {'connected':false,'cancelled':true};
         _drive=account;
         try{
           _about=await _json('GET','/drive/v3/about',query:{'fields':'user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive)'});
           final user=_about!['user'];
-          if(user is! Map||user['emailAddress']?.toString().toLowerCase()!=account.email.toLowerCase())
-            throw const NativeCloudException('تعذر التحقق من تطابق حساب Drive.');
+          if(user is! Map||user['emailAddress']?.toString().toLowerCase()!=account.email.toLowerCase()){
+            throw NativeCloudErrors.accountMismatch;
+          }
           return driveStatus();
         }catch(_){_clearDrive();rethrow;}
       }
@@ -232,30 +235,30 @@ class NativeCloudSession {
         default:
           throw const NativeCloudException('هذا الإجراء غير مفعّل في Drive المحلي.',code:'VALIDATION_ERROR');
       }
-    }on NativeCloudException{rethrow;}
+    }on NativeCloudException catch(error){
+      _invalidateRejectedAuthorization(error);
+      rethrow;
+    }
     on SecretBoxAuthenticationError{
       throw const NativeCloudException('مفتاح الاسترداد غير صحيح أو تغير محتوى النسخة. لم تُعتمد الاستعادة أو عملية الاستبدال.',code:'VALIDATION_ERROR');
     }on FormatException{
       throw const NativeCloudException('تنسيق البيانات غير صالح أو النسخة غير مشفّرة بالتنسيق المعتمد. للنسخ القديمة استخدم التنزيل المحلي بحذر.',code:'VALIDATION_ERROR');
-    }on FirebaseAuthException catch(e){
-      throw NativeCloudException(e.code=='network-request-failed'?'لا يوجد اتصال بخدمة Firebase.':'تعذر تسجيل الدخول إلى Firebase. تحقق من تفعيل Google وإعداد التطبيق.');
-    }on PlatformException catch(e){
-      throw NativeCloudException(e.code=='network_error'?'لا يوجد اتصال بخدمة Google.':'تعذر إكمال مصادقة Google. تحقق من شهادة APK وإعداد OAuth.');
-    }on TimeoutException{
-      throw const NativeCloudException('انتهت مهلة الاتصال بخدمة Google. تحقق من الملفات قبل تكرار أي رفع.');
-    }on SocketException{
-      throw const NativeCloudException('تعذر الاتصال بخدمة Google. بيانات SQLite المحلية متاحة دون الإنترنت.');
     }on ArgumentError{
       throw const NativeCloudException('معطيات العملية غير صالحة.',code:'VALIDATION_ERROR');
-    }catch(_){
-      throw const NativeCloudException('تعذر إكمال العملية. تحقق من إعدادات Google والاتصال؛ لم يُؤكد نجاح الرفع أو الاستعادة.');
+    }catch(error){
+      final safe=NativeCloudErrors.fromException(error);
+      _invalidateRejectedAuthorization(safe);
+      throw safe;
     }finally{_busy=false;}
   }
 
   GoogleSignInAccount _requireDrive(){
     final account=_drive;
-    if(account==null||!FirebaseSyncAuth.matchesDriveAccount(account)){
-      _clearDrive();throw const NativeCloudException('أعد ربط حساب Google Drive.',code:'UNAUTHORIZED_ACTION');
+    if(account==null){
+      _clearDrive();throw NativeCloudErrors.expired;
+    }
+    if(!FirebaseSyncAuth.matchesDriveAccount(account)){
+      _clearDrive();throw NativeCloudErrors.accountMismatch;
     }
     return account;
   }
@@ -288,8 +291,8 @@ class NativeCloudSession {
       throw const NativeCloudException('عنوان Google API غير صالح.',code:'VALIDATION_ERROR');
     final account=_requireDrive(),client=HttpClient()..connectionTimeout=const Duration(seconds:20);
     try{
-      final auth=await account.authHeaders;
-      if(!identical(account,_drive)||!FirebaseSyncAuth.matchesDriveAccount(account))throw const NativeCloudException('تغير حساب Google.',code:'UNAUTHORIZED_ACTION');
+      final auth=await FirebaseSyncAuth.driveAuthHeaders(account);
+      if(!identical(account,_drive)||!FirebaseSyncAuth.matchesDriveAccount(account))throw NativeCloudErrors.accountMismatch;
       final request=await client.openUrl(method,uri).timeout(const Duration(seconds:40));
       request.followRedirects=false;
       auth.forEach((key,value)=>request.headers.set(key,value));
@@ -297,9 +300,22 @@ class NativeCloudSession {
       if(contentType!=null)request.headers.set('Content-Type',contentType);
       if(body!=null){request.contentLength=body.length;request.add(body);}
       final response=await request.close().timeout(const Duration(seconds:90));
-      if(response.statusCode==401){_clearDrive();throw const NativeCloudException('انتهت جلسة Drive. أعد الربط.',code:'UNAUTHORIZED_ACTION');}
-      if(response.statusCode==403)throw const NativeCloudException('رفض Google Drive الطلب. تحقق من تفعيل Drive API والموافقة على الصلاحية.');
-      if(response.statusCode<200||response.statusCode>=300)throw NativeCloudException('رفض Drive العملية (HTTP '+response.statusCode.toString()+').');
+      if(response.statusCode==401){_clearDrive();throw NativeCloudErrors.expired;}
+      if(response.statusCode<200||response.statusCode>=300){
+        // Read only a bounded error prefix to classify allowlisted reason
+        // fields. Never forward or log the raw response body.
+        final errorBytes=BytesBuilder(copy:false);
+        try{
+          await (()async{
+            await for(final chunk in response){
+              final remaining=8192-errorBytes.length;
+              errorBytes.add(chunk.length>remaining?chunk.sublist(0,remaining):chunk);
+              if(errorBytes.length>=8192)break;
+            }
+          })().timeout(const Duration(seconds:10));
+        }catch(_){/* Keep the known HTTP status if the error body is incomplete. */}
+        throw NativeCloudErrors.fromHttp(response.statusCode,errorBytes.takeBytes());
+      }
       if(response.contentLength>limit)throw const NativeCloudException('الملف أكبر من الحجم المدعوم.');
       final out=BytesBuilder(copy:false);
       await for(final chunk in response.timeout(const Duration(seconds:40))){

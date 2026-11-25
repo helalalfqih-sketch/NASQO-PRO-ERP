@@ -1,0 +1,64 @@
+✔ native camera policy rejects foreign origins/audio and cancels late grants without reassigning callbacks (2501.606055ms)
+✔ Android scaffold declares optional camera only, remains idempotent, and adds no microphone permission (124.180257ms)
+✔ formatDriveFileSize formats bytes across units accurately (1.719325ms)
+✔ classifyDriveMimeType distinguishes folders, backups, spreadsheets, PDFs, and docs (0.481169ms)
+✔ filterDriveFiles excludes trashed files and filters by category and search query (1.926189ms)
+✔ buildDriveFilesListUrl constructs clean Drive v3 query URLs (1.019004ms)
+✔ Drive popup failures expose an actionable localized message (1.372784ms)
+✔ Drive OAuth configuration and network errors have distinct messages (0.343886ms)
+✔ Drive error output never leaks opaque or sensitive SDK messages (0.541147ms)
+✔ Drive permissions stay limited to individual files (2.039256ms)
+▶ Hybrid Bridge Contracts & Security Validation
+  ✔ accepts all 12 core commands plus domain commands in strict allowlist (1.33588ms)
+  ✔ rejects unauthorized actions and raw SQL/shell injection keys (5.217115ms)
+  ✔ enforces mandatory idempotencyKey on financial mutations (3.362284ms)
+  ✔ validates inbound responses and rejects malformed or unknown host events (0.667608ms)
+✔ Hybrid Bridge Contracts & Security Validation (12.376022ms)
+▶ NasqoHybridBridge Runtime & Duplicate Prevention
+  ✔ blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST (8.723693ms)
+  ✔ propagates Flutter service errors and timeouts without faking success (49.036908ms)
+  ✔ rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached (4.300544ms)
+✔ NasqoHybridBridge Runtime & Duplicate Prevention (62.900186ms)
+▶ Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ✔ hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge (9.781942ms)
+✔ Hybrid Service Adapter Simulated Flutter Host Round-Trip (9.98401ms)
+▶ Hybrid Routes Canonical Mapping
+  ✔ normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches (1.537755ms)
+✔ Hybrid Routes Canonical Mapping (1.825982ms)
+▶ Offline Hybrid Build Output Integrity (dist/hybrid)
+  ✔ produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code (46.917476ms)
+  ✔ prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge (5.038974ms)
+✔ Offline Hybrid Build Output Integrity (dist/hybrid) (52.786445ms)
+▶ Stage 2 Home Screen Batch 1 Requirements
+  ✔ validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads (0.96807ms)
+  ✔ computes signed multi-currency group balances accurately without mixing currencies (6.184852ms)
+  ✔ blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences (1.029726ms)
+  ✔ supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout (22.700617ms)
+✔ Stage 2 Home Screen Batch 1 Requirements (31.228236ms)
+✔ uses explicit journal legs for stock cost, tax and account reports (9.919074ms)
+▶ Legacy register restoration parity
+  ✔ preserves both original sides in account, statement and group reports, without fictitious counterpart (0.82531ms)
+✔ Legacy register restoration parity (0.96508ms)
+✔ catalog includes unverified and other-warehouse products without changing stock (6.00682ms)
+✔ explicit imported family selects the existing approved selected-warehouse clone once (1.806621ms)
+✔ same warehouse unverified source stays selectable when no approved clone exists (5.593203ms)
+✔ identical names and SKUs do not collapse unrelated catalog records (0.914399ms)
+✔ native Drive errors reach localized UI without raw credentials or popup advice (29.172353ms)
+✔ cancelled native chooser remains retryable and never reports Drive connected (1.233897ms)
+✔ rapid duplicate connect taps share one native account chooser (7.771831ms)
+✔ incomplete connect response cannot create a connected marker (2.072402ms)
+✔ expired, mismatched or scope-denied account clears the connected gate without automatic reauthorization (1.506783ms)
+✔ late status cannot restore a connected marker after disconnect (0.957147ms)
+✔ disconnect invalidates an in-flight successful connect (0.695288ms)
+✔ permission denial explains Android permission recovery and alternative input (1.351865ms)
+✔ missing and busy devices have distinct actionable errors (0.293687ms)
+✔ unknown errors do not imply permission denial or expose arbitrary exception text (4.743134ms)
+✔ camera cleanup attempts every track even when one track throws (1.364066ms)
+ℹ tests 42
+ℹ suites 7
+ℹ pass 42
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3217.099228

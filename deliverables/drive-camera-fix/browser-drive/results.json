@@ -1,0 +1,332 @@
+{
+  "environment": "Chromium production hybrid bundle + synthetic native bridge; NOT Android and NOT a real Google login",
+  "bundleManifestSha256": "93060a98b1bba9247cf0ef66ab0c11601d6ac2d6a2021a6e44d9ecfa11855b7b",
+  "noDeviceNoProductionData": true,
+  "externalRequests": [],
+  "results": [
+    {
+      "name": "connect-google_config_missing",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-google_config_missing.png"
+    },
+    {
+      "name": "connect-google_provider_config",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-google_provider_config.png"
+    },
+    {
+      "name": "connect-google_network_error",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-google_network_error.png"
+    },
+    {
+      "name": "connect-google_scope_denied",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-google_scope_denied.png"
+    },
+    {
+      "name": "connect-google_auth_cancelled",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-google_auth_cancelled.png"
+    },
+    {
+      "name": "connect-drive_api_disabled",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-drive_api_disabled.png"
+    },
+    {
+      "name": "connect-drive_permission_denied",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        }
+      ],
+      "screenshot": "connect-drive_permission_denied.png"
+    },
+    {
+      "name": "cancelled-profile-stays-disconnected",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "cloudIdentityAction",
+          "operation": "status"
+        }
+      ],
+      "screenshot": "cancelled-profile-stays-disconnected.png"
+    },
+    {
+      "name": "incomplete-profile-never-announces-success",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "cloudIdentityAction",
+          "operation": "status"
+        }
+      ],
+      "screenshot": "incomplete-profile-never-announces-success.png"
+    },
+    {
+      "name": "malformed-truthy-profile-never-announces-success",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "cloudIdentityAction",
+          "operation": "status"
+        }
+      ],
+      "screenshot": "malformed-truthy-profile-never-announces-success.png"
+    },
+    {
+      "name": "retry-success-requires-connected-true",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "listFiles"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "getAbout"
+        }
+      ],
+      "screenshot": "retry-success-requires-connected-true.png"
+    },
+    {
+      "name": "rapid-double-tap-one-native-connect",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "listFiles"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "getAbout"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "listFiles"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "getAbout"
+        }
+      ],
+      "screenshot": "rapid-double-tap-one-native-connect.png"
+    },
+    {
+      "name": "initial-status-error-is-safe-and-retryable",
+      "passed": true,
+      "commands": [
+        {
+          "action": "getSnapshot"
+        },
+        {
+          "action": "navigate"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "status"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "connect"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "listFiles"
+        },
+        {
+          "action": "googleDriveAction",
+          "operation": "getAbout"
+        }
+      ],
+      "screenshot": "initial-status-error-is-safe-and-retryable.png"
+    }
+  ],
+  "browserErrors": [],
+  "passed": 13,
+  "failed": 0
+}

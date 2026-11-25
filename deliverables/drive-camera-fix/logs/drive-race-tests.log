@@ -1,0 +1,15 @@
+✔ native Drive errors reach localized UI without raw credentials or popup advice (6.631903ms)
+✔ cancelled native chooser remains retryable and never reports Drive connected (1.121105ms)
+✔ rapid duplicate connect taps share one native account chooser (1.012124ms)
+✔ incomplete connect response cannot create a connected marker (1.732933ms)
+✔ expired, mismatched or scope-denied account clears the connected gate without automatic reauthorization (1.301117ms)
+✔ late status cannot restore a connected marker after disconnect (0.921795ms)
+✔ disconnect invalidates an in-flight successful connect (0.498195ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 357.913738

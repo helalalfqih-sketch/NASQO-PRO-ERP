@@ -12,12 +12,54 @@ import java.util.concurrent.Executors
 import java.security.MessageDigest
 import android.net.Uri
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterActivity(), HybridCameraPermissionHost {
     private val lifecycleInstance = java.util.UUID.randomUUID().toString()
+    private val cameraPermissionCode = 7321
+    private var cameraForeground = false
+    private val cameraPermissionGate = HybridCameraRequestGate()
+    private val cameraStopListeners = mutableSetOf<() -> Unit>()
+
+    override fun requestCameraPermission(owner: Any, callback: (Boolean) -> Unit) {
+        if (!cameraForeground || isFinishing || isDestroyed || !cameraPermissionGate.begin(owner) { granted -> callback(granted) }) {
+            callback(false)
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            cameraPermissionGate.finish(true)
+            return
+        }
+        try {
+            requestPermissions(arrayOf(Manifest.permission.CAMERA), cameraPermissionCode)
+        } catch (_: Exception) {
+            cameraPermissionGate.finish(false)
+        }
+    }
+
+    override fun cancelCameraPermission(owner: Any) {
+        cameraPermissionGate.cancel(owner)
+    }
+
+    override fun registerCameraStopListener(listener: () -> Unit) { cameraStopListeners.add(listener) }
+    override fun unregisterCameraStopListener(listener: () -> Unit) { cameraStopListeners.remove(listener) }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != cameraPermissionCode) return
+        cameraPermissionGate.finish(!isFinishing && !isDestroyed && permissions.size == 1 &&
+            permissions[0] == Manifest.permission.CAMERA && grantResults.size == 1 &&
+            grantResults[0] == PackageManager.PERMISSION_GRANTED)
+    }
+
+    override fun onStop() {
+        cameraStopListeners.toList().forEach { it() }
+        super.onStop()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,10 +69,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        cameraForeground = true
         HybridLifecycleDiagnostics.log("activity-resumed", lifecycleInstance)
     }
 
     override fun onPause() {
+        cameraForeground = false
         HybridLifecycleDiagnostics.log("activity-paused", lifecycleInstance)
         super.onPause()
     }
@@ -229,6 +273,8 @@ class MainActivity : FlutterActivity() {
         HybridLifecycleDiagnostics.log("activity-destroyed", lifecycleInstance,
             "configurationChange=$isChangingConfigurations")
         backupIo.shutdown()
+        cameraStopListeners.toList().forEach { it() }
+        cameraStopListeners.clear()
         super.onDestroy()
     }
 
@@ -259,7 +305,7 @@ class MainActivity : FlutterActivity() {
             }
         flutterEngine.platformViewsController.registry.registerViewFactory(
             "nasqo/offline_hybrid",
-            OfflineHybridViewFactory(flutterEngine.dartExecutor.binaryMessenger)
+            OfflineHybridViewFactory(flutterEngine.dartExecutor.binaryMessenger, this)
         )
     }
 }

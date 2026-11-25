@@ -50,6 +50,13 @@ When implementing from a selected generated mock, treat that image as the source
 - Preserve the existing published deployment. Review and test the independent
   SQLite deployment before switching any public traffic to it.
 
+## Invoice item selection and inventory destinations (user direction, 2026-11-25)
+
+- Keep **ملف الأصناف** (item master/catalog) and **حركة المخزون** (inventory movements) as distinct destinations.
+- Selecting an item while editing an invoice adds or updates the invoice line in place. It must never automatically open native stock reconciliation, stock-count filters, or an inventory-movement screen.
+- Unverified imported stock may be selected and retained in a local UI draft. This is not approval of its quantities or valuation. Preserve the native posting guards; explain any blocked posting inside the same invoice.
+- Stock reconciliation remains a separate, explicit settings action only. Do not inject a reconciliation screen or a reconciliation action into invoice item selection.
+
 ## Editing Boundary
 
 - Build app-specific UI in `src/Prototype.tsx` and `src/prototype.css`.

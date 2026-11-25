@@ -1,5 +1,5 @@
-import { HybridBridgeError } from "./bridge";
-import { nativeDriveCall } from "./cloudSession";
+import { isNativeDriveSessionInvalid, nativeDriveCall } from "./cloudSession";
+import { describeGoogleDriveConnectError } from "../utils/googleDriveAuthError";
 import {
   buildDriveFilesListUrl,
   classifyDriveMimeType,
@@ -62,7 +62,7 @@ export class DriveApiError extends Error {
 async function callFlutterDrive<T>(operation: string, args: Record<string, unknown> = {}): Promise<T> {
   try{return await nativeDriveCall<T>(operation,args);}
   catch(error){
-    if(error instanceof HybridBridgeError && error.code==="UNAUTHORIZED_ACTION")throw new DriveAuthExpiredError(error.message);
+    if(isNativeDriveSessionInvalid(error))throw new DriveAuthExpiredError(describeGoogleDriveConnectError(error));
     throw error;
   }
 }

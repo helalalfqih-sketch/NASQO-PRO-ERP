@@ -1,0 +1,12 @@
+✔ catalog includes unverified and other-warehouse products without changing stock (1.871344ms)
+✔ explicit imported family selects the existing approved selected-warehouse clone once (5.307085ms)
+✔ same warehouse unverified source stays selectable when no approved clone exists (0.570042ms)
+✔ identical names and SKUs do not collapse unrelated catalog records (0.480107ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 238.987826

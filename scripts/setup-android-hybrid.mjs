@@ -20,6 +20,18 @@ if (!xml.includes('android.permission.INTERNET')) {
   xml = xml.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />\n    <application');
   fs.writeFileSync(manifest, xml);
 }
+// QR camera only: Android runtime permission is requested after the camera
+// button invokes getUserMedia. Do not request microphone or storage access.
+if (!xml.includes('android.permission.CAMERA')) {
+  xml = xml.replace('<application', '<uses-permission android:name="android.permission.CAMERA" />\n    <application');
+}
+// CAMERA otherwise implies a required rear camera/autofocus in Play filtering.
+for (const feature of ['android.hardware.camera', 'android.hardware.camera.any', 'android.hardware.camera.autofocus']) {
+  if (!xml.includes(`android:name="${feature}"`)) {
+    xml = xml.replace('<application', `<uses-feature android:name="${feature}" android:required="false" />\n    <application`);
+  }
+}
+fs.writeFileSync(manifest, xml);
 // Restrict document sharing to a dedicated cache subtree. The system
 // chooser grants temporary read access only to the explicitly selected file.
 if (!xml.includes('android:authorities="${applicationId}.documents"')) {

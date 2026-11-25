@@ -1,0 +1,31 @@
+Native Google access-token scope audit — synthetic/local source evidence
+
+Inspected dependency: google_sign_in_android 6.2.1
+Dart wrapper dependency: google_sign_in 6.3.0
+Plugin source: android/src/main/java/io/flutter/plugins/googlesignin/GoogleSignInPlugin.java
+Plugin source SHA-256: 835a3a5010b8bccf8546dcae490e7dd9bd0226c09a3701c6ecfcff322280f8db
+
+Observations (no dependency source vendored):
+- init at source line 250 assigns the native requestedScopes field from initialization parameters.
+- requestScopes at source line 345 checks/requests permission, but does not update requestedScopes.
+- getAccessToken at source line 516 constructs its oauth2 scope string from requestedScopes.
+- The old FirebaseSyncAuth client initialized with email only, then called requestScopes(drive.file).
+  Granting that consent did not change the access-token request to include drive.file.
+
+Fix: a single serialized owner initializes an active client with email only for identity,
+and with email + drive.file only when the user explicitly connects Drive. Every explicit authentication
+retires the old wrapper and initializes a new one, including same-mode reconnects to
+refresh the login ID token (Android token refresh returns only an access token). Token fetching, transitions and signout are
+serialized; retired account objects and unverified identities cannot fetch Drive headers.
+No OAuth client, project setting, signing identity, or broader Drive scope was changed.
+
+Regression evidence: native_google_account_session_test.dart uses the real Dart wrapper
+against a synthetic platform matching the dependency's initial-scope token semantics.
+The first test reproduces the old email-only token after consent. Eight additional tests
+cover scoped tokens, identity-only login, repeated mode transitions, stale account rejection,
+consent cancellation/denial, failed identity verification, serialization, same-mode login-token refresh and empty tokens.
+Combined scope/error/session/bridge suite: 25 passed; native-scopes-tests.log.
+
+Limit: this proves the source-level token construction defect and the mocked correction.
+No live Google authorization, Drive API request or device sign-in was performed. It does not
+prove the user's Google project/client configuration is valid or rule out an additional issue.

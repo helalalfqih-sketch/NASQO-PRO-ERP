@@ -1,0 +1,12 @@
+✔ permission denial explains Android permission recovery and alternative input (0.994084ms)
+✔ missing and busy devices have distinct actionable errors (0.248934ms)
+✔ unknown errors do not imply permission denial or expose arbitrary exception text (0.190213ms)
+✔ camera cleanup attempts every track even when one track throws (0.867237ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 299.468254

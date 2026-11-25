@@ -173,7 +173,7 @@ export function GoogleDriveModal({
         if(!active)return;
         setAccessToken(token);
         if(token)await loadDriveContents(token,currentFolder.id);
-      }catch(err){if(active)setErrorMsg(err instanceof Error?err.message:"تعذر قراءة جلسة Drive.");}
+      }catch(err){if(active)setErrorMsg(describeGoogleDriveConnectError(err));}
     };
     void refresh();
     return ()=>{active=false;};

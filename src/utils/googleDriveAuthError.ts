@@ -12,6 +12,39 @@ export function describeGoogleDriveConnectError(error: unknown): string {
       : "";
 
   switch (code) {
+    case "GOOGLE_CONFIG_MISSING":
+      return "إعداد ربط Google غير مكتمل في هذه النسخة من التطبيق. يلزم إصدار مُعدّ للربط؛ بياناتك المحلية متاحة دون Google Drive.";
+    case "GOOGLE_PROVIDER_CONFIG":
+      return "تعذر اعتماد تسجيل الدخول من هذه النسخة. يلزم التحقق من إعداد Google في Firebase ومعرّف OAuth وشهادة توقيع التطبيق. (GOOGLE_PROVIDER_CONFIG)";
+    case "GOOGLE_AUTH_CANCELLED":
+      return "أُلغي اختيار حساب Google. اضغط ربط Google Drive عندما تكون مستعدًا لإكمال الاختيار.";
+    case "GOOGLE_SCOPE_DENIED":
+      return "لم تُمنح صلاحية ملفات Google Drive الخاصة بالتطبيق. أعد الربط ووافق على هذه الصلاحية للمتابعة.";
+    case "GOOGLE_ACCOUNT_MISMATCH":
+      return "حساب Drive لا يطابق حساب Google المسجّل في التطبيق. اختر الحساب نفسه وأعد الربط.";
+    case "GOOGLE_NETWORK_ERROR":
+      return "تعذر الاتصال بخدمة Google. تحقق من الشبكة ثم أعد الربط؛ بياناتك المحلية متاحة دون الإنترنت.";
+    case "GOOGLE_AUTH_EXPIRED":
+      return "انتهت جلسة Google Drive. أعد ربط الحساب للمتابعة.";
+    case "GOOGLE_TIMEOUT":
+    case "TIMEOUT":
+      return "انتهت مهلة ربط Google Drive. أكمل أو أغلق شاشة اختيار الحساب، ثم أعد الربط.";
+    case "DRIVE_API_DISABLED":
+      return "خدمة Google Drive API غير مفعّلة لمشروع التطبيق. يلزم تفعيلها في Google Cloud ثم إعادة الربط. (DRIVE_API_DISABLED)";
+    case "DRIVE_PERMISSION_DENIED":
+      return "رفض Google Drive صلاحية الوصول. أعد الربط بالحساب الصحيح؛ إذا استمر الرفض، يلزم مراجعة صلاحيات المشروع. (DRIVE_PERMISSION_DENIED)";
+    case "DRIVE_RATE_LIMITED":
+      return "بلغت خدمة Google Drive حد الطلبات المتاح. انتظر قليلًا ثم أعد المحاولة.";
+    case "DUPLICATE_REQUEST":
+      return "توجد عملية Google جارية. انتظر اكتمالها ثم أعد الربط مرة واحدة.";
+    case "UNAUTHORIZED_ACTION":
+      return "جلسة Google Drive غير متاحة. أعد ربط الحساب للمتابعة.";
+    case "GOOGLE_AUTH_FAILED":
+    case "GOOGLE_CONNECTION_INCOMPLETE":
+      return `لم يكتمل ربط Google Drive (الرمز: ${code}). أعد المحاولة؛ إذا استمر العطل، أرسل هذا الرمز للدعم.`;
+    case "SERVICE_UNAVAILABLE":
+    case "INTERNAL_ERROR":
+      return `تعذر إكمال ربط Google Drive داخل التطبيق (الرمز: ${code}). أعد المحاولة؛ إذا استمر العطل، أرسل هذا الرمز للدعم.`;
     case "auth/popup-blocked":
       return "المتصفح منع نافذة Google. اسمح بالنوافذ المنبثقة لهذا الموقع واضغط ربط Google Drive مرة أخرى.";
     case "auth/popup-closed-by-user":

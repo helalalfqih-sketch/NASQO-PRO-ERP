@@ -108,6 +108,7 @@ import {
   computeInvoiceLineNet,
   stepInvoiceQuantity,
 } from "./utils/invoiceGridUtils";
+import { findInvoiceCatalogItems } from "./utils/invoiceCatalog";
 import {
   countActiveFilters,
   createInitialSearchState,
@@ -4204,7 +4205,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
   return (
     <>
       <AppHeader
-        title="الأصناف"
+        title="ملف الأصناف"
         subtitle=""
         onBack={() => {
           setOverflowOpen(false);
@@ -4212,7 +4213,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
         }}
         actions={[
           {
-            label: "حركة المخازن",
+            label: "حركة المخزون",
             icon: ActivityLogIcon,
             onClick: () => runAction(() => flow.push(inventoryReportScreen())),
           },
@@ -4952,7 +4953,7 @@ function InventoryHeader({ flow }: { flow: FlowControls }) {
   return (
     <>
       <AppHeader
-        title="حركة المخازن"
+        title="حركة المخزون"
         subtitle=""
         onBack={() => {
           setOverflowOpen(false);
@@ -6370,6 +6371,7 @@ function InvoiceModal({
   const accountSelectRef = useRef<HTMLButtonElement>(null);
   const freeAmountInputRef = useRef<HTMLInputElement>(null);
   const itemSearchInputRef = useRef<HTMLInputElement>(null);
+  const invoiceErrorRef = useRef<HTMLDivElement>(null);
   const rowNameRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowQtyRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowPriceRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -6507,28 +6509,9 @@ function InvoiceModal({
 
   const matchingInventory = useMemo(() => {
     if (!open) return [];
-    const q = normalizeArabicSearch(itemSearch);
-    if (!q) return [];
-    const sorted = [...ctx.inventory].filter((item) =>
-      (!hybridLocal || !warehouseId || item.warehouseId === warehouseId ||
-        item.legacyHistoricalQtyByWarehouse?.[warehouseId] !== undefined) &&
-      matchesArabicSearch(
-        `${item.name} ${item.sku ?? ""} ${item.legacyId ?? ""} ${item.id} ${item.unit} ${item.unit2 ?? ""} ${item.unit3 ?? ""}`,
-        q,
-      ),
-    );
-    sorted.sort((a, b) => {
-      const aExact = a.sku?.toLowerCase() === q || String(a.legacyId ?? "") === q ? 0 : 1;
-      const bExact = b.sku?.toLowerCase() === q || String(b.legacyId ?? "") === q ? 0 : 1;
-      if (aExact !== bExact) return aExact - bExact;
-      const aPrefix = normalizeArabicSearch(a.name).startsWith(q) ? 0 : 1;
-      const bPrefix = normalizeArabicSearch(b.name).startsWith(q) ? 0 : 1;
-      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
-      const aWh = warehouseId && a.warehouseId === warehouseId ? 0 : 1;
-      const bWh = warehouseId && b.warehouseId === warehouseId ? 0 : 1;
-      return aWh - bWh;
-    });
-    return sorted.slice(0, 10);
+    // Item master selection is independent of warehouse balance verification.
+    // Posting validates the selected warehouse later, without leaving this form.
+    return findInvoiceCatalogItems(ctx.inventory, itemSearch, warehouseId, hybridLocal);
   }, [ctx.inventory, itemSearch, open, warehouseId, hybridLocal]);
 
   const parsedLegacyRows = useMemo<DraftInvoiceRow[]>(() => {
@@ -6631,21 +6614,11 @@ function InvoiceModal({
   const invoiceStockQty = (item: InventoryItemRecord) => hybridLocal
     ? (historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
     : (item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0));
-  const historicalStockLabel = (item: InventoryItemRecord) => {
-    const q = item.legacyHistoricalQtyByWarehouse?.[warehouseId] ?? item.legacyInvoiceQtyByWarehouse?.[warehouseId];
-    return q === undefined ? "غير معتمد" : `تاريخي غير معتمد: ${formatAmount(q)}${item.legacyTransferIncomplete ? " (غير مكتمل)" : ""}`;
-  };
+  const invoiceStockStatus = (item: InventoryItemRecord) =>
+    historicalStockPending(item) ? "رصيد المخزن غير معتمد" : "الصنف غير مرتبط بالمخزن المحدد";
   const pickProductIntoInvoice = (item: InventoryItemRecord) => {
-    if (historicalStockPending(item) && !localDraft) {
-      if (!warehouseId) { ctx.showToast("اختر المخزن أولًا"); return; }
-      void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{
-        workspaceId:ctx.uid,warehouseId,productId:item.legacySourceItemId ?? item.id,
-      }).then(async result=>{
-        if(result?.changed){await refreshWorkspaceFromServer(ctx.uid);ctx.showToast("تم تحديث قائمة الأصناف؛ اختر الرصيد المعتمد إن وجد");}
-      }).catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون"));
-      return;
-    }
-    if (hybridLocal && item.warehouseId!==warehouseId) {ctx.showToast("الصنف غير متاح في المخزن المختار");return;}
+    keyboard.hide();
+    setFormError(null);
     const defUnit: 1 | 2 | 3 =
       item.defaultUnit === 2 && item.unit2
         ? 2
@@ -6859,8 +6832,19 @@ function InvoiceModal({
       return;
     }
     if(hybridLocal && content==="items"){
-      if(validLines.some(l=>{const item=l.inventoryItemId?inventoryById.get(l.inventoryItemId):undefined;return !item||(!localDraft&&historicalStockPending(item))||item.warehouseId!==warehouseId;})){
-        focusInvalid(accountSelectRef.current,{field:"submit",message:"اعتمد مخزون الأصناف وحدد المخزن الصحيح قبل ترحيل الفاتورة."});
+      const invalidLine = validLines.find((line) => {
+        const item = line.inventoryItemId ? inventoryById.get(line.inventoryItemId) : undefined;
+        return !item || (!localDraft && historicalStockPending(item)) || item.warehouseId !== warehouseId;
+      });
+      if (invalidLine) {
+        const item = invalidLine.inventoryItemId ? inventoryById.get(invalidLine.inventoryItemId) : undefined;
+        const reason = !item ? "اختر الصنف من ملف الأصناف."
+          : !localDraft && historicalStockPending(item)
+            ? `رصيد الصنف «${item.name}» غير معتمد للمخزن المحدد؛ لم يُرحّل أي قيد أو حركة مخزون.`
+            : `الصنف «${item.name}» غير مرتبط بالمخزن المحدد. اختر مخزنه الصحيح أو أعد اختيار الصنف لهذا المخزن قبل الحفظ.`;
+        setFormError({ field: "submit", message: `${reason} بقيت الفاتورة مفتوحة ويمكنك حفظ مسودة دون ترحيل.` });
+        keyboard.hide();
+        requestAnimationFrame(() => invoiceErrorRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
         return;
       }
       if((!localDraft&&currency!=="ريال") || !selectedWarehouse || !validLines.length ||
@@ -7428,7 +7412,7 @@ function InvoiceModal({
                   ref={itemSearchInputRef}
                   data-testid="invoice-item-search"
                   aria-label="بحث عن صنف أو باركود"
-                  placeholder="ابحث باسم الصنف أو رقمه أو الباركود..."
+                  placeholder="ابحث في ملف الأصناف بالاسم أو الرقم أو الباركود..."
                   value={itemSearch}
                   onFocus={(e) => {
                     e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -7477,7 +7461,7 @@ function InvoiceModal({
                         >
                           <span>
                             <strong>{item.name}</strong>
-                            <small> · {stockQty === null ? historicalStockLabel(item) + " — مطابقة المخزون" : "كمية المخزن: " + formatAmount(stockQty)}</small>
+                            <small> · {stockQty === null ? invoiceStockStatus(item) : "كمية المخزن: " + formatAmount(stockQty)}</small>
                             {item.sku ? <small> · باركود: {item.sku}</small> : null}
                           </span>
                           <b>
@@ -7598,8 +7582,8 @@ function InvoiceModal({
                                   <span className="invoice-erp-stock-meta" title={`المتاح بالمخزن: ${formatAmount(stockQty)}`}>
                                     متاح: <bdi>{formatAmount(stockQty)}</bdi>
                                   </span>
-                                ) : linkedItem && historicalStockPending(linkedItem) ? (
-                                  <button type="button" onClick={()=>pickProductIntoInvoice(linkedItem)} className="invoice-erp-stock-meta">مطابقة مخزون الصنف</button>
+                                ) : linkedItem ? (
+                                  <span className="invoice-erp-stock-meta" data-testid="invoice-line-stock-status">{invoiceStockStatus(linkedItem)}</span>
                                 ) : null}
                                 <button
                                   type="button"
@@ -7812,7 +7796,7 @@ function InvoiceModal({
           ) : null}
 
           {formError ? (
-            <div className="field-inline-error" role="alert" data-testid="invoice-validation-error">
+            <div ref={invoiceErrorRef} className="field-inline-error" role="alert" data-testid="invoice-validation-error">
               {formError.message}
             </div>
           ) : null}
@@ -8261,7 +8245,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     { id: "warehouses", label: "المخازن", icon: CubeIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); flow.push(warehousesScreen()); } },
     { id: "sales-dashboard", label: "لوحة المبيعات", icon: BarChartIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); flow.push(analyticsDashboardScreen()); } },
     { id: "trial-balance", label: "ميزان المراجعة", icon: GaugeIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-trial-balance-btn", action: () => { triggerHaptic("light"); ctx.openTrialBalance(); } },
-    { id: "items", label: "الأصناف", icon: TagPriceIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-items-btn", action: () => { triggerHaptic("light"); flow.push(itemsScreen()); } },
+    { id: "items", label: "ملف الأصناف", icon: TagPriceIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-items-btn", action: () => { triggerHaptic("light"); flow.push(itemsScreen()); } },
     { id: "stock-movement", label: "حركة المخزون", icon: ActivityLogIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-stock-movement-btn", action: () => { triggerHaptic("light"); flow.push(inventoryReportScreen()); } },
   ];
 
@@ -10834,7 +10818,7 @@ function AppDrawer({
       title: "المخازن",
       items: [
         { label: "المخازن", icon: CubeIcon, target: "warehouses" },
-        { label: "الأصناف", icon: BackpackIcon, target: "items" },
+        { label: "ملف الأصناف", icon: BackpackIcon, target: "items" },
         { label: "إضافة صنف", icon: PlusIcon, action: () => { onClose(); ctx.openInventoryAdd(); } },
       ],
     },

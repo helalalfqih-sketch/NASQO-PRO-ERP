@@ -95,11 +95,10 @@ if (process.env.NASQO_PREVIEW_ONLY === "1") {
   console.log("Preview remains running. All financial commands are rejected; no Android or production data is connected.");
 } else {
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 412, height: 915 } });
-  const page = await context.newPage();
+  let context = await browser.newContext({ viewport: { width: 412, height: 915 } });
+  let page = await context.newPage();
   const errors: string[] = [];
   const results: { name: string; passed: boolean; error?: string }[] = [];
-  page.on("pageerror", (error) => { errors.push(error.message); console.error(`BROWSER_ERROR ${error.message}`); });
   let sequence = 0;
   const event = async (event: string, payload: unknown) => page.evaluate(({ event, payload }) => (window as any).__nasqoAcceptanceEmit(event, payload), { event, payload });
   const back = async () => {
@@ -108,9 +107,13 @@ if (process.env.NASQO_PREVIEW_ONLY === "1") {
     await page.waitForTimeout(240);
   };
   const fresh = async () => {
+    // A pagehide checkpoint can repopulate storage after clear()+reload().
+    // Isolate scenarios while keeping reloads within each scenario persistent.
+    await context.close();
+    context = await browser.newContext({ viewport: { width: 412, height: 915 } });
+    page = await context.newPage();
+    page.on("pageerror", (error) => { errors.push(error.message); console.error(`BROWSER_ERROR ${error.message}`); });
     await page.goto(url);
-    await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
-    await page.reload();
     await expect(page.getByTestId("dashboard-screen")).toBeVisible();
   };
   const supplier = async () => {

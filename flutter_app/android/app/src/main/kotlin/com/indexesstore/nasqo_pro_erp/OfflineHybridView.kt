@@ -11,6 +11,8 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceError
+import android.webkit.PermissionRequest
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -40,16 +42,27 @@ internal object HybridLifecycleDiagnostics {
  * Every unknown path, remote request and external navigation is rejected.
  * The only native bridge is an explicit, main-frame-only NasqoHome channel.
  */
-class OfflineHybridViewFactory(private val messenger: BinaryMessenger) :
+interface HybridCameraPermissionHost {
+    fun requestCameraPermission(owner: Any, callback: (Boolean) -> Unit)
+    fun cancelCameraPermission(owner: Any)
+    fun registerCameraStopListener(listener: () -> Unit)
+    fun unregisterCameraStopListener(listener: () -> Unit)
+}
+
+class OfflineHybridViewFactory(
+    private val messenger: BinaryMessenger,
+    private val cameraHost: HybridCameraPermissionHost
+) :
     PlatformViewFactory(StandardMessageCodec.INSTANCE) {
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView =
-        OfflineHybridView(context, messenger, viewId)
+        OfflineHybridView(context, messenger, viewId, cameraHost)
 }
 
 private class OfflineHybridView(
     context: Context,
     messenger: BinaryMessenger,
-    id: Int
+    id: Int,
+    private val cameraHost: HybridCameraPermissionHost
 ) : PlatformView {
     private val origin = "https://appassets.androidplatform.net"
     private val resourcePrefix = "/offline/flutter_assets/assets/web/"
@@ -64,9 +77,12 @@ private class OfflineHybridView(
     private var pageLoads = 0
     private var started = false
     private var disposed = false
+    private var pendingCamera: PermissionRequest? = null
+    private val cameraStopListener: () -> Unit = { stopCameraCapture() }
 
     init {
         HybridLifecycleDiagnostics.log("webview-created", instance)
+        cameraHost.registerCameraStopListener(cameraStopListener)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -77,12 +93,45 @@ private class OfflineHybridView(
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                // getUserMedia is called only by the QR camera button. Never grant
+                // all requested resources: audio and non-local origins are denied.
+                if (disposed || !started || pendingCamera != null ||
+                    !HybridCameraPolicy.allows(request.origin.toString(), webView.url, request.resources)) {
+                    request.deny()
+                    return
+                }
+                pendingCamera = request
+                cameraHost.requestCameraPermission(this@OfflineHybridView) { granted ->
+                    if (pendingCamera !== request) return@requestCameraPermission
+                    pendingCamera = null
+                    if (granted && started && !disposed &&
+                        HybridCameraPolicy.allows(request.origin.toString(), webView.url, request.resources)) {
+                        request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+                        HybridLifecycleDiagnostics.log("camera-permission-granted", instance)
+                    } else {
+                        request.deny()
+                        HybridLifecycleDiagnostics.log("camera-permission-denied", instance)
+                    }
+                }
+            }
+
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                if (pendingCamera === request) {
+                    pendingCamera = null
+                    cameraHost.cancelCameraPermission(this@OfflineHybridView)
+                }
+            }
+
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 // Never log financial records or restored backup content.
                 return true
             }
         }
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                cancelPendingCamera()
+            }
             override fun onPageFinished(view: WebView, url: String) {
                 pageLoads += 1
                 HybridLifecycleDiagnostics.log("page-finished", instance, "loads=$pageLoads")
@@ -184,6 +233,9 @@ private class OfflineHybridView(
                             webView.evaluateJavascript(
                                 "window.dispatchEvent(new CustomEvent('nasqo:checkpoint'));", null)
                         }
+                        // An Android runtime permission dialog can make Flutter
+                        // inactive. Cancel only on actual background transitions.
+                        if (state in setOf("hidden", "paused", "detached")) stopCameraCapture()
                     }
                     // Do not loadUrl/reload or synthesize financial requests.
                     result.success(null)
@@ -244,9 +296,25 @@ private class OfflineHybridView(
     private fun denied(): WebResourceResponse =
         WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
 
+    private fun cancelPendingCamera() {
+        val request = pendingCamera
+        pendingCamera = null
+        cameraHost.cancelCameraPermission(this)
+        request?.deny()
+    }
+
+    private fun stopCameraCapture() {
+        cancelPendingCamera()
+        if (started && !disposed) {
+            webView.evaluateJavascript("window.dispatchEvent(new Event('nasqo:camera-stop'));", null)
+        }
+    }
+
     override fun getView(): WebView = webView
 
     override fun dispose() {
+        stopCameraCapture()
+        cameraHost.unregisterCameraStopListener(cameraStopListener)
         disposed = true
         HybridLifecycleDiagnostics.log("webview-disposed", instance, "loads=$pageLoads")
         channel.setMethodCallHandler(null)
