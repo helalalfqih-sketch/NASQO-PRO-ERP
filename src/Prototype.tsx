@@ -7438,7 +7438,7 @@ function InvoiceModal({
                 value={warehouseId}
                 onChange={(e) => setWarehouseId(e.target.value)}
               >
-                {ctx.warehouses.length === 0 ? <option value="">المخزن الافتراضي</option> : null}
+                {cashier ? <option value="">غير محدد</option> : ctx.warehouses.length === 0 ? <option value="">المخزن الافتراضي</option> : null}
                 {ctx.warehouses.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
@@ -7446,14 +7446,15 @@ function InvoiceModal({
                 ))}
               </select>
             </label>
-            {payment === "cash" && invoiceCashboxes.length > 0 ? (
+            {payment === "cash" && (cashier || invoiceCashboxes.length > 0) ? (
               <label className="invoice-field-box">
                 <span>الصندوق</span>
                 <select
                   aria-label="صندوق النقدية"
                   value={effectiveCashboxId ?? ""}
-                  onChange={(e) => setCashboxId(Number(e.target.value))}
+                  onChange={(e) => setCashboxId(e.target.value ? Number(e.target.value) : undefined)}
                 >
+                  {cashier ? <option value="">غير محدد</option> : null}
                   {invoiceCashboxes.map((cb) => (
                     <option key={cb.id} value={cb.id}>
                       {cb.name}

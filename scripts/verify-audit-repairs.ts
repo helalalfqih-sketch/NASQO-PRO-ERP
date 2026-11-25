@@ -183,6 +183,10 @@ try{
  await emit('settings');await page.getByRole('tab',{name:'المنشأة',exact:true}).click();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).toBeDisabled();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).not.toBeChecked();
  await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await expect(page.getByRole('switch')).toBeDisabled();await expect(page.getByRole('switch')).not.toBeChecked();await expect(page.getByLabel('التذكير عند الإغلاق — غير متاح؛ احفظ نسخة يدويًا',{exact:true})).toBeDisabled();return{correct:true,storedPreference:mode,actualProtection:false,negativeStockSupported:false};
  });
+ await run('cashier-missing-defaults-explicit',async()=>{
+  await drawer('الكاشير');await expect(page.getByTestId('invoice-account-trigger')).toContainText('اختر');await expect(page.getByLabel('صندوق النقدية',{exact:true})).toHaveValue('');await expect(page.getByLabel('صندوق النقدية',{exact:true}).locator('option:checked')).toHaveText('غير محدد');
+  const wh=page.locator('select').filter({has:page.locator('option[value="wh_main"]')});await expect(wh).toHaveValue('');await expect(wh.locator('option:checked')).toHaveText('غير محدد');return {correct:true,noArbitraryReference:true};
+ });
  await run('cashier-covered-settings-back',async()=>{
   await drawer('إعدادات الكاشير');await page.getByLabel('المخزن الافتراضي',{exact:true}).selectOption('wh_branch');
   await emit('settings');await page.locator('[data-flow-current="true"]').getByTestId('settings-cashier').click();
