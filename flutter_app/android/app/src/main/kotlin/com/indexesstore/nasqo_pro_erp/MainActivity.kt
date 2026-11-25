@@ -310,7 +310,7 @@ class MainActivity : FlutterActivity(), HybridCameraPermissionHost {
                     result.notImplemented()
                 } else {
                     val url = call.arguments as? String
-                    val allowed = Regex("^https://github\\.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-preview-v[1-9][0-9]{0,8}/NASQO-PRO-ERP\\.apk$")
+                    val allowed = Regex("^https://github\\.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-(?:preview-)?v[1-9][0-9]{0,8}/NASQO-PRO-ERP\\.apk$")
                     if (url == null || !allowed.matches(url)) {
                         result.error("INVALID_URL", "Unexpected download URL", null)
                     } else {

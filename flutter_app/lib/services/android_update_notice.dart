@@ -18,13 +18,18 @@ class AndroidPreviewRelease {
   static AndroidPreviewRelease? newest(Object? data, int current) {
     if (data is! List) return null;
     AndroidPreviewRelease? best;
-    final pattern = RegExp(r'^android-preview-v([1-9][0-9]{0,8})$');
+    final pattern = RegExp(r'^android-(preview-)?v([1-9][0-9]{0,8})$');
     for (final item in data) {
-      if (item is! Map || item['draft'] != false || item['prerelease'] != true) continue;
+      if (item is! Map || item['draft'] != false) continue;
       final tag = item['tag_name'];
       if (tag is! String) continue;
-      final code = int.tryParse(pattern.firstMatch(tag)?.group(1) ?? '');
-      if (code == null || code <= current || code <= (best?.code ?? current)) continue;
+      final match = pattern.firstMatch(tag);
+      if (match == null || item['prerelease'] != (match.group(1) != null)) continue;
+      final code = int.tryParse(match.group(2)!);
+      if (code == null || code <= current || code < (best?.code ?? current)) continue;
+      // The legacy preview alias and stable release may contain the same APK.
+      // Prefer its stable link regardless of API ordering; never reinstall it.
+      if (code == best?.code && match.group(1) != null) continue;
       final assets = item['assets'];
       if (assets is! List || !assets.any((a) => a is Map &&
           a['name'] == _asset && a['state'] == 'uploaded' &&
@@ -103,7 +108,7 @@ class _AndroidUpdateNoticeState extends State<AndroidUpdateNotice>
       _notified = release.code;
       messenger.showSnackBar(SnackBar(
         duration: const Duration(seconds: 20),
-        content: Text('يتوفر إصدار تجريبي أحدث (${release.code}).'),
+        content: Text('يتوفر تحديث للتطبيق (${release.code}).'),
         action: SnackBarAction(label: 'تحميل التحديث', onPressed: () async {
           try {
             await _channel.invokeMethod<void>('openDownload', release.download.toString());

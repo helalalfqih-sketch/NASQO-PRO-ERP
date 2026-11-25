@@ -26,4 +26,24 @@ void main() {
     expect(AndroidPreviewRelease.newest([release('android-preview-v1000')],1000),isNull);
     expect(AndroidPreviewRelease.newest({},1000),isNull);
   });
+  test('stable release wins over its legacy compatibility alias in either order', () {
+    final stable = release('android-v1124', preview:false);
+    final alias = release('android-preview-v1124');
+    for (final releases in [[stable, alias], [alias, stable]]) {
+      final selected = AndroidPreviewRelease.newest(releases,1123);
+      expect(selected?.tag,'android-v1124');
+      expect(selected?.download.path,
+        '/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1124/NASQO-PRO-ERP.apk');
+      expect(AndroidPreviewRelease.newest(releases,1124),isNull);
+    }
+  });
+  test('rejects mismatched channels and incomplete stable assets', () {
+    expect(AndroidPreviewRelease.newest([
+      release('android-v1124'),
+      release('android-preview-v1125',preview:false),
+      release('android-v1126',preview:false,draft:true),
+      release('android-v1127',preview:false,asset:false),
+      release('android-v1128/../../bad',preview:false),
+    ],1123),isNull);
+  });
 }

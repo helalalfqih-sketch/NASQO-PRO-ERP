@@ -12,6 +12,11 @@ on:
       - "scripts/sync-hybrid-to-flutter.mjs"
       - ".github/workflows/flutter-hybrid-preview.yml"
   workflow_dispatch:
+    inputs:
+      signed_candidate:
+        description: Build a signed candidate artifact without automatic publication
+        type: boolean
+        default: false
 
 # Only the newest revision of this review branch needs an APK.
 concurrency:
@@ -94,8 +99,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Build signed versioned preview APK
-        if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true'
+      - name: Build signed versioned APK
+        if: ((github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true))
         working-directory: flutter_app
         env:
           NASQO_ANDROID_KEYSTORE_BASE64: ${{ secrets.NASQO_ANDROID_KEYSTORE_BASE64 }}
@@ -131,8 +136,8 @@ jobs:
           cp "$APK" release-output/NASQO-PRO-ERP.apk
           (cd release-output && sha256sum NASQO-PRO-ERP.apk > NASQO-PRO-ERP.apk.sha256)
 
-      - name: Upload signed preview APK
-        if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true'
+      - name: Upload signed APK candidate
+        if: ((github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true))
         uses: actions/upload-artifact@v4
         with:
           name: nasqo-signed-preview
@@ -142,7 +147,7 @@ jobs:
 
   publish-preview:
     needs: flutter-hybrid
-    if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true'
+    if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true' && inputs.signed_candidate != true
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -168,3 +173,49 @@ jobs:
             --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "NASQO Android preview 1.0.$GITHUB_RUN_NUMBER" \
             --notes "Signed development preview. Financial workflows and cloud sync are not production-certified. Android verifies the signing identity on upgrade."
+
+  signed-upgrade:
+    needs: flutter-hybrid
+    if: github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+      - name: Get prior published APK and verify identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous-release upgrade-evidence
+          gh release download android-preview-v1123 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
+          "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
+          diff <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/previous-certificate.txt) <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/candidate-certificate.txt)
+          test -s upgrade-evidence/candidate-certificate.txt
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+      - name: Emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: bash scripts/verify-android-release-upgrade.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence/
