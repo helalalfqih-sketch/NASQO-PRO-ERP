@@ -35,7 +35,7 @@ class NativeSyncService {
         if (FirebaseAuth.instance.currentUser?.uid != uid) {
           throw StateError('Authentication changed');
         }
-        return FirebaseSyncAuth.token();
+        return FirebaseSyncAuth.token(expectedUid: uid);
       });
       await SyncEngine(local, transport,
           SqliteRemoteChangeStore(local, applyRemoteAccount))
