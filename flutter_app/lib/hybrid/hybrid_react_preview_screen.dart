@@ -22,6 +22,7 @@ import '../services/stock_invoice_commands.dart';
 import '../services/local_stock_catalog.dart';
 import 'package:flutter/services.dart';
 import 'hybrid_read_only_protocol.dart';
+import 'hybrid_back_coordinator.dart';
 import '../services/local_account_commands.dart';
 import '../services/local_document_commands.dart';
 import '../services/local_document_lifecycle.dart';
@@ -42,7 +43,57 @@ class HybridReactPreviewScreen extends StatefulWidget {
   State<HybridReactPreviewScreen> createState() => _HybridReactPreviewScreenState();
 }
 
-class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
+class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
+    with WidgetsBindingObserver {
+  late HybridBackCoordinator _back = _newBackCoordinator();
+  bool _exitDialogOpen = false;
+
+  HybridBackCoordinator _newBackCoordinator() => HybridBackCoordinator(
+    dispatch: (event) async => _channel?.invokeMethod<String>('dispatchBack', event),
+  );
+
+  Future<void> _handleSystemBack() async {
+    // A Flutter dialog or native screen above us owns this press. Android's
+    // external picker/share Activity similarly owns its own back dispatch.
+    if (!mounted || _exitDialogOpen || ModalRoute.of(context)?.isCurrent != true ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    final channel = _channel;
+    final outcome = await _back.requestBack();
+    if (!mounted || channel != _channel ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        outcome != HybridBackOutcome.home) {
+      return;
+    }
+    _exitDialogOpen = true;
+    try {
+      final exit = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('الخروج من نسقو برو؟'),
+        content: const Text('أنت في الشاشة الرئيسية. يمكنك العودة ومتابعة العمل.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('متابعة')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('خروج')),
+        ],
+      ));
+      if (exit == true && mounted && channel == _channel) await SystemNavigator.pop();
+    } finally {
+      _exitDialogOpen = false;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Visibility changes never rebuild/reload the platform view or replay
+    // commands. Native diagnostics correlate process and WebView instances.
+    final channel = _channel;
+    if (state != AppLifecycleState.resumed) _back.cancelPending();
+    if (channel != null) {
+      unawaited(channel.invokeMethod<void>('lifecycle', state.name).catchError((Object _) {}));
+    }
+  }
+
   final _documentOutput=LocalDocumentOutput();
   late final NativeCloudSession _cloud=NativeCloudSession(
     confirm:_confirmCloud,exportWorkspace:_exportCloudWorkspace,restoreWorkspace:_restoreCloudFile,
@@ -336,6 +387,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   @override
   void initState(){
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Future.wait<bool>([_backups.isReview(),LocalDatabase.instance.database.then(LocalDatabase.hasLegacyOperational)]).then((value){
       if(mounted)setState((){_review=value[0];_legacyOperational=value[1];_backupStateLoaded=true;});
     }).catchError((Object _){
@@ -588,16 +640,25 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
   String? _error;
 
   Future<void> _attach(int viewId) async {
+    _channel?.setMethodCallHandler(null);
+    _back.dispose();
+    _back = _newBackCoordinator();
     final channel = MethodChannel('nasqo/offline_hybrid/$viewId');
     _channel = channel;
     channel.setMethodCallHandler((call) async {
       if (call.method != 'message' || call.arguments is! String) return null;
       try {
-        final response = await _protocol.handle(call.arguments as String);
+        final raw = call.arguments as String;
+        final response = _back.handleMessage(raw) ?? await _protocol.handle(raw);
+        if (!mounted || channel != _channel) return null;
         await channel.invokeMethod<void>('respond', response);
       } catch (_) {
-        if (mounted) {
-          setState(() => _error = 'تعذر قراءة SQLite المحلية أو إيصال رد Flutter إلى React.');
+        if (mounted && channel == _channel) {
+          // A lost acknowledgement may follow a successful SQLite commit.
+          // Keep the WebView/draft in place and never retry the command here.
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('تعذر إيصال تأكيد العملية. تحقّق من السجل قبل إعادة المحاولة.'),
+          ));
         }
       }
       return null;
@@ -615,6 +676,8 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _back.dispose();
     _channel?.setMethodCallHandler(null);
     unawaited(_documentOutput.dispose());
     super.dispose();
@@ -622,12 +685,18 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_handleSystemBack());
+      },
+      child: Scaffold(
       body: SafeArea(
         child: _error!=null
           ? Center(child:Padding(padding:const EdgeInsets.all(18),child:Text(_error!,textAlign:TextAlign.center)))
           : !_backupStateLoaded ? const Center(child:CircularProgressIndicator()) : AndroidView(
               key:ValueKey(_viewGeneration),viewType:'nasqo/offline_hybrid',onPlatformViewCreated:_attach),
+      ),
       ),
     );
   }

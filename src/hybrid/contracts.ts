@@ -225,7 +225,7 @@ export interface HybridPickFileResult {
 
 export interface HybridCommandPayloadMap {
   navigate: { route: string; params?: Record<string, string | number | boolean | undefined> };
-  goBack: { currentRoute?: string; stackDepth?: number };
+  goBack: { currentRoute?: string; stackDepth?: number; requestId?: string; outcome?: "handled" | "home" | "blocked" };
   getSnapshot: { workspaceId?: string; forceRefresh?: boolean };
   changeCurrency: { scope: "dashboard" | "category" | "statement" | "report"; targetId?: string; currency: string };
   saveUiPreferences: { preferences: HybridUiPreferences };

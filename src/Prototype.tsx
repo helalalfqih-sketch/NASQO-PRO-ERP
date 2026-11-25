@@ -5,6 +5,7 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -272,6 +273,11 @@ import { nativeDriveCall } from "./hybrid/cloudSession";
 import { outputNativeDocument, shareNativeText, usesNativeDocumentOutput } from "./hybrid/documentOutput";
 import { useHybridPresentation } from "./hybrid/presentationAdapter";
 import type { HybridUiPreferences } from "./hybrid/contracts";
+import { consumeBackLayer, useBackLayer } from "./hybrid/backCoordinator";
+import { PendingSubmissionStore } from "./hybrid/pendingSubmission";
+import { useUnsavedForm } from "./hybrid/useUnsavedForm";
+import { UiResumeWorkspaceContext } from "./hybrid/resumeContext";
+import { readUiState, writeUiState, removeUiState, readValidatedRoutes, usePersistentUiState } from "./hybrid/resumeState";
 
 type IconComponent = ComponentType<{ className?: string }>;
 type SheetKind = "filters" | "export" | "notifications" | null;
@@ -447,6 +453,39 @@ function useWorkspace(): LiveWorkspaceState {
     throw new Error("useWorkspace must be used inside WorkspaceContext.Provider");
   }
   return ctx;
+}
+
+function matchesUiShape(value: unknown, example: unknown): boolean {
+  if (example === null) return value === null || typeof value === "boolean";
+  if (Array.isArray(example)) return Array.isArray(value);
+  if (typeof example === "object") return Boolean(value) && typeof value === "object" &&
+    Object.entries(example as Record<string, unknown>).every(([key, part]) =>
+      matchesUiShape((value as Record<string, unknown>)[key], part));
+  return typeof value === typeof example;
+}
+
+function useWorkspaceUiState<T>(slot: string, initial: T | (() => T)) {
+  const ctx = useWorkspace();
+  const sample = typeof initial === "function" ? (initial as () => T)() : initial;
+  return usePersistentUiState<T>(ctx.workspace?.id ?? ctx.uid, slot, initial,
+    import.meta.env.VITE_NASQO_HYBRID === "1", (value) => matchesUiShape(value, sample));
+}
+
+function UnsavedFormPrompt({ guard }: { guard: ReturnType<typeof useUnsavedForm> }) {
+  if (!guard.promptOpen) return null;
+  return <div className="center-modal-layer" style={{ zIndex: 1000 }} data-testid="unsaved-form-dialog">
+    <button className="center-modal-backdrop" aria-label="إغلاق تنبيه التعديلات" onClick={guard.continueEditing} />
+    <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعديلات غير محفوظة">
+      <h2>تعديلات غير محفوظة</h2>
+      <p>حفظ المسودة محلي فقط ولا يرحّل قيدًا أو حركة مخزون.</p>
+      {guard.error ? <p role="alert">{guard.error}</p> : null}
+      <div className="form-modal-actions">
+        <button onClick={guard.continueEditing}>متابعة التحرير</button>
+        <button onClick={guard.discard}>تجاهل التعديلات</button>
+        <button onClick={guard.saveAndClose}>حفظ مسودة دون ترحيل</button>
+      </div>
+    </section>
+  </div>;
 }
 
 async function downloadFile(filename: string, content: string, mimeType: string): Promise<boolean> {
@@ -1055,24 +1094,24 @@ export function AuthenticatedWorkspace({
   const [ledger, setLedger] = useState<LedgerEntryRecord[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseRecord[]>([]);
   const [inventory, setInventory] = useState<InventoryItemRecord[]>([]);
-  const [categoryCurrencies, setCategoryCurrencies] = useState<Partial<Record<AccountCategory, string>>>({});
-  const [statementCurrencies, setStatementCurrencies] = useState<Record<string, string>>({});
+  const [categoryCurrencies, setCategoryCurrencies] = usePersistentUiState<Partial<Record<AccountCategory, string>>>(user.uid, "category-currencies", {}, hybrid.isHybrid, (value) => !!value && typeof value === "object" && Object.values(value).every((v) => typeof v === "string"));
+  const [statementCurrencies, setStatementCurrencies] = usePersistentUiState<Record<string, string>>(user.uid, "statement-currencies", {}, hybrid.isHybrid, (value) => !!value && typeof value === "object" && Object.values(value).every((v) => typeof v === "string"));
   const [activeStatementAccountId, setActiveStatementAccountId] = useState<string | null>(null);
-  const [statementFilter, setStatementFilter] = useState<{
+  const [statementFilter, setStatementFilter] = usePersistentUiState<{
     docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
     sortOrder: "asc" | "desc";
     period: string;
     fromDate: string;
     toDate: string;
     showPreviousBalance: boolean | null;
-  }>({
+  }>(user.uid, "statement-filter", {
     docKind: "all",
     sortOrder: "desc",
     period: "الكل",
     fromDate: "",
     toDate: "",
     showPreviousBalance: null,
-  });
+  }, hybrid.isHybrid, (value) => Boolean(value) && typeof value === "object" && ["all", "invoice", "voucher", "return", "quote", "order"].includes((value as {docKind: string}).docKind) && ["asc", "desc"].includes((value as {sortOrder: string}).sortOrder) && ["period", "fromDate", "toDate"].every((key) => typeof (value as Record<string, unknown>)[key] === "string"));
   const [erpData, setErpData] = useState<ErpWorkspaceData>(() => loadErpWorkspaceData(user.uid));
   const [syncFlags, setSyncFlags] = useState({ accounts: false, ledger: false, inventory: false });
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -1082,6 +1121,8 @@ export function AuthenticatedWorkspace({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [overlay, setOverlay] = useState<OverlayKind>(null);
+  const [unavailableDraft, setUnavailableDraft] = useState(false);
+  useBackLayer(unavailableDraft, () => { setUnavailableDraft(false); return true; }, 200);
   const [pickerMode, setPickerMode] = useState<"statement" | "edit" | "whatsapp" | "search">("statement");
   const [editingAccount, setEditingAccount] = useState<AccountRecord | undefined>();
   const [accountCreateCategory, setAccountCreateCategory] = useState<AccountCategory>("purchases");
@@ -1469,9 +1510,27 @@ export function AuthenticatedWorkspace({
     [dismissKeyboard],
   );
 
+  const recoverExistingInvoiceDraft = useCallback(() => {
+    if (!hybrid.isHybrid) return false;
+    const saved = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
+    if (!saved) return false;
+    const account = accounts.find((item) => item.id === saved.accountId);
+    const entry = saved.editingEntryId ? ledger.find((item) => item.id === saved.editingEntryId && !item.deleted) : undefined;
+    if (!canRestoreInvoiceDraft(saved, { accounts, ledger, warehouses, inventory, cashboxes, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+      setUnavailableDraft(true);
+      return true;
+    }
+    setInvoiceSeed((seed) => ({ account, editingEntry: entry, intent: saved.intent,
+      kindOverride: saved.kindOverride, revision: seed.revision + 1 }));
+    setOverlay("invoice");
+    showToast("استُعيدت المسودة المحلية. تابعها أو تجاهلها صراحةً قبل إنشاء مستند آخر.");
+    return true;
+  }, [hybrid.isHybrid, user.uid, accounts, ledger, warehouses, inventory, cashboxes, currencies, showToast]);
+
   const openInvoice = useCallback(
     (defaultCategory?: AccountCategory, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
+      if (recoverExistingInvoiceDraft()) return;
       const matchingAccount =
         (defaultCategory ? accounts.find((a) => a.category === defaultCategory) : undefined) ?? accounts[0];
       const kindOverride =
@@ -1490,12 +1549,13 @@ export function AuthenticatedWorkspace({
         kindOverride,
       });
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
 
   const openVendorInvoice = useCallback(
     (account?: AccountRecord, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
+      if (recoverExistingInvoiceDraft()) return;
       const targetAccount = account ?? accounts[0];
       const kindOverride = targetAccount ? (targetAccount.category === "sales" ? "sale" : "purchase") : undefined;
       setInvoiceSeed((value) => ({
@@ -1512,12 +1572,13 @@ export function AuthenticatedWorkspace({
         kindOverride,
       });
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
 
   const openInvoiceEdit = useCallback(
     (entry: LedgerEntryRecord, account?: AccountRecord) => {
       dismissKeyboard();
+      if (recoverExistingInvoiceDraft()) return;
       const targetAccount = account ?? accounts.find((a) => a.id === entry.accountId) ?? accounts[0];
       const entryIntent: InvoiceIntent =
         entry.kind === "quote"
@@ -1550,7 +1611,7 @@ export function AuthenticatedWorkspace({
       });
       setOverlay("invoice");
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
 
   const openDashboardMenu = useCallback(() => {
@@ -2094,6 +2155,92 @@ export function AuthenticatedWorkspace({
 
   const syncing = !(syncFlags.accounts && syncFlags.ledger && syncFlags.inventory);
 
+  const didRestoreUi = useRef(false);
+  useEffect(() => {
+    if (!hybrid.isHybrid || syncing || !workspace || workspace.id !== user.uid || !flowRef.current || didRestoreUi.current) return;
+    const resolve = (id: string): FlowScreen | null => {
+      if (id === "dashboard") return dashboardScreen();
+      if (id.startsWith("supplier-")) {
+        const accountId = id.slice("supplier-".length);
+        return accounts.some((account) => account.id === accountId) ? supplierScreen(accountId) : null;
+      }
+      if (id.startsWith("accounts-")) {
+        const match = /^accounts-(purchases|sales|clients|employees|transfers|shop)-(all|[0-9]+)$/.exec(id);
+        if (!match) return null;
+        const group = match[2] === "all" ? undefined : accountGroups.find((g) => g.id === Number(match[2]));
+        if (match[2] !== "all" && !group) return null;
+        return purchasesScreen(match[1] as AccountCategory, group?.id, group?.name);
+      }
+      if (id.startsWith("invoice-preview-")) {
+        const entryId = id.slice("invoice-preview-".length);
+        return ledger.some((entry) => entry.id === entryId && !entry.deleted) ? cashInvoicePreviewScreen(entryId) : null;
+      }
+      if (id.startsWith("inventory-report-")) {
+        const warehouseId = id.slice("inventory-report-".length);
+        return warehouseId === "all" ? inventoryReportScreen() : warehouses.some((w) => w.id === warehouseId) ? inventoryReportScreen(warehouseId) : null;
+      }
+      for (const [prefix, factory] of [["simple-entry-", simpleEntryScreen], ["currency-exchange-", currencyScreen]] as const) {
+        if (id.startsWith(prefix)) {
+          const accountId = id.slice(prefix.length);
+          return accountId === "default" ? factory() : accounts.some((account) => account.id === accountId) ? factory(accountId) : null;
+        }
+      }
+      const simple: Record<string, () => FlowScreen> = { shop: shopScreen, warehouses: warehousesScreen,
+        "items-catalog": itemsScreen, "daily-journal": dailyJournalScreen,
+        "analytics-dashboard": analyticsDashboardScreen, "system-settings": systemSettingsScreen,
+        "whatsapp-settings": whatsappSettingsScreen };
+      return simple[id]?.() ?? null;
+    };
+    const restored = readValidatedRoutes(user.uid, (id) => Boolean(resolve(id)));
+    didRestoreUi.current = true;
+    for (const id of restored.slice(1)) {
+      const screen = resolve(id);
+      if (screen) flowRef.current.push(screen);
+    }
+    const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
+    if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+      setInvoiceSeed((seed) => ({ account: accounts.find((a) => a.id === draft.accountId),
+        editingEntry: ledger.find((e) => e.id === draft.editingEntryId), intent: draft.intent,
+        kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
+      setOverlay("invoice");
+    } else if (draft) setUnavailableDraft(true);
+    const activeForm = readUiState<Record<string, unknown> | null>(user.uid, "active-form", null,
+      (value) => Boolean(value) && typeof value === "object" && typeof (value as Record<string, unknown>).kind === "string");
+    if (activeForm?.kind === "screen" && typeof activeForm.screenId === "string" && !restored.includes(activeForm.screenId)) {
+      const screen = resolve(activeForm.screenId);
+      if (screen) flowRef.current.push(screen);
+    }
+    if (activeForm?.kind === "transaction") {
+      const account = typeof activeForm.accountId === "string" ? accounts.find((item) => item.id === activeForm.accountId) : undefined;
+      const entry = typeof activeForm.editingEntryId === "string" ? ledger.find((item) => item.id === activeForm.editingEntryId && !item.deleted) : undefined;
+      if ((!activeForm.accountId || account) && (!activeForm.editingEntryId || entry)) {
+        setTransactionTarget({ account, editingEntry: entry }); setOverlay("transaction");
+      }
+    }
+    if (activeForm?.kind === "account") {
+      const account = typeof activeForm.accountId === "string" ? accounts.find((item) => item.id === activeForm.accountId) : undefined;
+      if (!activeForm.accountId || account) {
+        setEditingAccount(account);
+        if (["purchases", "sales", "clients", "employees", "transfers", "shop"].includes(String(activeForm.defaultCategory))) {
+          setAccountCreateCategory(activeForm.defaultCategory as AccountCategory);
+        }
+        if (draft) returnOverlay.current = "invoice";
+        setOverlay(activeForm.mode === "compact" ? "account-create-compact" : "account-create-extended");
+      }
+    }
+  }, [hybrid.isHybrid, syncing, workspace, user.uid, accounts, ledger, warehouses, accountGroups, inventory, cashboxes, currencies]);
+
+  useEffect(() => {
+    if (!hybrid.isHybrid) return;
+    const saveRoutes = (event: Event) => {
+      if (!didRestoreUi.current || workspace?.id !== user.uid) return;
+      const ids = (event as CustomEvent<unknown>).detail;
+      if (Array.isArray(ids) && ids.every((id) => typeof id === "string")) writeUiState(user.uid, "flow-stack", ids);
+    };
+    window.addEventListener("nasqo:flow-change", saveRoutes);
+    return () => window.removeEventListener("nasqo:flow-change", saveRoutes);
+  }, [hybrid.isHybrid, workspace?.id, user.uid]);
+
   const notifications = useMemo(
     () =>
       computeWorkspaceNotifications(accounts, ledger, warehouses, inventory, workspace, new Date(), {
@@ -2579,8 +2726,16 @@ export function AuthenticatedWorkspace({
 
   // Hardware/system Back closes transient UI before navigating the screen stack.
   // At the dashboard the history guard keeps the installed PWA in the app.
+  useBackLayer(Boolean(overlay) && !["invoice", "transaction", "account-create-compact", "account-create-extended"].includes(overlay ?? ""),
+    () => { closeOverlay(); return true; }, 50);
+  useBackLayer(Boolean(sheet), () => { setSheet(null); return true; }, 40);
+  useBackLayer(drawerOpen, () => { setDrawerOpen(false); return true; }, 30);
+  useBackLayer(dashboardMenuOpen, () => { setDashboardMenuOpen(false); return true; }, 30);
+  useBackLayer(exportState.open, () => { setExportState((state) => ({ ...state, open: false })); return true; }, 30);
   const handleSystemBack = () => {
-    if (overlay) { setOverlay(null); return true; }
+    if (keyboard.visible) { keyboard.hide(); return true; }
+    if (consumeBackLayer()) return true;
+    if (overlay) { closeOverlay(); return true; }
     if (drawerOpen) { setDrawerOpen(false); return true; }
     if (dashboardMenuOpen) { setDashboardMenuOpen(false); return true; }
     if (exportState.open) { setExportState((current) => ({ ...current, open: false })); return true; }
@@ -2590,8 +2745,25 @@ export function AuthenticatedWorkspace({
 
   return (
     <WorkspaceContext.Provider value={ctx}>
+      <UiResumeWorkspaceContext.Provider value={hybrid.isHybrid ? workspace?.id ?? "" : ""}>
       <div className="nasqo-app" dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
+        {unavailableDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
+          <button className="center-modal-backdrop" aria-label="الاحتفاظ بالمسودة" onClick={() => setUnavailableDraft(false)} />
+          <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعذر استعادة المسودة">
+            <h2>تعذر استعادة المسودة بأمان</h2>
+            <p>أحد الحسابات أو الأصناف أو المخازن المرتبطة لم يعد متاحًا. المسودة محفوظة محليًا ولم تُرحّل.</p>
+            <div className="form-modal-actions">
+              <button onClick={() => setUnavailableDraft(false)}>الاحتفاظ بالمسودة</button>
+              <button onClick={() => {
+                const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
+                if (draft && new PendingSubmissionStore().has(user.uid, draft.entryId)) { showToast("تأكيد الحفظ معلق؛ لا يمكن تجاهل المسودة قبل التحقق من السجل."); return; }
+                if (removeUiState(user.uid, "invoice-draft")) setUnavailableDraft(false);
+                else showToast("تعذر إزالة المسودة المحلية.");
+              }}>تجاهل المسودة صراحةً</button>
+            </div>
+          </section>
+        </div> : null}
         {user.uid !== LOCAL_WORKSPACE_UID && syncing && cloudInitializationError ? (
           <div className="nasqo-cloud-hydration-lock" role="status" data-testid="cloud-hydration-lock">
             <section>
@@ -2932,6 +3104,7 @@ export function AuthenticatedWorkspace({
           </div>
         ) : null}
       </div>
+      </UiResumeWorkspaceContext.Provider>
     </WorkspaceContext.Provider>
   );
 }
@@ -2952,6 +3125,7 @@ function DashboardBottomNav({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const [quickOpen, setQuickOpen] = useState(false);
+  useBackLayer(quickOpen, () => { setQuickOpen(false); return true; });
 
   useEffect(() => {
     if (!quickOpen) return;
@@ -4004,6 +4178,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const [overflowOpen, setOverflowOpen] = useState(false);
+  useBackLayer(overflowOpen, () => { setOverflowOpen(false); return true; });
   const portal = screenRef.current?.querySelector(".nasqo-app");
 
   const downloadTemplate = () => {
@@ -4765,6 +4940,7 @@ function InventoryHeader({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const [overflowOpen, setOverflowOpen] = useState(false);
+  useBackLayer(overflowOpen, () => { setOverflowOpen(false); return true; });
   const portal = screenRef.current?.querySelector(".nasqo-app");
 
   const runAction = (fn: () => void) => {
@@ -6030,6 +6206,49 @@ type DraftInvoiceRow = {
   discount: string;
 };
 
+type InvoiceUiDraft = {
+  version: 1;
+  intent: InvoiceIntent;
+  kindOverride?: "purchase" | "sale";
+  accountId: string;
+  editingEntryId?: string;
+  entryId: string;
+  fields: Record<string, unknown>;
+};
+
+function isInvoiceUiDraft(value: unknown): value is InvoiceUiDraft {
+  if (!value || typeof value !== "object") return false;
+  const draft = value as InvoiceUiDraft;
+  const f = draft.fields;
+  if (draft.version !== 1 || !["invoice", "return", "quote", "order"].includes(draft.intent) ||
+      typeof draft.accountId !== "string" || !/^[A-Za-z0-9:_-]{1,140}$/.test(draft.entryId) ||
+      (draft.editingEntryId !== undefined && typeof draft.editingEntryId !== "string") ||
+      !f || typeof f !== "object") return false;
+  if (!["content", "payment", "kind", "amount", "note", "documentNumber", "entryNumber", "entryDate", "expenseCategory", "currency", "exchangeRate", "warehouseId", "accountId", "itemSearch", "localTaxAmount", "localTaxMode", "localOriginalId"].every((key) => typeof f[key] === "string")) return false;
+  return f.accountId === draft.accountId && ["amount", "rate"].includes(String(f.localTaxMode)) &&
+    (f.cashboxId === undefined || (typeof f.cashboxId === "number" && Number.isSafeInteger(f.cashboxId))) &&
+    ["items", "free"].includes(String(f.content)) && ["cash", "credit"].includes(String(f.payment)) &&
+    ["purchase", "sale"].includes(String(f.kind)) && typeof f.isReturn === "boolean" &&
+    Array.isArray(f.rows) && f.rows.length <= 500 && f.rows.every((row) => row &&
+      ["rowId", "itemName", "unit", "quantity", "price", "discount"].every((key) => typeof row[key] === "string") &&
+      (row.inventoryItemId === undefined || typeof row.inventoryItemId === "string") &&
+      (row.unitNum === undefined || [1, 2, 3].includes(row.unitNum))) &&
+    f.localReturnQty !== null && typeof f.localReturnQty === "object" &&
+    Object.values(f.localReturnQty).every((quantity) => typeof quantity === "string");
+}
+
+function canRestoreInvoiceDraft(draft: InvoiceUiDraft, records: Pick<LiveWorkspaceState,
+  "accounts" | "ledger" | "warehouses" | "inventory" | "cashboxes" | "currencyCodes">): boolean {
+  const fields = draft.fields;
+  return (!draft.accountId || records.accounts.some((record) => record.id === draft.accountId)) &&
+    (!draft.editingEntryId || records.ledger.some((record) => record.id === draft.editingEntryId && !record.deleted)) &&
+    (!fields.warehouseId || records.warehouses.some((record) => record.id === fields.warehouseId)) &&
+    (fields.cashboxId === undefined || records.cashboxes.some((record) => record.id === fields.cashboxId)) &&
+    (!fields.localOriginalId || records.ledger.some((record) => record.id === fields.localOriginalId && !record.deleted)) &&
+    records.currencyCodes.includes(String(fields.currency)) &&
+    (fields.rows as DraftInvoiceRow[]).every((row) => !row.inventoryItemId || records.inventory.some((record) => record.id === row.inventoryItemId));
+}
+
 function stripAutoLineSummary(details: string): string {
   const trimmed = details.trim();
   if (!trimmed) return "";
@@ -6068,6 +6287,15 @@ function InvoiceModal({
   onAddAccount: () => void;
 }) {
   const ctx = useWorkspace();
+  const [restoredDraft] = useState(() => {
+    if (import.meta.env.VITE_NASQO_HYBRID !== "1") return null;
+    const saved = readUiState<InvoiceUiDraft | null>(ctx.uid, "invoice-draft", null, isInvoiceUiDraft);
+    if (!saved || saved.intent !== intent || saved.editingEntryId !== editingEntry?.id ||
+        saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "")) return null;
+    if (!canRestoreInvoiceDraft(saved, ctx)) return null;
+    return saved;
+  });
+  const restoreField = <T,>(name: string, fallback: T): T => restoredDraft ? restoredDraft.fields[name] as T ?? fallback : fallback;
   const initialContent: "items" | "free" =
     editingEntry?.invoiceContent === "free" ? "free" : "items";
   const initialPayment: "cash" | "credit" = editingEntry
@@ -6086,44 +6314,44 @@ function InvoiceModal({
   const localDraft=hybridLocal&&draftKind!==null&&!editingEntry?.deleted&&(!editingEntry||editingEntry.localDraft===true);
   const metadataOnly=hybridLocal&&editingEntry?.kind==="invoice"&&editingEntry.postingStatus==="posted"&&
     !editingEntry.deleted&&editingEntry.journalLines?.length;
-  const [localTaxAmount,setLocalTaxAmount] = useState(editingEntry?.taxAmount==null?"":String(editingEntry.taxAmount));
-  const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">("amount");
-  const [localOriginalId,setLocalOriginalId] = useState("");
-  const [localReturnQty,setLocalReturnQty] = useState<Record<string,string>>({});
-  const [content, setContent] = useState<"items" | "free">(initialContent);
-  const [payment, setPayment] = useState<"cash" | "credit">(initialPayment);
-  const [kind, setKind] = useState<"purchase" | "sale">(initialKind);
-  const [isReturn, setReturn] = useState(editingEntry ? editingEntry.kind === "return" : intent === "return");
-  const [amount, setAmount] = useState(editingEntry ? String(editingEntry.amount || "") : "");
-  const [note, setNote] = useState(editingEntry ? stripAutoLineSummary(editingEntry.details) : "");
-  const [documentNumber, setDocumentNumber] = useState(editingEntry?.documentNumber ?? "");
-  const [entryNumber, setEntryNumber] = useState(editingEntry ? String(editingEntry.entryNumber) : "");
+  const [localTaxAmount,setLocalTaxAmount] = useState(restoreField("localTaxAmount", editingEntry?.taxAmount==null?"":String(editingEntry.taxAmount)));
+  const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">(restoreField("localTaxMode", "amount"));
+  const [localOriginalId,setLocalOriginalId] = useState(restoreField("localOriginalId", ""));
+  const [localReturnQty,setLocalReturnQty] = useState<Record<string,string>>(restoreField("localReturnQty", {}));
+  const [content, setContent] = useState<"items" | "free">(restoreField("content", initialContent));
+  const [payment, setPayment] = useState<"cash" | "credit">(restoreField("payment", initialPayment));
+  const [kind, setKind] = useState<"purchase" | "sale">(restoreField("kind", initialKind));
+  const [isReturn, setReturn] = useState(restoreField("isReturn", editingEntry ? editingEntry.kind === "return" : intent === "return"));
+  const [amount, setAmount] = useState(restoreField("amount", editingEntry ? String(editingEntry.amount || "") : ""));
+  const [note, setNote] = useState(restoreField("note", editingEntry ? stripAutoLineSummary(editingEntry.details) : ""));
+  const [documentNumber, setDocumentNumber] = useState(restoreField("documentNumber", editingEntry?.documentNumber ?? ""));
+  const [entryNumber, setEntryNumber] = useState(restoreField("entryNumber", editingEntry ? String(editingEntry.entryNumber) : ""));
   const [entryDate, setEntryDate] = useState(
-    editingEntry?.entryDate || new Date().toISOString().slice(0, 10),
+    restoreField("entryDate", editingEntry?.entryDate || new Date().toISOString().slice(0, 10)),
   );
-  const [expenseCategory, setExpenseCategory] = useState(editingEntry?.expenseCategory ?? "");
+  const [expenseCategory, setExpenseCategory] = useState(restoreField("expenseCategory", editingEntry?.expenseCategory ?? ""));
   const [currency, setCurrency] = useState<CurrencyCode>(
-    editingEntry?.currency ?? initialAccount?.currency ?? "ريال",
+    restoreField("currency", editingEntry?.currency ?? initialAccount?.currency ?? "ريال"),
   );
   const [exchangeRate, setExchangeRate] = useState(
-    editingEntry ? String(editingEntry.exchangeRate || 1) : "1",
+    restoreField("exchangeRate", editingEntry ? String(editingEntry.exchangeRate || 1) : "1"),
   );
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    () => editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
+    () => restoreField("cashboxId", editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id),
   );
   const [warehouseId, setWarehouseId] = useState(
-    editingEntry?.warehouseId ||
+    restoreField("warehouseId", editingEntry?.warehouseId ||
       ctx.warehouses.find((w) => w.isDefault)?.id ||
       ctx.warehouses[0]?.id ||
-      "",
+      ""),
   );
   const [accountId, setAccountId] = useState(
-    editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
+    restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? ""),
   );
-  const [itemSearch, setItemSearch] = useState("");
-  const [rows, setRows] = useState<DraftInvoiceRow[]>([
+  const [itemSearch, setItemSearch] = useState(restoreField("itemSearch", ""));
+  const [rows, setRows] = useState<DraftInvoiceRow[]>(restoreField("rows", [
     { rowId: "row_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
-  ]);
+  ]));
   const [loadingLines, setLoadingLines] = useState(Boolean(editingEntry));
   const [linesLoadedEmpty, setLinesLoadedEmpty] = useState(false);
   const [priceHint, setPriceHint] = useState<{
@@ -6145,12 +6373,63 @@ function InvoiceModal({
   const rowNameRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowQtyRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowPriceRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const draftNewEntryIdRef = useRef<string>("");
+  const draftNewEntryIdRef = useRef<string>(restoredDraft?.entryId ?? `inv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
   const keyboard = useKeyboard();
   const now = useMemo(
     () => new Intl.DateTimeFormat("ar", { weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date()),
     [],
   );
+
+  const [leavePrompt, setLeavePrompt] = useState(false);
+  const fields = { content, payment, kind, isReturn, amount, note, documentNumber, entryNumber,
+    entryDate, expenseCategory, currency, exchangeRate, cashboxId, warehouseId, accountId,
+    itemSearch, rows, localTaxAmount, localTaxMode, localOriginalId, localReturnQty };
+  const fieldJson = JSON.stringify(fields);
+  const initialFields = useRef(fieldJson);
+  if (loadingLines && !restoredDraft) initialFields.current = fieldJson;
+  const dirty = Boolean(restoredDraft) || fieldJson !== initialFields.current;
+  const completed = useRef(false);
+  const currentDraft: InvoiceUiDraft = { version: 1, intent, kindOverride, accountId,
+    editingEntryId: editingEntry?.id, entryId: draftNewEntryIdRef.current, fields };
+  const latestDraft = useRef(currentDraft);
+  latestDraft.current = currentDraft;
+  const persistDraft = () => writeUiState(ctx.uid, "invoice-draft", latestDraft.current);
+  const pendingReceipt = () => {
+    try { return hybridLocal && new PendingSubmissionStore().has(ctx.uid, draftNewEntryIdRef.current); }
+    catch { return true; }
+  };
+  const finishClose = () => {
+    completed.current = true;
+    if (hybridLocal) removeUiState(ctx.uid, "invoice-draft");
+    onClose();
+  };
+  const requestClose = () => {
+    keyboard.hide();
+    if (saving || pendingReceipt()) {
+      ctx.showToast("تأكيد الحفظ غير مكتمل. تحقّق من السجل قبل إغلاق المستند أو إعادة الحفظ.");
+      return;
+    }
+    if (dirty) setLeavePrompt(true);
+    else finishClose();
+  };
+  useBackLayer(open, () => {
+    if (leavePrompt) setLeavePrompt(false);
+    else requestClose();
+    return true;
+  }, 100);
+  useLayoutEffect(() => {
+    if (!hybridLocal || !open || !dirty || completed.current) return;
+    persistDraft();
+    const checkpoint = () => { if (!completed.current) persistDraft(); };
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [hybridLocal, open, dirty, fieldJson, ctx.uid]);
 
   useEffect(() => {
     if (!cashboxId && ctx.cashboxes[0]?.id) {
@@ -6161,11 +6440,11 @@ function InvoiceModal({
   useEffect(() => {
     if (!open) {
       setFormError(null);
-      draftNewEntryIdRef.current = "";
+
       return;
     }
     setFormError(null);
-    if (!editingEntry) {
+    if (!editingEntry || restoredDraft) {
       if (!draftNewEntryIdRef.current) {
         draftNewEntryIdRef.current = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       }
@@ -6219,7 +6498,7 @@ function InvoiceModal({
     return () => {
       active = false;
     };
-  }, [ctx.inventory, ctx.uid, editingEntry, open]);
+  }, [ctx.uid, editingEntry?.id, open, restoredDraft]);
 
   const inventoryById = useMemo(
     () => (open ? new Map(ctx.inventory.map((i) => [i.id, i])) : new Map<string, InventoryItemRecord>()),
@@ -6502,6 +6781,24 @@ function InvoiceModal({
   };
 
   const handleSave = async (mode: "save" | "whatsapp" | "print" = "save") => {
+    if (saving) return;
+    if (hybridLocal && !persistDraft()) {
+      setFormError({ field: "submit", message: "تعذر حفظ حالة المستند محليًا؛ لم تُرسل عملية مالية." });
+      return;
+    }
+    if (hybridLocal && pendingReceipt()) {
+      setSaving(true);
+      try {
+        // The durable receipt guard only reads a fresh snapshot for this known ID.
+        await createLedgerEntry(ctx.uid, { id: draftNewEntryIdRef.current, accountId,
+          accountName: ctx.accounts.find((account) => account.id === accountId)?.name ?? "" });
+        finishClose();
+        ctx.showToast("تم التحقق من المستند المحفوظ سابقًا دون إعادة ترحيل.");
+      } catch (error) {
+        setFormError({ field: "submit", message: error instanceof Error ? error.message : "تعذر التحقق من نتيجة الحفظ" });
+      } finally { setSaving(false); }
+      return;
+    }
     const focusInvalid = (
       el: HTMLElement | null | undefined,
       errObj: NonNullable<typeof formError>,
@@ -6530,7 +6827,7 @@ function InvoiceModal({
           originalInvoiceId:original.id,accountId:original.accountId,accountName:original.accountName,
           returnLines:returnLines.filter(l=>l.quantity>0),
           entryNumber:nextNum,entryDate:entryDate.trim()||new Date().toISOString().slice(0,10)});
-        triggerHaptic("success");ctx.showToast("تم ترحيل الكميات المرتجعة وعكس قيدها ومخزونها");onClose();
+        triggerHaptic("success");ctx.showToast("تم ترحيل الكميات المرتجعة وعكس قيدها ومخزونها");finishClose();
       }catch(err){setFormError({field:"submit",message:err instanceof Error?err.message:"تعذر حفظ المرتجع"});}
       finally{setSaving(false);}
       return;
@@ -6550,7 +6847,7 @@ function InvoiceModal({
           details:note.trim()===stripAutoLineSummary(editingEntry.details)?editingEntry.details:note.trim(),
           documentNumber:documentNumber.trim()});
         ctx.showToast("تم حفظ البيان والمرجع فقط؛ لم تتغير القيود أو الكميات.");
-        onClose();
+        finishClose();
       }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
       finally{setSaving(false);}
       return;
@@ -6690,7 +6987,7 @@ function InvoiceModal({
       if (editingEntry) {
         await updateLedgerEntry(ctx.uid, editingEntry.id, payload);
         triggerHaptic("success");
-        onClose();
+        finishClose();
         ctx.showToast(`تم تعديل ${typeLabel} رقم #${nextNum} بنجاح`);
       } else {
         targetId = await createLedgerEntry(ctx.uid, {
@@ -6698,7 +6995,7 @@ function InvoiceModal({
           ...payload,
         });
         triggerHaptic("success");
-        onClose();
+        finishClose();
         ctx.showToast(`تم حفظ ${typeLabel} رقم #${nextNum} بنجاح`);
       }
       if (mode === "print" && targetId) {
@@ -6795,7 +7092,7 @@ function InvoiceModal({
 
   return (
     <div className="center-modal-layer" data-testid="invoice-modal">
-      <button className="center-modal-backdrop" aria-label="إغلاق الفاتورة" onClick={onClose} />
+      <button className="center-modal-backdrop" aria-label="إغلاق الفاتورة" onClick={requestClose} />
       <section className="invoice-modal invoice-modal-pro" role="dialog" aria-modal="true" aria-labelledby="invoice-title">
         <header className="invoice-modal-head">
           <div className="invoice-modal-head-title">
@@ -6824,13 +7121,14 @@ function InvoiceModal({
               type="button"
               className="invoice-modal-close"
               aria-label="إغلاق"
-              onClick={onClose}
+              onClick={requestClose}
             >
               <Cross2Icon />
             </button>
           </div>
         </header>
 
+        <fieldset disabled={saving || pendingReceipt()} style={{ display: "contents", border: 0 }}>
         <div className="invoice-modal-body">
           <div className="invoice-radio-bar invoice-segment-row">
             <div className="invoice-radio-group">
@@ -7532,7 +7830,7 @@ function InvoiceModal({
                 try {
                   await setLedgerDeleted(ctx.uid, editingEntry.id, true);
                   triggerHaptic("warning");
-                  onClose();
+                  finishClose();
                   ctx.showToast(`تم نقل العملية #${editingEntry.entryNumber} إلى سلة المحذوفات`);
                 } catch (err) {
                   ctx.showToast(err instanceof Error ? err.message : "تعذر نقل العملية إلى السلة");
@@ -7546,12 +7844,13 @@ function InvoiceModal({
           ) : null}
         </div>
 
+        </fieldset>
         <footer className="invoice-modal-footer">
           <div className="form-modal-actions form-modal-actions-3 invoice-actions-erp">
             <button type="button" className="save" data-testid="invoice-save-btn" disabled={saving} onClick={() => void handleSave("save")}>
               {saving
                 ? "جاري الحفظ..."
-                : metadataOnly ? "حفظ البيان والمرجع فقط" : editingEntry
+                : pendingReceipt() ? "التحقق من نتيجة الحفظ" : metadataOnly ? "حفظ البيان والمرجع فقط" : editingEntry
                   ? "حفظ التعديل"
                   : intent === "quote"
                     ? "حفظ عرض السعر"
@@ -7571,12 +7870,32 @@ function InvoiceModal({
               <WhatsAppIcon />
               <span>حفظ وإرسال واتس</span>
             </button>
-            <button type="button" className="cancel" onClick={onClose}>
+            <button type="button" className="cancel" onClick={requestClose}>
               إلغاء
             </button>
           </div>
         </footer>
       </section>
+      {leavePrompt ? (
+        <div className="center-modal-layer" style={{ zIndex: 1000 }} data-testid="invoice-unsaved-dialog">
+          <button className="center-modal-backdrop" aria-label="إغلاق تنبيه التعديلات" onClick={() => setLeavePrompt(false)} />
+          <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعديلات غير محفوظة">
+            <h2>تعديلات غير محفوظة</h2>
+            <p>يمكنك متابعة التحرير أو تجاهل التعديلات أو حفظ مسودة محلية دون ترحيل.</p>
+            <div className="form-modal-actions">
+              <button onClick={() => setLeavePrompt(false)}>متابعة التحرير</button>
+              <button onClick={finishClose}>تجاهل التعديلات</button>
+              <button onClick={() => {
+                if (!persistDraft()) { ctx.showToast("تعذر حفظ المسودة محليًا. بقيت التعديلات مفتوحة."); return; }
+                completed.current = true;
+                setLeavePrompt(false);
+                onClose();
+                ctx.showToast("حُفظت مسودة محلية دون ترحيل أو حركة مخزون؛ تُستعاد عند إعادة الفتح.");
+              }}>حفظ مسودة دون ترحيل</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -8505,15 +8824,17 @@ function PurchasesPage({
 }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [sortDirection, setSortDirection] = useState("تنازلي");
-  const [sortBy, setSortBy] = useState("date");
+  const [fromDate, setFromDate] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:fromDate`, "");
+  const [toDate, setToDate] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:toDate`, "");
+  const [sortDirection, setSortDirection] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:sortDirection`, "تنازلي");
+  const [sortBy, setSortBy] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:sortBy`, "date");
   const currencyFilter = ctx.categoryCurrencies[category] ?? ctx.workspace?.defaultCurrency ?? "ريال";
-  const [byCurrency, setByCurrency] = useState(false);
-  const [searchState, setSearchState] = useState(() => createInitialSearchState());
+  const [byCurrency, setByCurrency] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:byCurrency`, false);
+  const [searchState, setSearchState] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:searchState`, () => createInitialSearchState());
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  useBackLayer(createMenuOpen, () => { setCreateMenuOpen(false); return true; });
   const [operationVendor, setOperationVendor] = useState<AccountRecord | null>(null);
+  useBackLayer(Boolean(operationVendor), () => { setOperationVendor(null); return true; });
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const searchQuery = searchState.query;
@@ -8931,7 +9252,8 @@ function SupplierPage({
   const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? true;
   const currency = ctx.statementCurrencies[account.id] ?? account.currency ?? "ريال";
   const [operationsOpen, setOperationsOpen] = useState(false);
-  const [searchUi, setSearchUi] = useState(() => createInitialSearchState());
+  useBackLayer(operationsOpen, () => { setOperationsOpen(false); return true; });
+  const [searchUi, setSearchUi] = useWorkspaceUiState(`supplier:${account.id}:search`, () => createInitialSearchState());
 
   useEffect(() => {
     ctx.setActiveStatementAccountId(account.id);
@@ -9413,13 +9735,16 @@ function CashSupplierPage({
   const ctx = useWorkspace();
   const { period, fromDate, toDate, docKind, sortOrder } = ctx.statementFilter;
   const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? false;
-  const [currency, setCurrency] = useState("ريال");
+  const [currency, setCurrency] = useWorkspaceUiState(`supplier:${account.id}:currency`, "ريال");
   const [operationsOpen, setOperationsOpen] = useState(false);
+  useBackLayer(operationsOpen, () => { setOperationsOpen(false); return true; });
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  useBackLayer(currencyOpen, () => { setCurrencyOpen(false); return true; });
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState<CashSearchMode>("الكل");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  useBackLayer(searchMenuOpen, () => { setSearchMenuOpen(false); return true; });
+  const [searchMode, setSearchMode] = useWorkspaceUiState<CashSearchMode>(`supplier:${account.id}:mode`, "الكل");
+  const [searchOpen, setSearchOpen] = useWorkspaceUiState(`supplier:${account.id}:searchOpen`, false);
+  const [query, setQuery] = useWorkspaceUiState(`supplier:${account.id}:query`, "");
   const listRef = useRef<HTMLElement>(null);
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
@@ -9801,17 +10126,39 @@ function SimpleEntryPage({
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
   const keyboard = useKeyboard();
-  const [fromAccountId, setFromAccountId] = useState(ctx.accounts[0]?.id ?? "");
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const completed = useRef(false);
+  const draftSlot = `simple-entry-draft:${initialToAccountId ?? "default"}`;
+  const [originalStoredDraft] = useState(() => hybridLocal ? readUiState<unknown>(ctx.uid, draftSlot, null) : null);
+  const [savedDraft] = useState(() => !hybridLocal ? null : readUiState<Record<string, string> | null>(ctx.uid, draftSlot, null,
+    (value) => Boolean(value) && typeof value === "object" && ["id", "fromAccountId", "toAccountId", "amount", "currency", "note", "documentNumber"].every((key) => typeof (value as Record<string, unknown>)[key] === "string") &&
+      ["fromAccountId", "toAccountId"].every((key) => ctx.accounts.some((account) => account.id === (value as Record<string, unknown>)[key]))));
+  const [invalidDraft, setInvalidDraft] = useState(Boolean(originalStoredDraft) && !savedDraft);
+  const documentId = useRef(savedDraft?.id ?? `simple_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+  const [fromAccountId, setFromAccountId] = useState(savedDraft?.fromAccountId ?? ctx.accounts[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState(
-    initialToAccountId ?? ctx.accounts[1]?.id ?? ctx.accounts[0]?.id ?? "",
+    savedDraft?.toAccountId ?? initialToAccountId ?? ctx.accounts[1]?.id ?? ctx.accounts[0]?.id ?? "",
   );
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<CurrencyCode>("ريال");
-  const [note, setNote] = useState("");
-  const [documentNumber, setDocumentNumber] = useState("");
+  const [amount, setAmount] = useState(savedDraft?.amount ?? "");
+  const [currency, setCurrency] = useState<CurrencyCode>(savedDraft?.currency ?? "ريال");
+  const [note, setNote] = useState(savedDraft?.note ?? "");
+  const [documentNumber, setDocumentNumber] = useState(savedDraft?.documentNumber ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [now, setNow] = useState(() => new Date());
+
+  const draftFields = { id: documentId.current, fromAccountId, toAccountId, amount, currency, note, documentNumber };
+  const draftJson = JSON.stringify(draftFields);
+  const initialDraftJson = useRef(draftJson);
+  const dirty = Boolean(savedDraft) || initialDraftJson.current !== draftJson;
+  const pending = () => { if (!hybridLocal) return false; try { return new PendingSubmissionStore().has(ctx.uid, documentId.current); } catch { return true; } };
+  const persist = () => !hybridLocal ? true : invalidDraft || completed.current ? false : writeUiState(ctx.uid, draftSlot, draftFields) && writeUiState(ctx.uid, "active-form", { kind: "screen", screenId: `simple-entry-${initialToAccountId ?? "default"}` });
+  const discard = () => { if (saving || pending()) return false; const removed = !hybridLocal || (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")); if (removed) completed.current = true; return removed; };
+  const leaveGuard = useUnsavedForm({ active: hybridLocal && flow.current.id === `simple-entry-${initialToAccountId ?? "default"}`,
+    dirty, onClose: flow.pop, saveDraft: persist, discardDraft: discard });
+  useBackLayer(hybridLocal && flow.current.id === `${draftSlot.startsWith("simple-entry") ? "simple-entry" : "currency-exchange"}-${draftSlot.split(":").slice(1).join(":")}` && (saving || pending()),
+    () => { if (completed.current) return false; ctx.showToast("تحقّق من نتيجة الحفظ قبل المغادرة."); return true; }, 200);
+  useLayoutEffect(() => { if (hybridLocal && dirty && !saving && !completed.current) persist(); }, [draftJson, dirty, hybridLocal]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
@@ -9832,6 +10179,15 @@ function SimpleEntryPage({
 
   const saveEntry = async () => {
     keyboard.hide();
+    if (saving || !persist()) { setError("تعذر حفظ حالة القيد محليًا."); return; }
+    if (pending()) {
+      setSaving(true);
+      try { await createLedgerEntry(ctx.uid, { id: documentId.current, accountId: toAccountId, accountName: "" });
+        completed.current = true; removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); leaveGuard.closeAfterSave();
+      } catch (error) { setError(error instanceof Error ? error.message : "تعذر التحقق من الحفظ"); }
+      finally { setSaving(false); }
+      return;
+    }
     const numericAmount = parseArabicNumber(amount);
     if (!fromAcc || !toAcc) {
       triggerHaptic("warning");
@@ -9853,6 +10209,7 @@ function SimpleEntryPage({
     try {
       const nextNum = Math.max(1000, ...ctx.ledger.map((e) => e.entryNumber)) + 1;
       await createLedgerEntry(ctx.uid, {
+        ...(hybridLocal ? { id: documentId.current } : {}),
         accountId: toAcc.id,
         accountName: toAcc.name,
         counterpartAccountId: fromAcc.id,
@@ -9872,15 +10229,21 @@ function SimpleEntryPage({
       });
       triggerHaptic("success");
       ctx.showToast(`تم حفظ القيد البسيط رقم #${nextNum} بنجاح`);
-      flow.pop();
+      completed.current = true;
+      if (hybridLocal) { removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); }
+      if (hybridLocal) leaveGuard.closeAfterSave(); else flow.pop();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "تعذر حفظ القيد");
     } finally {
       setSaving(false);
     }
   };
 
   return (
+    <>
     <MobileScroll className="app-screen simple-entry-scroll">
       <main className="simple-entry-page" data-testid="simple-entry-screen">
+        <fieldset disabled={invalidDraft || saving || pending()} style={{ display: "contents", border: 0 }}>
         <time className="simple-entry-time" dateTime={now.toISOString()}>
           <span>{now.toLocaleDateString("ar-SA", { weekday: "long" })}</span>{" "}
           <bdi>
@@ -10005,31 +10368,70 @@ function SimpleEntryPage({
             {error}
           </p>
         ) : null}
+        </fieldset>
         <div className="simple-entry-actions">
           <button className="save" data-testid="simple-entry-save" disabled={saving} onClick={saveEntry}>
-            {saving ? "جاري الحفظ..." : "حفظ"}
+            {saving ? "جاري الحفظ..." : pending() ? "التحقق من نتيجة الحفظ" : "حفظ"}
           </button>
-          <button className="cancel" data-testid="simple-entry-cancel" onClick={flow.pop}>
+          <button className="cancel" data-testid="simple-entry-cancel" onClick={hybridLocal ? leaveGuard.requestClose : flow.pop}>
             إلغاء
           </button>
         </div>
       </main>
     </MobileScroll>
+    <UnsavedFormPrompt guard={leaveGuard} />
+    {invalidDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
+      <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-label="تعذر استعادة المسودة">
+        <h2>تعذر استعادة المسودة بأمان</h2><p>أحد السجلات المرتبطة لم يعد متاحًا. لم تتغير المسودة المحفوظة.</p>
+        <div className="form-modal-actions">
+          <button onClick={() => { completed.current = true; leaveGuard.closeAfterSave(); }}>الاحتفاظ والرجوع</button>
+          <button onClick={() => {
+            const id = originalStoredDraft && typeof originalStoredDraft === "object" && "id" in originalStoredDraft ? String(originalStoredDraft.id) : "";
+            try { if (id && new PendingSubmissionStore().has(ctx.uid, id)) { ctx.showToast("نتيجة الحفظ معلقة؛ تحقّق من السجل أولًا."); return; } } catch { return; }
+            if (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")) setInvalidDraft(false);
+          }}>تجاهل المسودة صراحةً</button>
+        </div>
+      </section>
+    </div> : null}
+    </>
   );
 }
 
 function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialAccountId?: string }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
-  const [selectedAccountId, setSelectedAccountId] = useState(initialAccountId ?? ctx.accounts[0]?.id ?? "");
-  const [fromCurrency, setFromCurrency] = useState<CurrencyCode>(ctx.currencyCodes[1] ?? ctx.currencyCodes[0] ?? "ريال");
-  const [toCurrency, setToCurrency] = useState<CurrencyCode>(ctx.currencyCodes[0] ?? "ريال");
-  const [rate, setRate] = useState("530");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [mode, setMode] = useState<"buy" | "sell">("buy");
-  const [settlement, setSettlement] = useState<"account" | "cash">("account");
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const completed = useRef(false);
+  const draftSlot = `currency-draft:${initialAccountId ?? "default"}`;
+  const [originalStoredDraft] = useState(() => hybridLocal ? readUiState<unknown>(ctx.uid, draftSlot, null) : null);
+  const [savedDraft] = useState(() => !hybridLocal ? null : readUiState<Record<string, string> | null>(ctx.uid, draftSlot, null,
+    (value) => Boolean(value) && typeof value === "object" && ["id", "selectedAccountId", "fromCurrency", "toCurrency", "rate", "amount", "note", "mode", "settlement"].every((key) => typeof (value as Record<string, unknown>)[key] === "string") &&
+      ctx.accounts.some((account) => account.id === (value as Record<string, unknown>).selectedAccountId) &&
+      ["buy", "sell"].includes((value as Record<string, string>).mode) && ["account", "cash"].includes((value as Record<string, string>).settlement)));
+  const [invalidDraft, setInvalidDraft] = useState(Boolean(originalStoredDraft) && !savedDraft);
+  const documentId = useRef(savedDraft?.id ?? `currency_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+  const [selectedAccountId, setSelectedAccountId] = useState(savedDraft?.selectedAccountId ?? initialAccountId ?? ctx.accounts[0]?.id ?? "");
+  const [fromCurrency, setFromCurrency] = useState<CurrencyCode>((savedDraft?.fromCurrency) ?? ctx.currencyCodes[1] ?? ctx.currencyCodes[0] ?? "ريال");
+  const [toCurrency, setToCurrency] = useState<CurrencyCode>((savedDraft?.toCurrency) ?? ctx.currencyCodes[0] ?? "ريال");
+  const [rate, setRate] = useState((savedDraft?.rate) ?? "530");
+  const [amount, setAmount] = useState((savedDraft?.amount) ?? "");
+  const [note, setNote] = useState((savedDraft?.note) ?? "");
+  const [mode, setMode] = useState<"buy" | "sell">((savedDraft?.mode as "buy" | "sell" | undefined) ?? "buy");
+  const [settlement, setSettlement] = useState<"account" | "cash">((savedDraft?.settlement as "account" | "cash" | undefined) ?? "account");
   const [saving, setSaving] = useState(false);
+
+  const draftFields = { id: documentId.current, selectedAccountId, fromCurrency, toCurrency, rate, amount, note, mode, settlement };
+  const draftJson = JSON.stringify(draftFields);
+  const initialDraftJson = useRef(draftJson);
+  const dirty = Boolean(savedDraft) || initialDraftJson.current !== draftJson;
+  const pending = () => { if (!hybridLocal) return false; try { return new PendingSubmissionStore().has(ctx.uid, documentId.current); } catch { return true; } };
+  const persist = () => !hybridLocal ? true : invalidDraft || completed.current ? false : writeUiState(ctx.uid, draftSlot, draftFields) && writeUiState(ctx.uid, "active-form", { kind: "screen", screenId: `currency-exchange-${initialAccountId ?? "default"}` });
+  const discard = () => { if (saving || pending()) return false; const removed = !hybridLocal || (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")); if (removed) completed.current = true; return removed; };
+  const leaveGuard = useUnsavedForm({ active: hybridLocal && flow.current.id === `currency-exchange-${initialAccountId ?? "default"}`,
+    dirty, onClose: flow.pop, saveDraft: persist, discardDraft: discard });
+  useBackLayer(hybridLocal && flow.current.id === `${draftSlot.startsWith("simple-entry") ? "simple-entry" : "currency-exchange"}-${draftSlot.split(":").slice(1).join(":")}` && (saving || pending()),
+    () => { if (completed.current) return false; ctx.showToast("تحقّق من نتيجة الحفظ قبل المغادرة."); return true; }, 200);
+  useLayoutEffect(() => { if (hybridLocal && dirty && !saving && !completed.current) persist(); }, [draftJson, dirty, hybridLocal]);
 
   const selectedAccount = ctx.accounts.find((a) => a.id === selectedAccountId) ?? ctx.accounts[0];
   const parsedAmount = parseArabicNumber(amount);
@@ -10038,6 +10440,15 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
   const converted = parsedAmount * parsedRate;
 
   const saveExchange = async () => {
+    if (saving || !persist()) { ctx.showToast("تعذر حفظ حالة المصارفة محليًا."); return; }
+    if (pending()) {
+      setSaving(true);
+      try { await createLedgerEntry(ctx.uid, { id: documentId.current, accountId: selectedAccountId, accountName: "" });
+        completed.current = true; removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); leaveGuard.closeAfterSave();
+      } catch (error) { ctx.showToast(error instanceof Error ? error.message : "تعذر التحقق من الحفظ"); }
+      finally { setSaving(false); }
+      return;
+    }
     if (!selectedAccount || parsedAmount <= 0) {
       triggerHaptic("warning");
       ctx.showToast("أدخل المبلغ واختر الحساب أولًا");
@@ -10052,6 +10463,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
     try {
       const nextNum = Math.max(1000, ...ctx.ledger.map((e) => e.entryNumber)) + 1;
       await createLedgerEntry(ctx.uid, {
+        ...(hybridLocal ? { id: documentId.current } : {}),
         accountId: selectedAccount.id,
         accountName: selectedAccount.name,
         kind: "currency",
@@ -10068,19 +10480,25 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
       });
       triggerHaptic("success");
       ctx.showToast(`تم حفظ عملية الصرف رقم #${nextNum}`);
-      flow.pop();
+      completed.current = true;
+      if (hybridLocal) { removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); }
+      if (hybridLocal) leaveGuard.closeAfterSave(); else flow.pop();
+    } catch (error) {
+      ctx.showToast(error instanceof Error ? error.message : "تعذر حفظ المصارفة");
     } finally {
       setSaving(false);
     }
   };
 
   return (
+    <>
     <MobileScroll className="app-screen currency-page-scroll">
       <main className="currency-page" data-testid="currency-screen">
         <time className="currency-time">
           اليوم · {new Intl.DateTimeFormat("ar-SA", { hour: "2-digit", minute: "2-digit" }).format(new Date())}
         </time>
         <section className="currency-workspace">
+          <fieldset disabled={invalidDraft || saving || pending()} style={{ display: "contents", border: 0 }}>
           <AccountSelectCombobox
             accounts={ctx.accounts}
             value={selectedAccount?.id ?? ""}
@@ -10200,17 +10618,33 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
               مصادقة نقدية في الصندوق
             </label>
           </div>
+          </fieldset>
           <div className="form-modal-actions currency-actions">
-            <button className="cancel" onClick={flow.pop}>
+            <button className="cancel" onClick={hybridLocal ? leaveGuard.requestClose : flow.pop}>
               إلغاء
             </button>
             <button className="save" data-testid="currency-save" disabled={saving} onClick={saveExchange}>
-              {saving ? "جاري الحفظ..." : "حفظ"}
+              {saving ? "جاري الحفظ..." : pending() ? "التحقق من نتيجة الحفظ" : "حفظ"}
             </button>
           </div>
         </section>
       </main>
     </MobileScroll>
+    <UnsavedFormPrompt guard={leaveGuard} />
+    {invalidDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
+      <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-label="تعذر استعادة المسودة">
+        <h2>تعذر استعادة المسودة بأمان</h2><p>أحد السجلات المرتبطة لم يعد متاحًا. لم تتغير المسودة المحفوظة.</p>
+        <div className="form-modal-actions">
+          <button onClick={() => { completed.current = true; leaveGuard.closeAfterSave(); }}>الاحتفاظ والرجوع</button>
+          <button onClick={() => {
+            const id = originalStoredDraft && typeof originalStoredDraft === "object" && "id" in originalStoredDraft ? String(originalStoredDraft.id) : "";
+            try { if (id && new PendingSubmissionStore().has(ctx.uid, id)) { ctx.showToast("نتيجة الحفظ معلقة؛ تحقّق من السجل أولًا."); return; } } catch { return; }
+            if (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")) setInvalidDraft(false);
+          }}>تجاهل المسودة صراحةً</button>
+        </div>
+      </section>
+    </div> : null}
+    </>
   );
 }
 
@@ -10752,11 +11186,12 @@ function TransactionModal({
   onClose: () => void;
 }) {
   const ctx = useWorkspace();
+  const scope = ctx.workspace?.id ?? ctx.uid;
   const [accountId, setAccountId] = useState(
     editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
   );
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
-   const localDraftId = useRef("");
+  const localDraftId = useRef("");
   const [cashboxId, setCashboxId] = useState<number | undefined>(
     editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
   );
@@ -10773,22 +11208,94 @@ function TransactionModal({
   const [saving, setSaving] = useState(false);
   const [txError, setTxError] = useState<{ field?: "account" | "amount" | "submit"; message: string } | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const keyboard = useKeyboard();
+  const [draftReady, setDraftReady] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const completed = useRef(false);
+  const initialFields = useRef("");
+  const fields = { accountId, cashboxId, currency, amount, note, payment, direction, expenseCategory };
+  const fieldJson = JSON.stringify(fields);
+  const dirty = draftReady && (restored || fieldJson !== initialFields.current);
+  const draft = { version: 1, entryId: localDraftId.current, editingEntryId: editingEntry?.id ?? "", fields };
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const persistDraft = () => !hybridLocal || (writeUiState(scope, "transaction-draft", latestDraft.current) &&
+    writeUiState(scope, "active-form", { kind: "transaction", accountId, editingEntryId: editingEntry?.id }));
+  const pendingReceipt = () => {
+    if (!hybridLocal || editingEntry || !localDraftId.current) return false;
+    try { return new PendingSubmissionStore().has(ctx.uid, localDraftId.current); }
+    catch { return true; }
+  };
+  const discardDraft = () => {
+    if (saving || pendingReceipt()) return false;
+    const removed = !hybridLocal || (removeUiState(scope, "transaction-draft") && removeUiState(scope, "active-form"));
+    if (removed) completed.current = true;
+    return removed;
+  };
+  const finishSave = () => {
+    completed.current = true;
+    if (hybridLocal) { removeUiState(scope, "transaction-draft"); removeUiState(scope, "active-form"); }
+    onClose();
+  };
+  const leaveGuard = useUnsavedForm({
+    active: open, dirty, onClose: () => { keyboard.hide(); onClose(); },
+    saveDraft: () => !saving && persistDraft(), discardDraft,
+  });
+  const requestClose = () => {
+    keyboard.hide();
+    if (saving) { ctx.showToast("انتظر تأكيد الحفظ قبل إغلاق السند."); return; }
+    leaveGuard.requestClose();
+  };
+  useBackLayer(open && saving, () => { requestClose(); return true; }, 110);
 
   useEffect(() => {
-    if (!open) { localDraftId.current = ''; return; }
-    if (open) {
-      if (!localDraftId.current) localDraftId.current = `voucher_${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
-      setTxError(null);
-      setAccountId(editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "");
-      setCashboxId(editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id);
-      setCurrency(editingEntry?.currency ?? initialAccount?.currency ?? "ريال");
-      setAmount(editingEntry ? String(editingEntry.amount) : "");
-      setNote(editingEntry?.details ?? "");
-      setPayment(editingEntry?.payment === "balance" ? "balance" : "cash");
-      setDirection(editingEntry?.direction ?? "debit");
-      setExpenseCategory(editingEntry?.expenseCategory ?? "");
-    }
-  }, [ctx.accounts, ctx.cashboxes, editingEntry, initialAccount, open]);
+    if (!open) { setDraftReady(false); return; }
+    completed.current = false;
+    const defaults = {
+      accountId: editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
+      cashboxId: editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
+      currency: editingEntry?.currency ?? initialAccount?.currency ?? "ريال",
+      amount: editingEntry ? String(editingEntry.amount) : "", note: editingEntry?.details ?? "",
+      payment: editingEntry?.payment === "balance" ? "balance" as const : "cash" as const,
+      direction: editingEntry?.direction ?? "debit", expenseCategory: editingEntry?.expenseCategory ?? "",
+    };
+    const saved = hybridLocal ? readUiState<typeof draft | null>(scope, "transaction-draft", null, (value) => {
+      if (!value || typeof value !== "object") return false;
+      const candidate = value as typeof draft;
+      const f = candidate.fields;
+      return candidate.version === 1 && typeof candidate.entryId === "string" && /^voucher_[A-Za-z0-9_]+$/.test(candidate.entryId) &&
+        candidate.editingEntryId === (editingEntry?.id ?? "") && Boolean(f) &&
+        [f.accountId, f.currency, f.amount, f.note, f.expenseCategory].every((v) => typeof v === "string") &&
+        ["cash", "balance"].includes(f.payment) && ["debit", "credit"].includes(f.direction) &&
+        (f.cashboxId === undefined || typeof f.cashboxId === "number") &&
+        (f.cashboxId === undefined || ctx.cashboxes.some((cashbox) => cashbox.id === f.cashboxId)) &&
+        ctx.accounts.some((a) => a.id === f.accountId) && ctx.currencyCodes.includes(f.currency) &&
+        (!initialAccount || initialAccount.id === f.accountId) &&
+        (!candidate.editingEntryId || ctx.ledger.some((e) => e.id === candidate.editingEntryId && !e.deleted));
+    }) : null;
+    const next = saved?.fields ?? defaults;
+    localDraftId.current = saved?.entryId ?? `voucher_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    initialFields.current = JSON.stringify(defaults);
+    setRestored(Boolean(saved));
+    setTxError(null); setAccountId(next.accountId); setCashboxId(next.cashboxId); setCurrency(next.currency);
+    setAmount(next.amount); setNote(next.note); setPayment(next.payment); setDirection(next.direction);
+    setExpenseCategory(next.expenseCategory); setDraftReady(true);
+    // Snapshot refreshes must not reset an open user's fields or operation ID.
+  }, [open, scope, editingEntry?.id, initialAccount?.id]);
+
+  useEffect(() => {
+    if (!hybridLocal || !open || !dirty || completed.current) return;
+    persistDraft();
+    const checkpoint = () => { if (!completed.current) persistDraft(); };
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [hybridLocal, open, dirty, fieldJson, scope]);
 
   if (!open) return null;
 
@@ -10804,6 +11311,23 @@ function TransactionModal({
   }).format(new Date());
 
   const save = async (andPrint = false) => {
+    if (saving || !draftReady) return;
+    if (hybridLocal && !persistDraft()) {
+      setTxError({ field: "submit", message: "تعذر حفظ المسودة محليًا؛ لم يُرسل السند." });
+      return;
+    }
+    if (pendingReceipt()) {
+      setSaving(true);
+      try {
+        await createLedgerEntry(ctx.uid, { id: localDraftId.current, accountId,
+          accountName: ctx.accounts.find((account) => account.id === accountId)?.name ?? "" });
+        finishSave();
+        ctx.showToast("تم التحقق من السند المحفوظ سابقًا دون إعادة ترحيل.");
+      } catch (error) {
+        setTxError({ field: "submit", message: error instanceof Error ? error.message : "تعذر التحقق من نتيجة الحفظ" });
+      } finally { setSaving(false); }
+      return;
+    }
     if (!selectedAccount) {
       triggerHaptic("warning");
       const msg = "اختر حسابًا أولًا قبل الحفظ.";
@@ -10820,7 +11344,7 @@ function TransactionModal({
       try{
         await updateLedgerEntry(ctx.uid,editingEntry.id,{accountId:editingEntry.accountId,accountName:editingEntry.accountName,details:note.trim()});
         ctx.showToast("تم حفظ بيان السند دون تغيير القيود.");
-        onClose();
+        finishSave();
       }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
       finally{setSaving(false);}
       return;
@@ -10879,7 +11403,7 @@ function TransactionModal({
         triggerHaptic("success");
         ctx.showToast(`تم حفظ السند رقم #${nextNum} بنجاح`);
       }
-      onClose();
+      finishSave();
       if (andPrint && targetEntryId) {
         ctx.flowRef.current?.push(cashInvoicePreviewScreen(targetEntryId));
       }
@@ -10899,7 +11423,7 @@ function TransactionModal({
     try {
       await setLedgerDeleted(ctx.uid, editingEntry.id, true);
       ctx.showToast(`تم نقل العملية #${editingEntry.entryNumber} إلى سلة المحذوفات`);
-      onClose();
+      finishSave();
     } finally {
       setSaving(false);
     }
@@ -10907,8 +11431,9 @@ function TransactionModal({
 
   return (
     <div className="center-modal-layer" data-testid="transaction-modal">
-      <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق السند" />
+      <button className="center-modal-backdrop" onClick={requestClose} aria-label="إغلاق السند" />
       <section className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="transaction-modal-title">
+        <fieldset disabled={saving || pendingReceipt()} style={{ display: "contents", border: 0 }}>
         <div className="transaction-modal-head-row">
           <h2 id="transaction-modal-title">
             {editingEntry
@@ -11083,18 +11608,20 @@ function TransactionModal({
           currency={currency}
           entryType={direction === "credit" ? "سند له" : "سند عليه / مصروف"}
         />
+        </fieldset>
         <div className="form-modal-actions form-modal-actions-3">
-          <button className="cancel" onClick={onClose}>
+          <button className="cancel" onClick={requestClose}>
             إلغاء
           </button>
           <button className="save-print" disabled={saving||(hybridLocal&&Boolean(editingEntry))} onClick={() => void save(true)}>
             حفظ وطباعة
           </button>
           <button className="save" disabled={saving} onClick={() => void save(false)}>
-            {saving ? "جاري الحفظ..." : hybridLocal&&editingEntry ? "حفظ البيان فقط" : "حفظ"}
+            {saving ? "جاري الحفظ..." : pendingReceipt() ? "التحقق من نتيجة الحفظ" : hybridLocal&&editingEntry ? "حفظ البيان فقط" : "حفظ"}
           </button>
         </div>
       </section>
+      <UnsavedFormPrompt guard={leaveGuard} />
     </div>
   );
 }
@@ -11113,6 +11640,8 @@ function AccountCreateModal({
   onClose: () => void;
 }) {
   const ctx = useWorkspace();
+  const scope = ctx.workspace?.id ?? ctx.uid;
+  const draftSlot = `account-draft:${mode}:${initialAccount?.id ?? defaultCategory}`;
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
   const [localCashAccount,setLocalCashAccount] = useState(initialAccount?.isCashAccount ?? false);
   const [name, setName] = useState(initialAccount?.name ?? "");
@@ -11138,16 +11667,95 @@ function AccountCreateModal({
   const [messageMethod, setMessageMethod] = useState<"sms" | "whatsapp">(initialAccount?.messageMethod ?? "sms");
   const [sendMode, setSendMode] = useState<"auto" | "confirm" | "never">(initialAccount?.sendMode ?? "never");
   const [saving, setSaving] = useState(false);
+  const [submissionPending, setSubmissionPending] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const completed = useRef(false);
+  const initialFields = useRef("");
   const keyboard = useKeyboard();
+  const fields = { localCashAccount, name, category, phone, note, debtLimit, openingBalance, openingAmount,
+    openingDirection, debtAmount, settlement, documentNumber, accountImage, accountCurrency, sortOrder, messageMethod, sendMode };
+  const fieldJson = JSON.stringify(fields);
+  const dirty = draftReady && (restored || submissionPending || fieldJson !== initialFields.current);
+  const draft = { version: 1, recordId: initialAccount?.id ?? "", submissionPending, fields };
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const persistDraft = () => !hybridLocal || (writeUiState(scope, draftSlot, latestDraft.current) &&
+    writeUiState(scope, "active-form", { kind: "account", accountId: initialAccount?.id, mode, defaultCategory }));
+  const discardDraft = () => {
+    if (saving || submissionPending) return false;
+    const removed = !hybridLocal || (removeUiState(scope, draftSlot) && removeUiState(scope, "active-form"));
+    if (removed) completed.current = true;
+    return removed;
+  };
+  const leaveGuard = useUnsavedForm({ active: open, dirty,
+    onClose: () => { keyboard.hide(); onClose(); }, saveDraft: () => !saving && persistDraft(), discardDraft });
   const close = () => {
     keyboard.hide();
-    onClose();
+    if (saving) { ctx.showToast("انتظر تأكيد حفظ الحساب."); return; }
+    leaveGuard.requestClose();
   };
+  useBackLayer(open && saving, () => { close(); return true; }, 110);
+
+  useEffect(() => {
+    if (!open) { setDraftReady(false); return; }
+    completed.current = false;
+    const defaults = {
+      localCashAccount: initialAccount?.isCashAccount ?? false, name: initialAccount?.name ?? "",
+      category: initialAccount?.category ?? defaultCategory, phone: initialAccount?.phone ?? "", note: initialAccount?.note ?? "",
+      debtLimit: Boolean(initialAccount?.creditLimit), openingBalance: Boolean(initialAccount?.openingBalance),
+      openingAmount: initialAccount?.openingBalance ? String(initialAccount.openingBalance) : "",
+      openingDirection: initialAccount?.openingDirection ?? "debit", debtAmount: initialAccount?.creditLimit ? String(initialAccount.creditLimit) : "",
+      settlement: initialAccount?.settlement ?? false, documentNumber: initialAccount?.documentNumberRequired ?? false,
+      accountImage: initialAccount?.accountImage ?? "1", accountCurrency: initialAccount?.currency ?? "ريال",
+      sortOrder: String(initialAccount?.sortOrder ?? ctx.accounts.length + 1),
+      messageMethod: initialAccount?.messageMethod ?? "sms", sendMode: initialAccount?.sendMode ?? "never",
+    };
+    const saved = hybridLocal ? readUiState<typeof draft | null>(scope, draftSlot, null, (value) => {
+      if (!value || typeof value !== "object") return false;
+      const candidate = value as typeof draft;
+      const f = candidate.fields;
+      return candidate.version === 1 && candidate.recordId === (initialAccount?.id ?? "") &&
+        typeof candidate.submissionPending === "boolean" && matchesUiShape(f, defaults) &&
+        ["purchases", "sales", "clients", "employees", "transfers", "shop"].includes(f.category) &&
+        ["debit", "credit"].includes(f.openingDirection) && ["1", "2", "3"].includes(f.accountImage) &&
+        ["sms", "whatsapp"].includes(f.messageMethod) && ["auto", "confirm", "never"].includes(f.sendMode) &&
+        ctx.currencyCodes.includes(f.accountCurrency) &&
+        (!candidate.recordId || ctx.accounts.some((account) => account.id === candidate.recordId));
+    }) : null;
+    const next = saved?.fields ?? defaults;
+    initialFields.current = JSON.stringify(defaults);
+    setRestored(Boolean(saved)); setSubmissionPending(saved?.submissionPending ?? false);
+    setLocalCashAccount(next.localCashAccount); setName(next.name); setCategory(next.category); setPhone(next.phone); setNote(next.note);
+    setDebtLimit(next.debtLimit); setOpeningBalance(next.openingBalance); setOpeningAmount(next.openingAmount);
+    setOpeningDirection(next.openingDirection); setDebtAmount(next.debtAmount); setSettlement(next.settlement);
+    setDocumentNumber(next.documentNumber); setAccountImage(next.accountImage); setAccountCurrency(next.accountCurrency);
+    setSortOrder(next.sortOrder); setMessageMethod(next.messageMethod); setSendMode(next.sendMode); setDraftReady(true);
+  }, [open, scope, draftSlot, initialAccount?.id]);
+
+  useEffect(() => {
+    if (!hybridLocal || !open || !dirty || completed.current) return;
+    persistDraft();
+    const checkpoint = () => { if (!completed.current) persistDraft(); };
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [hybridLocal, open, dirty, fieldJson, submissionPending, scope, draftSlot]);
+
   if (!open) return null;
   const testId = mode === "compact" ? "account-form-compact" : "account-form-extended";
 
   const submitAccount = async () => {
     keyboard.hide();
+    if (saving || !draftReady || submissionPending) {
+      if (submissionPending) ctx.showToast("تأكيد حفظ الحساب السابق غير مكتمل. راجع قائمة الحسابات؛ لم يُعَد إرسال الطلب.");
+      return;
+    }
     if (!name.trim()) {
       triggerHaptic("warning");
       ctx.showToast("أدخل اسم الحساب أولًا");
@@ -11157,6 +11765,11 @@ function AccountCreateModal({
         (!initialAccount && openingBalance && parseArabicNumber(openingAmount) !== 0))) {
       ctx.showToast("بعض الإعدادات أو الرصيد الافتتاحي غير مدعومة في الإصدار المحلي بعد.");
       return;
+    }
+    if (hybridLocal) {
+      latestDraft.current = { ...latestDraft.current, submissionPending: true };
+      if (!persistDraft()) { ctx.showToast("تعذر حفظ المسودة محليًا؛ لم يُرسل الحساب."); return; }
+      setSubmissionPending(true);
     }
     setSaving(true);
     try {
@@ -11186,8 +11799,16 @@ function AccountCreateModal({
       );
       triggerHaptic("success");
       ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : import.meta.env.VITE_NASQO_HYBRID === "1" ? "تم إنشاء الحساب وحفظه محليًا" : "تم إنشاء الحساب وحفظه في السحابة");
+      completed.current = true;
+      if (hybridLocal) { removeUiState(scope, draftSlot); removeUiState(scope, "active-form"); }
+      setSubmissionPending(false);
       onClose();
     } catch (err) {
+      if (!(err instanceof UncertainWriteError)) {
+        setSubmissionPending(false);
+        latestDraft.current = { ...latestDraft.current, submissionPending: false };
+        if (hybridLocal) persistDraft();
+      }
       ctx.showToast(err instanceof Error ? err.message : "تعذر حفظ الحساب");
     } finally {
       setSaving(false);
@@ -11204,6 +11825,8 @@ function AccountCreateModal({
         aria-labelledby={`${testId}-title`}
       >
         <h2 id={`${testId}-title`}>{initialAccount ? "تعديل بيانات حساب" : "إضافة حساب جديد"}</h2>
+        {submissionPending ? <p role="status">تأكيد الحفظ غير مكتمل. راجع قائمة الحسابات قبل إنشاء حساب آخر؛ لم يُعَد إرسال الطلب.</p> : null}
+        <fieldset disabled={saving || submissionPending} style={{ display: "contents", border: 0 }}>
         {hybridLocal && <div className="account-check-row">
           <label><input type="checkbox" checked={localCashAccount} disabled={Boolean(initialAccount)}
             onChange={e=>setLocalCashAccount(e.target.checked)}/> حساب صندوق نقدي</label>
@@ -11476,15 +12099,17 @@ function AccountCreateModal({
             ) : null}
           </>
         )}
+        </fieldset>
         <div className="form-modal-actions">
           <button className="cancel" onClick={close}>
             إلغاء
           </button>
-          <button className="save" disabled={saving} onClick={submitAccount}>
+          <button className="save" disabled={saving || submissionPending} onClick={submitAccount}>
             {saving ? "جاري الحفظ..." : "حفظ"}
           </button>
         </div>
       </section>
+      <UnsavedFormPrompt guard={leaveGuard} />
     </div>
   );
 }

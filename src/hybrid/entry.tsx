@@ -31,6 +31,7 @@ import { useThemeMode } from "../utils/theme";
 import type { ErpWorkspaceData } from "../erp";
 
 import { hybridBridge } from "./bridge";
+import { observeHybridLifecycle } from "./lifecycleDiagnostics";
 import {
   validateHybridSnapshot,
   type HybridCapabilities,
@@ -73,6 +74,7 @@ function hydrateUiPreferencesFromHost(prefs?: HybridUiPreferences) {
 }
 
 function HybridRootApp() {
+  useEffect(observeHybridLifecycle, []);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
 
@@ -127,6 +129,12 @@ function HybridRootApp() {
       throw new Error(checked.reason);
     }
     const snap: HybridWorkspaceSnapshot = checked.value;
+    // The Android runtime owns one local workspace. Never hydrate UI recovery
+    // against a mismatched snapshot (including a stale/foreign workspace).
+    if (snap.workspaceId !== LOCAL_WORKSPACE_UID ||
+        (snap.workspace && (snap.workspace.id !== LOCAL_WORKSPACE_UID || snap.workspace.ownerId !== LOCAL_WORKSPACE_UID))) {
+      throw new Error("تعذر التحقق من مساحة العمل المحلية. لم تُستعد حالة سابقة.");
+    }
     setReview((snap as HybridWorkspaceSnapshot & {backupReview?:boolean}).backupReview===true);
     hybridBridge.setReadOnlyFinancialMode(Boolean(snap.capabilities?.readOnlyFinancial));
     hybridBridge.setLocalAccountCreation(snap.capabilities?.localAccountCreation === true);

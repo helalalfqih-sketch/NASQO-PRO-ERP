@@ -1,0 +1,54 @@
+✔ filterComboboxAccounts prioritizes preferred categories and ranks Arabic search queries (5.492804ms)
+✔ filterComboboxAccounts keeps selected account visible when truncated and expands with showAll (0.530158ms)
+✔ formatAccountOptionMeta formats Arabic category, code number, and phone cleanly (0.275642ms)
+✔ a recreated store retains a pending ID without storing financial payload (12.563099ms)
+✔ lost acknowledgement, recreated bridge and explicit Save recover by reads only (16.668351ms)
+✔ an absent receipt after timeout blocks resending but not an unrelated document (5.284683ms)
+✔ storage quota denial prevents sending a financial request (2.172922ms)
+✔ a different workspace cannot confirm a saved document with the same ID (2.000913ms)
+✔ a malformed success acknowledgement preserves the pending marker (1.898328ms)
+✔ acknowledged validation rejection permits correcting the same draft (1.220007ms)
+✔ fresh reads recover search, filters, scroll and draft identity without a memory cache (3.165941ms)
+✔ a missing/deleted record truncates restoration before its dependent routes (2.001265ms)
+✔ corrupt/version-mismatched or cross-workspace envelopes fall back safely (0.768611ms)
+✔ schema checks reject malformed UI fields and storage failure never claims success (7.865297ms)
+✔ discard removes only the selected UI draft, without touching records or other workspaces (0.634354ms)
+▶ Hybrid Bridge Contracts & Security Validation
+  ✔ accepts all 12 core commands plus domain commands in strict allowlist (1.040547ms)
+  ✔ rejects unauthorized actions and raw SQL/shell injection keys (0.477137ms)
+  ✔ enforces mandatory idempotencyKey on financial mutations (0.792668ms)
+  ✔ validates inbound responses and rejects malformed or unknown host events (0.682997ms)
+✔ Hybrid Bridge Contracts & Security Validation (5.703604ms)
+▶ NasqoHybridBridge Runtime & Duplicate Prevention
+  ✔ blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST (3.578597ms)
+  ✔ propagates Flutter service errors and timeouts without faking success (37.091226ms)
+  ✔ rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached (0.777333ms)
+✔ NasqoHybridBridge Runtime & Duplicate Prevention (42.310176ms)
+▶ Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ✔ hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge (3.945903ms)
+✔ Hybrid Service Adapter Simulated Flutter Host Round-Trip (4.258791ms)
+▶ Hybrid Routes Canonical Mapping
+  ✔ normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches (0.635929ms)
+✔ Hybrid Routes Canonical Mapping (0.854061ms)
+▶ Offline Hybrid Build Output Integrity (dist/hybrid)
+  ✔ produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code (37.810387ms)
+  ✔ prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge (0.829071ms)
+✔ Offline Hybrid Build Output Integrity (dist/hybrid) (38.89531ms)
+▶ Stage 2 Home Screen Batch 1 Requirements
+  ✔ validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads (0.858748ms)
+  ✔ computes signed multi-currency group balances accurately without mixing currencies (1.831624ms)
+  ✔ blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences (0.941525ms)
+  ✔ supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout (0.938518ms)
+✔ Stage 2 Home Screen Batch 1 Requirements (4.783443ms)
+✔ uses explicit journal legs for stock cost, tax and account reports (2.276079ms)
+▶ Legacy register restoration parity
+  ✔ preserves both original sides in account, statement and group reports, without fictitious counterpart (0.751566ms)
+✔ Legacy register restoration parity (0.823836ms)
+ℹ tests 32
+ℹ suites 7
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 514.701014

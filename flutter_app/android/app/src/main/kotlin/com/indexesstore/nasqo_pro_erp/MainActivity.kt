@@ -11,11 +11,29 @@ import java.io.OutputStream
 import java.util.concurrent.Executors
 import java.security.MessageDigest
 import android.net.Uri
+import android.os.Bundle
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
+    private val lifecycleInstance = java.util.UUID.randomUUID().toString()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        HybridLifecycleDiagnostics.log("activity-created", lifecycleInstance,
+            "savedState=${savedInstanceState != null}")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        HybridLifecycleDiagnostics.log("activity-resumed", lifecycleInstance)
+    }
+
+    override fun onPause() {
+        HybridLifecycleDiagnostics.log("activity-paused", lifecycleInstance)
+        super.onPause()
+    }
     private val backupIo = Executors.newSingleThreadExecutor()
     private var backupResult: MethodChannel.Result? = null
     private var exportFile: File? = null
@@ -208,6 +226,8 @@ class MainActivity : FlutterActivity() {
         }
     }
     override fun onDestroy() {
+        HybridLifecycleDiagnostics.log("activity-destroyed", lifecycleInstance,
+            "configurationChange=$isChangingConfigurations")
         backupIo.shutdown()
         super.onDestroy()
     }

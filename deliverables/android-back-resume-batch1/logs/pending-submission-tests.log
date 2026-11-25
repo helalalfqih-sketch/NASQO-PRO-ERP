@@ -1,0 +1,15 @@
+✔ a recreated store retains a pending ID without storing financial payload (11.616763ms)
+✔ lost acknowledgement, recreated bridge and explicit Save recover by reads only (18.995365ms)
+✔ an absent receipt after timeout blocks resending but not an unrelated document (6.007835ms)
+✔ storage quota denial prevents sending a financial request (2.419872ms)
+✔ a different workspace cannot confirm a saved document with the same ID (1.69806ms)
+✔ a malformed success acknowledgement preserves the pending marker (2.618525ms)
+✔ acknowledged validation rejection permits correcting the same draft (2.100542ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 233.89185

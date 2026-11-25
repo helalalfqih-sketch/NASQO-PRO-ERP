@@ -19,9 +19,11 @@ import type {
 import { hybridBridge, HybridBridgeError } from "./bridge";
 import {
   createIdempotencyKey,
+  validateHybridSnapshot,
   type HybridWorkspaceSnapshot,
 } from "./contracts";
 import type { User } from "./firebaseAuthStub";
+import { PendingSubmissionStore } from "./pendingSubmission";
 import { nativeDriveMarker, nativeDriveProfile, clearNativeDriveMarker, subscribeNativeDrive, connectNativeDrive, nativeIdentity } from "./cloudSession";
 
 export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
@@ -640,6 +642,46 @@ export async function createLedgerEntry(
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<string> {
   return runWithBrandLoader("جاري ترحيل العملية المالية...", async () => {
+    const workspaceId = uid || LOCAL_WORKSPACE_UID;
+    const documentId = entry.id;
+    let receipt: PendingSubmissionStore | undefined;
+    if (documentId) {
+      try {
+        receipt = new PendingSubmissionStore();
+        if (receipt.has(workspaceId, documentId)) {
+          // A previous send may have committed before its acknowledgement was
+          // lost. A fresh, read-only snapshot is the only recovery performed.
+          const raw = await hybridBridge.invoke("getSnapshot", { workspaceId, forceRefresh: true });
+          const checked = validateHybridSnapshot(raw);
+          if (!checked.valid || checked.value.workspaceId !== workspaceId ||
+              (checked.value.workspace && checked.value.workspace.id !== workspaceId)) {
+            throw new UncertainWriteError("تعذر مطابقة مساحة العمل عند التحقق من الحفظ.", "unreachable");
+          }
+          const verified = applyHybridSnapshot(checked.value);
+          if (verified.ledger.some((item) => item.id === documentId)) {
+            receipt.confirm(workspaceId, documentId);
+            return documentId;
+          }
+          throw new UncertainWriteError(
+            "لم يتأكد حفظ العملية السابقة. راجع السجل قبل المحاولة؛ لم يُعَد إرسال أي عملية مالية.",
+            "synced",
+          );
+        }
+        // Bootstrap may already contain the committed document even if the
+        // process died between receiving success and closing its draft.
+        if (activeBundle?.workspace?.id === workspaceId &&
+            activeBundle.ledger.some((item) => item.id === documentId)) {
+          return documentId;
+        }
+        receipt.mark(workspaceId, documentId);
+      } catch (err) {
+        if (err instanceof UncertainWriteError) throw err;
+        throw new UncertainWriteError(
+          "تعذر التحقق المحلي من تأكيد الحفظ. بقيت المسودة ولم تُرسل عملية مالية أخرى.",
+          "unreachable",
+        );
+      }
+    }
     const fingerprint = [
       entry.kind ?? "voucher",
       entry.accountId,
@@ -660,16 +702,19 @@ export async function createLedgerEntry(
         }
       >(
         "createLedgerEntry",
-        { workspaceId: uid || LOCAL_WORKSPACE_UID, payload: entry },
+        { workspaceId, payload: entry },
         {
           idempotencyKey: entry.id ? `document_${entry.id}` : createIdempotencyKey("createLedgerEntry", entry.accountId),
           dedupeKey: `createLedgerEntry:${fingerprint}`,
         },
       );
+      if (!res?.entry?.id || (documentId && res.entry.id !== documentId)) {
+        throw new UncertainWriteError("تأكيد الحفظ غير مكتمل. تحقق من السجل قبل المحاولة.", "unreachable");
+      }
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else if (activeBundle && res?.entry) {
-        const next = [...activeBundle.ledger, res.entry];
+        const next = [...activeBundle.ledger.filter((item) => item.id !== res.entry.id), res.entry];
         activeBundle = {
           ...activeBundle,
           ledger: next,
@@ -683,8 +728,22 @@ export async function createLedgerEntry(
         };
         notifyAllListeners(activeBundle);
       }
+      if (documentId) receipt?.confirm(workspaceId, documentId);
       return res.entry.id;
     } catch (err) {
+      if (documentId && receipt) {
+        if (err instanceof HybridBridgeError &&
+            ["INVALID_REQUEST", "UNAUTHORIZED_ACTION", "VALIDATION_ERROR", "DUPLICATE_REQUEST"].includes(err.code)) {
+          // These acknowledgements reject the request before a financial
+          // transaction commits. Timeout/service failure is never a rejection.
+          receipt.confirm(workspaceId, documentId);
+        } else {
+          throw err instanceof UncertainWriteError ? err : new UncertainWriteError(
+            "لم يصل تأكيد الحفظ. احتُفظ بمعرف العملية؛ راجع السجل قبل المحاولة ولن تُرسل العملية تلقائيًا.",
+            "unreachable",
+          );
+        }
+      }
       throw mapBridgeError(err);
     }
   });

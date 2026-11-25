@@ -1,0 +1,24 @@
+[WebServer] (node:10641) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:10654) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 8 tests using 1 worker
+
+(node:10678) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/hybrid-back-resume.spec.ts:21:1 › one correlated host back returns exactly one screen; home alone authorizes confirmation (1.7s)
+  ✓  2 tests/hybrid-back-resume.spec.ts:35:1 › nested React overlay is consumed before its menu and supplier route (1.2s)
+  ✓  3 tests/hybrid-back-resume.spec.ts:50:1 › re-delivery of one request never pops another screen (919ms)
+  ✓  4 tests/hybrid-back-resume.spec.ts:63:1 › real account combobox consumes back before its containing form layer (1.3s)
+  ✓  5 tests/hybrid-back-resume.spec.ts:78:1 › two distinct rapid presses do not skip an additional route or request exit (904ms)
+  ✓  6 tests/hybrid-back-resume.spec.ts:92:1 › uncorrelated host events cannot pop or grant home exit (632ms)
+  ✓  7 tests/hybrid-back-resume.spec.ts:99:1 › missing native reply transport never leaves the current document (5.2s)
+  ✓  8 tests/hybrid-back-resume.spec.ts:113:1 › visible keyboard consumes back before a route and preserves entered text (831ms)
+
+  8 passed (16.5s)
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

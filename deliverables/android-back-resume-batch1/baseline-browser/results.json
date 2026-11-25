@@ -1,0 +1,25 @@
+{
+  "environment": "Chromium production hybrid bundle; synthetic bridge; NOT Android",
+  "results": [
+    {
+      "name": "supplier-menu-consumes-back-before-screen",
+      "passed": false,
+      "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('supplier-screen')\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.be.visible\" with timeout 5000ms\n  - waiting for getByTestId('supplier-screen')\n"
+    },
+    {
+      "name": "supplier-route-restores-after-new-document",
+      "passed": false,
+      "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('supplier-screen')\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.be.visible\" with timeout 5000ms\n  - waiting for getByTestId('supplier-screen')\n"
+    },
+    {
+      "name": "missing-account-cold-restore-falls-back-safely",
+      "passed": true
+    },
+    {
+      "name": "invoice-back-protects-draft-and-restores-after-reload",
+      "passed": false,
+      "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('invoice-modal')\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.be.visible\" with timeout 5000ms\n  - waiting for getByTestId('invoice-modal')\n"
+    }
+  ],
+  "browserErrors": []
+}

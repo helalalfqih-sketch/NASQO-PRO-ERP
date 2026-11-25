@@ -12,6 +12,8 @@ import android.webkit.WebChromeClient
 import android.webkit.ConsoleMessage
 import android.webkit.WebResourceError
 import android.util.Log
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
@@ -24,6 +26,14 @@ import io.flutter.plugin.platform.PlatformViewFactory
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.util.UUID
+
+/** Ephemeral instance IDs only; never record URLs, workspace/record IDs or text. */
+internal object HybridLifecycleDiagnostics {
+    val processInstance: String = UUID.randomUUID().toString()
+    fun log(event: String, instance: String, detail: String = "") {
+        Log.i("NASQO_LIFECYCLE", "process=$processInstance instance=$instance event=$event $detail")
+    }
+}
 
 /**
  * Serves the bundled React ES modules from a local HTTPS origin.
@@ -50,9 +60,13 @@ private class OfflineHybridView(
 
     private val webView = WebView(context)
     private val channel = MethodChannel(messenger, "nasqo/offline_hybrid/$id")
+    private val instance = UUID.randomUUID().toString()
+    private var pageLoads = 0
     private var started = false
+    private var disposed = false
 
     init {
+        HybridLifecycleDiagnostics.log("webview-created", instance)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -70,22 +84,22 @@ private class OfflineHybridView(
         }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
-                Log.i("NASQO_HYBRID", "pageFinished url=$url")
-
+                pageLoads += 1
+                HybridLifecycleDiagnostics.log("page-finished", instance, "loads=$pageLoads")
             }
             override fun onReceivedError(
                 view: WebView,
                 request: WebResourceRequest,
                 error: WebResourceError
             ) {
-                Log.e("NASQO_HYBRID", "loadError=${request.url} code=${error.errorCode} reason=${error.description}")
+                Log.e("NASQO_HYBRID", "load-error code=${error.errorCode} mainFrame=${request.isForMainFrame}")
             }
             override fun onReceivedHttpError(
                 view: WebView,
                 request: WebResourceRequest,
                 response: WebResourceResponse
             ) {
-                Log.e("NASQO_HYBRID", "httpError=${request.url} status=${response.statusCode}")
+                Log.e("NASQO_HYBRID", "http-error status=${response.statusCode} mainFrame=${request.isForMainFrame}")
             }
             override fun shouldInterceptRequest(
                 view: WebView,
@@ -136,6 +150,44 @@ private class OfflineHybridView(
 
         channel.setMethodCallHandler { call, result ->
             when (call.method) {
+                "dispatchBack" -> {
+                    // Android dialogs and external Activities consume back
+                    // before Flutter. A WebView IME must consume it before JS.
+                    val event = call.arguments as? String
+                    if (!started || disposed || event == null || event.length > 1000) {
+                        result.success("unavailable")
+                    } else if (ViewCompat.getRootWindowInsets(webView)
+                            ?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
+                        ViewCompat.getWindowInsetsController(webView)?.hide(WindowInsetsCompat.Type.ime())
+                        webView.evaluateJavascript(
+                            "(function(){var e=document.activeElement;if(e&&typeof e.blur==='function')e.blur();})()", null)
+                        webView.clearFocus()
+                        HybridLifecycleDiagnostics.log("back-ime", instance)
+                        result.success("ime")
+                    } else {
+                        webView.evaluateJavascript(
+                            "(function(){return typeof window.__nasqoHybridReceive==='function' && window.__nasqoHybridReceive(${JSONObject.quote(event)});})()"
+                        ) { accepted ->
+                            // No bridge reply or listener is NEVER permission
+                            // to finish Activity. Flutter awaits a correlated reply.
+                            result.success(if (accepted == "true") "sent" else "unavailable")
+                        }
+                    }
+                }
+                "lifecycle" -> {
+                    val state = call.arguments as? String
+                    if (state in setOf("resumed", "inactive", "hidden", "paused", "detached")) {
+                        HybridLifecycleDiagnostics.log("flutter-$state", instance, "loads=$pageLoads")
+                        if (started && !disposed && state in setOf("inactive", "hidden", "paused")) {
+                            // Best-effort extra checkpoint; React also writes
+                            // every committed UI change, never only on pause.
+                            webView.evaluateJavascript(
+                                "window.dispatchEvent(new CustomEvent('nasqo:checkpoint'));", null)
+                        }
+                    }
+                    // Do not loadUrl/reload or synthesize financial requests.
+                    result.success(null)
+                }
                 "start" -> {
                     if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                         result.error("UNSUPPORTED", "WebView message listener is unavailable", null)
@@ -195,6 +247,8 @@ private class OfflineHybridView(
     override fun getView(): WebView = webView
 
     override fun dispose() {
+        disposed = true
+        HybridLifecycleDiagnostics.log("webview-disposed", instance, "loads=$pageLoads")
         channel.setMethodCallHandler(null)
         webView.stopLoading()
         webView.destroy()
