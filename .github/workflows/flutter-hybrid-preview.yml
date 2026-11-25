@@ -87,6 +87,7 @@ jobs:
           bash ../scripts/test-flutter-audit.sh
 
       - name: Build debug APK for review only
+        if: inputs.signed_candidate != true
         working-directory: flutter_app
         env:
           NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
@@ -97,6 +98,7 @@ jobs:
             --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
 
       - name: Upload isolated preview artifact
+        if: inputs.signed_candidate != true
         uses: actions/upload-artifact@v4
         with:
           name: nasqo-hybrid-debug-apk

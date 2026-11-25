@@ -145,3 +145,4 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 
 - Use the supplied complete NASQO calculator/cube/Arabic wordmark image for the launcher icon and startup screen. The matching source is `public/assets/aistudio/NASQO_PRO_ERP_800_022d325f.png`. Preserve its artwork and transparency.
 - Keep it inside adaptive-icon safe margins. Configure native resources after `flutter create` so Flutter's default icon cannot return. Preserve package/signing identity.
+- The Android display name under the launcher icon and in system app information must be «نسقو برو» in Arabic. Keep the applicationId unchanged.

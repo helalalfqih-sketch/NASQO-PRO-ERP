@@ -11,7 +11,7 @@ export function configureAndroidBrand(androidMain=path.join(root,'flutter_app/an
   for(const name of fs.readdirSync(res)) {
     if(name.startsWith('mipmap-'))fs.rmSync(path.join(res,name,'ic_launcher.png'),{force:true});
   }
-  write('values/nasqo_brand.xml','<resources><color name="nasqo_launch_background">#F7F9FD</color></resources>\n');
+  write('values/nasqo_brand.xml','<resources><color name="nasqo_launch_background">#F7F9FD</color><string name="nasqo_app_name">نسقو برو</string></resources>\n');
   write('mipmap-anydpi/ic_launcher.xml',`<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item><shape><solid android:color="@color/nasqo_launch_background"/><size android:width="64dp" android:height="64dp"/></shape></item>
     <item android:width="52dp" android:height="52dp" android:gravity="center"><bitmap android:src="@drawable/nasqo_logo" android:gravity="fill"/></item>
@@ -36,6 +36,8 @@ export function configureAndroidBrand(androidMain=path.join(root,'flutter_app/an
   const manifest=path.join(androidMain,'AndroidManifest.xml');
   let xml=fs.readFileSync(manifest,'utf8');
   if(!/android:icon="[^"]+"/.test(xml))throw new Error('Missing Android application icon');
+  if(!/android:label="[^"]+"/.test(xml))throw new Error('Missing Android application label');
+  xml=xml.replace(/android:label="[^"]+"/,'android:label="@string/nasqo_app_name"');
   xml=xml.replace(/android:icon="[^"]+"/,'android:icon="@mipmap/ic_launcher"');
   fs.writeFileSync(manifest,xml);
 }
