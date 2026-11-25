@@ -65,7 +65,12 @@ export const SCHEMA_LIMITS = {
   skuMax: 64,
 } as const;
 
+export type CashierSettings = {
+  warehouseId: string; cashboxId: number | null; accountId: string; currency: CurrencyCode; quickItemIds: string[];
+};
+
 export type WorkspaceSettings = {
+  cashierSettings?: CashierSettings;
   /** Identity of immutable imported evidence; never a mutable company setting. */
   legacySourceSha?: string;
   id: string;

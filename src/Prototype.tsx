@@ -404,6 +404,7 @@ type LiveWorkspaceState = {
   openAccountCreate: (mode?: AccountCreateMode, defaultCategory?: AccountCategory) => void;
   openAccountReference: (select:(id:string)=>void, cash?:boolean, currency?:string)=>void;
   openCashboxReference: (select:((id:number)=>void)|undefined,currency:string)=>void;
+  openCashier: () => void;
   openInvoice: (defaultCategory?: AccountCategory, intent?: InvoiceIntent) => void;
   openVendorInvoice: (account?: AccountRecord, intent?: InvoiceIntent) => void;
   openInvoiceEdit: (entry: LedgerEntryRecord, account?: AccountRecord, sourceKey?: string) => void;
@@ -1154,6 +1155,7 @@ export function AuthenticatedWorkspace({
     editingEntry?: LedgerEntryRecord;
     intent: InvoiceIntent;
     kindOverride?: "purchase" | "sale";
+    cashier?: boolean;
     revision: number;
   }>({ intent: "invoice", revision: 0 });
   const returnOverlay = useRef<OverlayKind>(null);
@@ -1547,7 +1549,7 @@ export function AuthenticatedWorkspace({
       setUnavailableDraft(true);
       return true;
     }
-    setInvoiceSeed((seed) => ({ account, editingEntry: entry, intent: saved.intent,
+    setInvoiceSeed((seed) => ({ account, editingEntry: entry, intent: saved.intent, cashier: saved.cashier,
       kindOverride: saved.kindOverride, revision: seed.revision + 1 }));
     setOverlay("invoice");
     showToast("استُعيدت المسودة المحلية. تابعها أو تجاهلها صراحةً قبل إنشاء مستند آخر.");
@@ -1578,6 +1580,15 @@ export function AuthenticatedWorkspace({
     },
     [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
+
+  const openCashier = useCallback(() => {
+    dismissKeyboard();
+    if (recoverExistingInvoiceDraft()) return;
+    const prefs = workspace?.cashierSettings;
+    setInvoiceSeed(value => ({ account: accounts.find(a => a.id === prefs?.accountId),
+      intent: "invoice", kindOverride: "sale", cashier: true, revision: value.revision + 1 }));
+    setOverlay("invoice");
+  }, [accounts, workspace, dismissKeyboard, recoverExistingInvoiceDraft]);
 
   const openVendorInvoice = useCallback(
     (account?: AccountRecord, intent: InvoiceIntent = "invoice") => {
@@ -2241,7 +2252,7 @@ export function AuthenticatedWorkspace({
       const simple: Record<string, () => FlowScreen> = { shop: shopScreen, warehouses: warehousesScreen,
         "items-catalog": itemsScreen, "daily-journal": dailyJournalScreen,
         "analytics-dashboard": analyticsDashboardScreen, "system-settings": systemSettingsScreen,
-        "whatsapp-settings": whatsappSettingsScreen };
+        "cashier-settings": cashierSettingsScreen, "whatsapp-settings": whatsappSettingsScreen };
       return simple[id]?.() ?? null;
     };
     const restored = readValidatedRoutes(user.uid, (id) => Boolean(resolve(id)));
@@ -2253,7 +2264,7 @@ export function AuthenticatedWorkspace({
     const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
     if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
       setInvoiceSeed((seed) => ({ account: accounts.find((a) => a.id === draft.accountId),
-        editingEntry: ledger.find((e) => e.id === draft.editingEntryId), intent: draft.intent,
+        editingEntry: ledger.find((e) => e.id === draft.editingEntryId), intent: draft.intent, cashier: draft.cashier,
         kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
       setOverlay("invoice");
     } else if (draft) setUnavailableDraft(true);
@@ -2435,6 +2446,7 @@ export function AuthenticatedWorkspace({
       openAccountCreate,
       openAccountReference,
       openCashboxReference,
+      openCashier,
       openInvoice,
       openVendorInvoice,
       openInvoiceEdit,
@@ -2546,6 +2558,7 @@ export function AuthenticatedWorkspace({
       openDrawer,
       openErpModule,
       openExportMenu,
+      openCashier,
       openInvoice,
       openInvoiceEdit,
       openPrintOptions,
@@ -2747,6 +2760,7 @@ export function AuthenticatedWorkspace({
         />
         <InvoiceModal
           key={invoiceSeed.revision}
+          cashier={invoiceSeed.cashier}
           initialAccount={invoiceSeed.account}
           editingEntry={invoiceSeed.editingEntry}
           intent={invoiceSeed.intent}
@@ -6290,6 +6304,7 @@ type DraftInvoiceRow = {
 };
 
 type InvoiceUiDraft = {
+  cashier?: boolean;
   version: 1;
   sourceSha?: string;
   intent: InvoiceIntent;
@@ -6359,6 +6374,7 @@ function unitPriceForProduct(item: InventoryItemRecord, unitNum: 1 | 2 | 3, kind
 }
 
 function InvoiceModal({
+  cashier = false,
   open,
   initialAccount,
   editingEntry,
@@ -6367,6 +6383,7 @@ function InvoiceModal({
   onClose,
   onAddAccount,
 }: {
+  cashier?: boolean;
   open: boolean;
   initialAccount?: AccountRecord;
   editingEntry?: LedgerEntryRecord;
@@ -6376,11 +6393,13 @@ function InvoiceModal({
   onAddAccount: () => void;
 }) {
   const ctx = useWorkspace();
+  const cashierPrefs = cashier && !editingEntry ? ctx.workspace?.cashierSettings : undefined;
+
   const [restoredDraft] = useState(() => {
     if (import.meta.env.VITE_NASQO_HYBRID !== "1") return null;
     const saved = readUiState<InvoiceUiDraft | null>(ctx.uid, "invoice-draft", null, isInvoiceUiDraft);
     if (!saved || saved.intent !== intent || saved.editingEntryId !== editingEntry?.id ||
-        saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "")) return null;
+        saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? (cashier ? "" : ctx.accounts[0]?.id ?? ""))) return null;
     if (!canRestoreInvoiceDraft(saved, ctx)) return null;
     return saved;
   });
@@ -6391,7 +6410,7 @@ function InvoiceModal({
     ? editingEntry.payment === "cash"
       ? "cash"
       : "credit"
-    : initialAccount?.isCashAccount
+    : cashier ? "cash" : initialAccount?.isCashAccount
       ? "cash"
       : "credit";
   const initialKind: "purchase" | "sale" =
@@ -6420,24 +6439,26 @@ function InvoiceModal({
   );
   const [expenseCategory, setExpenseCategory] = useState(restoreField("expenseCategory", editingEntry?.expenseCategory ?? ""));
   const [currency, setCurrency] = useState<CurrencyCode>(
-    restoreField("currency", editingEntry?.currency ?? initialAccount?.currency ?? "ريال"),
+    restoreField("currency", editingEntry?.currency ?? cashierPrefs?.currency ?? initialAccount?.currency ?? "ريال"),
   );
   const [exchangeRate, setExchangeRate] = useState(
     restoreField("exchangeRate", editingEntry ? String(editingEntry.exchangeRate || 1) : "1"),
   );
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    () => restoreField("cashboxId", editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id),
+    () => restoreField("cashboxId", editingEntry?.cashboxId ?? (cashier ? cashierPrefs?.cashboxId ?? undefined : ctx.cashboxes[0]?.id)),
   );
   const [warehouseId, setWarehouseId] = useState(
-    restoreField("warehouseId", editingEntry?.warehouseId ||
+    restoreField("warehouseId", editingEntry?.warehouseId || (cashier ? cashierPrefs?.warehouseId || "" :
       ctx.warehouses.find((w) => w.isDefault)?.id ||
       ctx.warehouses[0]?.id ||
-      ""),
+      "")),
   );
   const [accountId, setAccountId] = useState(
-    restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? ""),
+    restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? (cashier ? "" : ctx.accounts[0]?.id ?? "")),
   );
   const [itemSearch, setItemSearch] = useState(restoreField("itemSearch", ""));
+  const [quickPage, setQuickPage] = useState(0);
+  const quickItems = (cashierPrefs?.quickItemIds ?? []).map(id => ctx.inventory.find(i => i.id === id && i.isActive !== false)).filter((i): i is InventoryItemRecord => Boolean(i));
   const [rows, setRows] = useState<DraftInvoiceRow[]>(restoreField("rows", [
     { rowId: "row_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
   ]));
@@ -6488,7 +6509,7 @@ function InvoiceModal({
   if (loadingLines && !restoredDraft) initialFields.current = fieldJson;
   const dirty = Boolean(restoredDraft) || fieldJson !== initialFields.current;
   const completed = useRef(false);
-  const currentDraft: InvoiceUiDraft = { version: 1, intent, kindOverride, accountId,
+  const currentDraft: InvoiceUiDraft = { version: 1, cashier, intent, kindOverride, accountId,
     sourceSha: restoredDraft?.sourceSha ?? legacyCopySourceSha(editingEntry?.id),
     editingEntryId: editingEntry?.id, entryId: draftNewEntryIdRef.current, fields };
   const latestDraft = useRef(currentDraft);
@@ -6532,10 +6553,10 @@ function InvoiceModal({
   }, [hybridLocal, open, dirty, fieldJson, ctx.uid]);
 
   useEffect(() => {
-    if (!cashboxId && ctx.cashboxes[0]?.id) {
+    if (!cashier && !cashboxId && ctx.cashboxes[0]?.id) {
       setCashboxId(ctx.cashboxes[0].id);
     }
-  }, [cashboxId, ctx.cashboxes]);
+  }, [cashier, cashboxId, ctx.cashboxes]);
 
   useEffect(() => {
     if (!open) {
@@ -6648,10 +6669,10 @@ function InvoiceModal({
 
   if (!open) return null;
 
-  const invoiceAccounts=hybridLocal&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount):ctx.accounts;
-  const invoiceCashboxes=hybridLocal?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
-  const effectiveCashboxId=hybridLocal?(invoiceCashboxes.find(cb=>cb.id===cashboxId)?.id??invoiceCashboxes[0]?.id):cashboxId;
-  const selectedAccount = invoiceAccounts.find((a) => a.id === accountId) ?? invoiceAccounts[0];
+  const invoiceAccounts=(hybridLocal||cashier)&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount):ctx.accounts;
+  const invoiceCashboxes=(hybridLocal||cashier)?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
+  const effectiveCashboxId=(hybridLocal||cashier)?(invoiceCashboxes.find(cb=>cb.id===cashboxId)?.id??(cashier?undefined:invoiceCashboxes[0]?.id)):cashboxId;
+  const selectedAccount = invoiceAccounts.find((a) => a.id === accountId) ?? (cashier ? undefined : invoiceAccounts[0]);
   const selectedWarehouse = ctx.warehouses.find((w) => w.id === warehouseId);
   const accountSummary = selectedAccount
     ? computeAccountSummary(selectedAccount, ctx.ledger, currency)
@@ -6923,6 +6944,12 @@ function InvoiceModal({
       return;
     }
 
+    if(cashier && content === "items" && !selectedWarehouse) {
+      focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر مخزنًا للفاتورة قبل الحفظ."}); return;
+    }
+    if(cashier && payment === "cash" && !effectiveCashboxId) {
+      focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر صندوقًا نقديًا من عملة الفاتورة قبل الحفظ."}); return;
+    }
     if(metadataOnly&&editingEntry){
       setSaving(true);
       try{
@@ -7565,6 +7592,13 @@ function InvoiceModal({
                   </button>
                 ) : null}
               </div>
+
+              {cashier && !itemSearch.trim() ? <section className="cashier-quick-grid" aria-label="أصناف الكاشير" data-testid="cashier-quick-items">
+                {quickItems.slice(quickPage * 24, (quickPage + 1) * 24).map(item =>
+                  <button type="button" key={item.id} className="ref-btn" onClick={() => pickProductIntoInvoice(item)}>{item.name}</button>)}
+                {quickItems.length > 24 ? <div className="cashier-quick-pager"><button className="ref-btn" disabled={quickPage === 0} onClick={() => setQuickPage(p => p - 1)}>أصناف سابقة</button><span>{quickPage + 1} / {Math.ceil(quickItems.length / 24)}</span><button className="ref-btn" disabled={(quickPage + 1) * 24 >= quickItems.length} onClick={() => setQuickPage(p => p + 1)}>أصناف تالية</button></div> : null}
+                {!quickItems.length ? <p>لم تخصص أصنافًا سريعة. يمكنك البحث عن الصنف أو تخصيصه من إعدادات الكاشير.</p> : null}
+              </section> : null}
 
               {itemSearch.trim() ? (
                 <div
@@ -10976,6 +11010,8 @@ function AppDrawer({
         { label: "عروض الأسعار", icon: FileTextIcon, target: "quotes" },
         { label: "الطلبيات", icon: FilePlusIcon, target: "orders" },
         { label: "سلة المحذوفات", icon: TrashIcon, target: "trash" },
+        { label: "الكاشير", icon: ReaderIcon, action: () => { onClose(); ctx.openCashier(); } },
+        { label: "إعدادات الكاشير", icon: GearIcon, action: () => { onClose(); ctx.flowRef.current?.push(cashierSettingsScreen()); } },
         { label: "الإعدادات", icon: GearIcon, target: "settings" },
       ],
     },
@@ -13764,6 +13800,90 @@ function ResetDatabaseConfirmModal({
   );
 }
 
+function cashierSettingsScreen(): FlowScreen {
+  return { id: "cashier-settings", headerHeight: 50,
+    header: () => <SimpleAppHeader title="إعدادات الكاشير" onBack={() => window.dispatchEvent(new Event("nasqo:cashier-back"))} />,
+    render: flow => <CashierSettingsBody flow={flow} /> };
+}
+
+function CashierSettingsBody({ flow }: { flow: FlowControls }) {
+  const ctx = useWorkspace();
+  const keyboard = useKeyboard();
+  const [draft, setDraft] = useState(() => ctx.workspace?.cashierSettings ?? {
+    warehouseId: ctx.warehouses.find(w => w.isDefault)?.id ?? "", cashboxId: null as number | null,
+    accountId: "", currency: ctx.workspace?.defaultCurrency ?? "ريال", quickItemIds: [] as string[],
+  });
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [editingItems, setEditingItems] = useState(false);
+  const [clearPrompt, setClearPrompt] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [savedJson, setSavedJson] = useState(JSON.stringify(draft));
+  const dirty = JSON.stringify(draft) !== savedJson;
+  const [leavePrompt, setLeavePrompt] = useState(false);
+  const source = useRef({uid:ctx.uid, sha:ctx.workspace?.legacySourceSha});
+  useBackLayer(true, () => {
+    keyboard.hide();
+    if (saving) return true;
+    if (clearPrompt) setClearPrompt(false);
+    else if (editingItems) setEditingItems(false);
+    else if (leavePrompt) setLeavePrompt(false);
+    else if (dirty) setLeavePrompt(true);
+    else flow.pop();
+    return true;
+  }, 30);
+  const accounts = ctx.accounts.filter(a => !a.isCashAccount && a.currency === draft.currency);
+  const boxes = ctx.cashboxes.filter(b => b.currencyCode === draft.currency && b.isActive !== false && b.state !== 0);
+  const items = ctx.inventory.filter(i => i.isActive !== false && `${i.name} ${i.sku ?? ""} ${i.legacyId ?? ""}`.includes(search.trim()));
+  const update = (patch: Partial<typeof draft>) => { setDraft(d => ({ ...d, ...patch })); setNotice(""); setError(""); };
+  const save = async () => {
+    keyboard.hide(); setError(""); setNotice("");
+    if (!ctx.workspace || (source.current.uid !== ctx.uid || source.current.sha !== ctx.workspace.legacySourceSha)) { setError("تغيرت مساحة العمل. افتح الإعدادات من جديد."); return; }
+    if ((draft.warehouseId && !ctx.warehouses.some(w => w.id === draft.warehouseId)) ||
+        (draft.accountId && !accounts.some(a => a.id === draft.accountId)) ||
+        (draft.cashboxId !== null && !boxes.some(b => b.id === draft.cashboxId)) ||
+        !ctx.currencyCodes.includes(draft.currency) ||
+        draft.quickItemIds.some(id => !ctx.inventory.some(i => i.id === id && i.isActive !== false))) {
+      setError("أحد الاختيارات لم يعد متاحًا أو لا يطابق العملة. راجع المراجع والأصناف قبل الحفظ."); return;
+    }
+    setSaving(true);
+    try {
+      await saveWorkspaceSettings(ctx.uid, { ...ctx.workspace, cashierSettings: draft });
+      setSavedJson(JSON.stringify(draft)); setNotice("تم حفظ إعدادات الكاشير. تطبق على فاتورة كاشير جديدة فقط.");
+    } catch (e) { setError(e instanceof Error ? e.message : "لم تحفظ الإعدادات. حاول مجددًا."); }
+    finally { setSaving(false); }
+  };
+  const requestBack = () => { keyboard.hide(); if (saving) return; if (dirty) setLeavePrompt(true); else flow.pop(); };
+  useEffect(() => { window.addEventListener("nasqo:cashier-back", requestBack); return () => window.removeEventListener("nasqo:cashier-back", requestBack); });
+  return <MobileScroll className="app-screen"><main className="cashier-settings-page" data-testid="cashier-settings-screen">
+    <p>تهيئة الأصناف السريعة والمخزن والصندوق والعميل والعملة. حفظ الإعدادات لا يرحّل فاتورة ولا يغيّر رصيدًا.</p>
+    <fieldset disabled={saving}>
+      <section className="cashier-settings-card"><h3>أصناف الكاشير</h3><p>تخصيص الأصناف المعروضة كأزرار سريعة في فاتورة الكاشير</p>
+        <strong data-testid="cashier-selected-count">تم تخصيص {draft.quickItemIds.length} صنفًا</strong>
+        <div className="cashier-settings-actions"><button className="ref-btn" onClick={() => { keyboard.hide(); setEditingItems(v => !v); }}>تخصيص الأصناف</button>
+        <button className="ref-btn" disabled={!draft.quickItemIds.length} onClick={() => { keyboard.hide(); setClearPrompt(true); }}>مسح الأصناف السريعة</button></div>
+        {clearPrompt ? <div role="alert"><p>إزالة الاختصارات فقط؟ لن تُحذف الأصناف أو أرصدتها. يلزم حفظ الإعدادات لتثبيت التغيير.</p><button className="ref-btn" onClick={() => { update({quickItemIds: []}); setClearPrompt(false); }}>تأكيد مسح الاختصارات</button><button className="ref-btn" onClick={() => setClearPrompt(false)}>تراجع</button></div> : null}
+        {editingItems ? <section data-testid="cashier-item-picker"><KeyboardInput aria-label="بحث أصناف الكاشير" placeholder="ابحث بالاسم أو الباركود أو الرقم" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} />
+          {items.slice(page * 30, (page + 1) * 30).map(item => <label className="cashier-item-option" key={item.id}><input type="checkbox" checked={draft.quickItemIds.includes(item.id)} onChange={e => update({ quickItemIds: e.target.checked ? [...draft.quickItemIds, item.id] : draft.quickItemIds.filter(id => id !== item.id) })}/><span>{item.name}<small>{item.sku}</small></span></label>)}
+          {!items.length ? <p>لا توجد أصناف مطابقة</p> : null}
+          <div className="cashier-settings-actions"><button className="ref-btn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>السابق</button><span>{page + 1} / {Math.max(1, Math.ceil(items.length / 30))}</span><button className="ref-btn" disabled={(page + 1) * 30 >= items.length} onClick={() => setPage(p => p + 1)}>التالي</button></div>
+          <button className="ref-btn" onClick={() => { keyboard.hide(); setEditingItems(false); }}>إنهاء اختيار الأصناف</button>
+        </section> : null}
+      </section>
+      <label className="cashier-settings-card">المخزن الافتراضي<select aria-label="المخزن الافتراضي" value={draft.warehouseId} onChange={e => update({warehouseId:e.target.value})}><option value="">غير محدد</option>{ctx.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+      <label className="cashier-settings-card">الصندوق النقدي الافتراضي<select aria-label="الصندوق النقدي الافتراضي" value={draft.cashboxId ?? ""} onChange={e => update({cashboxId:e.target.value ? Number(e.target.value) : null})}><option value="">غير محدد</option>{boxes.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+      <label className="cashier-settings-card">حساب العميل الافتراضي<select aria-label="حساب العميل الافتراضي" value={draft.accountId} onChange={e => update({accountId:e.target.value})}><option value="">غير محدد</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+      <label className="cashier-settings-card">العملة الافتراضية<select aria-label="عملة الكاشير" value={draft.currency} onChange={e => update({currency:e.target.value as CurrencyCode, accountId:"", cashboxId:null})}>{ctx.currencyCodes.map(c => <option key={c} value={c}>{c}</option>)}</select><small>تغيير العملة يتطلب إعادة اختيار صندوق وحساب مطابقين.</small></label>
+      {error ? <p role="alert" className="auth-error">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
+      <div className="cashier-settings-actions"><button className="ref-btn green" onClick={() => void save()}>{saving ? "جارٍ الحفظ…" : "حفظ إعدادات الكاشير"}</button><button className="ref-btn" onClick={requestBack}>إلغاء والعودة</button></div>
+      <button className="ref-btn" disabled={dirty} onClick={() => { keyboard.hide(); ctx.openCashier(); }}>فتح الكاشير</button>
+      {leavePrompt ? <div role="alert"><p>هناك تعديلات لم تحفظ.</p><button className="ref-btn" onClick={() => setLeavePrompt(false)}>متابعة التعديل</button><button className="ref-btn" onClick={() => flow.pop()}>تجاهل والعودة</button></div> : null}
+    </fieldset>
+  </main></MobileScroll>;
+}
+
 function systemSettingsScreen(): FlowScreen {
   return {
     id: "system-settings",
@@ -13778,6 +13898,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
   ctx.flowRef.current = flow;
   return (
     <SystemSettingsPage
+      onOpenCashierSettings={() => flow.push(cashierSettingsScreen())}
       uid={ctx.uid}
       userEmail={ctx.userEmail}
       workspace={ctx.workspace}

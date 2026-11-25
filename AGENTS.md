@@ -166,3 +166,10 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Never replace a missing/zero optional-unit factor with 1 silently. Unit 2 is a whole positive count of base units; unit 3 is a whole positive count of unit 2. Keep supported multi-unit fields operational and disable selecting an undefined default unit.
 - Catalog validation must explain the actual rejected field, retain the form, and avoid a green success-style error toast. Catalog creation does not establish stock/cost; unchanged precise average costs must survive metadata edits without rounding.
 - Keep the default-unit and expiry controls in separate usable rows on narrow screens and with enlarged text.
+
+## Cashier defaults and shortcuts (user direction, 2026-11-25)
+
+- Provide integrated cashier settings for warehouse, cashbox, customer account, currency and quick item shortcuts. Store these in workspace SQLite settings and preserve them through native backup/restore.
+- Defaults initialize a new cashier invoice only. Reuse the existing invoice posting path; never alter old invoices or stock when saving settings. Missing defaults remain explicit, without selecting an arbitrary account/cashbox.
+- Clear shortcuts only after confirmation, and persist on Save; never delete products or stock. All shortcut selections and cashier buttons remain reachable by paging.
+- Changing currency clears incompatible customer/cashbox choices. Preserve edits on failed settings save; header/system Back must handle unsaved changes. Keep the NASQO visual style and narrow/dark layouts.

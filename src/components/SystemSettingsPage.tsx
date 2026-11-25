@@ -35,6 +35,7 @@ import { triggerHaptic } from "../utils/haptics";
 import type { ThemeMode } from "../utils/theme";
 
 interface SystemSettingsPageProps {
+  onOpenCashierSettings?: () => void;
   uid: string;
   userEmail: string;
   workspace: WorkspaceSettings | null;
@@ -67,6 +68,7 @@ interface SystemSettingsPageProps {
 }
 
 export function SystemSettingsPage({
+  onOpenCashierSettings,
   uid,
   userEmail,
   workspace,
@@ -225,6 +227,7 @@ export function SystemSettingsPage({
   return (
     <MobileScroll className="app-screen sys-settings-scroll">
       <main className="sys-settings-page page-with-footer" data-testid="system-settings-screen">
+        {onOpenCashierSettings ? <button className="ref-btn blue" onClick={onOpenCashierSettings} data-testid="settings-cashier">إعدادات الكاشير</button> : null}
         {/* Top Real Backup Status Card */}
         <section
           className={`sys-top-backup-card ${backupStatus.overdue ? "overdue" : "healthy"}`}

@@ -16243,3 +16243,23 @@ button.currencies-footer-hint:hover {
 .item-history-dialog .item-history-scope .item-history-scope-actions button { min-height: 44px; }
 .items-unit-help { margin: 6px 0; font-size: 12px; line-height: 1.7; color: var(--nasqo-muted, #64748b); }
 .items-optional-units-box > .items-unit-help { padding-inline: 10px; }
+
+/* Cashier configuration shares NASQO controls and remains one scroll surface. */
+.cashier-settings-page { padding: 16px 14px 100px; direction: rtl; }
+.cashier-settings-page fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.cashier-settings-card { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--brand-color, #4438ca); border-radius: 14px; padding: 16px; margin-bottom: 14px; background: var(--nasqo-surface, #fff); color: var(--nasqo-ink, #172234); }
+.cashier-settings-card h3, .cashier-settings-card p { margin: 0; }
+.cashier-settings-card select, .cashier-settings-card input:not([type=checkbox]) { width: 100%; min-width: 0; min-height: 48px; font: inherit; color: inherit; background: transparent; border: 1px solid #b9c5d3; border-radius: 10px; padding: 8px; }
+.cashier-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 10px; }
+.cashier-settings-page .ref-btn, .cashier-quick-grid .ref-btn { min-height: 44px; white-space: normal; }
+.cashier-item-option { display: flex; align-items: center; gap: 10px; min-height: 48px; padding-block: 6px; border-bottom: 1px solid #ccd3df; }
+.cashier-item-option input { width: 22px; height: 22px; flex-shrink: 0; }
+.cashier-item-option small { display: block; opacity: .7; }
+.cashier-quick-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; padding-block: 10px; }
+.cashier-quick-grid p { grid-column: 1 / -1; }
+
+.cashier-quick-pager { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cashier-settings-page { color: var(--nasqo-ink, #172234); }
+.cashier-settings-page .ref-btn:not(.green), .cashier-quick-grid .ref-btn { background: var(--nasqo-home-primary-bg, #4338ca); color: #fff; }
+.cashier-settings-page .ref-btn:disabled, .cashier-quick-grid .ref-btn:disabled { cursor: default; opacity: .5; }
+.cashier-quick-grid .ref-btn { overflow-wrap: anywhere; }

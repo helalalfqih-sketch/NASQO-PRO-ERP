@@ -113,6 +113,7 @@ function openAndInit(filePath: string): DatabaseSync {
   if (!wsCols.some((c) => c.name === "closed_until_date")) {
     db.exec("ALTER TABLE workspaces ADD COLUMN closed_until_date TEXT;");
   }
+  if (!wsCols.some(c => c.name === "cashier_settings_json")) db.exec("ALTER TABLE workspaces ADD COLUMN cashier_settings_json TEXT;");
   const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
   if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
     db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
@@ -790,6 +791,7 @@ function mapWorkspaceRow(r: Record<string, unknown>): WorkspaceSettings {
     whatsappProvider: r.whatsapp_provider === "external" ? "external" : "nasqo",
     whatsappInstantEnabled: Boolean(r.whatsapp_instant_enabled),
     whatsappPhone: String(r.whatsapp_phone ?? ""),
+    ...(r.cashier_settings_json ? { cashierSettings: JSON.parse(String(r.cashier_settings_json)) } : {}),
     ...(r.closed_until_date ? { closedUntilDate: String(r.closed_until_date) } : {}),
   };
 }
@@ -1183,6 +1185,18 @@ export function saveWorkspaceSettingsRow(
 ): WorkspaceSettings {
   ensureEmptyWorkspace(db, workspaceId);
   const current = mapWorkspaceRow(db.prepare("SELECT * FROM workspaces WHERE id = ?").get(workspaceId) as Record<string, unknown>);
+  const cashier = updates.cashierSettings ?? current.cashierSettings;
+  if (updates.cashierSettings !== undefined) {
+    const c = updates.cashierSettings;
+    if (!c || Object.keys(c).sort().join() !== "accountId,cashboxId,currency,quickItemIds,warehouseId" ||
+        typeof c.warehouseId !== "string" || typeof c.accountId !== "string" || typeof c.currency !== "string" ||
+        !Array.isArray(c.quickItemIds) || c.quickItemIds.length > 20000 || new Set(c.quickItemIds).size !== c.quickItemIds.length ||
+        c.quickItemIds.some(id => typeof id !== "string") || (c.cashboxId !== null && !Number.isSafeInteger(c.cashboxId))) throw new SqliteValidationError("إعدادات الكاشير غير صالحة.");
+    const exists = (table: string, id: string | number) => db.prepare(`SELECT id FROM ${table} WHERE workspace_id = ? AND id = ?`).get(workspaceId, id);
+    if ((c.warehouseId && !exists("warehouses", c.warehouseId)) || (c.accountId && !db.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND id = ? AND currency = ? AND is_cash_account = 0").get(workspaceId,c.accountId,c.currency)) ||
+        (c.cashboxId !== null && !db.prepare("SELECT id FROM cashboxes WHERE workspace_id = ? AND id = ? AND currency_code = ? AND state = 1").get(workspaceId,c.cashboxId,c.currency)) ||
+        !db.prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?").get(workspaceId,c.currency) || c.quickItemIds.some(id => !exists("inventory_items",id))) throw new SqliteValidationError("راجع مراجع الكاشير والعملة والأصناف المتاحة.");
+  }
   const clean = sanitizeWorkspacePayload({ ...current, ...updates, ownerId: workspaceId });
   const rawClosedUntil =
     updates.closedUntilDate !== undefined ? String(updates.closedUntilDate ?? "").trim() : (current.closedUntilDate ?? "");
@@ -1193,7 +1207,7 @@ export function saveWorkspaceSettingsRow(
   const now = nowIso();
   db.prepare(
     `UPDATE workspaces
-     SET company_name = ?, default_currency = ?, whatsapp_provider = ?, whatsapp_instant_enabled = ?, whatsapp_phone = ?, closed_until_date = ?, updated_at = ?
+     SET company_name = ?, default_currency = ?, whatsapp_provider = ?, whatsapp_instant_enabled = ?, whatsapp_phone = ?, closed_until_date = ?, cashier_settings_json = ?, updated_at = ?
      WHERE id = ?`,
   ).run(
     clean.companyName,
@@ -1202,6 +1216,7 @@ export function saveWorkspaceSettingsRow(
     clean.whatsappInstantEnabled ? 1 : 0,
     clean.whatsappPhone,
     closedUntilDate,
+    cashier ? JSON.stringify(cashier) : null,
     now,
     workspaceId,
   );
@@ -1214,6 +1229,7 @@ export function saveWorkspaceSettingsRow(
     whatsappProvider: clean.whatsappProvider,
     whatsappInstantEnabled: clean.whatsappInstantEnabled,
     whatsappPhone: clean.whatsappPhone,
+    ...(cashier ? { cashierSettings: cashier } : {}),
     ...(closedUntilDate ? { closedUntilDate } : {}),
   };
 }
@@ -5274,6 +5290,17 @@ export function restoreUnifiedJsonBundle(
       productionOrders: Array.isArray(erpIn?.productionOrders) ? erpIn.productionOrders : [],
       costCenters: Array.isArray(erpIn?.costCenters) ? erpIn.costCenters : [],
     });
+
+    if (wsIn.cashierSettings) {
+      const c = wsIn.cashierSettings;
+      if (!Array.isArray(c.quickItemIds)) throw new SqliteValidationError("أصناف الكاشير في النسخة غير صالحة.");
+      saveWorkspaceSettingsRow(db, workspaceId, { cashierSettings: { ...c,
+        warehouseId: c.warehouseId ? whMap.get(c.warehouseId) ?? "" : "",
+        accountId: c.accountId ? accMap.get(c.accountId)?.id ?? "" : "",
+        cashboxId: c.cashboxId === null ? null : cashboxMap.get(c.cashboxId) ?? null,
+        quickItemIds: c.quickItemIds.map(id => invMap.get(id)).filter((id): id is string => Boolean(id)),
+      } });
+    }
 
     writeAudit(db, workspaceId, workspaceId, "restore_json", "bundle", "restore", {
       groupsCount,
