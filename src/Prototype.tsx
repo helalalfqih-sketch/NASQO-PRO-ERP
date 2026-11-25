@@ -1,3 +1,4 @@
+import { ReferenceManagerDialog } from "./components/ReferenceManagerDialog";
 import { CashboxReferenceManager } from "./components/CashboxReferenceManager";
 import { useReportPreview, reportTotalText, reportSources, useReportSource, buildStatementReport, reportSummaryText, exportReport, type ReportSource, type ReportDocument, outputBytes } from "./utils/reportDocument";
 import { formatQuantity } from "./utils/quantityFormat";
@@ -1156,10 +1157,18 @@ export function AuthenticatedWorkspace({
     revision: number;
   }>({ intent: "invoice", revision: 0 });
   const returnOverlay = useRef<OverlayKind>(null);
+  const referenceAppRoot=useRef<HTMLDivElement>(null);
   const [referenceAccount,setReferenceAccount]=useState<{select:(id:string)=>void;cash:boolean;currency?:string;scope:string}|null>(null);
   const [referenceCashbox,setReferenceCashbox]=useState<{select?:((id:number)=>void);currency:string;scope:string}|null>(null);
   const openAccountReference=useCallback((select:(id:string)=>void,cash=false,currency?:string)=>{setReferenceAccount({select,cash,currency,scope:user.uid});},[user.uid]);
   const openCashboxReference=useCallback((select:((id:number)=>void)|undefined,currency:string)=>{setReferenceCashbox({select,currency,scope:user.uid});},[user.uid]);
+  useLayoutEffect(()=>{
+    if(!referenceCashbox&&!referenceAccount)return;
+    const background=Array.from(referenceAppRoot.current?.children??[]).filter((node):node is HTMLElement=>node instanceof HTMLElement&&!node.matches('.reference-manager-layer, .reference-account-layer'));
+    const previous=background.map(node=>node.inert);
+    background.forEach(node=>{node.inert=true;});
+    return()=>background.forEach((node,index)=>{node.inert=previous[index];});
+  },[Boolean(referenceCashbox),Boolean(referenceAccount)]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const flowRef = useRef<FlowControls | null>(null);
@@ -2697,7 +2706,7 @@ export function AuthenticatedWorkspace({
   return (
     <WorkspaceContext.Provider value={ctx}>
       <UiResumeWorkspaceContext.Provider value={hybrid.isHybrid ? workspace?.id ?? "" : ""}>
-      <div className="nasqo-app" dir="rtl">
+      <div ref={referenceAppRoot} className={`nasqo-app${referenceCashbox || referenceAccount ? " has-reference-manager" : ""}`} dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
         {unavailableDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
           <button className="center-modal-backdrop" aria-label="الاحتفاظ بالمسودة" onClick={() => setUnavailableDraft(false)} />
@@ -11733,13 +11742,24 @@ function TransactionModal({
 
 function ReferenceAccountManager({cash,currency,onSelect,onClose}:{cash:boolean;currency?:string;onSelect:(id:string)=>void;onClose:()=>void}){
  const ctx=useWorkspace(),keyboard=useKeyboard();const [query,setQuery]=useState("");const [edit,setEdit]=useState<AccountRecord|null|undefined>();const [pendingDelete,setPendingDelete]=useState<AccountRecord|null>(null);const [error,setError]=useState("");const [busy,setBusy]=useState(false);
- useBackLayer(edit===undefined,()=>{keyboard.hide();if(pendingDelete)setPendingDelete(null);else onClose();return true;},300);
+ const back=()=>{if(busy)return;keyboard.hide();setError("");if(pendingDelete)setPendingDelete(null);else onClose();};
+ useBackLayer(edit===undefined,()=>{back();return true;},300);
  const rows=ctx.accounts.filter(a=>(!cash||a.isCashAccount)&&(!currency||a.currency===currency)&&matchesArabicSearch(a.name,query));
- return <div className="reference-account-layer" style={{position:"fixed",inset:0,zIndex:340}}>
- {edit===undefined?<div className="center-modal-layer"><section className="transaction-modal" role="dialog" aria-label="إدارة الحساب المرجعي" dir="rtl"><h2>{cash?"حسابات الصناديق":"إدارة الحساب المرجعي"}</h2><p>الحفظ هنا لا يرحّل المستند المفتوح.</p><KeyboardInput aria-label="بحث الحساب المرجعي" value={query} onChange={e=>setQuery(e.target.value)}/><button onClick={()=>{keyboard.hide();setEdit(null);}}>إضافة حساب</button>
- <div style={{maxHeight:"45vh",overflowY:"auto"}}>{rows.map(a=><div key={a.id}><button onClick={()=>{keyboard.hide();onSelect(a.id);}}>{a.name} — اختيار والعودة</button><button onClick={()=>setEdit(a)}>تعديل {a.name}</button><button onClick={()=>setPendingDelete(a)}>حذف {a.name}</button></div>)}</div>
- {pendingDelete?<div role="alertdialog" aria-label="تأكيد حذف الحساب"><p>حذف «{pendingDelete.name}»؟ السجل المرتبط بالحركات محمي.</p><button disabled={busy} onClick={async()=>{setBusy(true);try{await deleteAccount(ctx.uid,pendingDelete.id);setPendingDelete(null);}catch(e){setError(e instanceof Error?e.message:"تعذر الحذف");}finally{setBusy(false);}}}>تأكيد الحذف</button><button onClick={()=>setPendingDelete(null)}>إلغاء الحذف</button></div>:null}
- {error?<p role="alert">{error}</p>:null}<button onClick={()=>{keyboard.hide();onClose();}}>إلغاء والعودة</button></section></div>:<AccountCreateModal key={edit?.id??"reference-new"} mode="extended" open initialAccount={edit??undefined} defaultCategory={cash?"shop":"clients"} defaultCash={cash} defaultCurrency={currency} onSaved={onSelect} onClose={()=>setEdit(undefined)}/>}
+ const startEdit=(account:AccountRecord|null)=>{keyboard.hide();setError("");setEdit(account);};
+ return <div className="reference-account-layer">
+ {edit===undefined?<ReferenceManagerDialog title={pendingDelete?"تأكيد حذف الحساب":cash?"حسابات الصناديق":"إدارة الحساب المرجعي"} description="الحفظ هنا لا يرحّل المستند المفتوح." onClose={back} busy={busy} alert={Boolean(pendingDelete)} testId="reference-account-manager" footer={<>
+  <button className="reference-button secondary" disabled={busy} onClick={back}>{pendingDelete?"إلغاء الحذف":"إلغاء والعودة"}</button>
+  {pendingDelete?<button className="reference-button danger" disabled={busy} onClick={async()=>{setBusy(true);setError("");try{await deleteAccount(ctx.uid,pendingDelete.id);setPendingDelete(null);}catch(e){setError(e instanceof Error?e.message:"تعذر الحذف");}finally{setBusy(false);}}}>تأكيد الحذف</button>:<button className="reference-button primary" onClick={()=>startEdit(null)}>إضافة حساب</button>}
+ </>}>
+ {pendingDelete?<p>حذف «{pendingDelete.name}»؟ السجل المرتبط بالحركات محمي.</p>:<>
+  <label className="reference-field"><span>بحث الحساب المرجعي</span><KeyboardInput aria-label="بحث الحساب المرجعي" placeholder="اكتب اسم الحساب..." value={query} onChange={e=>setQuery(e.target.value)}/></label>
+  <div className="reference-manager-list">{rows.map(a=><article className="reference-manager-row" key={a.id}>
+   <div className="reference-row-heading"><strong>{a.name}</strong><span>{a.currency}</span></div>
+   <div className="reference-row-actions"><button className="reference-button primary" aria-label={`${a.name} — اختيار والعودة`} onClick={()=>{keyboard.hide();onSelect(a.id);}}>اختيار والعودة</button><button className="reference-button secondary" aria-label={`تعديل ${a.name}`} onClick={()=>startEdit(a)}>تعديل</button><button className="reference-button danger" aria-label={`حذف ${a.name}`} onClick={()=>{keyboard.hide();setError("");setPendingDelete(a);}}>حذف</button></div>
+  </article>)}{!rows.length?<p className="reference-empty">لا توجد حسابات مطابقة.</p>:null}</div>
+ </>}
+ {error?<p className="reference-error" role="alert">{error}</p>:null}
+ </ReferenceManagerDialog>:<AccountCreateModal key={edit?.id??"reference-new"} mode="extended" open initialAccount={edit??undefined} defaultCategory={cash?"shop":"clients"} defaultCash={cash} defaultCurrency={currency} onSaved={onSelect} onClose={()=>setEdit(undefined)}/>}
  </div>;
 }
 
@@ -12978,7 +12998,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
             <Cross2Icon />
           </button>
           <h2 id="cashboxes-report-title">صناديق النقدية والتدفق النقدي</h2>
-          {usesNativeDocumentOutput()?<button onClick={()=>ctx.openCashboxReference(undefined,currencyFilter==="الكل"?defaultCurrency:currencyFilter)}>إدارة الصناديق</button>:null}
+          {usesNativeDocumentOutput()?<button className="reference-header-action" onClick={()=>ctx.openCashboxReference(undefined,currencyFilter==="الكل"?defaultCurrency:currencyFilter)}>إدارة الصناديق</button>:null}
           <span className="smart-modal-spacer" aria-hidden="true" />
         </header>
 

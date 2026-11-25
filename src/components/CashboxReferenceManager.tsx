@@ -6,20 +6,36 @@ import {createIdempotencyKey,type HybridWorkspaceSnapshot} from '../hybrid/contr
 import {applyHybridSnapshot} from '../hybrid/serviceAdapter';
 import type {AccountRecord,CashboxRecord} from '../types';
 import {AccountSelectCombobox} from './AccountSelectCombobox';
+import {ReferenceManagerDialog} from './ReferenceManagerDialog';
 
 export function CashboxReferenceManager({workspace,currency,accounts,boxes,onSelect,onClose,onAddAccount,blocked}:{blocked?:boolean;workspace:string;currency:string;accounts:readonly AccountRecord[];boxes:readonly CashboxRecord[];onSelect?:(id:number)=>void;onClose:()=>void;onAddAccount:(select:(id:string)=>void)=>void}){
  const keyboard=useKeyboard();const [query,setQuery]=useState('');const [editing,setEditing]=useState<CashboxRecord|null|undefined>();const [name,setName]=useState(''),[accountId,setAccountId]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const gate=useRef(false);const [confirmArchive,setConfirmArchive]=useState(false);
- useBackLayer(!blocked,()=>{if(!gate.current){keyboard.hide();onClose();}return true;},250);
+ const back=()=>{if(gate.current)return;keyboard.hide();setError('');if(confirmArchive)setConfirmArchive(false);else if(editing!==undefined)setEditing(undefined);else onClose();};
+ // The account combobox (200) must close before this editor (150).
+ useBackLayer(!blocked,()=>{back();return true;},150);
  const scoped=boxes.filter(b=>b.currencyCode===currency&&b.name.includes(query));
  const eligible=accounts.filter(a=>a.isCashAccount&&a.currency===currency);
+ const edit=(box:CashboxRecord|null)=>{keyboard.hide();setError('');setEditing(box);setName(box?.name??'');setAccountId(box&&'accountId' in box?String(box.accountId):'');};
  async function save(active=true){if(gate.current)return;gate.current=true;setBusy(true);setError('');keyboard.hide();try{
   const result=await hybridBridge.invoke<'saveCashbox',{cashbox:CashboxRecord;snapshot:HybridWorkspaceSnapshot}>('saveCashbox',{workspaceId:workspace,payload:{...(editing?{id:editing.id}:{}),name,currencyCode:currency,accountId,isActive:active}},{idempotencyKey:createIdempotencyKey('saveCashbox')});
-  applyHybridSnapshot(result.snapshot);if(active&&onSelect){onSelect(result.cashbox.id);onClose();}else setEditing(undefined);
+  applyHybridSnapshot(result.snapshot);setConfirmArchive(false);if(active&&onSelect){onSelect(result.cashbox.id);onClose();}else setEditing(undefined);
  }catch(e){setError(e instanceof Error?e.message:'تعذر حفظ الصندوق');}finally{gate.current=false;setBusy(false);}}
- return <div className="center-modal-layer" style={{zIndex:310}} data-testid="cashbox-reference-manager"><section className="transaction-modal" role="dialog" aria-label="إدارة الصناديق" dir="rtl"><h2>إدارة الصناديق — {currency}</h2><p>إنشاء الصندوق لا يحفظ السند أو يرحّله. الربط بحساب نقدي صريح من العملة نفسها.</p><KeyboardInput aria-label="البحث عن صندوق" value={query} onChange={e=>setQuery(e.target.value)}/>
- {scoped.map(box=><div key={box.id}><button disabled={box.isActive===false||box.state===0} onClick={()=>{onSelect?.(box.id);onClose();}}>{box.name} — {onSelect?'اختيار والعودة':'إغلاق'}</button><button onClick={()=>{setEditing(box);setName(box.name);setAccountId('accountId' in box?String(box.accountId):'');}}>تعديل {box.name}</button></div>)}
- <button onClick={()=>{setEditing(null);setName('');setAccountId('');}}>صندوق جديد</button>
- {editing!==undefined?<fieldset disabled={busy}><KeyboardInput aria-label="اسم الصندوق الجديد" value={name} onChange={e=>setName(e.target.value)}/><AccountSelectCombobox accounts={eligible} value={accountId} onChange={setAccountId} ariaLabel="حساب ترحيل الصندوق" onAddAccount={()=>onAddAccount(setAccountId)}/><button onClick={()=>void save(true)}>{onSelect?'حفظ واختيار':'حفظ الصندوق'}</button>{editing?<button onClick={()=>setConfirmArchive(true)}>أرشفة الصندوق</button>:null}<button onClick={()=>setEditing(undefined)}>إلغاء التعديل</button></fieldset>:null}
- {confirmArchive?<div role="alertdialog" aria-label="تأكيد أرشفة الصندوق"><p>أرشفة «{editing?.name}»؟ تبقى الحركات محفوظة.</p><button disabled={busy} onClick={()=>{setConfirmArchive(false);void save(false);}}>تأكيد الأرشفة</button><button onClick={()=>setConfirmArchive(false)}>إلغاء الأرشفة</button></div>:null}
- {error?<p role="alert">{error}</p>:null}<button disabled={busy} onClick={()=>{keyboard.hide();onClose();}}>إلغاء والعودة</button></section></div>;
+ return <ReferenceManagerDialog title={confirmArchive?'تأكيد أرشفة الصندوق':editing!==undefined?`${editing?'تعديل':'إضافة'} صندوق — ${currency}`:`إدارة الصناديق — ${currency}`} description="إنشاء الصندوق لا يحفظ السند أو يرحّله. الربط بحساب نقدي صريح من العملة نفسها." onClose={back} busy={busy} hidden={blocked} alert={confirmArchive} testId="cashbox-reference-manager" footer={<>
+  <button className="reference-button secondary" disabled={busy} onClick={back}>{confirmArchive?'إلغاء الأرشفة':editing!==undefined?'إلغاء التعديل':'إلغاء والعودة'}</button>
+  {confirmArchive?<button className="reference-button danger" disabled={busy} onClick={()=>void save(false)}>تأكيد الأرشفة</button>:editing!==undefined?<button className="reference-button primary" disabled={busy||!name.trim()||!accountId} onClick={()=>void save(true)}>{busy?'جاري الحفظ...':onSelect?'حفظ واختيار':'حفظ الصندوق'}</button>:<button className="reference-button primary" onClick={()=>edit(null)}>صندوق جديد</button>}
+ </>}>
+ {confirmArchive?<p>أرشفة «{editing?.name}»؟ تبقى الحركات محفوظة.</p>:editing!==undefined?<fieldset className="reference-manager-fields" disabled={busy}>
+  <label className="reference-field"><span>اسم الصندوق</span><KeyboardInput aria-label="اسم الصندوق الجديد" value={name} onChange={e=>setName(e.target.value)}/></label>
+  <div className="reference-field"><span>حساب ترحيل الصندوق · {currency}</span><AccountSelectCombobox accounts={eligible} value={accountId} onChange={setAccountId} ariaLabel="حساب ترحيل الصندوق" onAddAccount={()=>{keyboard.hide();onAddAccount(setAccountId);}}/></div>
+  {editing?<button className="reference-button danger" onClick={()=>{keyboard.hide();setConfirmArchive(true);}}>أرشفة الصندوق</button>:null}
+ </fieldset>:<>
+  <label className="reference-field"><span>البحث عن صندوق</span><KeyboardInput aria-label="البحث عن صندوق" placeholder="اكتب اسم الصندوق..." value={query} onChange={e=>setQuery(e.target.value)}/></label>
+  <div className="reference-manager-list">{scoped.map(box=><article className="reference-manager-row" key={box.id}>
+   <div className="reference-row-heading"><strong>{box.name}</strong><span>{box.isActive===false||box.state===0?'مؤرشف':currency}</span></div>
+   <div className="reference-row-actions"><button className="reference-button secondary" onClick={()=>edit(box)} aria-label={`تعديل ${box.name}`}>تعديل</button>
+   {onSelect?<button className="reference-button primary" disabled={box.isActive===false||box.state===0} onClick={()=>{keyboard.hide();onSelect(box.id);onClose();}} aria-label={`${box.name} — اختيار والعودة`}>اختيار والعودة</button>:null}</div>
+  </article>)}{!scoped.length?<p className="reference-empty">لا توجد صناديق مطابقة لهذه العملة والبحث.</p>:null}</div>
+ </>}
+ {error?<p className="reference-error" role="alert">{error}</p>:null}
+ </ReferenceManagerDialog>;
 }

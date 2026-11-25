@@ -15,6 +15,7 @@ s.inventory=Array.from({length:12},(_,i)=>({...s.inventory[0],id:`item-${i}`,nam
 function host(state:any){
  const w=window as any;sessionStorage.clear();const erpKey="acceptance-erp:"+location.search;const keptErp=localStorage.getItem(erpKey);localStorage.clear();if(keptErp)localStorage.setItem(erpKey,keptErp);state.erpData=JSON.parse(localStorage.getItem(erpKey)||'{"employees":[],"leaveRequests":[],"deals":[],"purchaseOrders":[],"boms":[],"productionOrders":[],"costCenters":[]}');if(location.search.includes("empty"))state.inventory=[];if(location.search.includes("large"))state.ledger=Array.from({length:516},(_,i)=>({...state.ledger[0],id:"row-"+i,entryNumber:i+1,amount:1,details:"حركة عربية "+(i+1),currency:"دولار"}));w.auditCommands=[];w.auditFiles=[];w.canvasText=[];
  const fill=CanvasRenderingContext2D.prototype.fillText;CanvasRenderingContext2D.prototype.fillText=function(t:any,...args:any[]){w.canvasText.push(String(t));return (fill as any).call(this,t,...args)};
+ if(location.search.includes('reference-long')){const cash=state.accounts.find((a:any)=>a.isCashAccount);state.accounts.push(...Array.from({length:40},(_,i)=>({...cash,id:'reference-cash-'+i,name:'حساب نقدي اصطناعي طويل للاختبار '+(i+1)})));}
  if(location.search.includes('settings-legacy-on'))state.uiPreferences.extendedSettings={passwordLock:true,backupReminderOnExit:true,sellWithoutBalance:true};
  const allowed=new Set(['saveWorkspaceSettings','saveAccount','saveCashbox','saveErpRecords','backupWorkspace','getSnapshot','navigate','goBack','showMessage','changeCurrency','saveUiPreferences','getProductPriceStats','getInventoryMovementsReport','getCashboxesReport','getInvoiceDetail','beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport','printDocument','exportPdf','shareText','cloudIdentityAction','googleDriveAction','localToolsAction','legacyArchiveAction']);
  let doc:any;
@@ -67,6 +68,7 @@ try{
  await manager.getByRole('button',{name:'صندوق جديد',exact:true}).click();
  await manager.getByLabel('اسم الصندوق الجديد',{exact:true}).fill('صندوق الرحلة');
  await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();
+ await page.screenshot({path:`${out}/cashbox-linked-accounts.png`,animations:"disabled"});
  await page.getByRole('button',{name:'إضافة حساب',exact:true}).click();
  await page.getByRole('textbox',{name:'اسم الحساب',exact:true}).fill('حساب صندوق الرحلة');
  await page.getByTestId('account-form-extended').getByRole('button',{name:'حفظ واختيار',exact:true}).click();
@@ -77,6 +79,84 @@ try{
  await expect(page.getByTestId('transaction-amount')).toHaveValue('23');
  await expect(page.getByLabel('صندوق النقد',{exact:true})).toHaveValue('99');
  const writes=(await commands()).filter((r:any)=>['saveAccount','saveCashbox','createLedgerEntry','postStockInvoice'].includes(r.action));assert.deepEqual(writes.map((r:any)=>r.action),['saveAccount','saveCashbox']);return{correct:true,parentAmountPreserved:true,parentNotPosted:true};
+ });
+
+ const openReferenceEditor=async()=>{
+  await page.getByRole('button',{name:'الإجراءات السريعة',exact:true}).click();await page.getByTestId('home-quick-voucher').click();
+  await page.getByTestId('transaction-amount').fill('23');
+  await page.getByRole('button',{name:'إدارة صندوق السند',exact:true}).click();
+  const manager=page.getByTestId('cashbox-reference-manager');
+  await manager.getByRole('button',{name:'صندوق جديد',exact:true}).click();
+  await manager.getByLabel('اسم الصندوق الجديد',{exact:true}).fill('صندوق اصطناعي محفوظ في النموذج');
+  return manager;
+ };
+ let backSequence=0;
+ const backReference=async()=>{await page.evaluate(id=>(window as any).auditEmit('backPressed',{requestId:id}),`reference-${++backSequence}`);await page.waitForTimeout(250);};
+ const assertNoPosting=async()=>assert(!(await commands()).some((r:any)=>['createLedgerEntry','postStockInvoice','postFreeInvoice'].includes(r.action)));
+ await run('reference-account-cancel-and-system-back',async()=>{
+  const manager=await openReferenceEditor();
+  await manager.getByRole('combobox',{name:'حساب ترحيل الصندوق',exact:true}).click();
+  await expect(manager.getByRole('listbox')).toBeVisible();
+  await backReference();await expect(manager.getByRole('listbox')).toHaveCount(0);
+  await expect(manager.getByLabel('اسم الصندوق الجديد')).toHaveValue('صندوق اصطناعي محفوظ في النموذج');
+  await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();
+  const accounts=page.getByTestId('reference-account-manager');await expect(accounts).toBeVisible();await expect(manager).toBeHidden();
+  await expect(page.getByTestId('transaction-modal')).toBeHidden();
+  await accounts.getByRole('button',{name:/^حذف /}).first().click();await expect(accounts.getByRole('alertdialog')).toBeVisible();
+  await backReference();await expect(accounts.getByRole('alertdialog')).toHaveCount(0);await expect(accounts).toBeVisible();
+  await accounts.getByRole('button',{name:'إلغاء والعودة',exact:true}).click();
+  await expect(manager.getByLabel('اسم الصندوق الجديد')).toHaveValue('صندوق اصطناعي محفوظ في النموذج');
+  await backReference();await expect(manager.getByRole('button',{name:'صندوق جديد',exact:true})).toBeVisible();
+  await backReference();await expect(manager).toHaveCount(0);await expect(page.getByTestId('transaction-amount')).toHaveValue('23');
+  await assertNoPosting();assert(!(await commands()).some((r:any)=>['saveCashbox','saveAccount','deleteAccount'].includes(r.action)));
+  return{correct:true,oneStepPerBack:true,cancelNoWrites:true,parentAmountPreserved:true};
+ });
+ await run('reference-account-select-and-delete-rejection',async()=>{
+  const manager=await openReferenceEditor();await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();
+  const accounts=page.getByTestId('reference-account-manager');
+  await accounts.getByRole('button',{name:/^حذف /}).first().click();await accounts.getByRole('button',{name:'تأكيد الحذف',exact:true}).click();
+  await expect(accounts.getByRole('alert')).toBeVisible();await expect(accounts.getByRole('alertdialog')).toBeVisible();
+  await accounts.getByRole('button',{name:'إلغاء الحذف',exact:true}).click();
+  await accounts.getByRole('button',{name:/اختيار والعودة/}).first().click();await expect(accounts).toHaveCount(0);
+  await expect(manager.getByRole('combobox',{name:'حساب ترحيل الصندوق'})).toContainText('حساب اصطناعي');
+  await expect(manager.getByLabel('اسم الصندوق الجديد')).toHaveValue('صندوق اصطناعي محفوظ في النموذج');
+  await assertNoPosting();return{correct:true,failedDeleteRetained:true,selectionReturnsToEditor:true};
+ });
+
+ await run('reference-edit-and-archive-cancel',async()=>{
+  const manager=await openReferenceEditor();await manager.getByRole('button',{name:'إلغاء التعديل',exact:true}).click();
+  await manager.getByRole('button',{name:/^تعديل /}).first().click();
+  const originalName=await manager.getByLabel('اسم الصندوق الجديد').inputValue();
+  await manager.getByRole('button',{name:'أرشفة الصندوق',exact:true}).click();await expect(manager.getByRole('alertdialog')).toBeVisible();
+  await backReference();await expect(manager.getByRole('alertdialog')).toHaveCount(0);await expect(manager.getByLabel('اسم الصندوق الجديد')).toHaveValue(originalName);
+  await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();
+  const accounts=page.getByTestId('reference-account-manager');await accounts.getByRole('button',{name:/^تعديل /}).first().click();
+  await expect(page.getByTestId('account-form-extended')).toBeVisible();await expect(accounts).toHaveCount(0);await expect(manager).toBeHidden();
+  await page.getByTestId('account-form-extended').getByRole('button',{name:'إلغاء',exact:true}).click();await expect(accounts).toBeVisible();
+  await accounts.getByRole('button',{name:'إلغاء والعودة',exact:true}).click();await expect(manager.getByLabel('اسم الصندوق الجديد')).toHaveValue(originalName);
+  assert(!(await commands()).some((r:any)=>['saveCashbox','saveAccount'].includes(r.action)));await assertNoPosting();return{correct:true,archiveCanceled:true,editCanceled:true};
+ });
+ await run('reference-long-list-scroll',async()=>{
+  const manager=await openReferenceEditor();await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();
+  const accounts=page.getByTestId('reference-account-manager');const last=accounts.getByRole('button',{name:'حساب نقدي اصطناعي طويل للاختبار 40 — اختيار والعودة',exact:true});
+  await last.scrollIntoViewIfNeeded();await expect(last).toBeInViewport();
+  await expect(accounts.getByRole('button',{name:'إلغاء والعودة',exact:true})).toBeInViewport();
+  await page.screenshot({path:`${out}/reference-long-list.png`,animations:'disabled'});
+  await last.click();await expect(manager.getByRole('combobox',{name:'حساب ترحيل الصندوق'})).toContainText('للاختبار 40');
+  await assertNoPosting();return{correct:true,all41AccountsReachable:true,fixedFooterReachable:true};
+ });
+ for(const variant of ['narrow','landscape','dark'])await run('reference-layout-'+variant,async()=>{
+  await page.setViewportSize(variant==='landscape'?{width:740,height:360}:{width:320,height:640});
+  const manager=await openReferenceEditor();await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();
+  if(variant==='dark')await page.evaluate(()=>document.documentElement.classList.add('dark'));
+  const accounts=page.getByTestId('reference-account-manager');await expect(accounts).toBeVisible();
+  await expect(manager).toBeHidden();await expect(page.getByTestId('transaction-modal')).toBeHidden();
+  await expect(accounts.locator('.reference-manager-dialog')).toHaveCSS('opacity','1');
+  const layout=await accounts.evaluate(el=>{const panel=el.querySelector('.reference-manager-dialog')!;const box=panel.getBoundingClientRect();const footer=el.querySelector('footer')!.getBoundingClientRect();return{width:box.width,height:box.height,x:box.x,y:box.y,bottom:footer.bottom,viewportWidth:innerWidth,viewportHeight:innerHeight,overflow:panel.scrollWidth>panel.clientWidth+1,buttons:Array.from(el.querySelectorAll('footer button')).map(b=>b.getBoundingClientRect().height)};});
+  assert(!layout.overflow,JSON.stringify(layout));assert(layout.x>=0&&layout.x+layout.width<=layout.viewportWidth);assert(layout.y>=0&&layout.bottom<=layout.viewportHeight,JSON.stringify(layout));assert(layout.buttons.every(n=>n>=43.9),JSON.stringify(layout));
+  await page.screenshot({path:`${out}/reference-layout-${variant}-accounts.png`,animations:"disabled"});
+  await accounts.getByRole('button',{name:'إلغاء والعودة',exact:true}).click();await expect(manager).toBeVisible();
+  await assertNoPosting();await page.evaluate(()=>document.documentElement.classList.remove('dark'));await page.setViewportSize({width:360,height:800});return{correct:true,layout};
  });
  for(const mode of ['on','off'])await run('settings-legacy-'+mode,async()=>{
  await emit('settings');await page.getByRole('tab',{name:'المنشأة',exact:true}).click();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).toBeDisabled();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).not.toBeChecked();

@@ -152,3 +152,10 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Android inventory reports must show the available estimated remaining value explicitly, separately from approved valuation. Never label an excluded, unapproved valuation as an ordinary zero stock value.
 - Use the selected price basis for comparison estimates, retaining signed quantities and separate currencies. A displayed estimate must not approve quantities/costs, post entries, or unlock invoice posting. Keep financial consumers on approved `remainingValue` only.
 - Keep estimate and approval status distinct in report exports as well as the on-screen footer. Private backup comparisons stay outside the repository.
+
+## Integrated reference management (user direction, 2026-11-25)
+
+- Cashbox/account reference editors must use the NASQO header, field, action and scrolling patterns. Do not ship raw browser buttons or visibly stacked management forms.
+- Keep the originating invoice/voucher mounted with its inputs intact, but hide/inert covered dialogs. Only the current management step is visible and interactive.
+- System Back closes the account combobox before the cashbox editor, a confirmation before its editor, and reference management before the originating document. Management save/select/cancel must never post that document.
+- Verify rendered narrow/landscape/dark layouts and reachable list/footer actions with synthetic data; a passing bridge test alone is not mobile visual acceptance.

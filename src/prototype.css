@@ -16175,3 +16175,52 @@ button.currencies-footer-hint:hover {
 .items-catalog-actions-row button { min-height: 44px; }
 .items-catalog-form-card select { min-width: 0; max-width: 100%; }
 @media(max-width:380px) { .items-catalog-form-card .items-catalog-defaults-row { align-items: stretch; } .items-default-unit-radios { flex-basis: 100%; } }
+
+/* Reference management belongs to the same NASQO flow, never stacked raw forms. */
+.nasqo-app.has-reference-manager > .center-modal-layer:not(.reference-manager-layer) {
+  visibility: hidden;
+  pointer-events: none;
+}
+.reference-account-layer { position: absolute; inset: 0; z-index: 340; }
+.reference-manager-layer { z-index: 310; }
+.reference-manager-layer[hidden] { display: none; }
+.reference-manager-dialog {
+  position: absolute; inset: 12px 10px; margin: auto; max-width: 480px;
+  max-height: 680px; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--nasqo-surface, #fff); color: var(--nasqo-ink, #242424);
+}
+.reference-manager-dialog .smart-modal-header { flex: none; }
+.reference-manager-scroll { position: relative; flex: 1; min-height: 0; }
+/* The whole dialog, including its footer, already follows keyboard insets. */
+.reference-manager-scroll > .mobile-scroll { bottom: 0; }
+.reference-manager-body { padding: 16px; display: grid; gap: 14px; }
+.reference-manager-note { margin: 0; font-size: 13px; line-height: 1.8; color: var(--nasqo-muted, #64748b); }
+.reference-manager-fields { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 16px; }
+.reference-field { min-width: 0; display: grid; gap: 7px; font-size: 14px; font-weight: 700; }
+.reference-field > input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 1px solid var(--nasqo-line, #d5e0eb); border-radius: 12px; background: var(--nasqo-surface, #fff); color: inherit; font: inherit; }
+.reference-field > input:focus-visible { outline: 2px solid var(--nasqo-blue, #4338ca); outline-offset: 2px; }
+.reference-manager-list { display: grid; gap: 12px; }
+.reference-manager-row { min-width: 0; border: 1px solid var(--nasqo-line, #d5e0eb); border-radius: 14px; padding: 12px; background: var(--nasqo-surface, #fff); }
+.reference-row-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.reference-row-heading strong { overflow-wrap: anywhere; }
+.reference-row-heading > span { flex-shrink: 0; font-size: 12px; color: var(--nasqo-muted, #64748b); }
+.reference-row-actions, .reference-manager-footer { display: flex; flex-wrap: wrap; gap: 8px; }
+.reference-manager-footer { flex: none; padding: 12px; border-top: 1px solid var(--nasqo-line, #d5e0eb); background: var(--nasqo-surface, #fff); }
+.nasqo-app .reference-manager-dialog .reference-button { min-height: 44px; border: 1px solid transparent; border-radius: 12px; padding: 9px 12px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.reference-button.primary { background: var(--nasqo-green, #047857); color: #fff; }
+.reference-button.secondary { border-color: var(--nasqo-line, #d5e0eb); background: var(--nasqo-surface, #fff); color: var(--nasqo-blue, #4338ca); }
+.reference-button.danger { background: #fff1f2; color: #be123c; }
+.reference-button:disabled { opacity: .5; cursor: default; }
+.reference-button:focus-visible { outline: 2px solid var(--nasqo-blue, #4338ca); outline-offset: 2px; }
+.reference-manager-footer > .reference-button { flex: 1; }
+.reference-row-actions > .reference-button.primary { flex: 1; }
+.reference-empty { padding: 16px 0; text-align: center; color: var(--nasqo-muted, #64748b); }
+.reference-error { margin: 0; padding: 12px; border-radius: 12px; background: #fff1f2; color: #be123c; overflow-wrap: anywhere; }
+.reference-header-action { min-height: 44px; padding: 6px 10px; border: 1px solid currentColor; border-radius: 10px; font: inherit; color: inherit; background: transparent; }
+.cashboxes-report-modal > .smart-modal-header { grid-template-columns: 36px 1fr auto; }
+.cashboxes-report-modal > .smart-modal-header .smart-modal-spacer { display: none; }
+
+.reference-manager-dialog .smart-modal-header { grid-template-columns: 44px 1fr 44px; }
+.nasqo-app .reference-manager-dialog .smart-modal-close { width: 44px; min-height: 44px; }
+.reference-manager-dialog .reference-button.primary { background: #047857; color: #fff; }
+.reference-manager-dialog .reference-button.secondary { border: 1px solid var(--nasqo-line, #d5e0eb); color: var(--nasqo-ink, #242424); }
