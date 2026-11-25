@@ -200,12 +200,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p previous-release upgrade-evidence
-          gh release download android-v1124 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          gh release download android-v1126 --pattern NASQO-PRO-ERP.apk --dir previous-release
           SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
           "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
           "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
           diff <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/previous-certificate.txt) <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/candidate-certificate.txt)
           test -s upgrade-evidence/candidate-certificate.txt
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging release-output/NASQO-PRO-ERP.apk > upgrade-evidence/badging.txt
+          grep -F "application-label:'نسقو برو'" upgrade-evidence/badging.txt
           (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
       - name: Emulator KVM
         run: |
