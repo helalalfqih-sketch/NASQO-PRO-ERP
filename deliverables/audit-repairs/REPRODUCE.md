@@ -22,3 +22,5 @@ npx tsx scripts/inventory-current-actions.ts
 قبول Android: workflow `android-hybrid-ui-smoke.yml` يبني debug ويثبت على محاكي نظيف تطبيق الاختبار وتطبيق استقبال مستقل، ثم يختبر ملفات وإلغاء وأزرار الواجهة. `qa/android-receiver` لا يُدمج في APK التطبيق العادي؛ مصادره تنسخ إلى androidTest فقط. نجاح بناء APK لا يعني نجاح instrumentation، ونتيجة التشغيل الكلية لا تُغيّر لمجرد نجاح بعض حدوده.
 
 مصادر التحقق: `logs/*-final.log`، `browser-final/results.json`، `regression-final/*/results.json`، `performance-{before,after}/results.json`، `android-*/instrumentation.txt` وسجل NASQO_ACCEPTANCE. ملفات commands كبيرة تتضمن فقط ملفات اصطناعية base64 ؛ تحفظ محليًا ولا تدخل جميعها في Git. APK ونسخ `.back` الاصطناعية لا تدخل Git. شجرة المصدر تضم أيضًا callbacks ومكونات ديناميكية؛ لا تستخدم عدد مواضعها بوصفه عدد أزرار مختبرة.
+
+لإعادة قبول أصول الحزمة: استخرج `assets/flutter_assets/assets/web/` من APK إلى مجلد مستقل، ثم مرره كمسار مطلق في `REPAIR_BUNDLE`، واختر `REPAIR_OUT` جديدًا، وشغّل `npx tsx scripts/verify-audit-repairs.ts`. يوجد إثبات تطابق ملفات الواجهة بين الحزمتين في `apk-final-verification.json`؛ الاختلاف الوحيد في الوصف هو وقت البناء.

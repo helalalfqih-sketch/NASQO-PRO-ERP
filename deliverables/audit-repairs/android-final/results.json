@@ -1,0 +1,23 @@
+{
+  "sourceSha": "6f980410790346a385d27c12753db65d692d952e",
+  "runId": 45679502563,
+  "artifactId": 15054611348,
+  "environment": "Android API35 x86_64 Google APIs emulator; synthetic fresh install",
+  "conclusion": "success",
+  "assertions": [
+    "receiver PDF bytes/name/MIME/readable",
+    "receiver XLSX bytes/name/MIME/ZIP content",
+    "receiver PNG bytes/name/MIME/decode",
+    "system save picker canceled returns null",
+    "share chooser canceled no receiver delivery",
+    "UI employee create -> SQLite exactly one record",
+    "UI inventory report share -> PDF readable by separate receiver"
+  ],
+  "limitations": [
+    "No physical phone",
+    "No gesture/back-draft native acceptance",
+    "No state-preservation assertion across Home/process death",
+    "No real printer or Microsoft Excel",
+    "Employee edit/reopen/rejection covered separately, not by this native path"
+  ]
+}

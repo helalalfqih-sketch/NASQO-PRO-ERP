@@ -1,0 +1,22 @@
+{
+  "apkSha256": "b2693d83e75bc8193b2397d2b57acfa5111ee1ae26a89db720e2ba6df24e5dd2",
+  "builtSourceSha": "08996eeb4235d4342ba8891f4a317494ff768f22",
+  "matchingHybridFiles": 50,
+  "totalHybridFiles": 64,
+  "differences": [
+    "assets/chunk-ErpCrmPosScreen-BsCEX7gz.js",
+    "assets/chunk-ErpFinanceScreen-nEyI7WGZ.js",
+    "assets/chunk-ErpHrScreen-Bw7pe2gb.js",
+    "assets/chunk-ErpHubScreen-BVOw5Jyv.js",
+    "assets/chunk-ErpManufacturingScreen-C0cT66mv.js",
+    "assets/chunk-ErpProcurementScreen-rnjyYkHO.js",
+    "assets/chunk-FullSqliteImportModal-Cr16zzwp.js",
+    "assets/chunk-QrScannerModal-CcU0AJPc.js",
+    "assets/chunk-index.es-VG_7l8en.js",
+    "assets/chunk-purify.es-Cu8FNuDu.js",
+    "assets/chunk-smartProOfflineAdapter-DzHDl6eu.js",
+    "assets/nasqo-hybrid-Gbwq9zl3.js",
+    "hybrid-manifest.json",
+    "index.html"
+  ]
+}

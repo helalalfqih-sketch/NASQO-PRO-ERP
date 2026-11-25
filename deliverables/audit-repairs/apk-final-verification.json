@@ -1,0 +1,13 @@
+{
+  "comparison": "APK 08996ee vs APK 6f98041",
+  "webFiles": 64,
+  "allIdentical": false,
+  "apkSha256": "aca12304d3773af876a39ea6e1b2ffc689154c784a9d9f80098ff84f88c7cc9a",
+  "sourceSha": "6f980410790346a385d27c12753db65d692d952e",
+  "note": "63 HTML/JS/CSS/font assets byte-identical to the APK08996ee assets exercised by 29 Chromium cases. Only manifest build timestamp differs. Android native acceptance is reported separately.",
+  "executableAndVisualAssetsIdentical": true,
+  "identicalFiles": 63,
+  "manifestDifferences": [
+    "builtAtIso"
+  ]
+}

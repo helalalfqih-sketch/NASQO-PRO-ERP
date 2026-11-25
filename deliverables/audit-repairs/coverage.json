@@ -12,7 +12,7 @@
     "لم يُختبر": 85
   },
   "rows": 289,
-  "recheckedOrQualified": 40,
-  "directAndroidRows": 4,
+  "recheckedOrQualified": 54,
+  "directAndroidRows": 6,
   "warning": "المجموع دفتر أدلة بإصدارات مختلفة؛ الصفوف الباقية تحتفظ بالدليل القديم ولا تعني نجاحها على APK الحالي. ليس 289 اختبار هاتف."
 }
