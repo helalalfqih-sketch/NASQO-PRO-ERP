@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_verified_candidate:
-        description: Publish the already verified 1.0.130 artifact (no rebuild)
+        description: Publish the already verified 1.0.132 artifact (no rebuild)
         type: boolean
         default: false
       signed_candidate:
@@ -244,7 +244,7 @@ jobs:
         with:
           name: nasqo-signed-preview
           path: release-output
-          run-id: 45701693495
+          run-id: 45706404008
           github-token: ${{ github.token }}
       - name: Get prior published APK and verify identity
         env:
@@ -296,14 +296,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api repos/${{ github.repository }}/actions/runs/45701693495 > /tmp/release-run.json
+          gh api repos/${{ github.repository }}/actions/runs/45706404008 > /tmp/release-run.json
           test "$(jq -r .conclusion /tmp/release-run.json)" = success
-          test "$(jq -r .head_sha /tmp/release-run.json)" = fbc1adc19a7ed7acedcb22e74297afb8a01c7992
+          test "$(jq -r .head_sha /tmp/release-run.json)" = aba661fae2a0b0da2605ccb81d5c2ca04bcbe1f1
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-signed-preview
           path: release-output
-          run-id: 45701693495
+          run-id: 45706404008
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
@@ -316,13 +316,13 @@ jobs:
         run: |
           set -euo pipefail
           (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
-          test "$(sha256sum release-output/NASQO-PRO-ERP.apk | cut -d ' ' -f 1)" = 0165b4c93152cfbac7342079e298a071db7e76e79f6dd223bb1516f4e90acf40
-          for tag in android-v1130 android-preview-v1130; do
+          test "$(sha256sum release-output/NASQO-PRO-ERP.apk | cut -d ' ' -f 1)" = fb9b3b8330b5a2bb278423998c9bb3d381fddcfb5aed2ef638532baf035b95c0
+          for tag in android-v1132 android-preview-v1132; do
             gh release view "$tag" --json isDraft,targetCommitish > /tmp/release-draft.json
             test "$(jq -r .isDraft /tmp/release-draft.json)" = true
-            test "$(jq -r .targetCommitish /tmp/release-draft.json)" = fbc1adc19a7ed7acedcb22e74297afb8a01c7992
-            gh release upload "$tag" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 upgrade-evidence/launcher.png deliverables/inventory-estimate/inventory-estimated-value.png --clobber
-            gh release edit "$tag" --notes-file deliverables/inventory-estimate/RELEASE-NOTES-AR.md
+            test "$(jq -r .targetCommitish /tmp/release-draft.json)" = aba661fae2a0b0da2605ccb81d5c2ca04bcbe1f1
+            gh release upload "$tag" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 upgrade-evidence/launcher.png deliverables/reference-design/cashbox-linked-accounts.png --clobber
+            gh release edit "$tag" --notes-file deliverables/reference-design/RELEASE-NOTES-AR.md
           done
-          gh release edit android-v1130 --draft=false --prerelease=false --latest
-          gh release edit android-preview-v1130 --draft=false --prerelease --latest=false
+          gh release edit android-v1132 --draft=false --prerelease=false --latest
+          gh release edit android-preview-v1132 --draft=false --prerelease --latest=false

@@ -145,6 +145,22 @@ try{
   await last.click();await expect(manager.getByRole('combobox',{name:'حساب ترحيل الصندوق'})).toContainText('للاختبار 40');
   await assertNoPosting();return{correct:true,all41AccountsReachable:true,fixedFooterReachable:true};
  });
+
+ await run('reference-from-cashboxes-report',async()=>{
+  await emit('cashboxes-report');const report=page.getByTestId('cashboxes-report-modal');await expect(report).toBeVisible();
+  await report.getByRole('button',{name:'إدارة الصناديق',exact:true}).click();
+  const manager=page.getByTestId('cashbox-reference-manager');await expect(manager).toBeVisible();await expect(report).toBeHidden();
+  assert.equal(await manager.getByRole('button',{name:/اختيار والعودة/}).count(),0);
+  await manager.getByRole('button',{name:'إلغاء والعودة',exact:true}).click();await expect(report).toBeVisible();
+  assert(!(await commands()).some((r:any)=>r.action==='saveCashbox'));await assertNoPosting();return{correct:true,reportRestored:true,noMisleadingRowClose:true};
+ });
+ await run('reference-from-invoice-preserves-note',async()=>{
+  await statement();await page.locator('.footer-menu').click();await page.getByRole('menuitem',{name:'فاتورة جديدة',exact:true}).click();
+  const invoice=page.getByTestId('invoice-modal');await invoice.getByLabel('بيان الفاتورة',{exact:true}).fill('مسودة اصطناعية قبل إدارة الحساب');
+  await invoice.getByTestId('invoice-account-add').click();const accounts=page.getByTestId('reference-account-manager');await expect(accounts).toBeVisible();await expect(invoice).toBeHidden();
+  await accounts.getByRole('button',{name:'إلغاء والعودة',exact:true}).click();await expect(invoice).toBeVisible();
+  await expect(invoice.getByLabel('بيان الفاتورة',{exact:true})).toHaveValue('مسودة اصطناعية قبل إدارة الحساب');await assertNoPosting();return{correct:true,invoiceNotePreserved:true};
+ });
  for(const variant of ['narrow','landscape','dark'])await run('reference-layout-'+variant,async()=>{
   await page.setViewportSize(variant==='landscape'?{width:740,height:360}:{width:320,height:640});
   const manager=await openReferenceEditor();await manager.getByRole('button',{name:'إضافة حساب جديد',exact:true}).click();

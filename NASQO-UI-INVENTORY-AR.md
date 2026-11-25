@@ -219,3 +219,5 @@
 | التصميم الضيق/الأفقي/الداكن | نفس المسارات عند 320×640 و740×360 | نافذة واحدة، لا تجاوز أفقي، أهداف لمس 44px | reference-layout-narrow/landscape/dark؛ الصور في deliverables/reference-design |
 
 هذه نتائج الواجهة المبنية فعليًا في المتصفح ببيانات اصطناعية، وليست ادعاءً باختبار جميع شاشات النظام على هاتف Android.
+
+تم اختبار مدخل تقرير الصناديق فعليًا في المتصفح (`reference-from-cashboxes-report`) وكذلك مدخل إدارة الحساب من الفاتورة مع الاحتفاظ بالبيان (`reference-from-invoice-preserves-note`). الدليل الإضافي: `deliverables/reference-design/entrypoints-results.json`.

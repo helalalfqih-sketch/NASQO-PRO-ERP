@@ -1,0 +1,113 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "voucher-new-cashbox-return",
+      "execution": "observed",
+      "correct": true,
+      "parentAmountPreserved": true,
+      "parentNotPosted": true
+    },
+    {
+      "id": "reference-account-cancel-and-system-back",
+      "execution": "observed",
+      "correct": true,
+      "oneStepPerBack": true,
+      "cancelNoWrites": true,
+      "parentAmountPreserved": true
+    },
+    {
+      "id": "reference-account-select-and-delete-rejection",
+      "execution": "observed",
+      "correct": true,
+      "failedDeleteRetained": true,
+      "selectionReturnsToEditor": true
+    },
+    {
+      "id": "reference-edit-and-archive-cancel",
+      "execution": "observed",
+      "correct": true,
+      "archiveCanceled": true,
+      "editCanceled": true
+    },
+    {
+      "id": "reference-long-list-scroll",
+      "execution": "observed",
+      "correct": true,
+      "all41AccountsReachable": true,
+      "fixedFooterReachable": true
+    },
+    {
+      "id": "reference-from-cashboxes-report",
+      "execution": "observed",
+      "correct": true,
+      "reportRestored": true,
+      "noMisleadingRowClose": true
+    },
+    {
+      "id": "reference-from-invoice-preserves-note",
+      "execution": "observed",
+      "correct": true,
+      "invoiceNotePreserved": true
+    },
+    {
+      "id": "reference-layout-narrow",
+      "execution": "observed",
+      "correct": true,
+      "layout": {
+        "width": 300.027099609375,
+        "height": 616.0556030273438,
+        "x": 9.986465454101562,
+        "y": 11.89703369140625,
+        "bottom": 626.9525146484375,
+        "viewportWidth": 320,
+        "viewportHeight": 640,
+        "overflow": false,
+        "buttons": [
+          44.0040283203125,
+          44.0040283203125
+        ]
+      }
+    },
+    {
+      "id": "reference-layout-landscape",
+      "execution": "observed",
+      "correct": true,
+      "layout": {
+        "width": 480.0433349609375,
+        "height": 336.03033447265625,
+        "x": 129.9783477783203,
+        "y": 11.922271728515625,
+        "bottom": 346.9525146484375,
+        "viewportWidth": 740,
+        "viewportHeight": 360,
+        "overflow": false,
+        "buttons": [
+          44.00396728515625,
+          44.00396728515625
+        ]
+      }
+    },
+    {
+      "id": "reference-layout-dark",
+      "execution": "observed",
+      "correct": true,
+      "layout": {
+        "width": 300.0882568359375,
+        "height": 616.18115234375,
+        "x": 9.955886840820312,
+        "y": 11.66448974609375,
+        "bottom": 626.8453369140625,
+        "viewportWidth": 320,
+        "viewportHeight": 640,
+        "overflow": false,
+        "buttons": [
+          44.012939453125,
+          44.012939453125
+        ]
+      }
+    }
+  ],
+  "errors": [],
+  "external": []
+}
