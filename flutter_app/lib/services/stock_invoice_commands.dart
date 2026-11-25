@@ -298,6 +298,7 @@ class StockInvoiceCommands {
           legs.addAll([leg(a,cost,false),leg(b,cost,true)]);
         }
         final header={...details,'id':id,'originalInvoiceId':original,'entryNumber':entryNumber,'entryDate':entryDate,
+          'documentNumber':entryNumber.toString(),
           'netMinor':net,'taxMinor':tax,'totalMinor':total,'lines':changes.map((x)=>x['data']).toList()};
         await t.insert('ledger_entries',{...entry,'id':id,'kind':'returnEntry','direction':sale?'credit':'debit','amount':total/100,
           'typeLabel':sale?'مردود مبيعات':'مردود مشتريات','details':'مرتجع مرتبط للفاتورة $original',
