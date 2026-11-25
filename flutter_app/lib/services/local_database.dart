@@ -1,3 +1,4 @@
+import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
@@ -266,7 +267,8 @@ class LocalDatabase {
 
   static Future<void> requireVerifiedStock(DatabaseExecutor db,String id) async {
     if ((await db.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty) {
-      throw StateError('Imported stock requires physical quantity and cost reconciliation');
+      final quantityApproved=(await StockQuantityApprovalState.read(db)).containsKey(id);
+      throw StateError(quantityApproved?'الكمية معتمدة؛ تكلفة المخزون لم تُعتمد بعد.':'رصيد المخزون وتكلفته غير معتمدين بعد.');
     }
   }
 

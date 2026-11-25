@@ -1,3 +1,4 @@
+import { formatQuantity } from "./quantityFormat";
 import { jsPDF } from "jspdf";
 import { outputNativeDocument, usesNativeDocumentOutput } from "../hybrid/documentOutput";
 import { formatAmount, type DashboardSummary } from "../accounting";
@@ -103,7 +104,7 @@ export function buildInvoicePdfSummaryData(
     itemLines.splice(0,itemLines.length,...entry.lines.map(line=>({
       description:line.itemName || line.details || "بند",
       unit:line.unit || "حبة",
-      quantity:formatAmount(line.quantity),
+      quantity:formatQuantity(line.quantity),
       unitPrice:formatAmount(line.price),
       lineTotal:formatAmount(line.total),
       metadata:[

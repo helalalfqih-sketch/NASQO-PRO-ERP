@@ -1,0 +1,4 @@
+00:00 +0: loading /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_screen_test.dart
+00:00 +0: quantity review requires selection, acknowledgement and final confirmation; cancel never writes
+00:02 +1: stale review keeps error visible and requires a fresh acknowledgement
+00:02 +2: All tests passed!

@@ -1,3 +1,4 @@
+import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
@@ -36,6 +37,7 @@ class LegacyStockOpening {
         'warehouses':await t.query('warehouses',orderBy:'name'),
         'accounts':await t.query('accounts',where:'currency = ? AND isCashAccount = 0',whereArgs:['sar'],orderBy:'name'),
         'openings':await t.query('legacy_stock_openings'),
+        'quantityApprovals':(await StockQuantityApprovalState.read(t)).values.toList(),
       };
     });
     final extra=await LegacyHistoryArchive(local).load();
@@ -124,7 +126,16 @@ class LegacyStockOpening {
           throw StateError('Opening date must not precede the most recent document');
         final item=master.single['warehouseId']==wh?source:'legacy-location-$digest';
         final existing=await t.query('inventory_items',where:'id = ?',whereArgs:[item]);
-        if(item==source){
+        final qa=(await StockQuantityApprovalState.read(t))[item];
+        if(qa!=null){
+          if(qa['source_item_id']!=source||qa['warehouse_id']!=wh||qa['quantity']!=quantity||
+              date.compareTo(qa['entry_date'] as String)<0||existing.length!=1||
+              existing.single['quantity']!=quantity||existing.single['avgCost']!=0||
+              (await t.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[item])).length!=1||
+              (await t.query('stock_movements',where:'item_id = ?',whereArgs:[item],limit:1)).isNotEmpty) {
+            throw StateError('اعتمد تكلفة الكمية المثبتة دون تغييرها؛ يلزم مسار مستقل لتعديل الكمية.');
+          }
+        }else if(item==source){
           if(existing.length!=1||existing.single['quantity']!=0||existing.single['avgCost']!=0||
             (await t.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[item])).length!=1||
             (await t.query('stock_movements',where:'item_id = ?',whereArgs:[item],limit:1)).isNotEmpty){
@@ -132,7 +143,7 @@ class LegacyStockOpening {
           }
         }else if(existing.isNotEmpty){throw StateError('Warehouse stock identity already exists');}
         final avg=quantity==0?0.0:value/quantity/100;
-        if(item==source){
+        if(item==source||qa!=null){
           await t.update('inventory_items',{'quantity':quantity,'avgCost':avg},where:'id = ?',whereArgs:[item]);
           await t.delete('legacy_unverified_stock',where:'item_id = ?',whereArgs:[item]);
         }else{
@@ -147,12 +158,12 @@ class LegacyStockOpening {
           final number=StockInvoiceCommands.number(max+1);
           await t.insert('ledger_entries',{'id':ledger,'accountId':asset,'accountName':a['name'],
             'counterpartAccountId':offset,'counterpartAccountName':b['name'],'kind':'opening',
-            'typeLabel':'افتتاح مخزون معتمد','payment':'balance','direction':'debit','amount':value/100,
+            'typeLabel':qa==null?'افتتاح مخزون معتمد':'اعتماد تكلفة مخزون','payment':'balance','direction':'debit','amount':value/100,
             'currency':'sar','exchangeRate':1,'details':evidence,'documentNumber':'',
             'warehouseId':wh,'warehouseName':stores.single['name'],'expenseCategory':'',
             'entryNumber':number,'deleted':0,'entryDate':date,'invoiceContent':'none','postingStatus':'posted'});
           await StockInvoiceCommands.journal(t,ledger,'sar',[StockInvoiceCommands.leg(asset,value,true),StockInvoiceCommands.leg(offset,value,false)]);
-          await t.insert('stock_movements',{'id':ledger,'item_id':item,'quantity_delta':quantity,'operation_id':key});
+          if(qa==null)await t.insert('stock_movements',{'id':ledger,'item_id':item,'quantity_delta':quantity,'operation_id':key});
         }
         await t.insert('legacy_stock_openings',{'source_item_id':source,'warehouse_id':wh,'item_id':item,
           'quantity':quantity,'value_minor':value,'inventory_account_id':asset,'offset_account_id':offset,

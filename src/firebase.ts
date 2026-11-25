@@ -813,6 +813,7 @@ export type InventoryMovementItemRow = {
   sellingPrice?: number;
   catalogQuantity: number;
   quantityUnverified: boolean;
+  costUnverified?: boolean;
   hasMovement: boolean;
 };
 

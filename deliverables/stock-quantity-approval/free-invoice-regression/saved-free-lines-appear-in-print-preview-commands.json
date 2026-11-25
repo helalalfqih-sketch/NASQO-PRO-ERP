@@ -1,0 +1,207 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "supplier"
+    }
+  },
+  {
+    "action": "openInvoice",
+    "payload": {
+      "intent": "invoice",
+      "accountId": "acc_sup_1",
+      "kindOverride": "purchase"
+    }
+  },
+  {
+    "action": "createLedgerEntry",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "id": "inv_1795623389732_6if7xtu",
+        "accountId": "acc_sup_1",
+        "accountName": "حساب اصطناعي 1",
+        "kind": "invoice",
+        "typeLabel": "فاتورة شراء آجلة",
+        "payment": "credit",
+        "direction": "credit",
+        "amount": 19.5,
+        "settledOnReceipt": false,
+        "currency": "ريال",
+        "exchangeRate": 1,
+        "details": "فاتورة شراء آجلة",
+        "documentNumber": "1001",
+        "warehouseId": "",
+        "warehouseName": "",
+        "invoiceContent": "free",
+        "entryNumber": 1001,
+        "deleted": false,
+        "entryDate": "2026-11-25",
+        "lines": [
+          {
+            "itemName": "خدمة اصطناعية أ",
+            "unit": "حبة",
+            "unitNum": 1,
+            "quantity": 1.5,
+            "price": 10,
+            "discount": 0,
+            "total": 15
+          },
+          {
+            "itemName": "بند اصطناعي ب",
+            "unit": "حبة",
+            "unitNum": 1,
+            "quantity": 2,
+            "price": 2.25,
+            "discount": 0,
+            "total": 4.5
+          }
+        ]
+      }
+    },
+    "idempotencyKey": "document_inv_1795623389732_6if7xtu"
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "cash-invoice-preview"
+    }
+  },
+  {
+    "action": "getInvoiceDetail",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "entryId": "inv_1795623389732_6if7xtu"
+    }
+  },
+  {
+    "action": "getInvoiceDetail",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "entryId": "inv_1795623389732_6if7xtu"
+    }
+  },
+  {
+    "action": "beginDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "fileName": "nasqo-invoice-1001-2026-11-25.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 217748,
+      "mode": "save"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 0,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 20480,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 40960,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 61440,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 81920,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 102400,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 122880,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 143360,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 163840,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 184320,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 204800,
+      "base64": "[PDF bytes omitted]"
+    }
+  },
+  {
+    "action": "finishDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export"
+    }
+  }
+]

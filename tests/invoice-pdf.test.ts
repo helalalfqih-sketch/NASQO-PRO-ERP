@@ -121,3 +121,10 @@ test("free invoice PDF uses saved descriptive lines, quantities and prices", () 
   assert.equal(summary.amount, 19.5);
   assert.equal(summary.warehouseName, "—");
 });
+
+test("invoice PDF keeps thousandths in quantities", () => {
+  const summary = buildInvoicePdfSummaryData({ ...sampleMultiLineInvoice,
+    lines: [{ itemName: "بند اصطناعي", unit: "حبة", quantity: 1.125, price: 4, total: 4.5 }], amount: 4.5,
+  });
+  assert.equal(summary.lines[0].quantity, "1.125");
+});

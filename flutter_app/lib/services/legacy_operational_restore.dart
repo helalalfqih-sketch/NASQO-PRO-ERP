@@ -1,3 +1,4 @@
+import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
@@ -217,15 +218,18 @@ class LegacyOperationalRestore {
     final incomplete=(transferReport['affectedItemIds'] as List).toSet();
     final unverified=(await db.query('legacy_unverified_stock',columns:['item_id'])).map((r)=>r['item_id']).toSet();
     final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o};
+    final quantityApprovals=await StockQuantityApprovalState.read(db);
     final approvedWarehouses=<String,Set<String>>{};
     for(final o in openings.values){approvedWarehouses.putIfAbsent(o['source_item_id'] as String,()=> <String>{}).add(o['warehouse_id'] as String);}
+    for(final o in quantityApprovals.values){approvedWarehouses.putIfAbsent(o['source_item_id'] as String,()=> <String>{}).add(o['warehouse_id'] as String);}
     for(final c in ['currencies','accountGroups','cashboxes']){
       data[c]=(byCollection[c]??{}).values.toList();
     }
     for(final c in ['accounts','warehouses','inventory','ledger']){
       for(final row in (data[c] as List).cast<Map<String,dynamic>>()){
         final opening=c=='inventory'?openings[row['id']]:null;
-        final old=byCollection[c]?[opening?['source_item_id']??row['id']];
+        final qa=c=='inventory'?quantityApprovals[row['id']]:null;
+        final old=byCollection[c]?[opening?['source_item_id']??qa?['source_item_id']??row['id']];
         if(old==null)continue;
         if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
         final keys=c=='accounts'?['groupId','sortOrder','accountImage','settlement','documentNumberRequired','messageMethod','sendMode','legacyRef']:
@@ -237,7 +241,7 @@ class LegacyOperationalRestore {
           LegacySourceDetails.overlay(row,old,recovered[row['id']]);
         }
         if(c=='inventory'&&unified&&old['quantityUnverified']==false)row['quantityUnverified']=false;
-        if(c=='inventory'&&old['quantityUnverified']!=false&&(opening==null||opening['source_item_id']==row['id'])){
+        if(c=='inventory'&&old['quantityUnverified']!=false&&(opening==null||opening['source_item_id']==row['id'])&&(qa==null||qa['source_item_id']==row['id'])){
           final sourceId=row['id'];
           final invoices=projected[sourceId]??<String,num>{};
           final transfers=transferComplete?(transferNets[sourceId] as Map<String,num>? ??<String,num>{}):<String,num>{};
@@ -246,7 +250,7 @@ class LegacyOperationalRestore {
           final pending=<String,num>{for(final wh in known)
             if(!approved.contains(wh))wh:(invoices[wh]??0)+(transfers[wh]??0)};
           row['legacyHistoricalQtyByWarehouse']=pending;
-          row['legacyStockPending']=pending.isNotEmpty||unverified.contains(sourceId);
+          row['legacyStockPending']=pending.isNotEmpty||(unverified.contains(sourceId)&&qa==null);
           row['legacyTransferIncomplete']=!transferComplete||incomplete.contains(sourceId);
           row['legacyHistoryIncludesTransfers']=transferComplete;
         }
@@ -259,6 +263,14 @@ class LegacyOperationalRestore {
           final remaining={for(final e in quantities.entries)if(!approved.contains(e.key))e.key:e.value};
           row['legacyInvoiceQtyByWarehouse']=remaining;
           if(remaining.isNotEmpty)row['computedQuantity']=remaining.values.fold<num>(0,(s,v)=>s+v);
+        }
+        if(qa!=null){
+          row['legacySourceItemId']=qa['source_item_id'];
+          row['quantityApprovalDate']=qa['entry_date'];
+          row['quantityUnverified']=false;
+          row['costUnverified']=unverified.contains(row['id']);
+          row['legacyCatalogCost']=old['avgCost'];
+          row.remove('computedQuantity');
         }
       }
     }

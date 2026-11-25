@@ -138,7 +138,7 @@ class LocalInvoiceRoles {
           if(line is! Map||line['inventoryItemId'] is! String)throw ArgumentError('Invalid invoice line');
           final id=line['inventoryItemId'] as String;
           try{await LocalDatabase.requireVerifiedStock(t,id);}
-          on StateError{throw const InvoicePostingSetupRequired('الصنف المستورد يحتاج اعتماد جرد المخزن والتكلفة قبل الترحيل.');}
+          on StateError catch(e){throw InvoicePostingSetupRequired(e.message.toString());}
           final opening=await t.query('legacy_stock_openings',columns:['inventory_account_id'],where:'item_id = ?',whereArgs:[id]);
           if(opening.isEmpty){unassigned=true;}else{ids.add(opening.single['inventory_account_id'] as String);}
         }

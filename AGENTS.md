@@ -132,3 +132,11 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - A free invoice supports manually named lines with quantity, price and a calculated total. These are descriptive lines, with no inventory item or warehouse linkage and no stock movement.
 - Persist free lines atomically with the local invoice, include them in native backups, and read them for preview/PDF. Repeating a confirmed operation must not post twice.
 - Keep existing amount-only free invoices readable. Switching between stock and free modes must preserve separate unsent rows; it must not convert unverified imported quantities into approved stock.
+
+## Separate quantity approval (user direction, 2026-11-25)
+
+- Allow the user to review and explicitly confirm the displayed current quantities for a selected warehouse, independently of cost approval. Keep this action in settings, not invoice item selection.
+- Freeze the reviewed all-time warehouse quantities once. Bind the review to the source SHA, workspace, selected rows and current review hash. A stale review must fail without partial writes. Repeated confirmation must be idempotent.
+- Quantity-only approval must not replay historical movements, create stock movements or financial entries, or approve reference prices. Keep cost-pending quantities out of inventory valuation and preserve costing guards for invoice posting.
+- A later explicit valuation must retain the approved quantity without another quantity movement. Display quantity and cost approval states separately, including in reports, catalog and invoice validation.
+- Display stock quantities to three decimal places so review values match persisted quantities; money remains two decimal places.

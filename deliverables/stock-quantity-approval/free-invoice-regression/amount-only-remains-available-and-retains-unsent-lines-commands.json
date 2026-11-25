@@ -1,0 +1,52 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "supplier"
+    }
+  },
+  {
+    "action": "openInvoice",
+    "payload": {
+      "intent": "invoice",
+      "accountId": "acc_sup_1",
+      "kindOverride": "purchase"
+    }
+  },
+  {
+    "action": "createLedgerEntry",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "id": "inv_1795623399707_i987urp",
+        "accountId": "acc_sup_1",
+        "accountName": "حساب اصطناعي 1",
+        "kind": "invoice",
+        "typeLabel": "فاتورة شراء آجلة",
+        "payment": "credit",
+        "direction": "credit",
+        "amount": 25,
+        "settledOnReceipt": false,
+        "currency": "ريال",
+        "exchangeRate": 1,
+        "details": "فاتورة شراء آجلة",
+        "documentNumber": "1001",
+        "warehouseId": "",
+        "warehouseName": "",
+        "invoiceContent": "free",
+        "entryNumber": 1001,
+        "deleted": false,
+        "entryDate": "2026-11-25",
+        "lines": []
+      }
+    },
+    "idempotencyKey": "document_inv_1795623399707_i987urp"
+  }
+]

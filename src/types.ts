@@ -255,6 +255,9 @@ export type InventoryItemRecord = {
   legacyCatalogCost?: number;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
+  /** Quantity can be approved while inventory valuation is still pending. */
+  costUnverified?: boolean;
+  quantityApprovalDate?: string;
   legacyRef?: string;
 };
 

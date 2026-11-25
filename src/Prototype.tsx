@@ -1,3 +1,4 @@
+import { formatQuantity } from "./utils/quantityFormat";
 import {
   createContext,
   useCallback,
@@ -2649,8 +2650,8 @@ export function AuthenticatedWorkspace({
         if (kind === "inventory") {
           const csv = buildCsvContent(
             ["الصنف", "الوحدة", "الكمية المعتمدة", "التكلفة المعتمدة", "سعر التكلفة المرجعي", "حالة المخزون"],
-            inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost,
-              getCatalogReferenceCost(i) ?? "", i.quantityUnverified ? "غير معتمد" : "معتمد"]),
+            inventory.map((i) => [i.name, i.unit, i.quantityUnverified ? "" : i.quantity, (i.quantityUnverified || i.costUnverified) ? "" : i.avgCost,
+              getCatalogReferenceCost(i) ?? "", i.quantityUnverified ? "غير معتمد" : i.costUnverified ? "كمية معتمدة؛ تكلفة غير معتمدة" : "معتمد"]),
           );
           const saved=await downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
           showToast(saved?"تم حفظ تقرير المخزون بصيغة CSV":"تم إلغاء حفظ التقرير");
@@ -2695,7 +2696,7 @@ export function AuthenticatedWorkspace({
             title: "تقرير حركة المخزون",
             subtitle: `عدد الأصناف: ${invSummary.items.length} | إجمالي القيمة: ${formatAmount(invSummary.totalValue)}`,
             accentColor: extendedSettings.reportColor || brandColor,
-            rows: inventory.slice(0, 10).map((i) => [i.name, `${formatAmount(i.quantity)} ${i.unit}`]),
+            rows: inventory.slice(0, 10).map((i) => [i.name, `${formatQuantity(i.quantity)} ${i.unit}`]),
             footerNote: extendedSettings.statementFooterNote,
           });
         } else if (kind === "purchases") {
@@ -4528,7 +4529,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
 
   const showEditorForm = formOpen && !searchState.isFocused;
   const selectedCatalogItem = ctx.inventory.find((item) => item.id === selectedId);
-  const selectedReferenceCost = selectedCatalogItem?.quantityUnverified
+  const selectedReferenceCost = (selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified)
     ? getCatalogReferenceCost(selectedCatalogItem)
     : undefined;
 
@@ -4660,7 +4661,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     />
                   </div>
                   <div className="items-catalog-field">
-                    <span className="items-lbl blue">{selectedCatalogItem?.quantityUnverified ? "التكلفة المعتمدة" : "سعر التكلفة"}</span>
+                    <span className="items-lbl blue">{(selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified) ? "التكلفة المعتمدة" : "سعر التكلفة"}</span>
                     <KeyboardInput
                       aria-label="سعر التكلفة"
                       data-testid="catalog-item-cost"
@@ -4669,7 +4670,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                       value={avgCost}
                       onChange={(e) => setAvgCost(e.target.value)}
                     />
-                    {selectedCatalogItem?.quantityUnverified ? (
+                    {(selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified) ? (
                       <small data-testid="catalog-reference-cost">
                         سعر التكلفة المرجعي: {selectedReferenceCost !== undefined && Number.isFinite(selectedReferenceCost)
                           ? formatAmount(selectedReferenceCost)
@@ -4912,7 +4913,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         <td className="item-name-cell">{item.name}</td>
                         <td>{item.unit || "حبة"}</td>
                         <td data-testid={`catalog-cost-${item.id}`}>
-                          {item.quantityUnverified ? (
+                          {(item.quantityUnverified || item.costUnverified) ? (
                             <>
                               {referenceCost !== undefined
                                 ? formatAmount(referenceCost)
@@ -5210,12 +5211,13 @@ function InventoryReportPage({
         sellTotal: 0,
         availableQty: i.quantityUnverified ? (selectedWarehouseId ? (i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] ?? 0) : (i.computedQuantity ?? 0)) : i.quantity,
         unitCost: i.avgCost,
-        remainingValue: Math.round((i.quantityUnverified ? 0 : i.quantity) * i.avgCost * 100) / 100,
+        remainingValue: Math.round(((i.quantityUnverified || i.costUnverified) ? 0 : i.quantity) * i.avgCost * 100) / 100,
         profit: 0,
         avgCost: i.avgCost,
         sellingPrice: i.sellingPrice,
         catalogQuantity: i.quantity,
         quantityUnverified: Boolean(i.quantityUnverified),
+        costUnverified: Boolean(i.costUnverified),
         hasMovement: Boolean(i.quantityUnverified && (selectedWarehouseId ? i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] !== undefined : i.computedQuantity !== undefined)),
       }));
     return [...rawReportRows, ...missingFromReport].sort((a, b) =>
@@ -5248,7 +5250,7 @@ function InventoryReportPage({
     [fromDate, reportRows],
   );
   const totalRemainingQty = useMemo(
-    () => Math.round(reportRows.reduce((sum, r) => sum + Number(r.availableQty ?? 0), 0) * 100) / 100,
+    () => Math.round(reportRows.reduce((sum, r) => sum + Number(r.availableQty ?? 0), 0) * 1000) / 1000,
     [reportRows],
   );
 
@@ -5701,28 +5703,28 @@ function InventoryReportPage({
                           {row.name}
                           {showSearchDetails && row.sku ? <small className="inv-sku-meta"> ({row.sku})</small> : null}
                         </td>
-                        {showOpeningCol ? <td>{formatAmount(row.openingQty ?? 0)}</td> : null}
-                        <td>{formatAmount(row.buyQty)}</td>
-                        <td>{formatAmount(row.sellQty)}</td>
-                        <td>{formatAmount(row.transferInQty)}</td>
-                        <td>{formatAmount(row.transferOutQty)}</td>
+                        {showOpeningCol ? <td>{formatQuantity(row.openingQty ?? 0)}</td> : null}
+                        <td>{formatQuantity(row.buyQty)}</td>
+                        <td>{formatQuantity(row.sellQty)}</td>
+                        <td>{formatQuantity(row.transferInQty)}</td>
+                        <td>{formatQuantity(row.transferOutQty)}</td>
                         {showOpeningCol ? (
                           <td>
                             {(row.periodNetQty ?? 0) < 0
-                              ? `${formatAmount(Math.abs(row.periodNetQty ?? 0))}-`
-                              : formatAmount(row.periodNetQty ?? 0)}
+                              ? `${formatQuantity(Math.abs(row.periodNetQty ?? 0))}-`
+                              : formatQuantity(row.periodNetQty ?? 0)}
                           </td>
                         ) : null}
                         <td>{formatAmount(row.buyTotal)}</td>
                         <td>{formatAmount(row.sellTotal)}</td>
                         <td>
-                          <b>{formatAmount(shownAvailable)}</b>
-                          {liveItem?.quantityUnverified ? (
-                            <small style={{ display: "block", color: "#b45309", fontSize: 9.5 }}>بحاجة إلى تسوية</small>
-                          ) : null}
+                          <b>{formatQuantity(shownAvailable)}</b>
+                          {row.quantityUnverified ? (
+                            <small style={{ display: "block", color: isActiveRow ? "#fff" : "#b45309", fontSize: 9.5 }}>كمية غير معتمدة</small>
+                          ) : row.costUnverified ? <small style={{ display: "block", color: isActiveRow ? "#fff" : "#b45309", fontSize: 9.5 }}>كمية معتمدة — التكلفة غير معتمدة</small> : null}
                         </td>
                         <td>{row.unit}</td>
-                        <td>{formatAmount(row.remainingValue)}</td>
+                        <td>{row.costUnverified ? "غير معتمدة" : formatAmount(row.remainingValue)}</td>
                         <td>
                           {row.profit < 0 ? `${formatAmount(Math.abs(row.profit))}-` : formatAmount(row.profit)}
                         </td>
@@ -5805,7 +5807,7 @@ function InventoryReportPage({
                   <span>إظهار كل أصناف الدليل ({ctx.inventory.length})</span>
                 </label>
                 <div className="smart-mv-bottom-center">
-                  كمية المتبقي : <bdi>{formatAmount(totalRemainingQty)}</bdi>
+                  كمية المتبقي : <bdi>{formatQuantity(totalRemainingQty)}</bdi>
                   {multiCurrencyTotals ? (
                     <>
                       {" | "}
@@ -5881,7 +5883,7 @@ function InventoryReportPage({
                           <td>{mv.accountName}</td>
                           <td>{mv.warehouseName}</td>
                           <td style={{ color: mv.effectQty < 0 ? "#dc2626" : "#059669", fontWeight: 700 }}>
-                            {formatAmount(mv.quantity)} {mv.unit}
+                            {formatQuantity(mv.quantity)} {mv.unit}
                           </td>
                           <td>{mv.price > 0 ? formatAmount(mv.price) : "—"}</td>
                         </tr>
@@ -7007,13 +7009,15 @@ function InvoiceModal({
     if(hybridLocal && content==="items"){
       const invalidLine = validLines.find((line) => {
         const item = line.inventoryItemId ? inventoryById.get(line.inventoryItemId) : undefined;
-        return !item || (!localDraft && historicalStockPending(item)) || item.warehouseId !== warehouseId;
+        return !item || (!localDraft && (historicalStockPending(item) || item.costUnverified === true)) || item.warehouseId !== warehouseId;
       });
       if (invalidLine) {
         const item = invalidLine.inventoryItemId ? inventoryById.get(invalidLine.inventoryItemId) : undefined;
         const reason = !item ? "اختر الصنف من ملف الأصناف."
           : !localDraft && historicalStockPending(item)
             ? `رصيد الصنف «${item.name}» غير معتمد للمخزن المحدد؛ لم يُرحّل أي قيد أو حركة مخزون.`
+            : !localDraft && item.costUnverified
+              ? `كمية الصنف «${item.name}» معتمدة؛ التكلفة غير معتمدة بعد، ولم يُرحّل أي قيد أو حركة مخزون.`
             : `الصنف «${item.name}» غير مرتبط بالمخزن المحدد. اختر مخزنه الصحيح أو أعد اختيار الصنف لهذا المخزن قبل الحفظ.`;
         setFormError({ field: "submit", message: `${reason} بقيت الفاتورة مفتوحة ويمكنك حفظ مسودة دون ترحيل.` });
         keyboard.hide();
@@ -7122,7 +7126,7 @@ function InvoiceModal({
 
       const itemsSummaryText =
         content === "items" && validLines.length > 0
-          ? `[ ${validLines.map((l) => `${l.itemName} (${formatAmount(l.quantity)} ${l.unit})`).join("، ")} ]`
+          ? `[ ${validLines.map((l) => `${l.itemName} (${formatQuantity(l.quantity)} ${l.unit})`).join("، ")} ]`
           : "";
       const finalDetails = [note.trim(), itemsSummaryText].filter(Boolean).join(" — ") || typeLabel;
       const cleanDate = entryDate.trim() || new Date().toISOString().slice(0, 10);
@@ -7647,7 +7651,7 @@ function InvoiceModal({
                         >
                           <span>
                             <strong>{item.name}</strong>
-                            <small> · {stockQty === null ? invoiceStockStatus(item) : "كمية المخزن: " + formatAmount(stockQty)}</small>
+                            <small> · {stockQty === null ? invoiceStockStatus(item) : "كمية المخزن: " + formatQuantity(stockQty) + (item.costUnverified ? " — التكلفة غير معتمدة" : "")}</small>
                             {item.sku ? <small> · باركود: {item.sku}</small> : null}
                           </span>
                           <b>
@@ -7765,8 +7769,8 @@ function InvoiceModal({
                                   />
                                 )}
                                 {stockQty !== null ? (
-                                  <span className="invoice-erp-stock-meta" title={`المتاح بالمخزن: ${formatAmount(stockQty)}`}>
-                                    متاح: <bdi>{formatAmount(stockQty)}</bdi>
+                                  <span className="invoice-erp-stock-meta" title={`المتاح بالمخزن: ${formatQuantity(stockQty)}`}>
+                                    كمية المخزن: <bdi>{formatQuantity(stockQty)}</bdi>{linkedItem?.costUnverified ? " — التكلفة غير معتمدة" : ""}
                                   </span>
                                 ) : linkedItem ? (
                                   <span className="invoice-erp-stock-meta" data-testid="invoice-line-stock-status">{invoiceStockStatus(linkedItem)}</span>
@@ -7909,7 +7913,7 @@ function InvoiceModal({
               <div className="invoice-totals-bar">
                 <div className="invoice-total-stat">
                   <span>الكمية</span>
-                  <b>{formatAmount(computedItemsQty)}</b>
+                  <b>{formatQuantity(computedItemsQty)}</b>
                 </div>
                 {computedItemsDiscount > 0 ? (
                   <div className="invoice-total-stat">
@@ -13861,7 +13865,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
         void hybridBridge.invoke("openInvoiceRoles",{workspaceId:ctx.uid})
           .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح إعدادات الترحيل."));
       } : undefined}
-      onOpenStockReconciliation={import.meta.env.VITE_NASQO_HYBRID === "1" && ctx.inventory.some(i=>i.quantityUnverified||i.legacyStockPending) ? () => {
+      onOpenStockReconciliation={import.meta.env.VITE_NASQO_HYBRID === "1" && ctx.inventory.some(i=>i.quantityUnverified||i.costUnverified||i.legacyStockPending) ? () => {
         void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{workspaceId:ctx.uid})
           .then(async result=>{if(result?.changed)await refreshWorkspaceFromServer(ctx.uid);})
           .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون."));
@@ -14621,7 +14625,7 @@ function CashInvoiceDocument({
                 </td>
                 <td>{line.unit || "حبة"}</td>
                 <td className="red">{formatAmount(line.price)}</td>
-                <td>{formatAmount(line.quantity)}</td>
+                <td>{formatQuantity(line.quantity)}</td>
                 <td className="blue">{formatAmount(line.total)}</td>
               </tr>
             ))

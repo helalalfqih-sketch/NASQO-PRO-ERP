@@ -1,3 +1,4 @@
+import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_backup_restore.dart';
@@ -45,7 +46,10 @@ class LocalInventoryReports {
     final sourceProducts=await sourceRows(db,'inventory',sha);
     final source={for(final p in sourceProducts)s(p['id']):p};
     final archivedEntries=await sourceRows(db,'ledger',sha);
-    final openings=sha==null?await db.query('legacy_stock_openings'): <Map<String,Object?>>[];
+    final valued=sha==null?await db.query('legacy_stock_openings'): <Map<String,Object?>>[];
+    final quantities=sha==null?await StockQuantityApprovalState.read(db):<String,Map<String,dynamic>>{};
+    // A later valuation must not create a second quantity cutover.
+    final openings=<Map<String,Object?>>[...valued.where((o)=>!quantities.containsKey(o['item_id'])),...quantities.values];
     final byOpening={for(final o in openings) "${o['source_item_id']}|${o['warehouse_id']}":s(o['item_id'])};
     String locationItem(String id,String wh)=>byOpening['$id|$wh']??id;
     final result=<Map<String,dynamic>>[];
@@ -248,7 +252,8 @@ class LocalInventoryReports {
         (scope.isEmpty||scope==wh?current:0)-sum(balanceEvents.where((e)=>to.isNotEmpty&&s(e['date']).compareTo(to)>0),'effectQty');
       final periodNet=sum(endEvents.where((e)=>from.isEmpty||s(e['date']).compareTo(from)>=0),'effectQty');
       final openingQty=available-periodNet;
-      final value=historicalOnly||rowCurrency!=c?0:round(available*catalogCost);
+      final costPending=item['costUnverified']==true;
+      final value=historicalOnly||costPending||rowCurrency!=c?0:round(available*catalogCost);
       if(historicalOnly)estimates++;
       final otherCurrencies=relevant.where((e)=>e['financial']==true&&e['currency']!=rowCurrency);
       if(otherCurrencies.isNotEmpty)mixed++;
@@ -265,7 +270,7 @@ class LocalInventoryReports {
         'buyQty':round(buys,1000),'sellQty':round(sells,1000),'transferInQty':round(txIn,1000),'transferOutQty':round(txOut,1000),
         'buyTotal':round(buyValue),'sellTotal':round(sellValue),'availableQty':round(available,1000),
         'unitCost':round(unitCost),'remainingValue':value,'profit':round(profit),'avgCost':catalogCost,
-        'sellingPrice':item['sellingPrice'],'catalogQuantity':current,'quantityUnverified':historicalOnly,
+        'sellingPrice':item['sellingPrice'],'catalogQuantity':current,'quantityUnverified':historicalOnly,'costUnverified':costPending,
         'hasMovement':relevant.isNotEmpty,'balanceBasis':historicalOnly?'historical':'operational'});
       // Keep money in its own currency. The row shows one currency, while
       // report totals include each movement currency separately.
@@ -322,6 +327,7 @@ class LocalInventoryReports {
     final one=buckets.length==1?buckets.single:<String,dynamic>{};
     final unresolved=data['unresolved'] as List;
     final note='الرصيد المعتمد من SQLite ولا تُعاد إضافة الحركات القديمة إليه. الكميات التاريخية غير المعتمدة تقديرية ولا تدخل في قيمة المخزون. '
+      'اعتماد الكمية مستقل عن التكلفة؛ الكمية المعتمدة بتكلفة غير معتمدة لا تدخل في قيمة المخزون. '
       'الأرباح التاريخية تقديرية حسب أساس السعر المختار؛ الربح المسجل متاح للفواتير المحلية. قيمة المتبقي بسعر التكلفة الحالي وليست تقييمًا تاريخيًا. '
       'استثناءات: ${unresolved.length} تحويل غير مكتمل، ${data['missingLines']} بند غير مرتبط، $unknownValue بند دون قيمة مالية معتمدة، $mixed صنف متعدد العملات.'
       + (data['incompleteTransferHistory']==true?' بعض التحويلات القديمة غير متوفرة في المصدر.':'');

@@ -1,3 +1,4 @@
+import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
@@ -68,7 +69,8 @@ class LocalStockCatalog {
   }
 
   static Future<bool> hasHistory(Transaction t,String id)async{
-    return (await t.query('invoice_lines',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty||
+    return (await StockQuantityApprovalState.read(t)).containsKey(id)||
+      (await t.query('invoice_lines',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty||
       (await t.query('stock_movements',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty||
       (await t.query('legacy_operational_rows',where:'collection = ? AND record_id = ?',whereArgs:['inventory',id],limit:1)).isNotEmpty||
       (await t.query('legacy_stock_openings',where:'item_id = ? OR source_item_id = ?',whereArgs:[id,id],limit:1)).isNotEmpty;
@@ -114,7 +116,8 @@ class LocalStockCatalog {
        input.containsKey('avgCost')&&(input['avgCost'] is! num||(input['avgCost'] as num).isFinite==false||
          ((input['avgCost'] as num)-cost).abs()>0.0000001)||
        input.containsKey('quantityUnverified')&&input['quantityUnverified']!=
-         (await t.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty)
+         ((await t.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty&&
+          !(await StockQuantityApprovalState.read(t)).containsKey(id)))
       throw StateError('Stock quantities and valuation require balanced posting');
     final merged=<String,dynamic>{...old,...oldUnits,...input};
     final name=LocalDocumentCommands.field(merged,'name',120).trim(),sku=LocalDocumentCommands.field(merged,'sku',64);

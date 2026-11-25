@@ -1,3 +1,4 @@
+import 'legacy_quantity_approval_screen.dart';
 import 'package:flutter/material.dart';
 import '../services/legacy_stock_opening.dart';
 import '../services/local_database.dart';
@@ -14,7 +15,7 @@ class LegacyStockOpeningScreen extends StatefulWidget {
 class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
   final service=LegacyStockOpening(LocalDatabase.instance);
   final search=TextEditingController(),quantity=TextEditingController(),value=TextEditingController(),evidence=TextEditingController();
-  List<Map<String,dynamic>> products=[],warehouses=[],accounts=[],openings=[];
+  List<Map<String,dynamic>> products=[],warehouses=[],accounts=[],openings=[],quantityApprovals=[];
   String? product,warehouse,asset,offset;
   String date=DateTime.now().toIso8601String().substring(0,10);
   bool busy=true,confirmed=false,changed=false;
@@ -33,7 +34,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       final data=await service.load();
       if(!mounted)return;
       setState((){
-        products=rows(data['products']);warehouses=rows(data['warehouses']);accounts=rows(data['accounts']);openings=rows(data['openings']);
+        products=rows(data['products']);warehouses=rows(data['warehouses']);accounts=rows(data['accounts']);openings=rows(data['openings']);quantityApprovals=rows(data['quantityApprovals']);
         unresolvedTransfers=(data['unresolvedTransfers'] as List).length;
         sourceSha=data['sourceSha'] as String;
         if(!_initialSelectionApplied){
@@ -46,6 +47,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
         if(!accounts.any((a)=>a['id']==offset))offset=null;
         busy=false;error=null;
       });
+      if(approvedQuantity!=null)quantity.text=approvedQuantity!['quantity'].toString();
     }catch(_){if(mounted)setState((){busy=false;error='تعذر تحميل بيانات الجرد.';});}
   }
   Map<String,dynamic>? get selected {
@@ -56,6 +58,10 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     for(final o in openings){if(o['source_item_id']==product&&o['warehouse_id']==warehouse)return o;}
     return null;
   }
+  Map<String,dynamic>? get approvedQuantity {
+    for(final o in quantityApprovals){if(o['source_item_id']==product&&o['warehouse_id']==warehouse)return o;}
+    return null;
+  }
   String normalize(String input){
     const arabic='٠١٢٣٤٥٦٧٨٩',persian='۰۱۲۳۴۵۶۷۸۹';
     var out=input.trim().replaceAll('٫','.').replaceAll('٬','');
@@ -63,7 +69,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     return out;
   }
   bool validQuantity(num q){try{StockQuantity.ticks(q);return true;}catch(_){return false;}}
-  void clearCount(){quantity.clear();value.clear();evidence.clear();confirmed=false;error=null;}
+  void clearCount(){quantity.text=approvedQuantity?['quantity']?.toString()??'';value.clear();evidence.clear();confirmed=false;error=null;}
   Future<void> _chooseDate() async {
     final picked=await showDatePicker(context:context,initialDate:DateTime.parse(date),firstDate:DateTime(2000),lastDate:DateTime.now());
     if(picked!=null&&mounted)setState((){date=picked.toIso8601String().substring(0,10);confirmed=false;});
@@ -77,9 +83,9 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     }
     final name=selected?['name']??'';
     final yes=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
-      title:const Text('اعتماد نهائي للجرد'),
+      title:Text(approvedQuantity==null?'اعتماد نهائي للجرد':'اعتماد التكلفة للكمية المثبتة'),
       content:Text('الصنف: $name\nالكمية: $q\nإجمالي التكلفة: $v ريال\n'
-        'سيُفتح رصيد هذا المخزن مرة واحدة. لا تستخدم الاعتماد إذا كانت القيمة مثبتة مسبقًا في الدفاتر؛ يجب تسويتها محاسبيًا أولًا.'),
+        'ستُعتمد قيمة هذا المخزن مرة واحدة؛ الكمية المعتمدة سابقًا لن تُضاف مرة أخرى. لا تستخدم الاعتماد إذا كانت القيمة مثبتة مسبقًا في الدفاتر؛ يجب تسويتها محاسبيًا أولًا.'),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('اعتماد'))]));
     if(yes!=true||!mounted)return;
@@ -117,12 +123,16 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     return Directionality(textDirection:TextDirection.rtl,child:PopScope(canPop:!busy,child:Scaffold(
       appBar:AppBar(title:const Text('اعتماد جرد المخازن'),actions:[IconButton(tooltip:'تم',onPressed:busy?null:()=>Navigator.pop(context,changed),icon:const Icon(Icons.check))]),
       body:ListView(padding:const EdgeInsets.all(16),children:[
-        Text('اعتمادات المخازن المسجلة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
+        Text('اعتمادات الكمية: ${quantityApprovals.length} • اعتمادات التكلفة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
         FilledButton.icon(onPressed:busy||products.isEmpty||sourceSha==null?null:()async{
           final result=await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockBatchScreen(
             products:products,warehouses:warehouses,accounts:accounts,openings:openings,sourceSha:sourceSha!,initialWarehouseId:warehouse)));
           if(result==true&&mounted){changed=true;setState(()=>busy=true);await _load();}
         },icon:const Icon(Icons.playlist_add_check),label:const Text('اعتماد جرد جماعي')),
+        OutlinedButton.icon(onPressed:busy?null:()async{
+          await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyQuantityApprovalScreen(warehouses:warehouses,initialWarehouseId:warehouse)));
+          if(mounted){changed=true;setState(()=>busy=true);await _load();clearCount();}
+        },icon:const Icon(Icons.checklist),label:const Text('اعتماد الكميات الحالية فقط')),
         const Text('أدخل الكمية الفعلية والتكلفة الإجمالية بعد الجرد. كل صنف ومخزن يُعتمد مستقلًا. التاريخ السابق محفوظ، وليس جردًا مؤكدًا.'),
         if(unresolvedTransfers>0)Text('تحويلات تحتاج مطابقة مخزن: $unresolvedTransfers. لم تُضم كمياتها الملتبسة إلى التقدير.'),
         if(busy)const LinearProgressIndicator(),
@@ -140,18 +150,19 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
           const SizedBox(height:12),
           if(o!=null)Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('معتمد بتاريخ ${o['entry_date']}\nكمية الافتتاح: ${o['quantity']}\nقيمة الافتتاح: ${(o['value_minor'] as num)/100} ريال\nلا يمكن تكرار الافتتاح. هذه ليست الكمية الحالية.'))),
           if(o==null&&warehouse!=null)...[
+            if(approvedQuantity!=null)const Text('الكمية معتمدة؛ هذه الخطوة لاعتماد التكلفة فقط، ولن تضيف الكمية مرة أخرى.'),
             if(p['legacyInvoiceQtyByWarehouse'] is Map&&(p['legacyInvoiceQtyByWarehouse'] as Map).containsKey(warehouse))
               Text('صافي الفواتير التاريخية لهذا المخزن: ${(p['legacyInvoiceQtyByWarehouse'] as Map)[warehouse]} (ليس جردًا معتمدًا؛ لا يشمل التحويلات).'),
             if(transfers is Map&&transfers.containsKey(warehouse))
               Text('صافي التحويلات المعروفة: ${transfers[warehouse]}'),
             if(hasHistory)Text('صافي التاريخ بعد التحويلات المعروفة: $historical'),
             if(p['legacyTransferIncomplete']==true)const Text('هذا الصنف مرتبط بتحويل غير مكتمل؛ راجع سجله قبل اعتماد الكمية.'),
-            if(hasHistory&&validQuantity(historical)&&p['legacyTransferIncomplete']!=true)
+            if(approvedQuantity==null&&hasHistory&&validQuantity(historical)&&p['legacyTransferIncomplete']!=true)
               TextButton(onPressed:busy?null:()=>setState((){
                 quantity.text=StockQuantity.normalized(historical).toString();confirmed=false;
               }),child:const Text('استخدام الكمية المحسوبة كاقتراح للجرد')),
             if(p['avgCost'] is num)Text('سعر التكلفة المسجل تاريخيًا: ${p['avgCost']} ريال (مرجع فقط).'),
-            TextField(controller:quantity,enabled:!busy,keyboardType:const TextInputType.numberWithOptions(decimal:true),onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية',border:OutlineInputBorder())),
+            TextField(controller:quantity,enabled:!busy&&approvedQuantity==null,keyboardType:const TextInputType.numberWithOptions(decimal:true),onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية',border:OutlineInputBorder())),
             const SizedBox(height:12),
             TextField(controller:value,enabled:!busy,keyboardType:const TextInputType.numberWithOptions(decimal:true),onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'إجمالي تكلفة الكمية بالريال',border:OutlineInputBorder())),
             if(avg!=null)Text('متوسط التكلفة: $avg ريال'),
@@ -163,7 +174,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
             TextButton.icon(onPressed:busy?null:_chooseDate,icon:const Icon(Icons.calendar_today),label:Text('تاريخ الاعتماد: $date')),
             TextField(controller:evidence,enabled:!busy,maxLength:300,onChanged:(_)=>setState(()=>confirmed=false),decoration:const InputDecoration(labelText:'مرجع محضر الجرد والتقييم',border:OutlineInputBorder())),
             CheckboxListTile(value:confirmed,onChanged:busy?null:(v)=>setState(()=>confirmed=v??false),title:const Text('تحققت من الجرد والتكلفة والحسابات، ولن أكرر قيمة مثبتة سابقًا.')),
-            FilledButton.icon(onPressed:busy||!confirmed||asset==null||offset==null?null:_approve,icon:const Icon(Icons.fact_check),label:const Text('اعتماد المخزون')),
+            FilledButton.icon(onPressed:busy||!confirmed||asset==null||offset==null?null:_approve,icon:const Icon(Icons.fact_check),label:Text(approvedQuantity==null?'اعتماد المخزون':'اعتماد التكلفة')),
           ],
         ],
         if(error!=null)Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error)),

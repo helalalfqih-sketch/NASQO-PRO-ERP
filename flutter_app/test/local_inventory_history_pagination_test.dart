@@ -40,6 +40,7 @@ void main(){
       db=await databaseFactoryFfi.openDatabase(inMemoryDatabasePath,options:OpenDatabaseOptions(singleInstance:false));
       await db.execute('CREATE TABLE legacy_operational_rows(collection TEXT,record_id TEXT,row_json TEXT,PRIMARY KEY(collection,record_id))');
       await db.execute('CREATE TABLE backup_review_active(sha TEXT)');
+      await db.execute('CREATE TABLE erp_state(stateKey TEXT PRIMARY KEY,payloadJson TEXT,updatedAt TEXT)');
       await db.execute('CREATE TABLE legacy_stock_openings(item_id TEXT)');
       await db.execute('CREATE TABLE stock_posting_documents(id TEXT,document_json TEXT)');
       await db.execute('CREATE TABLE stock_posting_lines(id TEXT PRIMARY KEY,document_id TEXT,item_id TEXT,quantity REAL,line_json TEXT)');

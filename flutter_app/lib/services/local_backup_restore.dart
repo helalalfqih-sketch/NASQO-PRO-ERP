@@ -1,3 +1,4 @@
+import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -269,7 +270,7 @@ class LocalBackupRestore {
       final q=numValue(row['quantity']),cost=numValue(row['avgCost']);
       // Only an explicitly verified, representable base-currency quantity
       // from the unified source may be used as live stock without replay.
-      var verified=row['quantityUnverified']==false&&row['quantity']!=null&&row['avgCost']!=null&&
+      var verified=row['quantityUnverified']==false&&row['costUnverified']!=true&&row['quantity']!=null&&row['avgCost']!=null&&
         row['currencyCode']=='ريال'&&cost>=0&&(q!=0||cost==0);
       if(verified){
         try{StockQuantity.ticks(q);}catch(_){verified=false;}
@@ -607,6 +608,7 @@ class LocalBackupRestore {
       }else if(chunks.isNotEmpty||(await txn.query('legacy_operational_rows',limit:1)).isNotEmpty||(await txn.query('legacy_unverified_stock',limit:1)).isNotEmpty||(await txn.query('legacy_stock_openings',limit:1)).isNotEmpty){throw StateError('Missing imported source metadata');}
       final invalidOpenings=await txn.rawQuery('''SELECT o.item_id FROM legacy_stock_openings o LEFT JOIN inventory_items i ON i.id=o.item_id LEFT JOIN legacy_operational_rows r ON r.collection='inventory' AND r.record_id=o.source_item_id LEFT JOIN legacy_unverified_stock u ON u.item_id=o.item_id WHERE i.warehouseId<>o.warehouse_id OR r.record_id IS NULL OR u.item_id IS NOT NULL OR (o.ledger_id IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.inventory_account_id AND j.debit_minor=o.value_minor AND j.credit_minor=0) OR NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.offset_account_id AND j.credit_minor=o.value_minor AND j.debit_minor=0))) LIMIT 1''');
       if(invalidOpenings.isNotEmpty)throw StateError('Invalid stock opening audit');
+      await StockQuantityApprovalState.validate(txn);
       await txn.delete('backup_review_active');
     });
   }
