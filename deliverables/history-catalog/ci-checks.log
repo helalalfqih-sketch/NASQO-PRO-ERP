@@ -1,0 +1,8 @@
+2026-11-25T22:19:07.5254736Z Mobile runtime integrity check passed (28 protected files).
+2026-11-25T22:19:08.5491424Z [hybrid-build] SUCCESS: 63 files (4244.7 KB) written to dist/hybrid/ with 0 security/offline violations.
+2026-11-25T22:19:08.6707456Z [sync-flutter-hybrid] SUCCESS: Synced & verified 63 files (4244.7 KB) -> flutter_app/assets/web/ (bridge=NasqoHome, protocol=1.0.0)
+2026-11-25T22:19:09.1964408Z ℹ tests 18
+2026-11-25T22:19:09.1964788Z ℹ pass 18
+2026-11-25T22:19:09.1964929Z ℹ fail 0
+2026-11-25T22:19:57.0471444Z 00:19 +92: All tests passed!
+2026-11-25T22:23:33.8067825Z ✓ Built build/app/outputs/flutter-apk/app-release.apk (59.6MB)
