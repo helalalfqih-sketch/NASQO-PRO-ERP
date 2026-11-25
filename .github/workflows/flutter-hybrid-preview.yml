@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_verified_candidate:
-        description: Publish the already verified 1.0.126 artifact (no rebuild)
+        description: Publish the already verified 1.0.128 artifact (no rebuild)
         type: boolean
         default: false
       signed_candidate:
@@ -231,7 +231,59 @@ jobs:
           path: upgrade-evidence/
 
 
+  verify-arabic-name:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+          run-id: 45689924157
+          github-token: ${{ github.token }}
+      - name: Get prior published APK and verify identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous-release upgrade-evidence
+          gh release download android-v1126 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
+          "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
+          diff <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/previous-certificate.txt) <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/candidate-certificate.txt)
+          test -s upgrade-evidence/candidate-certificate.txt
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging release-output/NASQO-PRO-ERP.apk > upgrade-evidence/badging.txt
+          grep -F "application-label:'نسقو برو'" upgrade-evidence/badging.txt
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+      - name: Emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: bash scripts/verify-android-release-upgrade.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence/
+
+
   publish-verified-candidate:
+    needs: verify-arabic-name
     if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -244,15 +296,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api repos/${{ github.repository }}/actions/runs/45687704269 > /tmp/release-run.json
+          gh api repos/${{ github.repository }}/actions/runs/45689924157 > /tmp/release-run.json
           test "$(jq -r .conclusion /tmp/release-run.json)" = success
-          test "$(jq -r .head_sha /tmp/release-run.json)" = b68789951f3c5088c0246ede21516af35fb1924a
+          test "$(jq -r .head_sha /tmp/release-run.json)" = 1c5b0614b60827aabbfe7914f2c726898a0d5bd5
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-signed-preview
           path: release-output
-          run-id: 45687704269
+          run-id: 45689924157
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence
       - name: Publish the verified APK and compatibility alias
         env:
           GH_TOKEN: ${{ github.token }}
@@ -260,13 +316,13 @@ jobs:
         run: |
           set -euo pipefail
           (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
-          test "$(sha256sum release-output/NASQO-PRO-ERP.apk | cut -d ' ' -f 1)" = a2f5e1971b73e9e3e8b4ea09c0a257cfca33db49e1198d47a7739886b0de04ad
-          for tag in android-v1126 android-preview-v1126; do
+          test "$(sha256sum release-output/NASQO-PRO-ERP.apk | cut -d ' ' -f 1)" = e515848fbcc441026f9a8a08cdc55ab83221b73a904aefb169d6e4040970cfd4
+          for tag in android-v1128 android-preview-v1128; do
             gh release view "$tag" --json isDraft,targetCommitish > /tmp/release-draft.json
             test "$(jq -r .isDraft /tmp/release-draft.json)" = true
-            test "$(jq -r .targetCommitish /tmp/release-draft.json)" = b68789951f3c5088c0246ede21516af35fb1924a
-            gh release upload "$tag" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 deliverables/branding-1126/android/launcher.png deliverables/branding-1126/android/startup-1s.png --clobber
-            gh release edit "$tag" --notes-file deliverables/branding-1126/RELEASE-NOTES-AR.md
+            test "$(jq -r .targetCommitish /tmp/release-draft.json)" = 1c5b0614b60827aabbfe7914f2c726898a0d5bd5
+            gh release upload "$tag" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 upgrade-evidence/launcher.png --clobber
+            gh release edit "$tag" --notes-file deliverables/branding-1128/RELEASE-NOTES-AR.md
           done
-          gh release edit android-v1126 --draft=false --prerelease=false --latest
-          gh release edit android-preview-v1126 --draft=false --prerelease --latest=false
+          gh release edit android-v1128 --draft=false --prerelease=false --latest
+          gh release edit android-preview-v1128 --draft=false --prerelease --latest=false

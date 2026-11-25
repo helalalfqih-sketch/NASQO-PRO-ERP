@@ -15,6 +15,19 @@ adb install -r release-output/NASQO-PRO-ERP.apk > upgrade-evidence/install-updat
 adb shell input keyevent 3
 adb shell input swipe 540 2100 540 350 500
 sleep 2
+# Arabic labels sort near the end in an English launcher. Locate the visible
+# native label before taking its evidence screenshot; do not assume row 3.
+adb shell input swipe 540 1900 540 700 400
+sleep 1
+LABEL_VISIBLE=0
+for attempt in 1 2 3 4 5; do
+  adb shell uiautomator dump /sdcard/nasqo-launcher.xml >/dev/null
+  adb pull /sdcard/nasqo-launcher.xml upgrade-evidence/launcher-ui.xml >/dev/null
+  if grep -Fq 'نسقو برو' upgrade-evidence/launcher-ui.xml; then LABEL_VISIBLE=1; break; fi
+  adb shell input swipe 540 1900 540 700 400
+  sleep 1
+done
+test "$LABEL_VISIBLE" = 1
 adb exec-out screencap -p > upgrade-evidence/launcher.png
 adb shell am force-stop "$PKG"
 adb shell screenrecord --time-limit 12 /sdcard/nasqo-brand-start.mp4 >/dev/null 2>&1 &
