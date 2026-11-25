@@ -140,3 +140,8 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Quantity-only approval must not replay historical movements, create stock movements or financial entries, or approve reference prices. Keep cost-pending quantities out of inventory valuation and preserve costing guards for invoice posting.
 - A later explicit valuation must retain the approved quantity without another quantity movement. Display quantity and cost approval states separately, including in reports, catalog and invoice validation.
 - Display stock quantities to three decimal places so review values match persisted quantities; money remains two decimal places.
+
+## Android brand artwork (user direction, 2026-11-25)
+
+- Use the supplied complete NASQO calculator/cube/Arabic wordmark image for the launcher icon and startup screen. The matching source is `public/assets/aistudio/NASQO_PRO_ERP_800_022d325f.png`. Preserve its artwork and transparency.
+- Keep it inside adaptive-icon safe margins. Configure native resources after `flutter create` so Flutter's default icon cannot return. Preserve package/signing identity.

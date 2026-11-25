@@ -10,9 +10,19 @@ adb shell pidof "$PKG" > upgrade-evidence/previous-pid.txt
 adb shell dumpsys package "$PKG" > upgrade-evidence/previous-package.txt
 adb exec-out screencap -p > upgrade-evidence/previous.png
 adb logcat -c
+# Capture the updated icon and cold-start animation on this synthetic device.
 adb install -r release-output/NASQO-PRO-ERP.apk > upgrade-evidence/install-update.txt
+adb shell input keyevent 3
+adb shell input swipe 540 2100 540 350 500
+sleep 2
+adb exec-out screencap -p > upgrade-evidence/launcher.png
+adb shell am force-stop "$PKG"
+adb shell screenrecord --time-limit 12 /sdcard/nasqo-brand-start.mp4 >/dev/null 2>&1 &
+RECORD_PID=$!
 adb shell am start -W -n "$PKG/.MainActivity" > upgrade-evidence/start-update.txt
-sleep 12
+sleep 15
+wait "$RECORD_PID" || true
+adb pull /sdcard/nasqo-brand-start.mp4 upgrade-evidence/startup.mp4
 adb shell pidof "$PKG" > upgrade-evidence/update-pid.txt
 adb shell dumpsys package "$PKG" > upgrade-evidence/update-package.txt
 adb exec-out screencap -p > upgrade-evidence/update.png
@@ -29,9 +39,9 @@ def field(s,k):
     assert match,'Missing package field: '+k
     return match.group(1)
 assert field(old,'userId')==field(new,'userId'),'Android UID changed'
-assert int(field(old,'versionCode'))==1123
-assert int(field(new,'versionCode'))>1123
+assert int(field(old,'versionCode'))==1124
+assert int(field(new,'versionCode'))>1124
 assert 'Success' in (p/'install-update.txt').read_text()
 assert 'FATAL EXCEPTION' not in (p/'update-log.txt').read_text()
-(p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1123,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
+(p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1124,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
 PY

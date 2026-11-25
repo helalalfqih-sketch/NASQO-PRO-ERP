@@ -46,3 +46,7 @@ if (!original.includes(dependency)) {
   fs.appendFileSync(file, `\n// Local, offline React ES module loading through WebViewAssetLoader.\ndependencies {\n    ${dependency}\n}\n`);
 }
 console.log('[android-hybrid] WebViewAssetLoader dependency configured.');
+// Run after flutter create so its generated Flutter icon cannot replace NASQO.
+const {configureAndroidBrand}=await import('./configure-android-brand.mjs');
+configureAndroidBrand();
+console.log('[android-hybrid] NASQO launcher and native launch screen configured.');

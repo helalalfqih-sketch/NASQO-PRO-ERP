@@ -198,7 +198,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p previous-release upgrade-evidence
-          gh release download android-preview-v1123 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          gh release download android-v1124 --pattern NASQO-PRO-ERP.apk --dir previous-release
           SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
           "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
           "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
@@ -246,7 +246,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p previous-release upgrade-evidence
-          gh release download android-preview-v1123 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          gh release download android-v1124 --pattern NASQO-PRO-ERP.apk --dir previous-release
           SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
           "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
           "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt

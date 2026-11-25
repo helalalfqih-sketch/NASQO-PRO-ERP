@@ -703,7 +703,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       body: SafeArea(
         child: _error!=null
           ? Center(child:Padding(padding:const EdgeInsets.all(18),child:Text(_error!,textAlign:TextAlign.center)))
-          : !_backupStateLoaded ? const Center(child:CircularProgressIndicator()) : AndroidView(
+          : !_backupStateLoaded ? Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/branding/nasqo_logo.png',width:180,height:180,fit:BoxFit.contain),const SizedBox(height:24),const CircularProgressIndicator()])) : AndroidView(
               key:ValueKey(_viewGeneration),viewType:'nasqo/offline_hybrid',onPlatformViewCreated:_attach),
       ),
       ),
