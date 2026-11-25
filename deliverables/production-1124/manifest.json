@@ -11,5 +11,9 @@
   "stableTag": "android-v1124",
   "legacyCompatibilityTag": "android-preview-v1124",
   "dataUsed": "synthetic empty workspace only",
-  "publishedBranchUnchanged": "0a0b2414207166f783ea2bee2e64d4df4a4fa394"
+  "publishedBranchUnchanged": "0a0b2414207166f783ea2bee2e64d4df4a4fa394",
+  "publishAndUpgradeRun": 45684547905,
+  "publishWorkflowSha": "eb38115a8d4bb1c2bafd16cdefce386b50116beb",
+  "apkSha256": "ccb8732eb4bd6f833229e4aa27380944a16a692670d7ef3ec1a193806ca03be3",
+  "published": true
 }
