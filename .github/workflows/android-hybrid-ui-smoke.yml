@@ -3,8 +3,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
-  android:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -42,6 +43,23 @@ jobs:
           path: |
             flutter_app/build/app/outputs/flutter-apk/app-debug.apk
             flutter_app/build/app/outputs/flutter-apk/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-audit-instrumentation
+          path: flutter_app/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+  android:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-audit-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-audit-instrumentation
+          path: flutter_app/build/app/outputs/apk/androidTest/debug/
       - name: Emulator KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -54,11 +72,12 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
           script: |
             mkdir -p qa/android-results
             adb install -r flutter_app/build/app/outputs/flutter-apk/app-debug.apk
             adb install -r flutter_app/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb logcat -v threadtime NASQO_ACCEPTANCE:I NASQO_LIFECYCLE:I AndroidRuntime:E flutter:E '*:S' > qa/android-results/logcat-live.txt &
             adb shell am instrument -w -r com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
             adb logcat -d > qa/android-results/logcat.txt
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-pdf.png > qa/android-results/receiver-pdf.png

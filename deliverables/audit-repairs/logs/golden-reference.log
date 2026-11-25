@@ -1,0 +1,20 @@
+00:00 +0: loading /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart                                                                                                           00:01 +0: loading /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart                                                                                                           00:02 +0: loading /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart                                                                                                           00:02 +0: /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart: owner acceptance: money, stock, rollback, catalogs, backup and disk reopen                                       00:03 +0: /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart: owner acceptance: money, stock, rollback, catalogs, backup and disk reopen                                       00:03 +1: /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart: owner acceptance: money, stock, rollback, catalogs, backup and disk reopen                                       00:03 +1: /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart: owner acceptance: money, stock, rollback, catalogs, backup and disk reopen                                       
+ACCEPTANCE G01-cash-sale {"initialQty":10,"cost":5,"soldQty":2,"price":8,"remainingQty":8.0,"cashIncrease":16,"cogs":10,"journalDebitMinor":4200,"journalCreditMinor":4200,"saveMs":52.623}
+ACCEPTANCE G02-report-trace {"inventoryQuantity":8,"cashboxBalance":16,"snapshotLedgerCount":1}
+ACCEPTANCE G03-duplicate-ack-loss {"documentCount":1,"movementCount":1,"remainingQty":8,"note":"replay after committed result ignored + concurrent repeats; native SQLite only"}
+ACCEPTANCE G04-mid-save-rollback {"nativeExportByteEqualBeforeAfter":true,"remainingQty":8}
+ACCEPTANCE G05-partial-return {"quantity":9,"cashNet":8,"cogsNet":5,"lateReturnScenario":"ERP-001-RET-LATE deferred, no replenishment tested here"}
+ACCEPTANCE G06-credit-sale {"quantity":7,"cashNet":8,"customerDebit":16}
+ACCEPTANCE G07-purchase {"quantity":9,"supplierCredit":10}
+ACCEPTANCE G08-receipt-payment {"cashNet":10,"customerDebit":14}
+ACCEPTANCE G09-linked-delete-guard {"customerAndCashAccountsAndItemBlocked":true,"unchangedNativeExport":true,"cashboxRegistryDelete":"no dedicated delete command certified"}
+ACCEPTANCE M-purchases {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-sales {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-clients {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-employees {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-transfers {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-shop {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-currencies-setting {"currencies":["ريال","دولار","يورو"],"defaultChangePersisted":true,"oldInvoiceCurrencyUnchanged":true,"defaultDeleteBlocked":true}
+ACCEPTANCE G10-native-backup-restore {"allTableRowsAndValuesEqual":true,"serializedOrderChanged":"stock_posting_documents places originals before returns","foreignKeysClean":true,"quantity":9.0,"cashNet":10.0}
+ACCEPTANCE G11-disk-reopen-offline {"quantity":9,"documents":6,"stockDocuments":4,"cashNet":10,"network":"HttpClient disabled","scope":"new SQLite connection; not Android process kill"}
+00:04 +2: /workspace/NASQO-audit-repairs/flutter_app/test/owner_acceptance_test.dart: owner acceptance: money, stock, rollback, catalogs, backup and disk reopen                                       00:04 +2: All tests passed!                                                                                                                                                                            

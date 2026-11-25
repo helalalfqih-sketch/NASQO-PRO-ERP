@@ -1,0 +1,10 @@
+11-25 18:36:44.269  2774  3019 I NASQO_ACCEPTANCE: receiver pdf bytes/name/MIME/readability PASS
+11-25 18:36:53.096  2774  3019 I NASQO_ACCEPTANCE: receiver xlsx bytes/name/MIME/readability PASS
+11-25 18:36:58.528  2774  3019 I NASQO_ACCEPTANCE: receiver png bytes/name/MIME/readability PASS
+11-25 18:37:06.354  2774  3019 I NASQO_ACCEPTANCE: system save picker cancellation PASS
+11-25 18:37:11.285  2774  3019 I NASQO_ACCEPTANCE: share chooser canceled, no receiver delivery PASS
+11-25 18:37:27.714  2774  3019 E NASQO_ACCEPTANCE: FAIL
+11-25 18:37:27.714  2774  3019 E NASQO_ACCEPTANCE: java.lang.AssertionError: UI node missing: الاسم الكامل للموظف
+11-25 18:37:27.714  2774  3019 E NASQO_ACCEPTANCE: 	at com.nasqo.audit.DocumentInstrumentation.waitNode(DocumentInstrumentation.java:95)
+11-25 18:37:27.714  2774  3019 E NASQO_ACCEPTANCE: 	at com.nasqo.audit.DocumentInstrumentation.onStart(DocumentInstrumentation.java:70)
+11-25 18:37:27.714  2774  3019 E NASQO_ACCEPTANCE: 	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2594)

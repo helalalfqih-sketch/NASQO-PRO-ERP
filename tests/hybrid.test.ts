@@ -859,3 +859,16 @@ describe("Legacy register restoration parity", () => {
     assert.equal(trial.totalDebitAccounts,11);
   });
 });
+
+it('cashbox metadata needs catalog capability and an idempotency key in read-only financial mode', async () => {
+  const bridge=new NasqoHybridBridge();const sent:HybridRequestEnvelope[]=[];
+  bridge.setReadOnlyFinancialMode(true);
+  bridge.setTransportForTesting({postMessage(raw){const req=JSON.parse(raw) as HybridRequestEnvelope;sent.push(req);queueMicrotask(()=>bridge.handleInbound({protocolVersion:HYBRID_PROTOCOL_VERSION,kind:'response',requestId:req.requestId,action:req.action,ok:true,data:{cashbox:{id:9}}}));}});
+  const payload={workspaceId:LOCAL_WORKSPACE_UID,payload:{name:'صندوق اصطناعي',currencyCode:'ريال',accountId:'cash',isActive:true}};
+  await assert.rejects(()=>bridge.invoke('saveCashbox',payload,{idempotencyKey:'cashbox-attempt'}),(e:unknown)=>e instanceof HybridBridgeError&&e.code==='UNAUTHORIZED_ACTION');
+  assert.equal(sent.length,0);
+  bridge.setLocalCatalogEditing(true);
+  await bridge.invoke('saveCashbox',payload,{idempotencyKey:'cashbox-attempt'});
+  assert.equal(sent.length,1);assert.equal(sent[0].action,'saveCashbox');assert.equal(sent[0].idempotencyKey,'cashbox-attempt');
+  assert.equal(validateHybridRequestEnvelope({...sent[0],idempotencyKey:undefined}).valid,false);
+});

@@ -1,0 +1,72 @@
+android.widget.FrameLayout text=null desc=null hint=null clickable=false scroll=false
+android.widget.LinearLayout text=null desc=null hint=null clickable=false scroll=false
+android.widget.FrameLayout text=null desc=null hint=null clickable=false scroll=false
+android.widget.FrameLayout text=null desc=null hint=null clickable=false scroll=false
+android.view.View text=null desc=null hint=null clickable=false scroll=false
+android.view.View text=null desc=null hint=null clickable=false scroll=false
+android.view.View text=null desc=null hint=null clickable=false scroll=false
+android.view.View text=null desc=null hint=null clickable=false scroll=false
+android.view.View text=null desc=null hint=null clickable=false scroll=false
+android.webkit.WebView text=null desc=null hint=null clickable=false scroll=false
+android.webkit.WebView text=نسقو برو ERP — الواجهة المحلية desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.widget.Button text=رجوع desc=null hint= clickable=true scroll=false
+android.view.View text=الموارد البشرية والرواتب desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text=العمليات والتقارير desc=null hint= clickable=false scroll=false
+android.widget.Button text=سند جديد desc=null hint= clickable=true scroll=false
+android.widget.Button text=حوالة جديدة desc=null hint= clickable=true scroll=false
+android.widget.Button text=فاتورة جديدة desc=null hint= clickable=true scroll=false
+android.widget.Button text=مردود جديد desc=null hint= clickable=true scroll=false
+android.widget.Button text=قيد بسيط desc=null hint= clickable=true scroll=false
+android.widget.Button text=عرض سعر desc=null hint= clickable=true scroll=false
+android.widget.Button text=صرف عملات desc=null hint= clickable=true scroll=false
+android.widget.Button text=طلبية جديدة desc=null hint= clickable=true scroll=false
+android.widget.Button text=الحركة اليومية desc=null hint= clickable=true scroll=false
+android.widget.Button text=صناديق النقدية desc=null hint= clickable=true scroll=false
+android.widget.Button text=كشف حساب desc=null hint= clickable=true scroll=false
+android.view.View text=مجموعات الحسابات والأرصدة desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text=نسقو برو desc=null hint= clickable=false scroll=false
+android.widget.TextView text=إدارة الحسابات والمبيعات والمخزون desc=null hint= clickable=false scroll=false
+android.widget.Button text=مسح رمز QR desc=null hint= clickable=true scroll=false
+android.view.View text=الإدارة والتقارير desc=null hint= clickable=false scroll=false
+android.widget.Button text=العملات desc=null hint= clickable=true scroll=false
+android.widget.Button text=دليل الحسابات desc=null hint= clickable=true scroll=false
+android.widget.Button text=الحسابات desc=null hint= clickable=true scroll=false
+android.widget.Button text=المخازن desc=null hint= clickable=true scroll=false
+android.widget.Button text=لوحة المبيعات desc=null hint= clickable=true scroll=false
+android.widget.Button text=ميزان المراجعة desc=null hint= clickable=true scroll=false
+android.widget.Button text=ملف الأصناف desc=null hint= clickable=true scroll=false
+android.widget.Button text=حركة المخزون desc=null hint= clickable=true scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.view.View text=حفظ السجلات الإدارية متاح محليًا. الترحيل المتقدم والاستلام والتصنيع غير متاحة هنا؛ استخدم شاشات الفاتورة والسند الأصلية. desc=null hint= clickable=false scroll=false
+android.widget.TabWidget text=الموارد البشرية desc=null hint= clickable=false scroll=false
+android.view.View text=الموظفون والرواتب desc=null hint= clickable=true scroll=false
+android.view.View text=الحضور والإجازات desc=null hint= clickable=true scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.widget.TextView text=الموظفون النشطون desc=null hint= clickable=false scroll=false
+android.view.View text=0 desc=null hint= clickable=false scroll=false
+android.widget.TextView text=إجمالي مسير الشهر desc=null hint= clickable=false scroll=false
+android.view.View text=0 ريال desc=null hint= clickable=false scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.widget.TextView text=ترحيل مسير الرواتب للمحاسبة desc=null hint= clickable=false scroll=false
+android.widget.TextView text=مسير 2026-11 جاهز للاعتماد desc=null hint= clickable=false scroll=false
+android.widget.Button text=ترحيل للأستاذ العام desc=null hint= clickable=true scroll=false
+android.view.View text= desc=null hint= clickable=false scroll=false
+android.widget.TextView text=دليل الموظفين وكشف الرواتب desc=null hint= clickable=false scroll=false
+android.widget.Button text=موظف جديد desc=null hint= clickable=true scroll=false

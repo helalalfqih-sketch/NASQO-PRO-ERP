@@ -1,0 +1,22 @@
+Synthetic-only hybrid browser preview: http://127.0.0.1:4185
+PASS supplier-menu-consumes-back-before-screen
+PASS supplier-route-restores-after-new-document
+PASS supplier-search-filter-scroll-restores-after-new-document
+PASS missing-account-cold-restore-falls-back-safely
+PASS invoice-back-protects-draft-and-restores-after-reload
+PASS invoice-account-picker-back-closes-only-picker
+PASS invoice-discard-clears-only-local-draft
+PASS rapid-two-backs-close-one-layer-without-exit
+PASS synthetic-lifecycle-events-preserve-page-and-draft-without-bootstrap
+PASS simple-entry-unsaved-draft-restores-without-posting
+PASS currency-unsaved-draft-restores-without-posting
+PASS voucher-unsaved-draft-restores-without-posting
+PASS sales-account-unsaved-draft-retains-category-after-reload
+PASS missing-account-draft-is-preserved-until-explicit-discard
+PASS simple-explicit-synthetic-save-closes-form-and-does-not-replay
+PASS currency-explicit-synthetic-save-closes-form-and-does-not-replay
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

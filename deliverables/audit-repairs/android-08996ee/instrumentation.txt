@@ -1,0 +1,2 @@
+INSTRUMENTATION_RESULT: stream=java.lang.AssertionError: UI node missing: الاسم الكامل للموظف
+INSTRUMENTATION_CODE: 0

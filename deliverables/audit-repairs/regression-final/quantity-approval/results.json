@@ -1,0 +1,22 @@
+{
+  "environment": "Chromium full built hybrid UI; synthetic host, NOT Android or accounting engine",
+  "baseline": false,
+  "bundle": "/workspace/NASQO-audit-repairs/dist/hybrid",
+  "manifestSha256": "4349726db94df3f3de30d69f5fbcb113da76205ed64b1d4db89b2a7640f035bf",
+  "results": [
+    {
+      "name": "approved-quantity-remains-visible-while-cost-blocks-posting",
+      "passed": true
+    },
+    {
+      "name": "movement-report-separates-quantity-and-valuation",
+      "passed": true
+    },
+    {
+      "name": "catalog-keeps-reference-cost-separate-after-quantity-approval",
+      "passed": true
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": []
+}

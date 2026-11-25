@@ -1,0 +1,26 @@
+11-25 18:36:19.731  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-created savedState=false
+11-25 18:36:19.737  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-resumed 
+11-25 18:36:27.392  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=webview-created 
+11-25 18:36:30.422  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-paused 
+11-25 18:36:30.447  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=page-finished loads=1
+11-25 18:36:30.669  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-inactive loads=1
+11-25 18:36:44.235  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-resumed 
+11-25 18:36:45.736  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-resumed loads=1
+11-25 18:36:46.084  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-paused 
+11-25 18:36:46.501  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-inactive loads=1
+11-25 18:36:53.063  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-resumed 
+11-25 18:36:53.474  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-resumed loads=1
+11-25 18:36:53.908  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-paused 
+11-25 18:36:53.937  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-inactive loads=1
+11-25 18:36:59.434  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-resumed 
+11-25 18:37:00.360  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-paused 
+11-25 18:37:06.366  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-resumed 
+11-25 18:37:06.371  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-hidden loads=1
+11-25 18:37:06.372  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-paused loads=1
+11-25 18:37:06.728  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-hidden loads=1
+11-25 18:37:06.747  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-inactive loads=1
+11-25 18:37:08.150  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-paused 
+11-25 18:37:10.819  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=dce254db-295d-4e4a-bb20-524dd5f1242b event=activity-resumed 
+11-25 18:37:11.096  2774  2774 I NASQO_LIFECYCLE: process=d99a3bdd-83a8-4b15-92dc-4d0c2c53d4b3 instance=3a5b4574-bc45-4554-bc15-acc14393b6ec event=flutter-resumed loads=1
+11-25 18:37:39.018  4466  4466 I NASQO_LIFECYCLE: process=dd0f7c3f-7ac6-463a-824f-f486b03cddf4 instance=2a76cd1a-200c-47ac-981f-75c3571dcf08 event=activity-created savedState=false
+11-25 18:37:39.047  4466  4466 I NASQO_LIFECYCLE: process=dd0f7c3f-7ac6-463a-824f-f486b03cddf4 instance=2a76cd1a-200c-47ac-981f-75c3571dcf08 event=activity-resumed 

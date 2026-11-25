@@ -1,0 +1,32 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "baseline-catalog-empty",
+      "execution": "observed",
+      "captured": true
+    },
+    {
+      "id": "baseline-catalog-edit-textscale",
+      "execution": "observed",
+      "captured": true
+    },
+    {
+      "id": "employee-confirmed-create-edit-reject-double-click",
+      "execution": "test-error",
+      "error": "Error: expect(locator).toHaveValue(expected) failed\n\nLocator: getByPlaceholder('الاسم الكامل للموظف')\nExpected: \"موظف اختبار البقاء\"\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.have.value\" with timeout 5000ms\n  - waiting for getByPlaceholder('الاسم الكامل للموظف')\n"
+    },
+    {
+      "id": "attachment-Excel",
+      "execution": "test-error",
+      "error": "TimeoutError: locator.check: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByLabel('جميع العملات دون جمعها', { exact: true })\u001b[22m\n"
+    },
+    {
+      "id": "large-516-image-pages",
+      "execution": "test-error",
+      "error": "TimeoutError: locator.click: Timeout 7000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'حفظ الملف', exact: true })\u001b[22m\n"
+    }
+  ],
+  "errors": [],
+  "external": []
+}

@@ -1,0 +1,14 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "currency-route-current-no-provider-crash",
+      "execution": "observed",
+      "correct": true,
+      "alreadyFixedInCurrentBranch": true,
+      "postingNotTested": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}
