@@ -39,12 +39,15 @@ void main() {
       expect(await commit('two'), {'id': 'two'});
       expect(await db.query('test_effect'), hasLength(2));
       expect(await store.pendingOperations('test'), hasLength(2));
-      await store.acknowledgeOperation('test', 'two', 'rev2');
-      await store.acknowledgeOperation('test', 'one', 'rev1');
-      await store.acknowledgeOperation('test', 'one', 'rev1');
+      await expectLater(
+        store.acknowledgeOperation('test', 'two', 'rev2'), throwsArgumentError);
+      expect(await store.pendingOperations('test'), hasLength(2));
+      await store.acknowledgeOperation('test', 'two', '2');
+      await store.acknowledgeOperation('test', 'one', '1');
+      await store.acknowledgeOperation('test', 'one', '1');
       expect(await store.pendingOperations('test'), isEmpty);
       await expectLater(
-        store.acknowledgeOperation('test', 'one', 'rev2'), throwsStateError);
+        store.acknowledgeOperation('test', 'one', '2'), throwsStateError);
     } finally {
       await db.close();
       await dir.delete(recursive: true);
