@@ -53,6 +53,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "showMessage",
   // Accounting, accounts, inventory, and reports (persisted exclusively by Dart/SQLite)
   "saveWorkspaceSettings",
+  "saveCashbox",
   "saveAccountGroup",
   "saveCurrency",
   "deleteCurrency",
@@ -98,6 +99,7 @@ export const FINANCIAL_MUTATION_COMMANDS: ReadonlySet<HybridCommandAction> = new
   "permanentlyDeleteLedger",
   "saveAccount",
   "deleteAccount",
+  "saveCashbox",
   "saveAccountGroup",
   "saveCurrency",
   "deleteCurrency",
@@ -252,6 +254,7 @@ export interface HybridCommandPayloadMap {
   openStockReconciliation: { workspaceId: string; warehouseId?: string; productId?: string };
   showMessage: { message: string; level?: "info" | "success" | "warning" | "error" };
   saveWorkspaceSettings: { workspaceId: string; updates: Partial<WorkspaceSettings> };
+  saveCashbox: {workspaceId:string;payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}};
   saveAccountGroup: { workspaceId: string; payload: Partial<AccountGroupRecord> & { name: string } };
   saveCurrency: { workspaceId: string; payload: Partial<CurrencyRecord> & { name: string } };
   deleteCurrency: { workspaceId: string; currencyId: number };

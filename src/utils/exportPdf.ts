@@ -332,10 +332,9 @@ function drawSummaryCanvas(payload: DashboardPdfPayload): HTMLCanvasElement {
   return canvas;
 }
 
-function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasElement {
+function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData, pageNumber=1, totalPages=1): HTMLCanvasElement {
   const width = 1240;
-  const rowsHeight = Math.max(summary.lines.length, 1) * 60;
-  const height = Math.max(1754, 960 + rowsHeight);
+  const height = 1754;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -475,6 +474,8 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
     cursorY += rowH;
   });
 
+  // Only the last detail page states the original invoice total.
+  if(pageNumber===totalPages){
   // Totals Card
   cursorY += 34;
   const totalBoxH = summary.vatLine ? 196 : 152;
@@ -526,6 +527,7 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
     ctx.fillText(summary.footerNote.slice(0, 90), width / 2, cursorY + 36);
   }
 
+  }
   // Page Footer
   const stamp = summary.generatedAtIso.slice(0, 16).replace("T", " ");
   ctx.fillStyle = "#64748b";
@@ -533,7 +535,7 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
   ctx.textAlign = "right";
   ctx.fillText(`صادر عن قاعدة بيانات ${summary.companyName}`, width - 64, height - 48);
   ctx.textAlign = "left";
-  ctx.fillText(`Generated: ${stamp} · Page 1`, 64, height - 48);
+  ctx.fillText(`Generated: ${stamp} · Page ${pageNumber}/${totalPages}`, 64, height - 48);
 
   return canvas;
 }
@@ -621,17 +623,24 @@ function appendInvoiceSourcePages(pdf: jsPDF, summary: InvoicePdfSummaryData): v
   });
 }
 
+/** Fixed-size Arabic detail pages: repeated company/table headers, no row split. */
+export function paginateInvoiceTableLines<T>(lines:readonly T[]):T[][] {
+  if(!lines.length)return [[]];
+  const pages:T[][]=[];
+  for(let offset=0;offset<lines.length;offset+=12)pages.push(lines.slice(offset,offset+12));
+  return pages;
+}
+
 function createInvoiceSummaryPdfDoc(summary: InvoicePdfSummaryData): { pdf: jsPDF; filename: string } {
-  const canvas = drawInvoiceSummaryCanvas(summary);
-  const imgData = canvas.toDataURL("image/png");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const renderedHeight = (canvas.height * pageWidth) / canvas.width;
-  for(let offset=0;offset<renderedHeight;offset+=pageHeight){
-    if(offset>0)pdf.addPage();
-    pdf.addImage(imgData,"PNG",0,-offset,pageWidth,renderedHeight,undefined,"FAST");
-  }
+  const chunks=paginateInvoiceTableLines(summary.lines);
+  chunks.forEach((lines,index)=>{
+    if(index>0)pdf.addPage();
+    const canvas=drawInvoiceSummaryCanvas({...summary,lines},index+1,chunks.length);
+    pdf.addImage(canvas.toDataURL("image/png"),"PNG",0,0,pageWidth,pageHeight,undefined,"FAST");
+  });
   appendInvoiceSourcePages(pdf, summary);
 
   const safeDate = (summary.entryDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, "");

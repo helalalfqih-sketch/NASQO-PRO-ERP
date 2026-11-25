@@ -306,6 +306,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     final result=<String,dynamic>{};
     String? itemId,warehouseId;
     switch(action){
+      case 'saveCashbox':
+        result['cashbox']=await master.saveCashbox(workspace,key,p['payload'] as Map<String,dynamic>);
+        break;
       case 'saveAccountGroup':
         result['group']=await master.saveGroup(workspace,key,p['payload'] as Map<String,dynamic>);
         break;

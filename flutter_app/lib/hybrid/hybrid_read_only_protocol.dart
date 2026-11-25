@@ -353,7 +353,7 @@ class HybridReadOnlyProtocol {
       }
     }
 
-    const catalogActions={'saveAccountGroup','saveCurrency','deleteCurrency','deleteAccount',
+    const catalogActions={'saveCashbox','saveAccountGroup','saveCurrency','deleteCurrency','deleteAccount',
       'updateInventoryItem','deleteInventoryItem','importInventoryItems','batchUpdateInventoryItems','saveWarehouse'};
     final rawCatalog=request['payload'];
     final warehouseEdit=actionName=='saveWarehouse'&&rawCatalog is Map&&rawCatalog['warehouseId']!=null;
@@ -362,7 +362,7 @@ class HybridReadOnlyProtocol {
       if(key is! String||key.isEmpty||key.length>120||p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace')
         return _error(id,actionName,'VALIDATION_ERROR','طلب إدارة البيانات غير صالح.');
       final fields=switch(actionName){
-        'saveAccountGroup'||'saveCurrency'=>{'workspaceId','payload'},
+        'saveCashbox'||'saveAccountGroup'||'saveCurrency'=>{'workspaceId','payload'},
         'deleteCurrency'=>{'workspaceId','currencyId'},
         'deleteAccount'=>{'workspaceId','accountId'},
         'updateInventoryItem'=>{'workspaceId','itemId','updates'},

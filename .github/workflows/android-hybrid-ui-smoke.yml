@@ -56,8 +56,12 @@ jobs:
             mkdir -p qa/android-results
             adb install -r flutter_app/build/app/outputs/flutter-apk/app-debug.apk
             adb install -r flutter_app/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            adb shell am instrument -w com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
+            adb shell am instrument -w -r com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
             adb logcat -d > qa/android-results/logcat.txt
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-pdf.png > qa/android-results/receiver-pdf.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-xlsx.png > qa/android-results/receiver-xlsx.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-png.png > qa/android-results/receiver-png.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/employee-sqlite.png > qa/android-results/employee-sqlite.png
             adb exec-out screencap -p > qa/android-results/final.png
             adb shell am start -n com.indexesstore.nasqo_pro_erp/.MainActivity
             adb shell input keyevent 3

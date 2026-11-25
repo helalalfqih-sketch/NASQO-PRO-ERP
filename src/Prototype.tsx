@@ -1,3 +1,4 @@
+import { CashboxReferenceManager } from "./components/CashboxReferenceManager";
 import { useReportPreview, reportTotalText, reportSources, useReportSource, buildStatementReport, reportSummaryText, exportReport, type ReportSource, type ReportDocument, outputBytes } from "./utils/reportDocument";
 import { formatQuantity } from "./utils/quantityFormat";
 import {
@@ -168,6 +169,7 @@ import {
   createInventoryItem,
   createLedgerEntry,
   createOrUpdateAccount,
+  deleteAccount,
   deleteCurrencyRecord,
   deleteInventoryCatalogItem,
   downloadUnifiedSqliteFile,
@@ -399,6 +401,8 @@ type LiveWorkspaceState = {
   openAccountEdit: (account?: AccountRecord, sourceKey?: string) => void;
   openTransaction: (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => void;
   openAccountCreate: (mode?: AccountCreateMode, defaultCategory?: AccountCategory) => void;
+  openAccountReference: (select:(id:string)=>void, cash?:boolean, currency?:string)=>void;
+  openCashboxReference: (select:((id:number)=>void)|undefined,currency:string)=>void;
   openInvoice: (defaultCategory?: AccountCategory, intent?: InvoiceIntent) => void;
   openVendorInvoice: (account?: AccountRecord, intent?: InvoiceIntent) => void;
   openInvoiceEdit: (entry: LedgerEntryRecord, account?: AccountRecord, sourceKey?: string) => void;
@@ -1152,6 +1156,10 @@ export function AuthenticatedWorkspace({
     revision: number;
   }>({ intent: "invoice", revision: 0 });
   const returnOverlay = useRef<OverlayKind>(null);
+  const [referenceAccount,setReferenceAccount]=useState<{select:(id:string)=>void;cash:boolean;currency?:string;scope:string}|null>(null);
+  const [referenceCashbox,setReferenceCashbox]=useState<{select?:((id:number)=>void);currency:string;scope:string}|null>(null);
+  const openAccountReference=useCallback((select:(id:string)=>void,cash=false,currency?:string)=>{setReferenceAccount({select,cash,currency,scope:user.uid});},[user.uid]);
+  const openCashboxReference=useCallback((select:((id:number)=>void)|undefined,currency:string)=>{setReferenceCashbox({select,currency,scope:user.uid});},[user.uid]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const flowRef = useRef<FlowControls | null>(null);
@@ -2416,6 +2424,8 @@ export function AuthenticatedWorkspace({
       openAccountEdit,
       openTransaction,
       openAccountCreate,
+      openAccountReference,
+      openCashboxReference,
       openInvoice,
       openVendorInvoice,
       openInvoiceEdit,
@@ -2508,6 +2518,8 @@ export function AuthenticatedWorkspace({
       launchFavorite,
       ledger,
       openAccountCreate,
+      openAccountReference,
+      openCashboxReference,
       openAccountEdit,
       openAccountGroups,
       openAccountPicker,
@@ -2793,6 +2805,8 @@ export function AuthenticatedWorkspace({
           open={overlay === "account-create-extended"}
           onClose={closeOverlay}
         />
+        {referenceCashbox?<CashboxReferenceManager workspace={user.uid} currency={referenceCashbox.currency} boxes={cashboxes} accounts={accounts} blocked={Boolean(referenceAccount)} onSelect={referenceCashbox.select?((id)=>{if(referenceCashbox.scope===user.uid)referenceCashbox.select?.(id);}):undefined} onClose={()=>setReferenceCashbox(null)} onAddAccount={select=>openAccountReference(select,true,referenceCashbox.currency)}/>:null}
+        {referenceAccount?<ReferenceAccountManager cash={referenceAccount.cash} currency={referenceAccount.currency} onSelect={id=>{if(referenceAccount.scope===user.uid)referenceAccount.select(id);setReferenceAccount(null);}} onClose={()=>setReferenceAccount(null)}/>:null}
         <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} onLegacyDraft={openLegacyDraft} onLegacyAccount={openLegacyAccount} />
         <QuotesListModal open={overlay === "quotes-list"} onClose={() => setOverlay(null)} onLegacyDraft={openLegacyDraft} onLegacyAccount={openLegacyAccount} />
         <TrialBalanceModal open={overlay === "trial-balance"} onClose={() => setOverlay(null)} />
@@ -2881,6 +2895,8 @@ export function AuthenticatedWorkspace({
           ledger={ledger}
           defaultAccountId={transferAccountId}
           onClose={() => setOverlay(null)}
+          onManageAccount={(select)=>openAccountReference(select)}
+          onManageCashbox={(select,currency)=>openCashboxReference(select,currency)}
           onCreateAccount={() => {
             returnOverlay.current = "transfer";
             openAccountCreate("extended");
@@ -7258,7 +7274,7 @@ function InvoiceModal({
               listTestId="invoice-account-list"
               addTestId="invoice-account-add"
               invalid={formError?.field === "account"}
-              onAddAccount={onAddAccount}
+              onAddAccount={()=>ctx.openAccountReference(setAccountId,false,currency)}
               addAccountAriaLabel="إضافة حساب للفاتورة"
               triggerRef={accountSelectRef}
             />
@@ -11546,9 +11562,11 @@ function TransactionModal({
           searchTestId="transaction-account-search"
           listTestId="transaction-account-list"
           invalid={txError?.field === "account"}
+          onAddAccount={()=>ctx.openAccountReference(setAccountId,false,currency)}
           compact
         />
         <div className="transaction-cashbox-row">
+          {hybridLocal?<button type="button" aria-label="إدارة صندوق السند" onClick={()=>{keyboard.hide();ctx.openCashboxReference(setCashboxId,currency);}}>+ صندوق</button>:null}
           {(voucherCashboxes.length > 0 && (!hybridLocal||payment==="cash")) || editingEntry?.cashboxId ? (
             <select
               className="transaction-fund"
@@ -11700,13 +11718,26 @@ function TransactionModal({
   );
 }
 
+function ReferenceAccountManager({cash,currency,onSelect,onClose}:{cash:boolean;currency?:string;onSelect:(id:string)=>void;onClose:()=>void}){
+ const ctx=useWorkspace(),keyboard=useKeyboard();const [query,setQuery]=useState("");const [edit,setEdit]=useState<AccountRecord|null|undefined>();const [pendingDelete,setPendingDelete]=useState<AccountRecord|null>(null);const [error,setError]=useState("");const [busy,setBusy]=useState(false);
+ useBackLayer(edit===undefined,()=>{keyboard.hide();if(pendingDelete)setPendingDelete(null);else onClose();return true;},300);
+ const rows=ctx.accounts.filter(a=>(!cash||a.isCashAccount)&&(!currency||a.currency===currency)&&matchesArabicSearch(a.name,query));
+ return <div className="reference-account-layer" style={{position:"fixed",inset:0,zIndex:340}}>
+ {edit===undefined?<div className="center-modal-layer"><section className="transaction-modal" role="dialog" aria-label="إدارة الحساب المرجعي" dir="rtl"><h2>{cash?"حسابات الصناديق":"إدارة الحساب المرجعي"}</h2><p>الحفظ هنا لا يرحّل المستند المفتوح.</p><KeyboardInput aria-label="بحث الحساب المرجعي" value={query} onChange={e=>setQuery(e.target.value)}/><button onClick={()=>{keyboard.hide();setEdit(null);}}>إضافة حساب</button>
+ <div style={{maxHeight:"45vh",overflowY:"auto"}}>{rows.map(a=><div key={a.id}><button onClick={()=>{keyboard.hide();onSelect(a.id);}}>{a.name} — اختيار والعودة</button><button onClick={()=>setEdit(a)}>تعديل {a.name}</button><button onClick={()=>setPendingDelete(a)}>حذف {a.name}</button></div>)}</div>
+ {pendingDelete?<div role="alertdialog" aria-label="تأكيد حذف الحساب"><p>حذف «{pendingDelete.name}»؟ السجل المرتبط بالحركات محمي.</p><button disabled={busy} onClick={async()=>{setBusy(true);try{await deleteAccount(ctx.uid,pendingDelete.id);setPendingDelete(null);}catch(e){setError(e instanceof Error?e.message:"تعذر الحذف");}finally{setBusy(false);}}}>تأكيد الحذف</button><button onClick={()=>setPendingDelete(null)}>إلغاء الحذف</button></div>:null}
+ {error?<p role="alert">{error}</p>:null}<button onClick={()=>{keyboard.hide();onClose();}}>إلغاء والعودة</button></section></div>:<AccountCreateModal key={edit?.id??"reference-new"} mode="extended" open initialAccount={edit??undefined} defaultCategory={cash?"shop":"clients"} defaultCash={cash} defaultCurrency={currency} onSaved={onSelect} onClose={()=>setEdit(undefined)}/>}
+ </div>;
+}
+
 function AccountCreateModal({
   mode,
   open,
   initialAccount,
   defaultCategory = "purchases",
-  onClose,
+  onClose,onSaved,defaultCash=false,defaultCurrency,
 }: {
+  onSaved?:(id:string)=>void;defaultCash?:boolean;defaultCurrency?:string;
   mode: AccountCreateMode;
   open: boolean;
   initialAccount?: AccountRecord;
@@ -11717,7 +11748,7 @@ function AccountCreateModal({
   const scope = ctx.workspace?.id ?? ctx.uid;
   const draftSlot = `account-draft:${mode}:${initialAccount?.id ?? defaultCategory}`;
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
-  const [localCashAccount,setLocalCashAccount] = useState(initialAccount?.isCashAccount ?? false);
+  const [localCashAccount,setLocalCashAccount] = useState(initialAccount?.isCashAccount ?? defaultCash);
   const [name, setName] = useState(initialAccount?.name ?? "");
   const [category, setCategory] = useState<AccountCategory>(initialAccount?.category ?? defaultCategory);
   const [phone, setPhone] = useState(initialAccount?.phone ?? "");
@@ -11736,7 +11767,7 @@ function AccountCreateModal({
   const [settlement, setSettlement] = useState(initialAccount?.settlement ?? false);
   const [documentNumber, setDocumentNumber] = useState(initialAccount?.documentNumberRequired ?? false);
   const [accountImage, setAccountImage] = useState<"1" | "2" | "3">(initialAccount?.accountImage ?? "1");
-  const [accountCurrency, setAccountCurrency] = useState<CurrencyCode>(initialAccount?.currency ?? "ريال");
+  const [accountCurrency, setAccountCurrency] = useState<CurrencyCode>(initialAccount?.currency ?? (defaultCurrency as CurrencyCode) ?? "ريال");
   const [sortOrder, setSortOrder] = useState(String(initialAccount?.sortOrder ?? ctx.accounts.length + 1));
   const [messageMethod, setMessageMethod] = useState<"sms" | "whatsapp">(initialAccount?.messageMethod ?? "sms");
   const [sendMode, setSendMode] = useState<"auto" | "confirm" | "never">(initialAccount?.sendMode ?? "never");
@@ -11775,13 +11806,13 @@ function AccountCreateModal({
     if (!open) { setDraftReady(false); return; }
     completed.current = false;
     const defaults = {
-      localCashAccount: initialAccount?.isCashAccount ?? false, name: initialAccount?.name ?? "",
+      localCashAccount: initialAccount?.isCashAccount ?? defaultCash, name: initialAccount?.name ?? "",
       category: initialAccount?.category ?? defaultCategory, phone: initialAccount?.phone ?? "", note: initialAccount?.note ?? "",
       debtLimit: Boolean(initialAccount?.creditLimit), openingBalance: Boolean(initialAccount?.openingBalance),
       openingAmount: initialAccount?.openingBalance ? String(initialAccount.openingBalance) : "",
       openingDirection: initialAccount?.openingDirection ?? "debit", debtAmount: initialAccount?.creditLimit ? String(initialAccount.creditLimit) : "",
       settlement: initialAccount?.settlement ?? false, documentNumber: initialAccount?.documentNumberRequired ?? false,
-      accountImage: initialAccount?.accountImage ?? "1", accountCurrency: initialAccount?.currency ?? "ريال",
+      accountImage: initialAccount?.accountImage ?? "1", accountCurrency: initialAccount?.currency ?? (defaultCurrency as CurrencyCode) ?? "ريال",
       sortOrder: String(initialAccount?.sortOrder ?? ctx.accounts.length + 1),
       messageMethod: initialAccount?.messageMethod ?? "sms", sendMode: initialAccount?.sendMode ?? "never",
     };
@@ -11849,7 +11880,7 @@ function AccountCreateModal({
     try {
       const nextCode =
         initialAccount?.codeNumber ?? Math.max(0, ...ctx.accounts.map((a) => a.codeNumber)) + 1;
-      await createOrUpdateAccount(
+      const savedAccountId=await createOrUpdateAccount(
         ctx.uid,
         {
           name: name.trim(),
@@ -11857,7 +11888,7 @@ function AccountCreateModal({
           phone,
           creditLimit: debtLimit ? parseArabicNumber(debtAmount) : initialAccount?.creditLimit ?? 1000000,
           currency: accountCurrency,
-          isCashAccount: hybridLocal ? localCashAccount : initialAccount?.isCashAccount ?? false,
+          isCashAccount: hybridLocal ? localCashAccount : initialAccount?.isCashAccount ?? defaultCash,
           accountImage,
           sortOrder: parseArabicNumber(sortOrder) || 1,
           settlement,
@@ -11876,6 +11907,7 @@ function AccountCreateModal({
       completed.current = true;
       if (hybridLocal) { removeUiState(scope, draftSlot); removeUiState(scope, "active-form"); }
       setSubmissionPending(false);
+      onSaved?.(savedAccountId);
       onClose();
     } catch (err) {
       if (!(err instanceof UncertainWriteError)) {
@@ -12179,7 +12211,7 @@ function AccountCreateModal({
             إلغاء
           </button>
           <button className="save" disabled={saving || submissionPending} onClick={submitAccount}>
-            {saving ? "جاري الحفظ..." : "حفظ"}
+            {saving ? "جاري الحفظ..." : onSaved?"حفظ واختيار":"حفظ"}
           </button>
         </div>
       </section>
@@ -12933,6 +12965,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
             <Cross2Icon />
           </button>
           <h2 id="cashboxes-report-title">صناديق النقدية والتدفق النقدي</h2>
+          {usesNativeDocumentOutput()?<button onClick={()=>ctx.openCashboxReference(undefined,currencyFilter==="الكل"?defaultCurrency:currencyFilter)}>إدارة الصناديق</button>:null}
           <span className="smart-modal-spacer" aria-hidden="true" />
         </header>
 

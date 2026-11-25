@@ -29,6 +29,8 @@ interface TransferModalProps {
   defaultAccountId?: string;
   onClose: () => void;
   onCreateAccount: () => void;
+  onManageAccount?:(select:(id:string)=>void)=>void;
+  onManageCashbox?:(select:(id:number)=>void,currency:string)=>void;
   onNotify: (msg: string) => void;
   onSendWhatsApp: (account: AccountRecord | undefined, message: string) => void;
   onGenerateImage: (data: {
@@ -50,7 +52,7 @@ export function TransferModal({
   ledger,
   defaultAccountId,
   onClose,
-  onCreateAccount,
+  onCreateAccount,onManageAccount,onManageCashbox,
   onNotify,
   onSendWhatsApp,
   onGenerateImage,
@@ -264,7 +266,7 @@ export function TransferModal({
           triggerTestId="transfer-account-trigger"
           searchTestId="transfer-account-search"
           listTestId="transfer-account-list"
-          onAddAccount={onCreateAccount}
+          onAddAccount={()=>onManageAccount?onManageAccount(setSelectedAccountId):onCreateAccount()}
           addAccountAriaLabel="إضافة حساب جديد"
           compact
         />
@@ -379,6 +381,7 @@ export function TransferModal({
           </select>
         </label>
 
+        {onManageCashbox?<button type="button" onClick={()=>{keyboard.hide();onManageCashbox(setSqliteCashboxId,currency);}}>+ إدارة صندوق الحوالة</button>:null}
         {sqliteCashboxes.length > 0 ? (
           <label className="transfer-cashbox-row">
             <span>صندوق النقدية</span>

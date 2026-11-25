@@ -509,11 +509,13 @@ export function SystemSettingsPage({
                   <span>بيع بدون رصيد</span>
                   <input
                     type="checkbox"
-                    checked={draft.sellWithoutBalance}
+                    checked={usesNativeDocumentOutput()?false:draft.sellWithoutBalance}
+                    disabled={usesNativeDocumentOutput()}
                     onChange={(e) => updateField("sellWithoutBalance", e.target.checked)}
                   />
                 </label>
               </div>
+              {usesNativeDocumentOutput()?<p role="note">البيع دون رصيد غير مدعوم في المحرك المحلي: يجب اعتماد الكمية والتكلفة وتوفر رصيد كافٍ. التفضيل القديم لا يتجاوز هذا الشرط.</p>:null}
               {(
                 [
                   ["useWeightedAverage", "استخدام المتوسط المرجح للتكلفة"],
