@@ -5,6 +5,7 @@ import 'local_database.dart';
 import 'local_document_commands.dart';
 import 'stock_invoice_commands.dart';
 import 'stock_quantity.dart';
+import 'free_invoice_lines.dart';
 
 /// Draft quotes/orders never post accounting or inventory. Posted documents
 /// may change descriptive metadata only; financial changes require reversal.
@@ -56,11 +57,11 @@ class LocalDocumentLifecycle {
     final box=p['cashboxId'];
     if(box!=null&&(box is! int||box<=0||payment!='cash'))throw ArgumentError('Invalid draft cashbox');
     final raw=p['lines']??[];
-    if(raw is! List||raw.length>150||(content=='items'&&raw.isEmpty)||(content=='free'&&raw.isNotEmpty))
+    if(raw is! List||raw.length>150||(content=='items'&&raw.isEmpty))
       throw ArgumentError('Invalid draft lines');
-    final lines=<Map<String,dynamic>>[];
+    final lines=content=='free'?FreeInvoiceLines.normalize(raw,amount):<Map<String,dynamic>>[];
     var net=0;
-    for(final value in raw){
+    for(final value in content=='items'?raw:[]){
       if(value is! Map<String,dynamic>)throw ArgumentError('Invalid draft line');
       final item=identity(value['inventoryItemId']);
       if(value['warehouseId']!=null&&value['warehouseId']!=wh)throw ArgumentError('Warehouse mismatch');
@@ -104,6 +105,7 @@ class LocalDocumentLifecycle {
         if((await t.query('ledger_entries',where:'entryNumber = ? AND id != ?',whereArgs:[number,id])).isNotEmpty)
           throw StateError('رقم المستند مستخدم.');
         for(final line in lines){
+          if(content=='free')continue;
           final items=await t.query('inventory_items',where:'id = ?',whereArgs:[line['inventoryItemId']]);
           if(items.length!=1||items.single['warehouseId']!=wh)throw StateError('الصنف غير موجود في المخزن المحدد.');
         }

@@ -6377,6 +6377,9 @@ function isInvoiceUiDraft(value: unknown): value is InvoiceUiDraft {
     (f.cashboxId === undefined || (typeof f.cashboxId === "number" && Number.isSafeInteger(f.cashboxId))) &&
     ["items", "free"].includes(String(f.content)) && ["cash", "credit"].includes(String(f.payment)) &&
     ["purchase", "sale"].includes(String(f.kind)) && typeof f.isReturn === "boolean" &&
+    (f.freeAmountOnly === undefined || typeof f.freeAmountOnly === "boolean") &&
+    (f.freeRows === undefined || (Array.isArray(f.freeRows) && f.freeRows.length <= 150 &&
+      f.freeRows.every((row) => row && ["rowId", "itemName", "unit", "quantity", "price", "discount"].every((key) => typeof row[key] === "string") && !row.inventoryItemId))) &&
     Array.isArray(f.rows) && f.rows.length <= 500 && f.rows.every((row) => row &&
       ["rowId", "itemName", "unit", "quantity", "price", "discount"].every((key) => typeof row[key] === "string") &&
       (row.inventoryItemId === undefined || typeof row.inventoryItemId === "string") &&
@@ -6391,11 +6394,11 @@ function canRestoreInvoiceDraft(draft: InvoiceUiDraft, records: Pick<LiveWorkspa
   return legacyCopySourceMatches(draft, records.workspace?.legacySourceSha) &&
     (!draft.accountId || records.accounts.some((record) => record.id === draft.accountId)) &&
     (!draft.editingEntryId || records.ledger.some((record) => record.id === draft.editingEntryId && !record.deleted)) &&
-    (!fields.warehouseId || records.warehouses.some((record) => record.id === fields.warehouseId)) &&
+    (fields.content === "free" || !fields.warehouseId || records.warehouses.some((record) => record.id === fields.warehouseId)) &&
     (fields.cashboxId === undefined || records.cashboxes.some((record) => record.id === fields.cashboxId)) &&
     (!fields.localOriginalId || records.ledger.some((record) => record.id === fields.localOriginalId && !record.deleted)) &&
     records.currencyCodes.includes(String(fields.currency)) &&
-    (fields.rows as DraftInvoiceRow[]).every((row) => !row.inventoryItemId || records.inventory.some((record) => record.id === row.inventoryItemId));
+    (fields.content === "free" || (fields.rows as DraftInvoiceRow[]).every((row) => !row.inventoryItemId || records.inventory.some((record) => record.id === row.inventoryItemId)));
 }
 
 function stripAutoLineSummary(details: string): string {
@@ -6501,6 +6504,15 @@ function InvoiceModal({
   const [rows, setRows] = useState<DraftInvoiceRow[]>(restoreField("rows", [
     { rowId: "row_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
   ]));
+  const [freeRows, setFreeRows] = useState<DraftInvoiceRow[]>(restoreField("freeRows", [
+    { rowId: "free_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
+  ]));
+  const [freeAmountOnly, setFreeAmountOnly] = useState(restoreField("freeAmountOnly",
+    Boolean(editingEntry?.invoiceContent === "free" || (restoredDraft?.fields.content === "free" && !restoredDraft.fields.freeRows))));
+  const updateFreeRow = (id: string, patch: Partial<DraftInvoiceRow>) => {
+    setFormError(null);
+    setFreeRows((current) => current.map((row) => row.rowId === id ? { ...row, ...patch } : row));
+  };
   const [loadingLines, setLoadingLines] = useState(Boolean(editingEntry));
   const [linesLoadedEmpty, setLinesLoadedEmpty] = useState(false);
   const [priceHint, setPriceHint] = useState<{
@@ -6533,7 +6545,7 @@ function InvoiceModal({
   const [leavePrompt, setLeavePrompt] = useState(false);
   const fields = { content, payment, kind, isReturn, amount, note, documentNumber, entryNumber,
     entryDate, expenseCategory, currency, exchangeRate, cashboxId, warehouseId, accountId,
-    itemSearch, rows, localTaxAmount, localTaxMode, localOriginalId, localReturnQty };
+    itemSearch, rows, freeRows, freeAmountOnly, localTaxAmount, localTaxMode, localOriginalId, localReturnQty };
   const fieldJson = JSON.stringify(fields);
   const initialFields = useRef(fieldJson);
   if (loadingLines && !restoredDraft) initialFields.current = fieldJson;
@@ -6615,7 +6627,8 @@ function InvoiceModal({
           if (lines.some((l) => (l.discount ?? 0) > 0)) {
             setShowDiscounts(true);
           }
-          setRows(
+          if (editingEntry.invoiceContent === "free") setFreeAmountOnly(false);
+          (editingEntry.invoiceContent === "free" ? setFreeRows : setRows)(
             lines.map((l, idx) => {
               const linked = l.inventoryItemId
                 ? ctx.inventory.find((i) => i.id === l.inventoryItemId)
@@ -6732,6 +6745,13 @@ function InvoiceModal({
       };
     });
 
+  const freeLines: InvoiceLineInput[] = freeAmountOnly ? [] : freeRows
+    .filter((r) => r.itemName.trim().length > 0)
+    .map((r) => ({ itemName: r.itemName.trim(), unit: r.unit.trim() || "حبة", unitNum: 1,
+      quantity: parseArabicNumber(r.quantity), price: parseArabicNumber(r.price), discount: 0,
+      total: localGross(parseArabicNumber(r.quantity), parseArabicNumber(r.price)) }));
+  const freeTotal = freeLines.reduce((sum, l) => sum + Math.round(l.total * 100), 0) / 100;
+  const submittedLines = content === "items" ? validLines : freeLines;
   const computedItemsTotal = validLines.reduce((sum, l) => sum + l.total, 0);
   const computedItemsDiscount = validLines.reduce((sum, l) => sum + (l.discount ?? 0), 0);
   const computedItemsQty = validLines.reduce((sum, l) => sum + l.quantity, 0);
@@ -6744,7 +6764,7 @@ function InvoiceModal({
   const taxTotal = hybridLocal && content === "items" && !isReturn
     ? localTaxMode==="rate"?calculatedTax:Math.max(0,parsedTax):0;
   const effectiveAmount = content === "items" && validLines.length > 0
-    ? Math.round((computedItemsTotal + taxTotal)*100)/100 : parseArabicNumber(amount);
+    ? Math.round((computedItemsTotal + taxTotal)*100)/100 : content === "free" && !freeAmountOnly ? freeTotal : parseArabicNumber(amount);
   const eligibleLocalReturns = ctx.ledger.filter(e=>e.kind==="invoice" && e.stockPosting &&
     !e.deleted && !e.returnedById && e.stockSale === (kind === "sale"));
   const localOriginal=eligibleLocalReturns.find(e=>e.id===localOriginalId);
@@ -7008,7 +7028,20 @@ function InvoiceModal({
       }
     }
     if (content === "free") {
-      if (parseArabicNumber(amount) <= 0) {
+      if (!freeAmountOnly) {
+        const numericText = (v: string) => /^(?:[0-9٠-٩۰-۹]+(?:[.٫][0-9٠-٩۰-۹]+)?|[.٫][0-9٠-٩۰-۹]+)$/.test(v.replace(/[,٬\s]/g, ""));
+        const badRow = freeRows.find((r) => !r.itemName.trim() || r.itemName.length > 200 ||
+          !numericText(r.price) || !numericText(r.quantity) || !validLocalQuantity(parseArabicNumber(r.quantity)) || parseArabicNumber(r.quantity) <= 0 ||
+          !Number.isFinite(parseArabicNumber(r.price)) || parseArabicNumber(r.price) < 0 || parseArabicNumber(r.price) > 10000000000 ||
+          Math.abs(parseArabicNumber(r.price) * 100 - Math.round(parseArabicNumber(r.price) * 100)) > 0.00001);
+        if (freeRows.length === 0 || badRow || !Number.isFinite(freeTotal) || freeTotal <= 0 || freeTotal > 10000000000) {
+          focusInvalid(badRow ? rowNameRefs.current[badRow.rowId] : null, {
+            field: "items", message: "أكمل اسم كل بند وكمية موجبة حتى ثلاث منازل عشرية وسعرًا حتى منزلتين؛ يجب أن يكون الإجمالي أكبر من صفر.",
+          });
+          return;
+        }
+      }
+      if (freeAmountOnly && parseArabicNumber(amount) <= 0) {
         focusInvalid(freeAmountInputRef.current, {
           field: "amount",
           message: "يجب إدخال إجمالي مبلغ أكبر من صفر قبل حفظ الفاتورة.",
@@ -7110,13 +7143,13 @@ function InvoiceModal({
         exchangeRate: parseArabicNumber(exchangeRate) || 1,
         details: finalDetails,
         documentNumber: documentNumber.trim() || String(nextNum),
-        warehouseId: selectedWarehouse?.id ?? "",
-        warehouseName: selectedWarehouse?.name ?? "",
+        warehouseId: content === "items" ? selectedWarehouse?.id ?? "" : "",
+        warehouseName: content === "items" ? selectedWarehouse?.name ?? "" : "",
         invoiceContent: content,
         entryNumber: nextNum,
         deleted: editingEntry?.deleted ?? false,
         entryDate: cleanDate,
-        lines: content === "items" ? validLines : [],
+        lines: submittedLines,
         ...(kind === "purchase" && expenseCategory ? { expenseCategory } : {}),
       };
 
@@ -7188,7 +7221,7 @@ function InvoiceModal({
           accountName: selectedAccount.name,
           payment,
           currency,
-          lines: content === "items" ? validLines : [],
+          lines: submittedLines,
           totalAmount: effectiveAmount,
           totalDiscount: content === "items" ? computedItemsDiscount : 0,
           note: note.trim(),
@@ -7900,7 +7933,39 @@ function InvoiceModal({
               ) : null}
             </section>
           ) : (
-            <div className="invoice-free-amount-wrap">
+            <section className="invoice-free-lines" data-testid="invoice-free-lines">
+              <div className="invoice-free-lines-header">
+                <b>بنود حرة</b>
+                <button type="button" className="invoice-add-line-btn" onClick={() => {
+                  keyboard.hide(); setFormError(null); setFreeAmountOnly(!freeAmountOnly);
+                }}>{freeAmountOnly ? "إدخال بنود" : "مبلغ فقط"}</button>
+              </div>
+              <p>بنود وصفية لا تغيّر كمية المخزون.</p>
+              {!freeAmountOnly ? <>
+                {freeRows.map((row, index) => <div className="invoice-free-line" key={row.rowId}>
+                  <div className="invoice-free-line-name">
+                    <KeyboardInput aria-label={`اسم البند الحر ${index + 1}`} placeholder="اسم الصنف أو الخدمة"
+                      maxLength={200} value={row.itemName} ref={(el) => { rowNameRefs.current[row.rowId] = el; }}
+                      onChange={(e) => updateFreeRow(row.rowId, { itemName: e.target.value })} />
+                    <button type="button" aria-label={`حذف البند الحر ${index + 1}`} onClick={() => {
+                      keyboard.hide(); setFormError(null); setFreeRows((current) => current.filter((r) => r.rowId !== row.rowId));
+                    }}><TrashIcon width={18} height={18} /></button>
+                  </div>
+                  <div className="invoice-free-line-values">
+                    <label>الكمية<KeyboardInput aria-label={`كمية البند الحر ${index + 1}`} inputMode="decimal" value={row.quantity}
+                      onChange={(e) => updateFreeRow(row.rowId, { quantity: e.target.value })} /></label>
+                    <label>السعر<KeyboardInput aria-label={`سعر البند الحر ${index + 1}`} inputMode="decimal" value={row.price} placeholder="0"
+                      onChange={(e) => updateFreeRow(row.rowId, { price: e.target.value })} /></label>
+                    <label>الإجمالي<b>{formatAmount(localGross(parseArabicNumber(row.quantity), parseArabicNumber(row.price)))}</b></label>
+                  </div>
+                </div>)}
+                <button type="button" className="invoice-add-line-btn" disabled={freeRows.length >= 150} onClick={() => {
+                  setFormError(null); setFreeRows((current) => [...current, { rowId: `free_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" }]);
+                }}>+ بند حر</button>
+                <div className="invoice-totals-bar"><span>الإجمالي</span><b data-testid="invoice-free-total">{formatAmount(freeTotal)} {currency}</b></div>
+                {formError?.field === "items" ? <div className="field-inline-error" role="alert">{formError.message}</div> : null}
+              </> : <div className="invoice-free-amount-wrap">
               <OutlinedAmountField
                 label={`المبلغ (${currency})`}
                 ariaLabel="إجمالي مبلغ الفاتورة"
@@ -7922,7 +7987,8 @@ function InvoiceModal({
                   {formError.message}
                 </div>
               ) : null}
-            </div>
+            </div>}
+            </section>
           )}
 
           <label className="invoice-field-box invoice-note-box">
@@ -14264,7 +14330,8 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     try {
       await ctx.runWithLoader("جاري رفع الفاتورة إلى Google Drive...", async () => {
         const detail = await fetchInvoiceDetailWithLines(ctx.uid, entry.id);
-        if (detail.entry.invoiceContent === "items" && !detail.lines.length) {
+        if ((detail.entry.invoiceContent === "items" && !detail.lines.length) ||
+            (detail.entry.lineCount ?? 0) > detail.lines.length) {
           throw new Error("تفاصيل الأصناف غير متاحة؛ لم يُنشأ مستند ناقص.");
         }
         const summary = buildInvoicePdfSummaryData({ ...detail.entry,

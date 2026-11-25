@@ -1,0 +1,42 @@
+{
+  "environment": "Chromium full built hybrid UI; synthetic host, NOT Android or accounting engine",
+  "baseline": false,
+  "bundle": "/workspace/NASQO-free-invoice/dist/hybrid",
+  "manifestSha256": "89fd87a2a28dbc6a4ed9ba5734084d218f420f47378a0431e7a5df73fdebf977",
+  "results": [
+    {
+      "name": "unverified-imported-item-stays-in-invoice-without-native-navigation",
+      "passed": true
+    },
+    {
+      "name": "unverified-item-save-is-blocked-inline-with-zero-posting",
+      "passed": true
+    },
+    {
+      "name": "unverified-item-local-draft-restores-without-approval-or-posting",
+      "passed": true
+    },
+    {
+      "name": "other-warehouse-item-is-selectable-but-save-validates-inside-invoice",
+      "passed": true
+    },
+    {
+      "name": "dashboard-catalog-and-movement-destinations-are-distinct",
+      "passed": true
+    },
+    {
+      "name": "drawer-catalog-and-movement-destinations-are-distinct",
+      "passed": true
+    },
+    {
+      "name": "approved-item-explicit-save-sends-one-synthetic-document",
+      "passed": true
+    },
+    {
+      "name": "multiwarehouse-source-family-selects-existing-approved-warehouse-id",
+      "passed": true
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": []
+}

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../services/free_invoice_lines.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
@@ -364,6 +365,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     if(imported!=null)return imported;
     final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
     final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
+    if(entry['invoiceContent']=='free') return {'entry':entry,'lines':await FreeInvoiceLines.read(db,id)};
     final stored=await db.query('stock_posting_lines',where:'document_id = ?',whereArgs:[id],orderBy:'rowid');
     final lines=<Map<String,dynamic>>[];
     for(var i=0;i<stored.length;i++){

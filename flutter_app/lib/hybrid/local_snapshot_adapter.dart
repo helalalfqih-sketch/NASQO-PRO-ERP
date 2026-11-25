@@ -28,6 +28,10 @@ class HybridLocalSnapshotAdapter {
       final data=fromSnapshot(await local.loadSnapshot(executor:txn));
       final ledger=(data['ledger'] as List).cast<Map<String,dynamic>>();
       final byId={for(final entry in ledger) entry['id']:entry};
+      for(final row in await txn.rawQuery('SELECT ledger_id, COUNT(*) AS n FROM invoice_lines GROUP BY ledger_id')){
+        final entry=byId[row['ledger_id']];
+        if(entry!=null)entry['lineCount']=row['n'];
+      }
       for(final row in await txn.query('journal_lines',orderBy:'rowid')){
         final entry=byId[row['journal_id']];
         if(entry==null) continue;

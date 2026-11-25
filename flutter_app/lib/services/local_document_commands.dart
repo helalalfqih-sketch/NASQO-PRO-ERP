@@ -1,6 +1,7 @@
 import 'local_database.dart';
 import '../models/erp_models.dart';
 import 'local_invoice_roles.dart';
+import 'free_invoice_lines.dart';
 
 /// Restricted local document posting. Only explicit two-account, single-currency
 /// operations are accepted. Stock invoices, tax, discounts, FX and reversals
@@ -48,7 +49,7 @@ class LocalDocumentCommands {
         !['debit','credit'].contains(direction) ||
         !CurrencyCode.values.any((v) => v != CurrencyCode.currency2 && v.label == currency) ||
         input['deleted'] == true || (input['exchangeRate'] ?? 1) != 1 ||
-        (rawLines != null && (rawLines is! List || rawLines.isNotEmpty)) ||
+        (rawLines != null && (rawLines is! List || (kind != 'invoice' && rawLines.isNotEmpty))) ||
         (box!=null&&payment!='cash') || (input['settledOnReceipt']==true&&!isCashInvoice) ||
         (settlement!=null&&(!isCashInvoice||settlement is! String||!_id.hasMatch(settlement)||settlement==account||settlement==counterpart)) ||
         (isCashInvoice&&settlement==null) ||
@@ -67,6 +68,7 @@ class LocalDocumentCommands {
       throw ArgumentError('Invalid document date');
     }
     final amount = minor(input['amount']);
+    final lines = FreeInvoiceLines.normalize(rawLines, amount);
     final currencyCode = CurrencyCode.values.firstWhere((v) => v.label == currency).name;
     final entryNumber = input['entryNumber'];
     if (entryNumber is! int || entryNumber < 1 || entryNumber > 2147483647) {
@@ -80,6 +82,8 @@ class LocalDocumentCommands {
       'documentNumber':field(input,'documentNumber',64),
       'details':field(input,'details',600),'expenseCategory':field(input,'expenseCategory',60),
       if(box!=null)'cashboxId':box,if(settlement!=null)'cashSettlementAccountId':settlement,
+      // Preserve amount-only operation fingerprints from previous versions.
+      if(lines.isNotEmpty)'lines':lines,
     };
     await local.commitOperation(workspaceId:workspace,operationId:key,
       operationType:'document.post',payload:request,apply:(txn) async {
@@ -119,6 +123,7 @@ class LocalDocumentCommands {
           'entryNumber':entryNumber,'deleted':0,'entryDate':date,
           'invoiceContent':content,'postingStatus':'posted',
         });
+        await FreeInvoiceLines.store(txn, id, lines);
         await txn.insert('journal_entries',{
           'id':id,'currency':currencyCode,'created_at':DateTime.now().toUtc().toIso8601String(),
         });

@@ -133,7 +133,7 @@ export function buildInvoicePdfSummaryData(
     title: entry.typeLabel,
     accountName: entry.accountName,
     counterpartName: entry.counterpartAccountName || "—",
-    warehouseName: entry.warehouseName || "المخزن الرئيسي",
+    warehouseName: entry.warehouseName || (entry.invoiceContent === "free" ? "—" : "المخزن الرئيسي"),
     entryDate: entry.entryDate,
     dueDate: entry.dueDate,
     paymentLabel: PAYMENT_LABELS[entry.payment] ?? entry.payment,
@@ -701,7 +701,9 @@ export async function generatePrintableInvoicePdfFromDatabase(
   if (!resolvedEntry) {
     throw new Error("Invoice not found in database");
   }
-  if(usesNativeDocumentOutput()&&resolvedEntry.invoiceContent==="items"&&!resolvedEntry.lines?.length)
+  if(usesNativeDocumentOutput()&&
+      ((resolvedEntry.invoiceContent==="items"&&!resolvedEntry.lines?.length)||
+       (resolvedEntry.lineCount??0)>(resolvedEntry.lines?.length??0)))
     throw new Error("تفاصيل الأصناف غير متاحة؛ لم يُنشأ مستند ناقص.");
   const summary = buildInvoicePdfSummaryData(resolvedEntry, {
     companyName: options?.companyName,

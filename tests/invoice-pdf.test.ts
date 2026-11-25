@@ -104,3 +104,20 @@ test("buildInvoicePdfSummaryData handles plain single-line and cancelled invoice
   assert.equal(summary.lines[0].description, "فاتورة آجلة");
   assert.equal(summary.lines[0].lineTotal, "3,000");
 });
+
+test("free invoice PDF uses saved descriptive lines, quantities and prices", () => {
+  const summary = buildInvoicePdfSummaryData({ ...sampleMultiLineInvoice,
+    invoiceContent: "free", amount: 19.5, details: "ملاحظة اصطناعية", warehouseId: "", warehouseName: "",
+    lines: [
+      { itemName: "خدمة اصطناعية أ", unit: "حبة", quantity: 1.5, price: 10, total: 15 },
+      { itemName: "بند اصطناعي ب", unit: "حبة", quantity: 2, price: 2.25, total: 4.5 },
+    ],
+  });
+  assert.equal(summary.lines.length, 2);
+  assert.equal(summary.lines[0].description, "خدمة اصطناعية أ");
+  assert.equal(summary.lines[0].quantity, "1.5");
+  assert.equal(summary.lines[0].unitPrice, "10");
+  assert.equal(summary.lines[1].lineTotal, "4.5");
+  assert.equal(summary.amount, 19.5);
+  assert.equal(summary.warehouseName, "—");
+});

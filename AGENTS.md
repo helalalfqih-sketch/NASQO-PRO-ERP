@@ -126,3 +126,9 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Fixed phone chrome should not animate with pushed screens. Screen content can animate; the status bar, camera cutout, and preview chrome should stay put.
 - Keep the keyboard below the home indicator/safe area layer in z-index, and above ordinary app UI while visible.
 - Keep the home indicator as the topmost safe-area layer in the z-index above everything else in the prototype.
+
+## Free invoice lines (user direction, 2026-11-25)
+
+- A free invoice supports manually named lines with quantity, price and a calculated total. These are descriptive lines, with no inventory item or warehouse linkage and no stock movement.
+- Persist free lines atomically with the local invoice, include them in native backups, and read them for preview/PDF. Repeating a confirmed operation must not post twice.
+- Keep existing amount-only free invoices readable. Switching between stock and free modes must preserve separate unsent rows; it must not convert unverified imported quantities into approved stock.
