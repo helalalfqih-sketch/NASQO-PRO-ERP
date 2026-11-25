@@ -4272,13 +4272,43 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     [filteredItems, safePage, showAll],
   );
 
+  const catalogErrorRef = useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(formError){keyboard.hide();catalogErrorRef.current?.scrollIntoView({block:"center"});}},[formError]);
+  const validateCatalogForm = (creating:boolean) => {
+    const fail=(message:string)=>{setFormError(message);return false;};
+    const native=import.meta.env.VITE_NASQO_HYBRID === "1";
+    if(!name.trim() || name.trim().length>120)return fail("اسم الصنف مطلوب ولا يتجاوز 120 حرفًا.");
+    if(sku.trim().length>64)return fail("الباركود لا يتجاوز 64 حرفًا.");
+    if(!unit.trim() || unit.trim().length>32)return fail("أدخل الوحدة الأساسية بطول لا يتجاوز 32 حرفًا.");
+    const validNumber=(raw:string)=>/^[0-9٠-٩۰-۹.,٬٫\s]+$/.test(raw)&&Number.isFinite(Number(raw.replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[,٬\s]/g,"").replace(/٫/g,".")));
+    for(const [label,raw] of [["سعر التكلفة",avgCost],["سعر البيع",sellingPrice],["سعر البيع للوحدة 2",sprice2],["سعر البيع للوحدة 3",sprice3]]){
+      if(raw.trim()&&(!validNumber(raw)||parseArabicNumber(raw)>1e10||label!=="سعر التكلفة"&&Math.abs(parseArabicNumber(raw)*100-Math.round(parseArabicNumber(raw)*100))>0.00001))return fail(`${label}: أدخل مبلغًا غير سالب بمنزلتين عشريتين كحد أقصى.`);
+    }
+    if(native && creating && parseArabicNumber(avgCost)!==0)return fail("سعر التكلفة للصنف الجديد يجب أن يكون صفرًا؛ تُسجّل تكلفة المخزون من فاتورة الشراء أو إجراء اعتماد المخزون، دون ترحيل من بطاقة الصنف.");
+    if(native && !creating && parseArabicNumber(avgCost)!==(ctx.inventory.find(i=>i.id===selectedId)?.avgCost??0))return fail("لا يمكن تغيير تكلفة المخزون من بطاقة الصنف. احتفظ بالتكلفة الحالية واستخدم إجراء المخزون المعتمد لتغيير التقييم.");
+    if(native && currencyCode!=="ريال")return fail("عملة الصنف المحلي المدعومة حاليًا هي الريال؛ لم تُحفظ البيانات ولم تُرحّل أي حركة.");
+    if(unit3.trim()&&!unit2.trim())return fail("أدخل الوحدة 2 ومعاملها قبل إضافة الوحدة 3.");
+    for(const [n,label,count,price] of [[2,unit2,count2,sprice2],[3,unit3,count3,sprice3]] as const){
+      if(!label.trim()){
+        if(count.trim()&&(!validNumber(count)||parseArabicNumber(count)!==0)||price.trim()&&parseArabicNumber(price)!==0)return fail(`أدخل اسم الوحدة ${n} أو امسح معاملها وسعرها؛ لن تُهمل القيم المدخلة.`);
+        continue;
+      }
+      if(label.trim().length>32||label.trim()===unit.trim()||(n===3&&label.trim()===unit2.trim()))return fail(`اسم الوحدة ${n} يجب أن يكون مختلفًا عن الوحدات الأخرى ولا يتجاوز 32 حرفًا.`);
+      const factor=parseArabicNumber(count);
+      if(!count.trim()||!validNumber(count)||!Number.isInteger(factor)||factor<1||factor>1e7)return fail(`معامل التحويل للوحدة ${n} مطلوب: أدخل عددًا صحيحًا موجبًا، دون افتراض المعامل 1 تلقائيًا.`);
+    }
+    if(unit3.trim()&&parseArabicNumber(count2)*parseArabicNumber(count3)>1e7)return fail("حاصل معاملي التحويل يتجاوز الحد المدعوم (10,000,000 وحدة أساسية).");
+    if(defaultUnit===2&&!unit2.trim()||defaultUnit===3&&!unit3.trim())return fail("الوحدة الافتراضية المختارة غير مُعرّفة؛ اختر وحدة مكتملة البيانات.");
+    return true;
+  };
+
   const handleSaveNew = async () => {
     setFormError("");
+    if(!validateCatalogForm(true))return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       const msg = "أدخل اسم الصنف أولًا قبل الحفظ.";
       setFormError(msg);
-      ctx.showToast(msg);
       return;
     }
     const targetWh = ctx.warehouses.find((w) => w.isDefault)?.id || ctx.warehouses[0]?.id || "";
@@ -4291,8 +4321,8 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         quantity: 0,
         avgCost: avgCost.trim() ? parseArabicNumber(avgCost) : 0,
         ...(sellingPrice.trim() ? { sellingPrice: parseArabicNumber(sellingPrice) } : {}),
-        ...(unit2.trim() ? { unit2: unit2.trim(), count2: parseArabicNumber(count2) || 1, ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
-        ...(unit3.trim() ? { unit3: unit3.trim(), count3: parseArabicNumber(count3) || 1, ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
+        ...(unit2.trim() ? { unit2: unit2.trim(), count2: parseArabicNumber(count2), ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
+        ...(unit3.trim() ? { unit3: unit3.trim(), count3: parseArabicNumber(count3), ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
         defaultUnit,
         currencyCode,
         isActive,
@@ -4308,7 +4338,6 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "تعذر حفظ الصنف.";
       setFormError(msg);
-      ctx.showToast(msg);
     } finally {
       setSaving(false);
     }
@@ -4318,16 +4347,15 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     if (!selectedId) {
       const msg = "حدد صنفًا من الجدول أولًا لتعديل بياناته.";
       setFormError(msg);
-      ctx.showToast(msg);
       return;
     }
     const trimmedName = name.trim();
     if (!trimmedName) {
       const msg = "اسم الصنف مطلوب.";
       setFormError(msg);
-      ctx.showToast(msg);
       return;
     }
+    if(!validateCatalogForm(false))return;
     setSaving(true);
     setFormError("");
     try {
@@ -4338,9 +4366,9 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         avgCost: avgCost.trim() ? parseArabicNumber(avgCost) : 0,
         ...(sellingPrice.trim() ? { sellingPrice: parseArabicNumber(sellingPrice) } : {}),
         unit2: unit2.trim(),
-        ...(unit2.trim() ? { count2: parseArabicNumber(count2) || 1, ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
+        ...(unit2.trim() ? { count2: parseArabicNumber(count2), ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
         unit3: unit3.trim(),
-        ...(unit3.trim() ? { count3: parseArabicNumber(count3) || 1, ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
+        ...(unit3.trim() ? { count3: parseArabicNumber(count3), ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
         defaultUnit,
         currencyCode,
         isActive,
@@ -4354,7 +4382,6 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "تعذر تعديل الصنف.";
       setFormError(msg);
-      ctx.showToast(msg);
     } finally {
       setSaving(false);
     }
@@ -4493,7 +4520,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                 </button>
               </div>
               {formError ? (
-                <div className="field-inline-error" role="alert" data-testid="items-catalog-error">
+                <div ref={catalogErrorRef} className="field-inline-error" role="alert" data-testid="items-catalog-error">
                   {formError}
                 </div>
               ) : null}
@@ -4552,6 +4579,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                       value={avgCost}
                       onChange={(e) => setAvgCost(e.target.value)}
                     />
+                    {import.meta.env.VITE_NASQO_HYBRID === "1" ? <small className="items-unit-help">{selectedId ? "تكلفة المخزون لا تُعدّل من بطاقة الصنف." : "الصنف الجديد يبدأ بتكلفة ورصيد صفر؛ تكلفة الشراء تُسجّل من الفاتورة."}</small> : null}
                     {(selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified) ? (
                       <small data-testid="catalog-reference-cost">
                         سعر التكلفة المرجعي: {selectedReferenceCost !== undefined && Number.isFinite(selectedReferenceCost)
@@ -4575,6 +4603,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
 
                 <div className="items-optional-units-box">
                   <div className="items-optional-units-banner">وحدات اختيارية يمكنك اضافتها او تجاهلها</div>
+                  <p className="items-unit-help">مثال: الدُرزن = 12 حبة، والكرتون = 6 درازن = 72 حبة.</p>
                   <div className="items-optional-units-grid">
                     <div className="items-opt-col">
                       <div className="items-catalog-field">
@@ -4588,7 +4617,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         />
                       </div>
                       <div className="items-catalog-field">
-                        <span className="items-lbl blue">معامل التحويل</span>
+                        <span className="items-lbl blue">عدد الوحدات الأساسية داخل الوحدة ٢</span>
                         <KeyboardInput
                           aria-label="معامل التحويل 2"
                           data-testid="catalog-item-count2"
@@ -4623,7 +4652,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         />
                       </div>
                       <div className="items-catalog-field">
-                        <span className="items-lbl blue">معامل التحويل</span>
+                        <span className="items-lbl blue">عدد وحدات ٢ داخل الوحدة ٣</span>
                         <KeyboardInput
                           aria-label="معامل التحويل 3"
                           data-testid="catalog-item-count3"
@@ -4678,26 +4707,26 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
               </div>
 
               <div className="items-catalog-defaults-row">
-                <span className="items-lbl blue">الافتراضية</span>
+                <div className="items-catalog-default-unit-field"><span className="items-lbl blue">الوحدة الافتراضية</span>
                 <div className="items-default-unit-radios" role="radiogroup" aria-label="الوحدة الافتراضية">
                   <label>
                     <input type="radio" checked={defaultUnit === 1} onChange={() => setDefaultUnit(1)} /> الوحدة ١
                   </label>
                   <label>
-                    <input type="radio" checked={defaultUnit === 2} onChange={() => setDefaultUnit(2)} /> الوحدة ٢
+                    <input type="radio" checked={defaultUnit === 2} disabled={!unit2.trim()} onChange={() => setDefaultUnit(2)} /> الوحدة ٢
                   </label>
                   <label>
-                    <input type="radio" checked={defaultUnit === 3} onChange={() => setDefaultUnit(3)} /> الوحدة ٣
+                    <input type="radio" checked={defaultUnit === 3} disabled={!unit2.trim() || !unit3.trim()} onChange={() => setDefaultUnit(3)} /> الوحدة ٣
                   </label>
                 </div>
-                <span className="items-lbl blue">تاريخ الانتهاء</span>
+                </div><label className="items-catalog-expiry-field"><span className="items-lbl blue">تاريخ الانتهاء</span>
                 <input
                   type="date"
                   className="items-expiry-input"
                   aria-label="تاريخ الانتهاء"
                   value={expiryDate}
                   onChange={(e) => setExpiryDate(e.target.value)}
-                />
+                /></label>
               </div>
 
               <div className="items-catalog-actions-row">
@@ -5020,6 +5049,7 @@ function InventoryReportPage({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [movementReport, setMovementReport] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>> | null>(null);
   const [activeMovementItem, setActiveMovementItem] = useState<InventoryItemRecord | null>(null);
+  const [itemHistoryScope, setItemHistoryScope] = useState<"report" | "all">("report");
   const [itemMoves, setItemMoves] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movements"]>([]);
   const [loadingMoves, setLoadingMoves] = useState(false);
   const [itemMovesPage, setItemMovesPage] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movementPage"]>();
@@ -5171,10 +5201,10 @@ function InventoryReportPage({
     try {
       const res = await fetchInventoryMovementsReport(ctx.uid, {
         itemId: activeMovementItem.id,
-        warehouseId: selectedWarehouseId || undefined,
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        currency: selectedCurrency !== "الكل" ? selectedCurrency : undefined,
+        warehouseId: itemHistoryScope === "report" ? selectedWarehouseId || undefined : undefined,
+        fromDate: itemHistoryScope === "report" ? fromDate || undefined : undefined,
+        toDate: itemHistoryScope === "report" ? toDate || undefined : undefined,
+        currency: itemHistoryScope === "report" && selectedCurrency !== "الكل" ? selectedCurrency : undefined,
         profitBasis,
         movementOffset: offset,
         movementLimit: 100,
@@ -5210,7 +5240,7 @@ function InventoryReportPage({
         setLoadingMoves(false);
       }
     }
-  }, [activeMovementItem?.id, ctx.uid, selectedWarehouseId, fromDate, toDate, selectedCurrency, profitBasis]);
+  }, [activeMovementItem?.id, ctx.uid, selectedWarehouseId, fromDate, toDate, selectedCurrency, profitBasis, itemHistoryScope]);
 
   useEffect(() => {
     const generation = ++movementGeneration.current;
@@ -5226,6 +5256,7 @@ function InventoryReportPage({
 
   const openItemMovements = (item: InventoryItemRecord) => {
     keyboard.hide();
+    setItemHistoryScope("report");
     setActiveMovementItem(item);
   };
 
@@ -5736,11 +5767,10 @@ function InventoryReportPage({
               aria-label="إغلاق حركة الصنف"
             />
             <section
-              className="account-groups-modal"
+              className="account-groups-modal item-history-dialog"
               role="dialog"
               aria-modal="true"
               aria-labelledby="item-moves-title"
-              style={{ maxWidth: 560, maxHeight: "82vh", display: "flex", flexDirection: "column" }}
             >
               <header className="smart-modal-header" style={{ flexShrink: 0 }}>
                 <button
@@ -5754,7 +5784,14 @@ function InventoryReportPage({
                 <h2 id="item-moves-title">حركة صنف: {activeMovementItem.name}</h2>
                 <span className="smart-modal-spacer" aria-hidden="true" />
               </header>
-              <div style={{ padding: "8px 12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+              <div className="item-history-scope" data-testid="item-history-scope">
+                <div className="item-history-scope-actions" role="group" aria-label="نطاق حركة الصنف">
+                  <button className={`nasqo-aux-toggle${itemHistoryScope === "report" ? " is-expanded" : ""}`} aria-pressed={itemHistoryScope === "report"} onClick={()=>{keyboard.hide();setItemHistoryScope("report");}}>فلاتر التقرير</button>
+                  <button className={`nasqo-aux-toggle${itemHistoryScope === "all" ? " is-expanded" : ""}`} aria-pressed={itemHistoryScope === "all"} onClick={()=>{keyboard.hide();setItemHistoryScope("all");}}>سجل الصنف كاملًا</button>
+                </div>
+                <p>{itemHistoryScope === "all" ? "جميع المخازن والعملات والتواريخ — فلاتر التقرير الأصلي محفوظة" : `المخزن: ${ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name || "جميع المخازن"} · العملة: ${selectedCurrency} · الفترة: ${formatDateRangeLabel(fromDate,toDate) || "كامل السجل"}`}</p>
+              </div>
+              <MobileScroll className="item-history-scroll"><div className="item-history-body">
                 {loadingMoves && itemMoves.length === 0 ? (
                   <NasqoBrandLoader size="sm" label="جاري جلب سجل الحركات..." />
                 ) : itemMoves.length === 0 && !itemMovesError ? (
@@ -5783,7 +5820,7 @@ function InventoryReportPage({
                           <td style={{ color: mv.effectQty < 0 ? "#dc2626" : "#059669", fontWeight: 700 }}>
                             {formatQuantity(mv.quantity)} {mv.unit}
                           </td>
-                          <td>{mv.price > 0 ? formatAmount(mv.price) : "—"}</td>
+                          <td>{mv.price > 0 ? <><bdi>{formatAmount(mv.price)}</bdi><small className="item-history-currency">{mv.currency}</small></> : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -5805,7 +5842,7 @@ function InventoryReportPage({
                     {loadingMoves ? "جاري تحميل المزيد..." : "عرض المزيد من الحركات"}
                   </button>
                 ) : null}
-              </div>
+              </div></MobileScroll>
               <footer className="account-groups-footer" style={{ flexShrink: 0 }}>
                 <span data-testid="item-movements-count">الحركات المعروضة: {itemMoves.length}{itemMovesPage ? ` من ${itemMovesPage.totalCount}` : ""}</span>
                 <button type="button" className="ag-btn close" onClick={closeItemMovements}>

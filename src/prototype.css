@@ -16224,3 +16224,22 @@ button.currencies-footer-hint:hover {
 .nasqo-app .reference-manager-dialog .smart-modal-close { width: 44px; min-height: 44px; }
 .reference-manager-dialog .reference-button.primary { background: #047857; color: #fff; }
 .reference-manager-dialog .reference-button.secondary { border: 1px solid var(--nasqo-line, #d5e0eb); color: var(--nasqo-ink, #242424); }
+
+/* Keep item-history scope explicit; expanding it never mutates report filters. */
+.account-groups-modal.item-history-dialog { max-width: 560px; height: min(82dvh, 760px); overflow: hidden; }
+.item-history-scope { flex: none; padding: 10px 12px; border-bottom: 1px solid var(--nasqo-line, #d5e0eb); background: var(--nasqo-surface, #fff); }
+.item-history-scope-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.nasqo-app .item-history-scope-actions button { min-height: 44px; }
+.item-history-scope p { margin: 8px 0 0; font-size: 12px; line-height: 1.7; color: var(--nasqo-ink, #242424); overflow-wrap: anywhere; }
+.item-history-scroll { position: relative; flex: 1; min-height: 0; }
+.item-history-body { padding: 8px 12px; }
+.item-history-currency { display: block; font-size: 10px; color: var(--nasqo-muted, #64748b); }
+.items-catalog-form-card .items-catalog-defaults-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.items-catalog-default-unit-field, .items-catalog-expiry-field { display: grid; gap: 6px; min-width: 0; }
+.items-catalog-default-unit-field .items-default-unit-radios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; min-width: 0; background: var(--nasqo-surface, #fff); }
+.items-catalog-default-unit-field .items-default-unit-radios label { white-space: normal; min-width: 0; justify-content: center; }
+.items-catalog-default-unit-field label:has(input:disabled) { opacity: .5; cursor: default; }
+.items-catalog-expiry-field .items-expiry-input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; }
+.item-history-dialog .item-history-scope .item-history-scope-actions button { min-height: 44px; }
+.items-unit-help { margin: 6px 0; font-size: 12px; line-height: 1.7; color: var(--nasqo-muted, #64748b); }
+.items-optional-units-box > .items-unit-help { padding-inline: 10px; }

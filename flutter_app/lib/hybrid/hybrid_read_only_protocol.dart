@@ -10,6 +10,23 @@ import '../services/native_cloud_session.dart';
 /// its JSON response to window.__nasqoHybridReceive(...). Only explicitly
 /// whitelisted appearance preferences may be written; financial data is read-only.
 class HybridReadOnlyProtocol {
+  // Whitelisted validation reasons only: never expose raw records or SQL errors.
+  static String catalogValidationMessage(ArgumentError error) => switch(error.message) {
+    'New item requires zero stock and cost; post purchases or an approved opening' => 'الصنف الجديد يبدأ برصيد وتكلفة صفر. سجّل تكلفة المخزون من فاتورة الشراء أو إجراء اعتماد المخزون.',
+    'Duplicate item or barcode' => 'يوجد صنف بالاسم أو الباركود نفسه في المخزن. افتح الصنف الموجود للتعديل أو استخدم اسمًا وباركودًا مختلفين.',
+    'Warehouse missing' || 'Invalid identity' => 'تعذر العثور على المخزن المحدد؛ اختر مخزنًا موجودًا قبل حفظ الصنف.',
+    'Invalid unit conversion' || 'Only whole base units are supported' => 'معامل التحويل يجب أن يكون عددًا صحيحًا موجبًا، وأسماء الوحدات مختلفة.',
+    'Third unit requires second unit' => 'أدخل الوحدة الثانية ومعاملها قبل الوحدة الثالثة.',
+    'Default unit missing' => 'الوحدة الافتراضية غير معرّفة؛ اختر وحدة مكتملة البيانات.',
+    'Stock posting supports only base currency' => 'عملة الصنف المحلي المدعومة حاليًا هي الريال؛ لم تُحفظ البيانات.',
+    'Invalid expiry date' => 'تاريخ انتهاء الصنف غير صالح.',
+    'Invalid amount' || 'Amount requires at most two decimal places' => 'السعر يجب أن يكون مبلغًا غير سالب بمنزلتين عشريتين كحد أقصى.',
+    'Invalid name' => 'اسم الصنف لا يتجاوز 120 حرفًا.',
+    'Invalid sku' => 'الباركود لا يتجاوز 64 حرفًا.',
+    'Invalid unit' || 'Invalid unit2' || 'Invalid unit3' => 'اسم الوحدة لا يتجاوز 32 حرفًا.',
+    _ => 'تعذر حفظ بيانات الصنف أو المخزن؛ راجع الاسم والباركود والوحدات والأسعار. لم تُحفظ البيانات.',
+  };
+
   HybridReadOnlyProtocol({
     required this.readSnapshot,
     this.saveUiPreferences,
@@ -377,8 +394,8 @@ class HybridReadOnlyProtocol {
       try{
         final result=await manageCatalog!(actionName!,key,p);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
-      }on ArgumentError{
-        return _error(id,actionName,'VALIDATION_ERROR','تحقق من بيانات الحساب أو العملة أو الصنف.');
+      }on ArgumentError catch(e){
+        return _error(id,actionName,'VALIDATION_ERROR',actionName=='updateInventoryItem'?catalogValidationMessage(e):'تحقق من بيانات الحساب أو العملة أو الصنف.');
       }on StateError catch(e){
         return _error(id,actionName,'VALIDATION_ERROR',e.message.toString());
       }catch(_){
@@ -396,8 +413,10 @@ class HybridReadOnlyProtocol {
       try{
         final result=await createStockRecord!(actionName!,key,params['payload'] as Map<String,dynamic>);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
-      } on ArgumentError {
-        return _error(id,actionName,'VALIDATION_ERROR','يدعم المخزون المحلي إنشاء أصناف بوحدات معتمدة ورصيد وتكلفة صفر قبل الشراء.');
+      } on ArgumentError catch(e) {
+        return _error(id,actionName,'VALIDATION_ERROR',actionName=='saveWarehouse'
+          ? (e.message=='Duplicate warehouse'?'يوجد مخزن بالاسم نفسه؛ اختر اسمًا مختلفًا.':'راجع اسم المخزن (حتى 100 حرف) ووصفه (حتى 300 حرف). لم يُحفظ المخزن.')
+          : catalogValidationMessage(e));
       } catch(_){
         return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر حفظ بيانات المخزون محليًا.');
       }

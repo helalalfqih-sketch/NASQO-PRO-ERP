@@ -1,0 +1,40 @@
+▶ Hybrid Bridge Contracts & Security Validation
+  ✔ accepts all 12 core commands plus domain commands in strict allowlist (0.989102ms)
+  ✔ rejects unauthorized actions and raw SQL/shell injection keys (0.705455ms)
+  ✔ enforces mandatory idempotencyKey on financial mutations (0.627863ms)
+  ✔ validates inbound responses and rejects malformed or unknown host events (0.527084ms)
+✔ Hybrid Bridge Contracts & Security Validation (4.686488ms)
+▶ NasqoHybridBridge Runtime & Duplicate Prevention
+  ✔ blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST (2.970239ms)
+  ✔ propagates Flutter service errors and timeouts without faking success (36.839293ms)
+  ✔ rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached (0.826544ms)
+✔ NasqoHybridBridge Runtime & Duplicate Prevention (41.242562ms)
+▶ Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ✔ hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge (4.890633ms)
+✔ Hybrid Service Adapter Simulated Flutter Host Round-Trip (5.135732ms)
+▶ Hybrid Routes Canonical Mapping
+  ✔ normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches (0.492314ms)
+✔ Hybrid Routes Canonical Mapping (0.783624ms)
+▶ Offline Hybrid Build Output Integrity (dist/hybrid)
+  ✔ produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code (25.128127ms)
+  ✔ prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge (0.973492ms)
+✔ Offline Hybrid Build Output Integrity (dist/hybrid) (26.414239ms)
+▶ Stage 2 Home Screen Batch 1 Requirements
+  ✔ validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads (0.898912ms)
+  ✔ computes signed multi-currency group balances accurately without mixing currencies (2.285923ms)
+  ✔ blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences (0.898113ms)
+  ✔ supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout (0.984377ms)
+✔ Stage 2 Home Screen Batch 1 Requirements (5.303643ms)
+✔ uses explicit journal legs for stock cost, tax and account reports (3.702589ms)
+▶ Legacy register restoration parity
+  ✔ preserves both original sides in account, statement and group reports, without fictitious counterpart (0.950922ms)
+✔ Legacy register restoration parity (1.047515ms)
+✔ cashbox metadata needs catalog capability and an idempotency key in read-only financial mode (1.246241ms)
+ℹ tests 18
+ℹ suites 7
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 316.568256

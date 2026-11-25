@@ -39,8 +39,21 @@ adb pull /sdcard/nasqo-brand-start.mp4 upgrade-evidence/startup.mp4
 adb shell pidof "$PKG" > upgrade-evidence/update-pid.txt
 adb shell dumpsys package "$PKG" > upgrade-evidence/update-package.txt
 adb exec-out screencap -p > upgrade-evidence/update.png
-adb shell uiautomator dump /sdcard/nasqo-upgrade-ui.xml > upgrade-evidence/ui-dump-status.txt
-adb pull /sdcard/nasqo-upgrade-ui.xml upgrade-evidence/update-ui.xml
+# A cold emulator can still be rendering after install. Wait for WebView load,
+# and retry the observed transient null-root capture failure without clearing data.
+UI_READY=0
+for attempt in $(seq 1 15); do
+  adb logcat -d -s NASQO_LIFECYCLE:I AndroidRuntime:E flutter:E > upgrade-evidence/update-log.txt
+  if grep -Fq 'event=page-finished' upgrade-evidence/update-log.txt; then
+    if timeout 15s adb shell uiautomator dump /sdcard/nasqo-upgrade-ui.xml >> upgrade-evidence/ui-dump-status.txt 2>&1 &&
+       adb pull /sdcard/nasqo-upgrade-ui.xml upgrade-evidence/update-ui.xml >/dev/null 2>&1 &&
+       grep -Fq '<hierarchy' upgrade-evidence/update-ui.xml; then UI_READY=1; break; fi
+  fi
+  sleep 2
+done
+test "$UI_READY" = 1
+adb shell pidof "$PKG" > upgrade-evidence/update-pid.txt
+adb exec-out screencap -p > upgrade-evidence/update.png
 adb logcat -d -s NASQO_LIFECYCLE:I AndroidRuntime:E flutter:E > upgrade-evidence/update-log.txt
 python3 - <<'PY'
 import pathlib,re,json
@@ -52,9 +65,9 @@ def field(s,k):
     assert match,'Missing package field: '+k
     return match.group(1)
 assert field(old,'userId')==field(new,'userId'),'Android UID changed'
-assert int(field(old,'versionCode'))==1130
-assert int(field(new,'versionCode'))>1130
+assert int(field(old,'versionCode'))==1132
+assert int(field(new,'versionCode'))>1132
 assert 'Success' in (p/'install-update.txt').read_text()
 assert 'FATAL EXCEPTION' not in (p/'update-log.txt').read_text()
-(p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1130,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
+(p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1132,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
 PY

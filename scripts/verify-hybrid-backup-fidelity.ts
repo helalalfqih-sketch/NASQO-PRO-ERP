@@ -83,13 +83,13 @@ function installHost(state: typeof snapshot, lines: typeof invoiceLines) {
         itemName: "صنف اصطناعي 0001", warehouseId: "wh_main", warehouseName: "مخزن اصطناعي", quantity: 2,
         price: 50, total: 100, discount: 0, bonus: 0, unit: "حبة", unitNum: 1, details: "بند مستورد اصطناعي", expiryDate: "" }] } };
   };
-  const movementRows = (itemId: string) => Array.from({ length: itemId === "synthetic-item-0001" ? 516 : 2 }, (_, i) => ({
+  const movementRows = (itemId: string) => Array.from({ length: win.__historyScopeScenario ? 19 : itemId === "synthetic-item-0001" ? 516 : 2 }, (_, i) => ({
     movementId: `${itemId}:event:${i}`, itemId, sourceItemId: itemId, source: i === 515 ? "transfer" : "invoice",
     historical: true, role: i === 515 ? "transferIn" : "buy", refId: `${itemId}:ref:${i}`,
     date: i === 515 ? "2026-11-20" : "2026-11-25", entryNumber: 10000 - i,
     label: i === 515 ? "تحويل بين المخازن" : "فاتورة شراء اصطناعية", accountName: "حساب اختبار اصطناعي",
-    warehouseId: "wh_main", warehouseName: "مخزن اصطناعي", quantity: 1, unit: "حبة", baseQuantity: 1,
-    effectQty: 1, price: i === 515 ? 0 : 10, total: i === 515 ? 0 : 10, currency: "ريال",
+    warehouseId: win.__historyScopeScenario && i>=3 ? "wh_branch" : "wh_main", warehouseName: win.__historyScopeScenario && i>=3 ? "مخزن اصطناعي آخر" : "مخزن اصطناعي", quantity: 1, unit: "حبة", baseQuantity: 1,
+    effectQty: 1, price: i === 515 ? 0 : 10, total: i === 515 ? 0 : 10, currency: win.__historyScopeScenario && i>=17 ? "دولار" : "ريال",
   }));
   const report = (options: any) => {
     const all = options.itemId ? movementRows(options.itemId).filter(e => (!options.fromDate || e.date >= options.fromDate)
@@ -247,6 +247,19 @@ try {
     await expect(page.getByTestId("item-movement-row").last()).toContainText("تحويل");
     await page.getByTestId("item-movement-row").last().scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(evidence, "item-movements-516.png") });
+  });
+  await run("movement-scope-three-versus-nineteen-preserves-parent-filters",async()=>{
+    await page.evaluate(()=>{(window as any).__historyScopeScenario=true;});await openReport();await page.getByTestId("inventory-toggle-filters").click();
+    await page.getByRole("combobox",{name:"المخزن",exact:true}).selectOption("wh_main");
+    await openMovements();await expect(page.getByTestId("item-movement-row")).toHaveCount(3);
+    const modal=page.getByTestId("item-movements-modal");await expect(modal.getByTestId("item-history-scope")).toContainText("المخزن الرئيسي");
+    await modal.getByRole("button",{name:"سجل الصنف كاملًا",exact:true}).click();await expect(page.getByTestId("item-movement-row")).toHaveCount(19);
+    await expect(modal.getByTestId("item-history-scope")).toContainText("جميع المخازن والعملات والتواريخ");await expect(modal.locator('.item-history-currency').filter({hasText:'دولار'})).toHaveCount(2);
+    await page.screenshot({path:path.join(evidence,"item-history-all-warehouses.png"),animations:"disabled"});
+    await modal.getByRole("button",{name:"فلاتر التقرير",exact:true}).click();await expect(page.getByTestId("item-movement-row")).toHaveCount(3);
+    await page.screenshot({path:path.join(evidence,"item-history-filtered.png"),animations:"disabled"});
+    await modal.getByRole("button",{name:"إغلاق",exact:true}).first().click();await expect(page.getByRole("combobox",{name:"المخزن",exact:true})).toHaveValue("wh_main");
+    await openMovements();await expect(page.getByTestId("item-movement-row")).toHaveCount(3);
   });
   await run("movement-date-filter-includes-dated-transfer-and-resets-page", async () => {
     await openReport(); await page.getByTestId("inventory-toggle-filters").click();

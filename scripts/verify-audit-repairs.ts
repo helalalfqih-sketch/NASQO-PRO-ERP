@@ -15,9 +15,11 @@ s.inventory=Array.from({length:12},(_,i)=>({...s.inventory[0],id:`item-${i}`,nam
 function host(state:any){
  const w=window as any;sessionStorage.clear();const erpKey="acceptance-erp:"+location.search;const keptErp=localStorage.getItem(erpKey);localStorage.clear();if(keptErp)localStorage.setItem(erpKey,keptErp);state.erpData=JSON.parse(localStorage.getItem(erpKey)||'{"employees":[],"leaveRequests":[],"deals":[],"purchaseOrders":[],"boms":[],"productionOrders":[],"costCenters":[]}');if(location.search.includes("empty"))state.inventory=[];if(location.search.includes("large"))state.ledger=Array.from({length:516},(_,i)=>({...state.ledger[0],id:"row-"+i,entryNumber:i+1,amount:1,details:"حركة عربية "+(i+1),currency:"دولار"}));w.auditCommands=[];w.auditFiles=[];w.canvasText=[];
  const fill=CanvasRenderingContext2D.prototype.fillText;CanvasRenderingContext2D.prototype.fillText=function(t:any,...args:any[]){w.canvasText.push(String(t));return (fill as any).call(this,t,...args)};
+ if(location.search.includes('catalog-precise-cost'))state.inventory[0].avgCost=1.234567;
+ if(location.search.includes('catalog-create'))state.capabilities.localStockPosting=true;
  if(location.search.includes('reference-long')){const cash=state.accounts.find((a:any)=>a.isCashAccount);state.accounts.push(...Array.from({length:40},(_,i)=>({...cash,id:'reference-cash-'+i,name:'حساب نقدي اصطناعي طويل للاختبار '+(i+1)})));}
  if(location.search.includes('settings-legacy-on'))state.uiPreferences.extendedSettings={passwordLock:true,backupReminderOnExit:true,sellWithoutBalance:true};
- const allowed=new Set(['saveWorkspaceSettings','saveAccount','saveCashbox','saveErpRecords','backupWorkspace','getSnapshot','navigate','goBack','showMessage','changeCurrency','saveUiPreferences','getProductPriceStats','getInventoryMovementsReport','getCashboxesReport','getInvoiceDetail','beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport','printDocument','exportPdf','shareText','cloudIdentityAction','googleDriveAction','localToolsAction','legacyArchiveAction']);
+ const allowed=new Set(['updateInventoryItem','createInventoryItem','saveWorkspaceSettings','saveAccount','saveCashbox','saveErpRecords','backupWorkspace','getSnapshot','navigate','goBack','showMessage','changeCurrency','saveUiPreferences','getProductPriceStats','getInventoryMovementsReport','getCashboxesReport','getInvoiceDetail','beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport','printDocument','exportPdf','shareText','cloudIdentityAction','googleDriveAction','localToolsAction','legacyArchiveAction']);
  let doc:any;
  w.auditEmit=(event:string,payload:any)=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'event',event,payload,timestampMs:Date.now()});
  w.NasqoHome={postMessage(raw:string){const r=JSON.parse(raw);w.auditCommands.push(r);let data:any={ok:true};
@@ -26,6 +28,8 @@ function host(state:any){
   if(r.action==='saveErpRecords'){
     if(!w.rejectErp){for(const c of r.payload.changes){const row={...c.record,_revision:c.expectedRevision+1};if(c.collection==='vatConfig')state.erpData.vatConfig=row;else {const list=state.erpData[c.collection];const i=list.findIndex((x:any)=>x.id===row.id);if(i<0)list.push(row);else list[i]=row;}}localStorage.setItem(erpKey,JSON.stringify(state.erpData));data={erpData:state.erpData};}
   }
+if(r.action==='updateInventoryItem'){const i=state.inventory.find((x:any)=>x.id===r.payload.itemId);Object.assign(i,r.payload.updates);data={item:i,snapshot:state};}
+if(r.action==='createInventoryItem'&&!w.rejectCatalog){const item={...r.payload.payload,id:'new-catalog-item'};state.inventory.push(item);data={item,snapshot:state};}
 if(r.action==='saveAccount'){const a={...state.accounts[0],...r.payload.payload,id:r.payload.accountId||'new-account-'+state.accounts.length,openingBalance:0};state.accounts.push(a);data={account:a,snapshot:state};}
   if(r.action==='saveCashbox'){const b={...r.payload.payload,id:99};state.cashboxes.push(b);data={cashbox:b,snapshot:state};}
   if(r.action==='backupWorkspace')data={saved:false};
@@ -42,7 +46,7 @@ if(r.action==='saveAccount'){const a={...state.accounts[0],...r.payload.payload,
   if(r.action==='googleDriveAction')data={configured:false,connected:false,files:[]};
   if(r.action==='localToolsAction')data={review:false,imported:false};
   if(r.action==='legacyArchiveAction')data={available:false,items:[],totalCount:0};
-  setTimeout(()=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'response',requestId:r.requestId,action:r.action,ok:allowed.has(r.action)&&!(r.action==='saveErpRecords'&&w.rejectErp)&&!(r.action==='saveUiPreferences'&&w.rejectPreferences),...(allowed.has(r.action)&&!(r.action==='saveErpRecords'&&w.rejectErp)&&!(r.action==='saveUiPreferences'&&w.rejectPreferences)?{data}:{error:{code:'UNAUTHORIZED_ACTION',message:'Audit host rejects writes'}}),timestampMs:Date.now()}),0);
+  setTimeout(()=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'response',requestId:r.requestId,action:r.action,ok:(allowed.has(r.action)&&!(r.action==='createInventoryItem'&&w.rejectCatalog))&&!(r.action==='saveErpRecords'&&w.rejectErp)&&!(r.action==='saveUiPreferences'&&w.rejectPreferences),...((allowed.has(r.action)&&!(r.action==='createInventoryItem'&&w.rejectCatalog))&&!(r.action==='saveErpRecords'&&w.rejectErp)&&!(r.action==='saveUiPreferences'&&w.rejectPreferences)?{data}:{error:{code:r.action==='createInventoryItem'&&w.rejectCatalog?'VALIDATION_ERROR':'UNAUTHORIZED_ACTION',message:r.action==='createInventoryItem'&&w.rejectCatalog?'يوجد صنف بالاسم أو الباركود نفسه في المخزن.':'Audit host rejects writes'}}),timestampMs:Date.now()}),0);
  }};
 }
 const fixture=`(${host.toString()})(${JSON.stringify(s)});`;
@@ -204,6 +208,37 @@ try{
  await run('balance-confirmation-template',async()=>{await statement();await page.getByRole('button',{name:'تصدير',exact:true}).click();await page.getByRole('button',{name:'طباعة مصادقة الرصيد',exact:true}).click();const {bytes}=await exported();const drawn=await page.evaluate(()=>(window as any).canvasText as string[]);assert(drawn.some(t=>t.includes('مصادقة الرصيد')));assert(drawn.some(t=>t.includes('التوقيع والختم')));return{correct:true,bytes:bytes.length};});
  await run('backup-cancel-honest',async()=>{await emit('settings');await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await page.getByTestId('settings-download-sqlite-btn').click();await expect(page.getByText('أُلغي الحفظ',{exact:true})).toBeVisible();return{correct:true};});
  await run('settings-no-false-lock-or-reset',async()=>{await emit('settings');await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await expect(page.getByText('التطبيق لا يطلب كلمة مرور عند الفتح.',{exact:false})).toBeVisible();await expect(page.getByRole('switch')).toBeDisabled();await expect(page.getByRole('button',{name:'تفريغ قاعدة البيانات',exact:true})).toHaveCount(0);return{correct:true,actualLockImplemented:false};});
+ await run('catalog-create-validation-empty',async()=>{
+  await page.getByTestId('open-items-btn').click();await page.getByRole('button',{name:'إضافة أول صنف',exact:true}).click();
+  const form=page.getByTestId('catalog-form-card');await expect(form.getByRole('radio',{name:'الوحدة ٢',exact:true})).toBeDisabled();
+  await form.getByTestId('catalog-item-name').fill('صنف وحدات اصطناعي');await form.getByTestId('catalog-item-unit2').fill('دُرزن');
+  await form.getByTestId('catalog-save-btn').click();await expect(form.getByRole('alert')).toContainText('معامل التحويل للوحدة 2 مطلوب');
+  await form.getByTestId('catalog-item-count2').fill('0');await form.getByTestId('catalog-save-btn').click();await expect(form.getByRole('alert')).toContainText('عددًا صحيحًا موجبًا');
+  await form.getByTestId('catalog-item-count2').fill('١٢');await form.getByTestId('catalog-item-unit3').fill('كرتون');await form.getByTestId('catalog-item-count3').fill('٦');await form.getByRole('radio',{name:'الوحدة ٣',exact:true}).check();
+  await form.getByTestId('catalog-item-cost').fill('25');await form.getByTestId('catalog-save-btn').click();await expect(form.getByRole('alert')).toContainText('سعر التكلفة للصنف الجديد يجب أن يكون صفرًا');assert(!(await commands()).some((r:any)=>r.action==='createInventoryItem'));
+  await form.getByTestId('catalog-item-cost').fill('0');await form.getByLabel('تاريخ الانتهاء',{exact:true}).fill('2027-01-31');await form.getByTestId('catalog-save-btn').click();await expect(form).toHaveCount(0);
+  const writes=(await commands()).filter((r:any)=>r.action==='createInventoryItem');assert.equal(writes.length,1);assert.equal(writes[0].payload.payload.count2,12);assert.equal(writes[0].payload.payload.count3,6);assert.equal(writes[0].payload.payload.defaultUnit,3);assert.equal(writes[0].payload.payload.expiryDate,'2027-01-31');assert.equal(writes[0].payload.payload.avgCost,0);await assertNoPosting();return{correct:true,noImplicitFactorOne:true,allUnitFieldsSent:true};
+ });
+ await run('catalog-precise-cost-metadata-edit',async()=>{
+  await page.getByTestId('open-items-btn').click();await page.getByTestId('items-catalog-table').getByText('صنف اصطناعي 1',{exact:true}).click();const form=page.getByTestId('catalog-form-card');
+  await form.getByTestId('catalog-item-name').fill('اسم اصطناعي مصحح');await form.getByTestId('catalog-update-btn').click();await expect(form).toHaveCount(0);
+  const writes=(await commands()).filter((r:any)=>r.action==='updateInventoryItem');assert.equal(writes.length,1);assert.equal(writes[0].payload.updates.avgCost,1.234567);await assertNoPosting();return{correct:true,unchangedAverageCostPrecisionPreserved:true};
+ });
+ await run('catalog-unit-layout-empty',async()=>{
+  await page.setViewportSize({width:320,height:720});await page.getByTestId('open-items-btn').click();await page.getByRole('button',{name:'إضافة أول صنف',exact:true}).click();
+  const form=page.getByTestId('catalog-form-card');await form.getByTestId('catalog-item-name').fill('صنف تخطيط اصطناعي');
+  await form.getByTestId('catalog-item-unit2').fill('دُرزن');await form.getByTestId('catalog-item-count2').fill('12');await form.getByTestId('catalog-item-unit3').fill('كرتون');await form.getByTestId('catalog-item-count3').fill('6');
+  await page.addStyleTag({content:'.items-default-unit-radios{font-size:20px!important}'});
+  const defaults=form.getByRole('radiogroup',{name:'الوحدة الافتراضية'});await defaults.scrollIntoViewIfNeeded();
+  const layout=await defaults.evaluate(el=>{const r=el.getBoundingClientRect();return{overflow:el.scrollWidth>el.clientWidth+1,width:r.width,x:r.x,viewport:innerWidth,labels:[...el.querySelectorAll('label')].map(x=>{const b=x.getBoundingClientRect();return{x:b.x,right:b.right,height:b.height};})};});
+  assert(!layout.overflow);assert(layout.labels.every(x=>x.x>=layout.x-1&&x.right<=layout.x+layout.width+1&&x.height>=44));
+  await page.screenshot({path:`${out}/catalog-default-units-320.png`,animations:'disabled'});await page.setViewportSize({width:360,height:800});return{correct:true,layout};
+ });
+ await run('catalog-create-rejection-empty',async()=>{
+  await page.getByTestId('open-items-btn').click();await page.getByRole('button',{name:'إضافة أول صنف',exact:true}).click();const form=page.getByTestId('catalog-form-card');
+  await form.getByTestId('catalog-item-name').fill('صنف اصطناعي مكرر');await page.evaluate(()=>(window as any).rejectCatalog=true);await form.getByTestId('catalog-save-btn').click();
+  await expect(form.getByRole('alert')).toContainText('الاسم أو الباركود');await expect(form.getByTestId('catalog-item-name')).toHaveValue('صنف اصطناعي مكرر');await expect(page.locator('.app-toast')).toHaveCount(0);await assertNoPosting();return{correct:true,errorInline:true,draftRetained:true,noSuccessToast:true};
+ });
  await run('catalog-empty-touch',async()=>{await page.getByTestId('open-items-btn').click();await expect(page.getByRole('button',{name:'إضافة أول صنف',exact:true})).toBeVisible();await expect(page.getByTestId('catalog-next-page')).toHaveCount(0);await page.screenshot({path:`${out}/catalog-empty-after.png`});await page.getByRole('button',{name:'إضافة أول صنف',exact:true}).click();await expect(page.getByTestId('catalog-save-btn')).toBeVisible();await expect(page.getByTestId('catalog-update-btn')).toBeHidden();return{correct:true};});
  await run('catalog-touch-edit-delete-name-textscale',async()=>{await page.getByTestId('open-items-btn').click();await expect(page.getByText('التنقل : TAB',{exact:true})).toHaveCount(0);await page.getByTestId('items-catalog-table').getByText('صنف اصطناعي 1',{exact:true}).click();await expect(page.getByTestId('catalog-update-btn')).toBeVisible();await expect(page.getByTestId('catalog-save-btn')).toBeHidden();await page.getByTestId('catalog-delete-btn').click();await expect(page.getByRole('alertdialog',{name:'تأكيد حذف الصنف'})).toContainText('صنف اصطناعي 1');await page.getByRole('alertdialog').getByRole('button',{name:'إلغاء',exact:true}).click();await page.addStyleTag({content:'html{font-size:24px!important}.items-default-unit-radios{font-size:20px!important}'});await page.screenshot({path:`${out}/catalog-edit-large-text-after.png`});return{correct:true};});
  await run('native-template-csv-cancel',async()=>{await page.getByTestId('open-items-btn').click();await page.getByRole('button',{name:'خيارات بطاقات الأصناف',exact:true}).click();await page.evaluate(()=>(window as any).auditCancel=true);await page.getByTestId('items-import-template-btn').click();const {d}=await exported();assert.equal(d.mimeType,'text/csv');await expect(page.getByText('أُلغي الحفظ',{exact:true})).toBeVisible();return{correct:true};});

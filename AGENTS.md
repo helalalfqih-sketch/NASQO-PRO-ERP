@@ -159,3 +159,10 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Keep the originating invoice/voucher mounted with its inputs intact, but hide/inert covered dialogs. Only the current management step is visible and interactive.
 - System Back closes the account combobox before the cashbox editor, a confirmation before its editor, and reference management before the originating document. Management save/select/cancel must never post that document.
 - Verify rendered narrow/landscape/dark layouts and reachable list/footer actions with synthetic data; a passing bridge test alone is not mobile visual acceptance.
+
+## Item history scope and catalog validation (user screenshots, 2026-11-25)
+
+- Item history must show its warehouse/currency/date scope. Provide an explicit full-history choice without changing the parent inventory report filters; reset paging and discard stale responses when switching scope. Label movement price currency when showing multiple currencies.
+- Never replace a missing/zero optional-unit factor with 1 silently. Unit 2 is a whole positive count of base units; unit 3 is a whole positive count of unit 2. Keep supported multi-unit fields operational and disable selecting an undefined default unit.
+- Catalog validation must explain the actual rejected field, retain the form, and avoid a green success-style error toast. Catalog creation does not establish stock/cost; unchanged precise average costs must survive metadata edits without rounding.
+- Keep the default-unit and expiry controls in separate usable rows on narrow screens and with enlarged text.
