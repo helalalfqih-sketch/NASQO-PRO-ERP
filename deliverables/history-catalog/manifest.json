@@ -16,5 +16,14 @@
   "bridgeTests": 18,
   "protectedFiles": 28,
   "physicalAndroidUiTested": false,
-  "publication": "pending"
+  "publication": "published",
+  "publicationRun": 45713271731,
+  "downloadUrl": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1134/NASQO-PRO-ERP.apk",
+  "androidUpgrade": {
+    "result": "PASS",
+    "from": 1132,
+    "to": 1134,
+    "uidRetained": true,
+    "scope": "Synthetic empty emulator install and launch only"
+  }
 }
