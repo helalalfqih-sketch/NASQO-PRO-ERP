@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -137,6 +138,27 @@ void main(){
       expect(inspected.native,true);
       final lines=inspected.nativeTables!['stock_posting_lines']!;
       expect(lines.firstWhere((x)=>x['document_id']=='fraction-sale')['quantity'],0.375);
+
+      // A later purchase changes the average cost before a sale is returned.
+      await s.post(w,'late-sale-op',invoice('late-sale',12,true,2,10,0,0));
+      await s.post(w,'restock-op',invoice('restock',13,false,2,14,0,0));
+      final lateReturn={
+        'id':'late-return','kind':'return','originalInvoiceId':'late-sale',
+        'entryNumber':14,'entryDate':'2026-11-25',
+      };
+      await s.post(w,'late-return-op',lateReturn);
+      await s.post(w,'late-return-op',lateReturn);
+      final returnedStock=(await db.query('inventory_items',where:'id = ?',whereArgs:['item'])).single;
+      expect(returnedStock['quantity'],12);
+      expect(returnedStock['avgCost'],closeTo(68/12,0.000001));
+      final returnedLegs=await db.query('journal_lines',where:'journal_id = ?',whereArgs:['late-return']);
+      expect(returnedLegs.firstWhere((l)=>l['account_id']==inventory)['debit_minor'],800);
+      expect(returnedLegs.firstWhere((l)=>l['account_id']==cost)['credit_minor'],800);
+      expect(returnedLegs.firstWhere((l)=>l['account_id']==customer)['credit_minor'],2000);
+      expect(returnedLegs.firstWhere((l)=>l['account_id']==revenue)['debit_minor'],2000);
+      final returnedDoc=(await db.query('stock_posting_documents',where:'id = ?',whereArgs:['late-return'])).single;
+      expect(jsonDecode(returnedDoc['document_json'] as String)['documentNumber'],'14');
+      expect(returnedDoc['return_original_id'],'late-sale');
     }finally{await db.close();await dir.delete(recursive:true);}
   });
 }
