@@ -825,6 +825,8 @@ export async function fetchInventoryMovementsReport(
     toDate?: string;
     currency?: string;
     profitBasis?: "avg" | "cost" | "last";
+    movementOffset?: number;
+    movementLimit?: number;
   },
 ): Promise<{
   warehouses: Array<{ id: string; name: string }>;
@@ -858,7 +860,15 @@ export async function fetchInventoryMovementsReport(
     totalRemainingQty: number;
     activeItemsCount: number;
   }>;
+  movementPage?: {
+    offset: number;
+    limit: number;
+    totalCount: number;
+    nextOffset: number | null;
+    hasMore: boolean;
+  };
   movements: Array<{
+    movementId?: string;
     source: "invoice" | "transfer";
     refId: string;
     entryNumber?: number;
@@ -905,6 +915,8 @@ export async function fetchInventoryMovementsReport(
   if (params?.toDate) qs.set("toDate", params.toDate);
   if (params?.currency) qs.set("currency", params.currency);
   if (params?.profitBasis) qs.set("profitBasis", params.profitBasis);
+  if (params?.movementOffset !== undefined) qs.set("movementOffset", String(params.movementOffset));
+  if (params?.movementLimit !== undefined) qs.set("movementLimit", String(params.movementLimit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/report${suffix}`);
 }

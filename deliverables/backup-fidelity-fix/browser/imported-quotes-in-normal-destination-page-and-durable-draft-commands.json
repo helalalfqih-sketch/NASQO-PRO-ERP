@@ -1,0 +1,9 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  }
+]

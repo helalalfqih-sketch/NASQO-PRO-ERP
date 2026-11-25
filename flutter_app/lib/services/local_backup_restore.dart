@@ -7,6 +7,7 @@ import 'local_database.dart';
 import 'legacy_stock_projection.dart';
 import 'legacy_sql_dump.dart';
 import 'stock_quantity.dart';
+import 'legacy_source_details.dart';
 
 /// Native backups restore operational tables. Recognized SmartPro and unified
 /// web backups support explicit operational activation or isolated review.
@@ -504,9 +505,8 @@ class LocalBackupRestore {
       }
       final nd=str(r['ndate']);
       if(date.isEmpty&&RegExp(r'^[0-9]{8}$').hasMatch(nd)&&nd!='00000000')date='${nd.substring(0,4)}-${nd.substring(4,6)}-${nd.substring(6,8)}';
-      final rawDetails=str(r['details']).trim();
-      final preview=rawDetails.isNotEmpty?rawDetails:(billSummaries[id]??<String>[]).join('\n');
-      final displayDetails=preview.length>600?preview.substring(0,600):preview;
+      final rawDetails=str(r['details']);
+      final displayDetails=rawDetails.trim().isNotEmpty?rawDetails:(billSummaries[id]??<String>[]).join('\n');
       final stamp=DateTime.tryParse('${date}T00:00:00Z');
       ledger.add({'id':'legacy-ent-$id','accountId':aid,'accountName':names[aid]??'حساب غير مرتبط',
         'counterpartAccountId':'','counterpartAccountName':'','kind':kind,'typeLabel':typeLabel,'payment':d==0&&c==0?'balance':settled||(doc==1&&cb>0&&(d==0||c==0))?'cash':'credit',if(cashIds.contains(cb))'cashboxId':cb,
@@ -515,6 +515,7 @@ class LocalBackupRestore {
         'legacyCurrencyId':integer(r['cur']??r['cur_id'],1),'discount':numValue(r['discount']),'bonus':numValue(r['bonus']),
         'sender':str(r['sender']),'receiver':str(r['recever']),'companyName':str(r['comp']),'legacyId':id,
         'exchangeRate':numValue(r['curprice'],1)==0?1:numValue(r['curprice'],1),'details':displayDetails,'documentNumber':str(r['bill']),
+        'sourceReference':str(r['ref']),if(r['discount_amount']!=null)'headerDiscount':numValue(r['discount_amount']),
         'warehouseId':wh,'warehouseName':whNames[wh]??'','invoiceContent':[7,9].contains(doc)?'free':kind=='voucher'?'none':'items',
         'entryNumber':id,'entryDate':date,'createdAtMs':stamp==null?0:stamp.millisecondsSinceEpoch+id,
         'deleted':false,'docType':doc,'sourceOrigin':'legacy_sqlite','postingStatus':'historical_unposted','lineCount':billLines.length,'lines':billLines});
@@ -546,7 +547,7 @@ class LocalBackupRestore {
       'invoiceLines':detail.values.fold<int>(0,(s,l)=>s+l.length),'ambiguousMoves':ambiguous,'missingReferences':missing,
       'unknownCurrencies':unknownCurrencies,'orphanDetailBills':detail.keys.where((id)=>!seenMoves.contains(id)).length,
       'sourceExtraCounts':{for(final n in ['store_trans','trans_details','offers','offer_bill_details','offer_sbill_details','bin','bin_bill_details','bin_bill_details2','alerts'])n:t[n]?.length??0},
-      'historicalReview':true,'stockUnverified':true,
+      'historicalReview':true,'stockUnverified':true,'legacyDetailsVersion':1,
     },null);
   }
 
@@ -761,6 +762,7 @@ class LocalBackupRestore {
     final hash=active.single['sha'] as String;
     final source=(await txn.query('backup_review_sources',where:'sha = ?',whereArgs:[hash])).single;
     final meta=object(jsonDecode(source['meta_json'] as String));
+    final recovered=await _reviewSourceDetails(txn,source,meta);
     final data=<String,dynamic>{};
     for(final key in collections){
       final rr=await txn.query('backup_review_rows',where:'sha = ? AND collection = ?',whereArgs:[hash,key],orderBy:'ordinal');
@@ -773,7 +775,14 @@ class LocalBackupRestore {
             'settlement':row['settlement']??false,'documentNumberRequired':row['documentNumberRequired']??false,
             'messageMethod':row['messageMethod']??'sms','sendMode':row['sendMode']??'never'});
         }
+        if(key=='inventory'&&row['quantityUnverified']==true&&
+            ['legacy-sqlite','legacy-sql',...knownFormats].contains(source['source_format'])){
+          // Review retains the source's price in avgCost. Expose its explicit
+          // reference meaning without changing the archive or approving stock.
+          row['legacyCatalogCost']??=numValue(row['avgCost']);
+        }
         if(key=='ledger'){
+          LegacySourceDetails.overlay(row,Map<String,dynamic>.from(row),recovered[row['id']]);
           row.remove('lines');
           row['counterpartAccountId']??='';
           row['counterpartAccountName']??='';
@@ -788,8 +797,8 @@ class LocalBackupRestore {
           'accounts':{'id','ownerId','groupId','name','category','phone','creditLimit','currency','isCashAccount',
             'accountImage','sortOrder','settlement','documentNumberRequired','messageMethod','sendMode','note','openingBalance','openingDirection','codeNumber','legacyRef'},
           'warehouses':{'id','ownerId','name','details','isDefault','codeNumber','legacyRef'},
-          'inventory':{'id','ownerId','name','unit','quantity','avgCost','sellingPrice','minThreshold','sku','unit2','count2','sprice2','unit3','count3','sprice3','defaultUnit','currencyCode','isActive','expiryDate','legacyId','warehouseId','computedQuantity','quantityUnverified','legacyRef'},
-          'ledger':{'id','ownerId','accountId','accountName','counterpartAccountId','counterpartAccountName','cashboxId','kind','typeLabel','payment','direction','amount','rawDain','rawMadin','settledOnReceipt','currency','exchangeRate','taxAmount','discount','details','documentNumber','warehouseId','warehouseName','invoiceContent','entryNumber','deleted','entryDate','dueDate','expenseCategory','sourceOrigin','postingStatus','paidAmount','docType','lineCount','createdAtMs','legacyRef'},
+          'inventory':{'id','ownerId','name','unit','quantity','avgCost','legacyCatalogCost','sellingPrice','minThreshold','sku','unit2','count2','sprice2','unit3','count3','sprice3','defaultUnit','currencyCode','isActive','expiryDate','legacyId','warehouseId','computedQuantity','quantityUnverified','legacyRef'},
+          'ledger':{'id','ownerId','accountId','accountName','counterpartAccountId','counterpartAccountName','cashboxId','kind','typeLabel','payment','direction','amount','rawDain','rawMadin','settledOnReceipt','currency','exchangeRate','taxAmount','discount','details','documentNumber','sourceReference','headerDiscount','warehouseId','warehouseName','invoiceContent','entryNumber','deleted','entryDate','dueDate','expenseCategory','sourceOrigin','postingStatus','paidAmount','docType','lineCount','createdAtMs','legacyRef'},
           'currencies':{'id','name','code','symbol','ratePrimary','rateSecondary','nameSecondary','legacyId'},
           'accountGroups':{'id','name','category','currencyCode','hasBill','isEmployee','sortOrder','legacyId'},
           'cashboxes':{'id','name','details','currencyCode','state','boxType','sortOrder','isActive','legacyId'},
@@ -816,13 +825,32 @@ class LocalBackupRestore {
     final active=await txn.query('backup_review_active',limit:1);
     if(active.isEmpty)return null;
     final hash=active.single['sha'] as String;
+    final source=(await txn.query('backup_review_sources',where:'sha = ?',whereArgs:[hash])).single;
+    final recovered=await _reviewSourceDetails(txn,source,object(jsonDecode(source['meta_json'] as String)));
     final rr=await txn.query('backup_review_rows',where:'sha = ? AND collection = ?',whereArgs:[hash,'ledger'],orderBy:'ordinal');
     for(final row in rr){
       final entry=object(jsonDecode(row['row_json'] as String));
       if(entry['id']!=id)continue;
+      LegacySourceDetails.overlay(entry,Map<String,dynamic>.from(entry),recovered[id]);
       final raw=rows(entry.remove('lines')??[]);
       return {'entry':entry,'lines':[for(var i=0;i<raw.length;i++){'id':i+1,'sku':'','warehouseName':'','expiryDate':'',...raw[i]}]};
     }
     throw StateError('Archived invoice not found');
+  }
+
+  static Future<Map<String,Map<String,dynamic>>> _reviewSourceDetails(DatabaseExecutor txn,
+    Map<String,Object?> source,Map<String,dynamic> meta)async{
+    if(!['legacy-sqlite','legacy-sql'].contains(source['source_format'])||
+        meta['legacyDetailsVersion']==LegacySourceDetails.version)return {};
+    final hash=source['sha'] as String;
+    return LegacySourceDetails.load(hash,()async{
+      final chunks=await txn.query('backup_review_chunks',where:'sha = ?',whereArgs:[hash],orderBy:'ordinal');
+      final bytes=BytesBuilder(copy:false);
+      for(var i=0;i<chunks.length;i++){
+        if(chunks[i]['ordinal']!=i)throw StateError('Source chunk missing');
+        bytes.add((chunks[i]['data'] as List).cast<int>());
+      }
+      return bytes.takeBytes();
+    });
   }
 }

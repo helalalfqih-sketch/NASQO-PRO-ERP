@@ -57,6 +57,16 @@ When implementing from a selected generated mock, treat that image as the source
 - Unverified imported stock may be selected and retained in a local UI draft. This is not approval of its quantities or valuation. Preserve the native posting guards; explain any blocked posting inside the same invoice.
 - Stock reconciliation remains a separate, explicit settings action only. Do not inject a reconciliation screen or a reconciliation action into invoice item selection.
 
+## Legacy backup fidelity (user direction, 2026-11-25)
+
+- Preserve full imported notes, source references and recorded header/line discounts. Display recorded metadata without recalculating historical ledger amounts or subtracting an already included discount again.
+- Repairs must also work for previously activated legacy archives, using the verified embedded source where needed; do not require a destructive re-import or overwrite later local edits.
+- Inventory transfer dates must be read from the original supported date fields. Item history must be fully reachable through pagination; search results must keep their paging controls.
+- Show a saved legacy catalog cost as a reference price, separately from approved operational stock cost. Never approve quantities or valuation by displaying that price.
+- Make historical offers, deleted documents and alerts accessible from their corresponding normal destinations. Preserve original deleted/inactive status; creating a local draft or changing a reminder's local read state requires an explicit action. Opening these screens must not post financial entries, restore deleted entries to balances or schedule notifications.
+- Bind a draft copied from a legacy record to the verified source SHA as well as the workspace. Reused account/item IDs after backup replacement must not allow that draft to be submitted to another business.
+- Never commit a private source backup, restored database, private snapshot, customer data or monetary values in test artifacts. Use synthetic data for visual evidence.
+
 ## Editing Boundary
 
 - Build app-specific UI in `src/Prototype.tsx` and `src/prototype.css`.

@@ -79,6 +79,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "googleDriveAction",
   "cloudIdentityAction",
   "localToolsAction",
+  "legacyArchiveAction",
 ] as const;
 
 export type HybridCommandAction = (typeof HYBRID_ALLOWED_COMMANDS)[number];
@@ -293,6 +294,8 @@ export interface HybridCommandPayloadMap {
       toDate?: string;
       profitBasis?: "avg" | "cost" | "last";
       itemId?: string;
+      movementOffset?: number;
+      movementLimit?: number;
     };
   };
   getCashboxesReport: {
@@ -308,6 +311,7 @@ export interface HybridCommandPayloadMap {
   googleDriveAction: { operation: string; args?: Record<string, unknown> };
   cloudIdentityAction: { operation: string; args?: Record<string, unknown> };
   localToolsAction: { workspaceId: string; operation: "status"|"history"|"readiness"|"activate"|"leaveReview" };
+  legacyArchiveAction: { workspaceId: string; operation: "list" | "detail" | "alertState"; recordKind: "offers" | "trash" | "alerts"; recordId?: string; sourceSha?: string; offset?: number; limit?: number; query?: string; read?: boolean; dismissed?: boolean };
 }
 
 export interface HybridRequestEnvelope<A extends HybridCommandAction = HybridCommandAction> {

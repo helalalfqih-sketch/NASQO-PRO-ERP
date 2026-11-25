@@ -1,0 +1,72 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "inventory-report"
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "profitBasis": "avg"
+      }
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "itemId": "synthetic-item-0001",
+        "profitBasis": "avg",
+        "movementOffset": 0,
+        "movementLimit": 100
+      }
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "itemId": "synthetic-item-0001",
+        "profitBasis": "avg",
+        "movementOffset": 0,
+        "movementLimit": 100
+      }
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "itemId": "synthetic-item-0001",
+        "profitBasis": "avg",
+        "movementOffset": 100,
+        "movementLimit": 100
+      }
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "itemId": "synthetic-item-0001",
+        "profitBasis": "avg",
+        "movementOffset": 100,
+        "movementLimit": 100
+      }
+    }
+  }
+]

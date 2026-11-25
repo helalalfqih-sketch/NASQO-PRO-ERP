@@ -373,6 +373,15 @@ class LocalDatabase {
       throw ArgumentError('Missing operation identity');
     final encoded=jsonEncode(payload);
     await requireLiveWorkspace(txn);
+    // An explicitly copied historical draft belongs to one immutable source.
+    // Check in the same transaction as posting, even if React has a stale snapshot.
+    final documentId=payload['id'];
+    if(documentId is String&&documentId.startsWith('legacy-copy-')){
+      final match=RegExp(r'^legacy-copy-([a-f0-9]{64})-').firstMatch(documentId);
+      final source=await txn.query('legacy_operational_source',columns:['sha'],limit:1);
+      if(match==null||source.length!=1||source.single['sha']!=match[1])
+        throw StateError('تغير مصدر النسخة المستوردة؛ لا يمكن حفظ المسودة في قاعدة أخرى.');
+    }
       final prior = await txn.query('bridge_idempotency_keys',
           where: 'workspace_id = ? AND operation_id = ?',
           whereArgs: [workspaceId, operationId]);

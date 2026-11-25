@@ -89,6 +89,8 @@ import { GoogleDriveModal } from "./components/GoogleDriveModal";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
+import { LegacyRecordsPanel } from "./components/LegacyRecordsPanel";
+import { legacyRecordDraft, legacyCopySourceSha, legacyCopySourceMatches, type LegacyRecord } from "./utils/legacyRecordDraft";
 import { PrintOptionsModal } from "./components/PrintOptionsModal";
 import { UnifiedSearchFilterBar } from "./components/UnifiedSearchFilterBar";
 import { DateRangeFields } from "./components/DateRangeFields";
@@ -109,6 +111,7 @@ import {
   stepInvoiceQuantity,
 } from "./utils/invoiceGridUtils";
 import { findInvoiceCatalogItems } from "./utils/invoiceCatalog";
+import { getCatalogReferenceCost } from "./utils/catalogCosts";
 import {
   countActiveFilters,
   createInitialSearchState,
@@ -289,6 +292,7 @@ type OverlayKind =
   | "account-create-extended"
   | "invoice"
   | "trash"
+  | "quotes-list"
   | "inventory-add"
   | "notifications"
   | "qr-scanner"
@@ -1517,7 +1521,7 @@ export function AuthenticatedWorkspace({
     if (!saved) return false;
     const account = accounts.find((item) => item.id === saved.accountId);
     const entry = saved.editingEntryId ? ledger.find((item) => item.id === saved.editingEntryId && !item.deleted) : undefined;
-    if (!canRestoreInvoiceDraft(saved, { accounts, ledger, warehouses, inventory, cashboxes, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+    if (!canRestoreInvoiceDraft(saved, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
       setUnavailableDraft(true);
       return true;
     }
@@ -1526,7 +1530,7 @@ export function AuthenticatedWorkspace({
     setOverlay("invoice");
     showToast("استُعيدت المسودة المحلية. تابعها أو تجاهلها صراحةً قبل إنشاء مستند آخر.");
     return true;
-  }, [hybrid.isHybrid, user.uid, accounts, ledger, warehouses, inventory, cashboxes, currencies, showToast]);
+  }, [hybrid.isHybrid, user.uid, accounts, ledger, warehouses, inventory, cashboxes, currencies, workspace, showToast]);
 
   const openInvoice = useCallback(
     (defaultCategory?: AccountCategory, intent: InvoiceIntent = "invoice") => {
@@ -1614,6 +1618,37 @@ export function AuthenticatedWorkspace({
     },
     [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
+
+  const openLegacyDraft = useCallback((record: LegacyRecord) => {
+    dismissKeyboard();
+    if (recoverExistingInvoiceDraft()) return;
+    try {
+      const draft = legacyRecordDraft(record, { accounts, inventory, warehouses, ledger, cashboxes,
+        currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] });
+      const existing = ledger.find((item) => item.id === draft.entryId);
+      if (existing) {
+        if (existing.deleted) throw new Error("سبق إنشاء نسخة من هذا السجل وهي في السلة؛ استعدها من السلة المحلية.");
+        setOverlay(null);
+        flowRef.current?.push(cashInvoicePreviewScreen(existing.id));
+        showToast("سبق حفظ نسخة من هذا السجل؛ فُتحت النسخة الموجودة دون إنشاء مستند مكرر.");
+        return;
+      }
+      if (!isInvoiceUiDraft(draft) || !canRestoreInvoiceDraft(draft, { accounts, inventory, warehouses, ledger, cashboxes, workspace,
+        currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) throw new Error("لا يمكن نقل جميع مراجع المستند إلى مسودة آمنة.");
+      if (!writeUiState(user.uid, "invoice-draft", draft)) throw new Error("تعذر حفظ المسودة المحلية؛ لم يُغيّر المستند الأصلي.");
+      setInvoiceSeed((seed) => ({ account: accounts.find((item) => item.id === draft.accountId),
+        editingEntry: undefined, intent: draft.intent, kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
+      setOverlay("invoice");
+      showToast("فُتحت نسخة محفوظة كمسودة محلية. الأصل كما هو، ولم يُرحّل أي مبلغ أو مخزون.");
+    } catch (error) { showToast(error instanceof Error ? error.message : "تعذر فتح المسودة"); }
+  }, [accounts, inventory, warehouses, ledger, currencies, cashboxes, workspace, user.uid, dismissKeyboard, recoverExistingInvoiceDraft, showToast]);
+
+  const openLegacyAccount = useCallback((id: string) => {
+    dismissKeyboard();
+    if (!accounts.some((account) => account.id === id)) { showToast("الحساب المرتبط غير موجود."); return; }
+    setOverlay(null);
+    flowRef.current?.push(supplierScreen(id));
+  }, [accounts, dismissKeyboard, showToast]);
 
   const openDashboardMenu = useCallback(() => {
     dismissKeyboard();
@@ -2199,7 +2234,7 @@ export function AuthenticatedWorkspace({
       if (screen) flowRef.current.push(screen);
     }
     const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
-    if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+    if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
       setInvoiceSeed((seed) => ({ account: accounts.find((a) => a.id === draft.accountId),
         editingEntry: ledger.find((e) => e.id === draft.editingEntryId), intent: draft.intent,
         kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
@@ -2561,7 +2596,8 @@ export function AuthenticatedWorkspace({
       return;
     }
     if (target === "quotes" || target === "orders") {
-      openVendorInvoice(accounts[0], target === "quotes" ? "quote" : "order");
+      if (target === "quotes" && hybrid.isHybrid) setOverlay("quotes-list");
+      else openVendorInvoice(accounts[0], target === "quotes" ? "quote" : "order");
       return;
     }
     if (target === "warehouses") {
@@ -2612,8 +2648,9 @@ export function AuthenticatedWorkspace({
       async () => {
         if (kind === "inventory") {
           const csv = buildCsvContent(
-            ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
-            inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
+            ["الصنف", "الوحدة", "الكمية المعتمدة", "التكلفة المعتمدة", "سعر التكلفة المرجعي", "حالة المخزون"],
+            inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost,
+              getCatalogReferenceCost(i) ?? "", i.quantityUnverified ? "غير معتمد" : "معتمد"]),
           );
           const saved=await downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
           showToast(saved?"تم حفظ تقرير المخزون بصيغة CSV":"تم إلغاء حفظ التقرير");
@@ -2855,7 +2892,8 @@ export function AuthenticatedWorkspace({
           open={overlay === "account-create-extended"}
           onClose={closeOverlay}
         />
-        <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} />
+        <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} onLegacyDraft={openLegacyDraft} onLegacyAccount={openLegacyAccount} />
+        <QuotesListModal open={overlay === "quotes-list"} onClose={() => setOverlay(null)} onLegacyDraft={openLegacyDraft} onLegacyAccount={openLegacyAccount} />
         <TrialBalanceModal open={overlay === "trial-balance"} onClose={() => setOverlay(null)} />
         <AccountGroupsModal open={overlay === "account-groups"} onClose={() => setOverlay(null)} />
         <ChartOfAccountsModal open={overlay === "chart-of-accounts"} onClose={() => setOverlay(null)} />
@@ -3044,6 +3082,7 @@ export function AuthenticatedWorkspace({
           onMarkAllRead={handleMarkAllNotificationsRead}
           onDismiss={handleDismissNotification}
           onSelectNotification={handleSelectNotification}
+          importedRecords={<LegacyRecordsPanel kind="alerts" onAccount={openLegacyAccount} />}
         />
         {overlay === "qr-scanner" ? (
           <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح الماسح..." />}>
@@ -4488,6 +4527,10 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
   };
 
   const showEditorForm = formOpen && !searchState.isFocused;
+  const selectedCatalogItem = ctx.inventory.find((item) => item.id === selectedId);
+  const selectedReferenceCost = selectedCatalogItem?.quantityUnverified
+    ? getCatalogReferenceCost(selectedCatalogItem)
+    : undefined;
 
   return (
     <div className="nasqo-pinned-layout items-catalog-layout" data-testid="items-catalog-screen" dir="rtl">
@@ -4617,7 +4660,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     />
                   </div>
                   <div className="items-catalog-field">
-                    <span className="items-lbl blue">سعر التكلفة</span>
+                    <span className="items-lbl blue">{selectedCatalogItem?.quantityUnverified ? "التكلفة المعتمدة" : "سعر التكلفة"}</span>
                     <KeyboardInput
                       aria-label="سعر التكلفة"
                       data-testid="catalog-item-cost"
@@ -4626,6 +4669,13 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                       value={avgCost}
                       onChange={(e) => setAvgCost(e.target.value)}
                     />
+                    {selectedCatalogItem?.quantityUnverified ? (
+                      <small data-testid="catalog-reference-cost">
+                        سعر التكلفة المرجعي: {selectedReferenceCost !== undefined && Number.isFinite(selectedReferenceCost)
+                          ? formatAmount(selectedReferenceCost)
+                          : "غير متوفر"} — غير معتمد لتقييم المخزون
+                      </small>
+                    ) : null}
                   </div>
                   <div className="items-catalog-field">
                     <span className="items-lbl blue">سعر البيع</span>
@@ -4843,6 +4893,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                 <tbody>
                   {visibleItems.map((item, idx) => {
                     const isSelected = item.id === selectedId;
+                    const referenceCost = getCatalogReferenceCost(item);
                     const defUnitName =
                       item.defaultUnit === 2 && item.unit2
                         ? item.unit2
@@ -4860,7 +4911,16 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         <td><bdi>{item.sku || "—"}</bdi></td>
                         <td className="item-name-cell">{item.name}</td>
                         <td>{item.unit || "حبة"}</td>
-                        <td>{formatAmount(item.avgCost)}</td>
+                        <td data-testid={`catalog-cost-${item.id}`}>
+                          {item.quantityUnverified ? (
+                            <>
+                              {referenceCost !== undefined
+                                ? formatAmount(referenceCost)
+                                : "—"}
+                              <small style={{ display: "block", fontSize: 9 }}>مرجعي — غير معتمد</small>
+                            </>
+                          ) : formatAmount(item.avgCost)}
+                        </td>
                         <td>{formatAmount(item.sellingPrice ?? 0)}</td>
                         <td>{item.unit2 || ""}</td>
                         <td>{item.sprice2 ? formatAmount(item.sprice2) : "0"}</td>
@@ -4877,37 +4937,39 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
             </div>
           )}
 
-          {!searchActive ? (
             <footer className="items-catalog-footer">
               <div className="items-pagination-bar">
                 <button
                   type="button"
                   className="items-page-btn"
+                  data-testid="catalog-next-page"
                   disabled={showAll || safePage + 1 >= totalPages}
-                  onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                  onClick={() => { keyboard.hide(); setPageIndex(Math.min(totalPages - 1, safePage + 1)); }}
                 >
                   الصفحة التالية
                 </button>
-                <span className="items-page-indicator">
-                  صفحة رقم {safePage + 1} من {totalPages} ({filteredItems.length} صنف)
+                <span className="items-page-indicator" data-testid="catalog-page-indicator">
+                  {showAll ? `عرض جميع النتائج (${filteredItems.length} صنف)` : `صفحة رقم ${safePage + 1} من ${totalPages} (${filteredItems.length} صنف)`}
                 </span>
                 <button
                   type="button"
                   className="items-page-btn"
+                  data-testid="catalog-previous-page"
                   disabled={showAll || safePage <= 0}
-                  onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                  onClick={() => { keyboard.hide(); setPageIndex(Math.max(0, safePage - 1)); }}
                 >
                   الصفحة السابقة
                 </button>
                 <button
                   type="button"
                   className="items-page-btn"
-                  onClick={() => setShowAll((v) => !v)}
+                  data-testid="catalog-show-all"
+                  onClick={() => { keyboard.hide(); setPageIndex(0); setShowAll((v) => !v); }}
                 >
                   {showAll ? "تقسيم صفحات" : "عرض الكل"}
                 </button>
               </div>
-              <div className="items-shortcuts-strip">
+              {!searchActive ? <div className="items-shortcuts-strip">
                 <span>تعديل صنف: F2</span>
                 <button
                   type="button"
@@ -4918,9 +4980,8 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                   حذف صنف : DELETE
                 </button>
                 <span>التنقل : TAB</span>
-              </div>
+              </div> : null}
             </footer>
-          ) : null}
         </main>
       </MobileScroll>
     </div>
@@ -5079,6 +5140,11 @@ function InventoryReportPage({
   const [activeMovementItem, setActiveMovementItem] = useState<InventoryItemRecord | null>(null);
   const [itemMoves, setItemMoves] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movements"]>([]);
   const [loadingMoves, setLoadingMoves] = useState(false);
+  const [itemMovesPage, setItemMovesPage] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movementPage"]>();
+  const [itemMovesError, setItemMovesError] = useState("");
+  const movementGeneration = useRef(0);
+  const movementRequest = useRef<number | null>(null);
+  const movementPageRef = useRef<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movementPage"]>(undefined);
   const [visibleRowCount, setVisibleRowCount] = useState(80);
   const searchQuery = searchState.query;
   const searchActive = isSearchActiveMode(searchState);
@@ -5199,15 +5265,78 @@ function InventoryReportPage({
       : fallbackSummary.items;
   }, [fallbackSummary.items, inventoryById, reportRows, searchQuery]);
 
+  const closeItemMovements = useCallback(() => {
+    movementGeneration.current += 1;
+    movementRequest.current = null;
+    setActiveMovementItem(null);
+  }, []);
+
+  useBackLayer(Boolean(activeMovementItem), () => { closeItemMovements(); return true; });
+
+  const loadItemMovements = useCallback(async (offset: number, generation: number) => {
+    if (!activeMovementItem || generation !== movementGeneration.current || movementRequest.current === generation) return;
+    movementRequest.current = generation;
+    setLoadingMoves(true);
+    setItemMovesError("");
+    try {
+      const res = await fetchInventoryMovementsReport(ctx.uid, {
+        itemId: activeMovementItem.id,
+        warehouseId: selectedWarehouseId || undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        currency: selectedCurrency !== "الكل" ? selectedCurrency : undefined,
+        profitBasis,
+        movementOffset: offset,
+        movementLimit: 100,
+      });
+      if (generation !== movementGeneration.current) return;
+      if (res.movementPage && (res.movementPage.offset !== offset ||
+          (res.movementPage.hasMore && (res.movementPage.nextOffset === null || res.movementPage.nextOffset <= offset)))) {
+        throw new Error("تعذر استكمال سجل الحركات. أعد المحاولة.");
+      }
+      if (offset > 0 && movementPageRef.current && res.movementPage &&
+          movementPageRef.current.totalCount !== res.movementPage.totalCount) {
+        throw new Error("تغيّر سجل الحركات. أغلق الكشف وافتحه مجددًا لتحديثه.");
+      }
+      setItemMoves((previous) => {
+        if (offset === 0) return res.movements;
+        const seen = new Set(previous.map((row) => row.movementId).filter(Boolean));
+        return [...previous, ...res.movements.filter((row) => {
+          if (!row.movementId) return true;
+          if (seen.has(row.movementId)) return false;
+          seen.add(row.movementId);
+          return true;
+        })];
+      });
+      movementPageRef.current = res.movementPage;
+      setItemMovesPage(res.movementPage);
+    } catch (error) {
+      if (generation === movementGeneration.current) {
+        setItemMovesError(error instanceof Error ? error.message : "تعذر جلب سجل الحركات. أعد المحاولة.");
+      }
+    } finally {
+      if (generation === movementGeneration.current) {
+        movementRequest.current = null;
+        setLoadingMoves(false);
+      }
+    }
+  }, [activeMovementItem?.id, ctx.uid, selectedWarehouseId, fromDate, toDate, selectedCurrency, profitBasis]);
+
+  useEffect(() => {
+    const generation = ++movementGeneration.current;
+    movementRequest.current = null;
+    movementPageRef.current = undefined;
+    setItemMoves([]);
+    setItemMovesPage(undefined);
+    setItemMovesError("");
+    setLoadingMoves(false);
+    if (activeMovementItem) void loadItemMovements(0, generation);
+    return () => { movementGeneration.current += 1; };
+  }, [loadItemMovements, ctx.ledger, ctx.inventory]);
+
   const openItemMovements = (item: InventoryItemRecord) => {
     keyboard.hide();
     setActiveMovementItem(item);
-    setItemMoves([]);
-    setLoadingMoves(true);
-    void fetchInventoryMovementsReport(ctx.uid, { itemId: item.id })
-      .then((res) => setItemMoves(res.movements))
-      .catch(() => setItemMoves([]))
-      .finally(() => setLoadingMoves(false));
   };
 
   const toggleItem = (id: string) => {
@@ -5703,7 +5832,7 @@ function InventoryReportPage({
           <div className="center-modal-layer" data-testid="item-movements-modal">
             <button
               className="center-modal-backdrop"
-              onClick={() => setActiveMovementItem(null)}
+              onClick={closeItemMovements}
               aria-label="إغلاق حركة الصنف"
             />
             <section
@@ -5717,7 +5846,7 @@ function InventoryReportPage({
                 <button
                   type="button"
                   className="smart-modal-close"
-                  onClick={() => setActiveMovementItem(null)}
+                  onClick={closeItemMovements}
                   aria-label="إغلاق"
                 >
                   <Cross2Icon />
@@ -5726,10 +5855,10 @@ function InventoryReportPage({
                 <span className="smart-modal-spacer" aria-hidden="true" />
               </header>
               <div style={{ padding: "8px 12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
-                {loadingMoves ? (
+                {loadingMoves && itemMoves.length === 0 ? (
                   <NasqoBrandLoader size="sm" label="جاري جلب سجل الحركات..." />
-                ) : itemMoves.length === 0 ? (
-                  <p className="cash-empty">لا توجد فواتير أو تحويلات مخزنية مرتبطة بهذا الصنف.</p>
+                ) : itemMoves.length === 0 && !itemMovesError ? (
+                  <p className="cash-empty">لا توجد حركات لهذا الصنف ضمن المخزن والعملة والفترة المحددة.</p>
                 ) : (
                   <table className="account-groups-table" style={{ width: "100%", fontSize: 11 }}>
                     <thead>
@@ -5744,7 +5873,7 @@ function InventoryReportPage({
                     </thead>
                     <tbody>
                       {itemMoves.map((mv, idx) => (
-                        <tr key={`${mv.refId}-${idx}`}>
+                        <tr key={mv.movementId ?? `${mv.refId}-${idx}`} data-testid="item-movement-row" data-movement-id={mv.movementId}>
                           <td>{mv.date || "—"}</td>
                           <td>
                             {mv.label} {mv.entryNumber ? `#${mv.entryNumber}` : ""}
@@ -5760,10 +5889,26 @@ function InventoryReportPage({
                     </tbody>
                   </table>
                 )}
+                {itemMovesError ? (
+                  <div role="alert" data-testid="item-movements-error">
+                    <p>{itemMovesError}</p>
+                    <button type="button" className="load-more-list-btn" data-testid="item-movements-retry"
+                      disabled={loadingMoves}
+                      onClick={() => void loadItemMovements(itemMovesPage?.nextOffset ?? 0, movementGeneration.current)}>
+                      إعادة المحاولة
+                    </button>
+                  </div>
+                ) : itemMovesPage?.hasMore ? (
+                  <button type="button" className="load-more-list-btn" data-testid="item-movements-load-more"
+                    disabled={loadingMoves}
+                    onClick={() => void loadItemMovements(itemMovesPage.nextOffset!, movementGeneration.current)}>
+                    {loadingMoves ? "جاري تحميل المزيد..." : "عرض المزيد من الحركات"}
+                  </button>
+                ) : null}
               </div>
               <footer className="account-groups-footer" style={{ flexShrink: 0 }}>
-                <span>إجمالي الحركات المعروضة: {itemMoves.length}</span>
-                <button type="button" className="ag-btn close" onClick={() => setActiveMovementItem(null)}>
+                <span data-testid="item-movements-count">الحركات المعروضة: {itemMoves.length}{itemMovesPage ? ` من ${itemMovesPage.totalCount}` : ""}</span>
+                <button type="button" className="ag-btn close" onClick={closeItemMovements}>
                   إغلاق
                 </button>
               </footer>
@@ -6209,6 +6354,7 @@ type DraftInvoiceRow = {
 
 type InvoiceUiDraft = {
   version: 1;
+  sourceSha?: string;
   intent: InvoiceIntent;
   kindOverride?: "purchase" | "sale";
   accountId: string;
@@ -6224,6 +6370,7 @@ function isInvoiceUiDraft(value: unknown): value is InvoiceUiDraft {
   if (draft.version !== 1 || !["invoice", "return", "quote", "order"].includes(draft.intent) ||
       typeof draft.accountId !== "string" || !/^[A-Za-z0-9:_-]{1,140}$/.test(draft.entryId) ||
       (draft.editingEntryId !== undefined && typeof draft.editingEntryId !== "string") ||
+      (draft.sourceSha !== undefined && (typeof draft.sourceSha !== "string" || !/^[a-f0-9]{64}$/.test(draft.sourceSha))) ||
       !f || typeof f !== "object") return false;
   if (!["content", "payment", "kind", "amount", "note", "documentNumber", "entryNumber", "entryDate", "expenseCategory", "currency", "exchangeRate", "warehouseId", "accountId", "itemSearch", "localTaxAmount", "localTaxMode", "localOriginalId"].every((key) => typeof f[key] === "string")) return false;
   return f.accountId === draft.accountId && ["amount", "rate"].includes(String(f.localTaxMode)) &&
@@ -6239,9 +6386,10 @@ function isInvoiceUiDraft(value: unknown): value is InvoiceUiDraft {
 }
 
 function canRestoreInvoiceDraft(draft: InvoiceUiDraft, records: Pick<LiveWorkspaceState,
-  "accounts" | "ledger" | "warehouses" | "inventory" | "cashboxes" | "currencyCodes">): boolean {
+  "accounts" | "ledger" | "warehouses" | "inventory" | "cashboxes" | "currencyCodes" | "workspace">): boolean {
   const fields = draft.fields;
-  return (!draft.accountId || records.accounts.some((record) => record.id === draft.accountId)) &&
+  return legacyCopySourceMatches(draft, records.workspace?.legacySourceSha) &&
+    (!draft.accountId || records.accounts.some((record) => record.id === draft.accountId)) &&
     (!draft.editingEntryId || records.ledger.some((record) => record.id === draft.editingEntryId && !record.deleted)) &&
     (!fields.warehouseId || records.warehouses.some((record) => record.id === fields.warehouseId)) &&
     (fields.cashboxId === undefined || records.cashboxes.some((record) => record.id === fields.cashboxId)) &&
@@ -6392,6 +6540,7 @@ function InvoiceModal({
   const dirty = Boolean(restoredDraft) || fieldJson !== initialFields.current;
   const completed = useRef(false);
   const currentDraft: InvoiceUiDraft = { version: 1, intent, kindOverride, accountId,
+    sourceSha: restoredDraft?.sourceSha ?? legacyCopySourceSha(editingEntry?.id),
     editingEntryId: editingEntry?.id, entryId: draftNewEntryIdRef.current, fields };
   const latestDraft = useRef(currentDraft);
   latestDraft.current = currentDraft;
@@ -6755,6 +6904,10 @@ function InvoiceModal({
 
   const handleSave = async (mode: "save" | "whatsapp" | "print" = "save") => {
     if (saving) return;
+    if (hybridLocal && !legacyCopySourceMatches(currentDraft, ctx.workspace?.legacySourceSha)) {
+      setFormError({ field: "submit", message: "تغير مصدر النسخة المستوردة؛ لا يمكن حفظ هذه المسودة في قاعدة أخرى. بقيت المسودة محفوظة." });
+      return;
+    }
     if (hybridLocal && !persistDraft()) {
       setFormError({ field: "submit", message: "تعذر حفظ حالة المستند محليًا؛ لم تُرسل عملية مالية." });
       return;
@@ -13387,7 +13540,28 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
-function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function QuotesListModal({ open, onClose, onLegacyDraft, onLegacyAccount }: {
+  open: boolean; onClose: () => void; onLegacyDraft: (record: LegacyRecord) => void; onLegacyAccount: (id: string) => void;
+}) {
+  const ctx = useWorkspace();
+  if (!open) return null;
+  const quotes = ctx.ledger.filter((entry) => entry.kind === "quote" && !entry.deleted);
+  return <div className="center-modal-layer" data-testid="quotes-list-modal">
+    <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق عروض الأسعار" />
+    <section className="warehouse-modal legacy-destination-modal" role="dialog" aria-modal="true" aria-labelledby="quotes-list-title">
+      <h2 id="quotes-list-title">عروض الأسعار</h2>
+      <button type="button" className="load-more-list-btn" onClick={() => ctx.openVendorInvoice(ctx.accounts[0], "quote")}>عرض سعر جديد</button>
+      <h3>العروض المحلية ({quotes.length})</h3>
+      <ul>{quotes.map((entry) => <li key={entry.id}><button type="button" onClick={() => ctx.openInvoiceEdit(entry)}>{entry.accountName} · {entry.entryNumber} · {entry.amount} {entry.currency}</button></li>)}</ul>
+      <LegacyRecordsPanel kind="offers" onDraft={onLegacyDraft} onAccount={onLegacyAccount} />
+      <div className="form-modal-actions"><button type="button" className="cancel" onClick={onClose}>إغلاق</button></div>
+    </section>
+  </div>;
+}
+
+function TrashModal({ open, onClose, onLegacyDraft, onLegacyAccount }: {
+  open: boolean; onClose: () => void; onLegacyDraft: (record: LegacyRecord) => void; onLegacyAccount: (id: string) => void;
+}) {
   const ctx = useWorkspace();
   if (!open) return null;
   const deletedEntries = ctx.ledger.filter((e) => e.deleted);
@@ -13395,8 +13569,9 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <div className="center-modal-layer" data-testid="trash-modal">
       <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق سلة المحذوفات" />
-      <section className="warehouse-modal" role="dialog" aria-modal="true" aria-labelledby="trash-title">
-        <h2 id="trash-title">سلة المحذوفات ({deletedEntries.length})</h2>
+      <section className="warehouse-modal legacy-destination-modal" role="dialog" aria-modal="true" aria-labelledby="trash-title">
+        <h2 id="trash-title">سلة المحذوفات المحلية ({deletedEntries.length})</h2>
+        <LegacyRecordsPanel kind="trash" onDraft={onLegacyDraft} onAccount={onLegacyAccount} />
         {deletedEntries.length === 0 ? (
           <p className="cash-empty">سلة المحذوفات فارغة.</p>
         ) : (
@@ -14019,6 +14194,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
   const [uploadingDrive, setUploadingDrive] = useState(false);
   const [generatedAt] = useState(() => new Date());
   const [invoiceLines, setInvoiceLines] = useState<UnifiedInvoiceLine[]>([]);
+  const [documentHeight, setDocumentHeight] = useState(908);
   const fitScale = Math.min(viewportWidth / 1280, 1);
   const scale = zoom ?? fitScale;
 
@@ -14087,7 +14263,13 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     triggerHaptic("light");
     try {
       await ctx.runWithLoader("جاري رفع الفاتورة إلى Google Drive...", async () => {
-        const summary = buildInvoicePdfSummaryData(entry, {
+        const detail = await fetchInvoiceDetailWithLines(ctx.uid, entry.id);
+        if (detail.entry.invoiceContent === "items" && !detail.lines.length) {
+          throw new Error("تفاصيل الأصناف غير متاحة؛ لم يُنشأ مستند ناقص.");
+        }
+        const summary = buildInvoicePdfSummaryData({ ...detail.entry,
+          lines: detail.lines.map((line) => ({ ...line, inventoryItemId: line.inventoryItemId ?? undefined })),
+        }, {
           companyName: ctx.workspace?.companyName || "نسقو برو",
           footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
         });
@@ -14225,7 +14407,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
             className="cash-invoice-sheet-space"
             style={{
               width: 1280 * scale,
-              height: Math.max(908, 600 + Math.max(invoiceLines.length, entry.lineCount ?? 0, 1) * 52) * scale,
+              height: Math.max(documentHeight, 908, 600 + Math.max(invoiceLines.length, entry.lineCount ?? 0, 1) * 52) * scale,
               marginInline: "auto",
               direction: "ltr",
             }}
@@ -14237,6 +14419,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
               scale={scale}
               footerNote={ctx.extendedSettings.salesInvoiceFooterNote}
               invoiceLines={invoiceLines}
+              onHeightChange={setDocumentHeight}
             />
           </div>
         </div>
@@ -14252,6 +14435,7 @@ function CashInvoiceDocument({
   scale,
   footerNote,
   invoiceLines = [],
+  onHeightChange,
 }: {
   companyName: string;
   entry: LedgerEntryRecord;
@@ -14259,7 +14443,18 @@ function CashInvoiceDocument({
   scale: number;
   footerNote?: string;
   invoiceLines?: readonly UnifiedInvoiceLine[];
+  onHeightChange?: (height: number) => void;
 }) {
+  const documentRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const document = documentRef.current;
+    if (!document || !onHeightChange) return;
+    const measure = () => onHeightChange(document.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(document);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
   const stamp = `${generatedAt.getFullYear()}-${String(generatedAt.getMonth() + 1).padStart(2, "0")}-${String(
     generatedAt.getDate(),
   ).padStart(2, "0")} ${String(generatedAt.getHours()).padStart(2, "0")}:${String(
@@ -14280,6 +14475,7 @@ function CashInvoiceDocument({
 
   return (
     <article
+      ref={documentRef}
       className="cash-invoice-document cash-invoice-document-flow"
       data-testid="cash-invoice-document"
       dir="rtl"
@@ -14315,10 +14511,15 @@ function CashInvoiceDocument({
         <p className="cash-invoice-recipient-flow">الأخ / {entry.accountName}</p>
         <p className="cash-invoice-salutation-flow">المحترم</p>
       </div>
-      <p className="cash-invoice-description-flow">
+      {entry.sourceReference ? (
+        <p className="cash-invoice-description-flow" data-testid="cash-invoice-source-reference" style={{ overflowWrap: "anywhere" }}>
+          المرجع / {entry.sourceReference}
+        </p>
+      ) : null}
+      <p className="cash-invoice-description-flow" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
         البيان /{entry.warehouseName ? ` (${entry.warehouseName})` : ""}
         {entry.details && entry.details !== entry.typeLabel
-          ? ` ${entry.details.replace(/\s*—\s*\[.*\]$/, "")}`
+          ? ` ${entry.details}`
           : ""}
       </p>
       <table className="cash-invoice-table cash-invoice-table-flow" aria-label="بنود المستند">
@@ -14342,7 +14543,15 @@ function CashInvoiceDocument({
           {invoiceLines.length > 0 ? (
             invoiceLines.map((line) => (
               <tr key={line.id}>
-                <td>{line.itemName || line.details || entry.typeLabel}</td>
+                <td>
+                  {line.itemName || line.details || entry.typeLabel}
+                  <div data-testid={`cash-invoice-line-metadata-${line.id}`} style={{ fontSize: "0.75em", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    {line.details && line.details !== line.itemName ? <div>البيان: {line.details}</div> : null}
+                    {line.discount != null && line.discount !== 0 ? <div>خصم البند المسجل: {formatAmount(line.discount)}</div> : null}
+                    {line.bonus != null && line.bonus !== 0 ? <div>الكمية المجانية: {formatAmount(line.bonus)}</div> : null}
+                    {line.expiryDate ? <div>تاريخ الصلاحية: {line.expiryDate}</div> : null}
+                  </div>
+                </td>
                 <td>{line.unit || "حبة"}</td>
                 <td className="red">{formatAmount(line.price)}</td>
                 <td>{formatAmount(line.quantity)}</td>
@@ -14371,6 +14580,13 @@ function CashInvoiceDocument({
         </tbody>
       </table>
       <div className="cash-invoice-summary-flow">
+        {entry.headerDiscount != null && entry.headerDiscount !== 0 ? (
+          <div data-testid="cash-invoice-header-discount">
+            <strong>خصم الفاتورة المسجل</strong>
+            <bdi>{formatAmount(entry.headerDiscount)}</bdi>
+            <small>الإجمالي هو المبلغ الأصلي للمستند</small>
+          </div>
+        ) : null}
         <div>
           <strong>الكمية</strong>
           <bdi data-testid="cash-invoice-quantity-total">{formatAmount(totalQuantity)}</bdi>

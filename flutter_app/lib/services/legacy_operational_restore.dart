@@ -8,6 +8,7 @@ import 'legacy_stock_projection.dart';
 import 'legacy_history_reports.dart';
 import 'local_invoice_roles.dart';
 import 'stock_quantity.dart';
+import 'legacy_source_details.dart';
 
 /// Explicit restoration of legacy registers and unified web workspaces.
 /// Never invents counterpart accounts, quantities or accounting legs.
@@ -174,9 +175,13 @@ class LegacyOperationalRestore {
     if(rows.isEmpty)return null;
     final entry=LocalBackupRestore.object(jsonDecode(rows.single['row_json'] as String));
     final lines=LocalBackupRestore.rows(entry.remove('lines')??[]);
-    final live=await db.query('ledger_entries',columns:['postingStatus'],where:'id = ?',whereArgs:[id]);
+    final live=await db.query('ledger_entries',columns:['postingStatus','details'],where:'id = ?',whereArgs:[id]);
     if(live.length!=1)throw StateError('Imported ledger missing');
     entry['postingStatus']=live.single['postingStatus'];
+    final archived=Map<String,dynamic>.from(entry);
+    entry['details']=live.single['details'];
+    final recovered=await _sourceDetails(db);
+    LegacySourceDetails.overlay(entry,archived,recovered[id]);
     entry['ownerId']='local-erp-workspace';
     return {'entry':entry,'lines':[for(var j=0;j<lines.length;j++){'id':j+1,'sku':'','warehouseName':'','expiryDate':'',...lines[j]}]};
   }
@@ -191,8 +196,10 @@ class LegacyOperationalRestore {
     final sourceItems=(byCollection['inventory']??{}).values;
     final sourceLedger=(byCollection['ledger']??{}).values;
     final projected=LegacyStockProjection.invoiceQuantities(sourceItems,sourceLedger);
-    final metaRow=(await db.query('legacy_operational_source',columns:['meta_json'],limit:1)).single;
+    final metaRow=(await db.query('legacy_operational_source',columns:['meta_json','sha'],limit:1)).single;
+    (data['workspace'] as Map<String,dynamic>)['legacySourceSha']=metaRow['sha'];
     final meta=LocalBackupRestore.object(jsonDecode(metaRow['meta_json'] as String));
+    final recovered=await _sourceDetails(db,meta:meta);
     final counts=meta['sourceExtraCounts'],unified=meta['unifiedSource']==true;
     if(unified){
       final ws=LocalBackupRestore.object(meta['workspace']);
@@ -223,9 +230,12 @@ class LegacyOperationalRestore {
         if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
         final keys=c=='accounts'?['groupId','sortOrder','accountImage','settlement','documentNumberRequired','messageMethod','sendMode','legacyRef']:
           c=='warehouses'?['codeNumber','legacyRef']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate','legacyRef']:
-          ['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId','taxAmount','dueDate','paidAmount','deliveryDays','legacyRef'];
+          ['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId','taxAmount','dueDate','paidAmount','deliveryDays','legacyRef','sourceReference','headerDiscount'];
         for(final key in keys){if(old[key]!=null)row[key]=old[key];}
-        if(c=='ledger')row['importedRegister']=true;
+        if(c=='ledger'){
+          row['importedRegister']=true;
+          LegacySourceDetails.overlay(row,old,recovered[row['id']]);
+        }
         if(c=='inventory'&&unified&&old['quantityUnverified']==false)row['quantityUnverified']=false;
         if(c=='inventory'&&old['quantityUnverified']!=false&&(opening==null||opening['source_item_id']==row['id'])){
           final sourceId=row['id'];
@@ -253,5 +263,17 @@ class LegacyOperationalRestore {
       }
     }
     data['legacyOperational']=true;
+  }
+
+  static Future<Map<String,Map<String,dynamic>>> _sourceDetails(DatabaseExecutor db,{Map<String,dynamic>? meta})async{
+    final source=await db.query('legacy_operational_source',limit:1);
+    if(source.isEmpty)return {};
+    meta??=LocalBackupRestore.object(jsonDecode(source.single['meta_json'] as String));
+    if(meta['unifiedSource']==true||meta['legacyDetailsVersion']==LegacySourceDetails.version)return {};
+    return LegacySourceDetails.load(source.single['sha'] as String,()async{
+      final bytes=await original(db);
+      if(bytes==null)throw StateError('Original source missing');
+      return bytes;
+    });
   }
 }

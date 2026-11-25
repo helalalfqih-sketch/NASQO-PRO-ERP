@@ -17,6 +17,7 @@ function buildInvoiceText(invoice: LegacyInvoice): string {
     "نسقو برو – نسخة قراءة لمستند محفوظ",
     `رقم الحركة الأصلي: ${invoice.id}`,
     `رقم المستند في المصدر: ${invoice.documentNumber || "غير مسجل"}`,
+    ...(invoice.sourceReference ? [`المرجع: ${invoice.sourceReference}`] : []),
     `التاريخ: ${invoice.date ?? "غير مسجل"}`,
     `نوع المستند: ${invoice.roleConfirmed ? ROLE_LABELS[invoice.role] : "غير معتمد"}`,
     `الحالة: ${invoice.deleted ? "محذوف في المصدر" : "تاريخي غير مرحل"}`,
@@ -117,7 +118,8 @@ export function LegacyInvoicePreview({ invoice, onClose, testId = "legacy-invoic
           <span>المخزن</span>
           <strong>{invoice.warehouseNames.join("، ") || "غير محدد في البنود"}</strong>
         </div>
-        {invoice.details ? <div className="legacy-invoice-note"><span>الملاحظات</span><b>{invoice.details}</b></div> : null}
+        {invoice.sourceReference ? <div className="legacy-invoice-note"><span>المرجع</span><b>{invoice.sourceReference}</b></div> : null}
+        {invoice.details ? <div className="legacy-invoice-note"><span>الملاحظات</span><b style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{invoice.details}</b></div> : null}
       </div>
 
       <div className="legacy-invoice-search-row">
@@ -169,6 +171,8 @@ export function LegacyInvoicePreview({ invoice, onClose, testId = "legacy-invoic
           <strong>تفاصيل البند الأصلي #{selectedLine.id}</strong>
           <span>الصنف: {selectedLine.productName || selectedLine.description || "غير مسمى"}</span>
           <span>الخصم المسجل في البند: {amount(selectedLine.discount)}</span>
+          {selectedLine.bonus ? <span>الكمية المجانية: {amount(selectedLine.bonus)}</span> : null}
+          {selectedLine.expiryDate ? <span>تاريخ الصلاحية: {selectedLine.expiryDate}</span> : null}
           <span>مرجع المخزن: {selectedLine.storeId ?? "غير مسجل"} · نوع البند: {selectedLine.kind === "free" ? "حر" : "مرتبط بصنف"}</span>
         </div>
       ) : null}

@@ -7,6 +7,7 @@ import 'package:cryptography/cryptography.dart';
 import '../services/backup_encryption.dart';
 import '../services/local_backup_restore.dart';
 import '../services/legacy_operational_restore.dart';
+import '../services/legacy_archive_records.dart';
 import 'package:flutter/material.dart';
 import '../services/native_cloud_session.dart';
 import '../services/firebase_sync_auth.dart';
@@ -217,6 +218,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     readSnapshot: _readWorkspaceSnapshot,
     cloudAction: _cloud.handle,
     localToolsAction: _localTools,
+    legacyArchiveAction: LegacyArchiveRecords(LocalDatabase.instance).handle,
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
     saveWorkspaceSettings: _saveWorkspaceSettings,
     createAccount: (key,payload) => _saveAccount(key,payload),

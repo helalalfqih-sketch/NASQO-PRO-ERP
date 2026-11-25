@@ -32,6 +32,7 @@ class HybridReadOnlyProtocol {
     this.exportBackup,
     this.cloudAction,
     this.localToolsAction,
+    this.legacyArchiveAction,
   });
 
   final Future<Map<String, dynamic>> Function() readSnapshot;
@@ -55,6 +56,7 @@ class HybridReadOnlyProtocol {
   final Future<bool> Function()? exportBackup;
   final Future<dynamic> Function(String,String,Map<String,dynamic>)? cloudAction;
   final Future<Map<String,dynamic>> Function(String)? localToolsAction;
+  final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? legacyArchiveAction;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
 
@@ -105,6 +107,20 @@ class HybridReadOnlyProtocol {
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
       }on NativeCloudException catch(e){return _error(id,actionName,e.code,e.message);}
       catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر إكمال طلب Google.');}
+    }
+    if(actionName=='legacyArchiveAction'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace'||
+        p.keys.any((k)=>!['workspaceId','operation','recordKind','recordId','sourceSha','offset','limit','query','read','dismissed'].contains(k))||
+        !['offers','trash','alerts'].contains(p['recordKind'])||!['list','detail','alertState'].contains(p['operation'])||
+        (p['recordId']!=null&&(p['recordId'] is! String||(p['recordId'] as String).length>100))||
+        (p['sourceSha']!=null&&(p['sourceSha'] is! String||!RegExp(r'^[a-f0-9]{64}$').hasMatch(p['sourceSha'] as String)))||
+        (p['query']!=null&&(p['query'] is! String||(p['query'] as String).length>100))||legacyArchiveAction==null)
+        return _error(id,actionName,'VALIDATION_ERROR','طلب السجلات المستوردة غير صالح.');
+      try{
+        final result=await legacyArchiveAction!(p);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر قراءة السجل المستورد أو حفظ حالة التنبيه. أعد فتح القائمة.');}
     }
     if(actionName=='localToolsAction'){
       final p=request['payload'];
@@ -188,8 +204,13 @@ class HybridReadOnlyProtocol {
         if(actionName=='getInventoryMovementsReport'&&readInventoryReport!=null){
           if(p.keys.any((k)=>!['workspaceId','options'].contains(k)))throw ArgumentError('Invalid report parameters');
           final options=p['options']==null?<String,dynamic>{}:Map<String,dynamic>.from(p['options'] as Map);
-          if(options.keys.any((k)=>!['warehouseId','itemId','currency','fromDate','toDate','profitBasis','search'].contains(k))||
-              options.values.any((v)=>v!=null&&(v is! String||v.length>150)))throw ArgumentError('Invalid report filters');
+          const filterKeys=['warehouseId','itemId','currency','fromDate','toDate','profitBasis','search'];
+          if(options.keys.any((k)=>![...filterKeys,'movementOffset','movementLimit'].contains(k))||
+              options.entries.any((e)=>filterKeys.contains(e.key)&&e.value!=null&&(e.value is! String||(e.value as String).length>150)))
+            throw ArgumentError('Invalid report filters');
+          final offset=options['movementOffset'],limit=options['movementLimit'];
+          if(offset!=null&&(offset is! int||offset<0||offset>2147483647)||
+              limit!=null&&(limit is! int||limit<1||limit>300))throw ArgumentError('Invalid report page');
           result=await readInventoryReport!(options);
         }else if(actionName=='getProductPriceStats'&&readProductPriceStats!=null){
           if(p.length!=2||p['itemId'] is! String||(p['itemId'] as String).length>150)throw ArgumentError('Invalid item');

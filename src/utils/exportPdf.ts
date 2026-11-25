@@ -16,6 +16,7 @@ export interface InvoicePdfSummaryLine {
   quantity: string;
   unitPrice: string;
   lineTotal: string;
+  metadata?: string[];
 }
 
 export interface InvoicePdfSummaryData {
@@ -35,6 +36,9 @@ export interface InvoicePdfSummaryData {
   currency: string;
   exchangeRate: number;
   amount: number;
+  notes?: string;
+  sourceReference?: string;
+  headerDiscount?: number;
   formattedAmount: string;
   vatLine?: string;
   lines: InvoicePdfSummaryLine[];
@@ -102,6 +106,12 @@ export function buildInvoicePdfSummaryData(
       quantity:formatAmount(line.quantity),
       unitPrice:formatAmount(line.price),
       lineTotal:formatAmount(line.total),
+      metadata:[
+        line.details && line.details !== line.itemName ? `البيان: ${line.details}` : "",
+        line.discount ? `خصم البند المسجل: ${formatAmount(line.discount)}` : "",
+        line.bonus ? `الكمية المجانية: ${formatAmount(line.bonus)}` : "",
+        line.expiryDate ? `تاريخ الصلاحية: ${line.expiryDate}` : "",
+      ].filter(Boolean),
     })));
   }
   if (typeof entry.taxAmount==="number"&&entry.taxAmount>0) vatLine="الضريبة: "+formatAmount(entry.taxAmount)+" "+entry.currency;
@@ -132,6 +142,9 @@ export function buildInvoicePdfSummaryData(
     currency: entry.currency,
     exchangeRate: entry.exchangeRate || 1,
     amount: entry.amount,
+    notes: entry.details,
+    sourceReference: entry.sourceReference,
+    headerDiscount: entry.headerDiscount,
     formattedAmount: formatAmount(entry.amount),
     vatLine,
     lines: itemLines,
@@ -524,6 +537,89 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
   return canvas;
 }
 
+/** Complete source details accompany the compact first-page summary. Stored
+ * totals are displayed verbatim; metadata discounts are never subtracted. */
+export function invoiceSourceDetailBlocks(summary: InvoicePdfSummaryData): string[] {
+  return [
+    `الشركة: ${summary.companyName}`,
+    `المستند: ${summary.title} · ${summary.entryNumber}`,
+    `رقم المستند: ${summary.documentNumber}`,
+    `الحساب: ${summary.accountName}`,
+    `الحساب المقابل: ${summary.counterpartName}`,
+    `المخزن: ${summary.warehouseName}`,
+    `التاريخ: ${summary.entryDate}`,
+    ...(summary.sourceReference ? [`المرجع: ${summary.sourceReference}`] : []),
+    ...(summary.headerDiscount != null && summary.headerDiscount !== 0
+      ? [`خصم الفاتورة المسجل: ${formatAmount(summary.headerDiscount)} ${summary.currency}`] : []),
+    `إجمالي المستند الأصلي: ${summary.formattedAmount} ${summary.currency}`,
+    ...(summary.notes ? [`البيان الكامل:\n${summary.notes}`] : []),
+    ...summary.lines.flatMap((line, index) => [
+      `البند ${index + 1}: ${line.description}`,
+      `الوحدة: ${line.unit} · الكمية: ${line.quantity} · السعر: ${line.unitPrice} · الإجمالي: ${line.lineTotal}`,
+      ...(line.metadata ?? []),
+    ]),
+    ...(summary.footerNote ? [summary.footerNote] : []),
+  ];
+}
+
+/** Fixed-height pages; neither source text nor unusually long words are cut. */
+export function paginateInvoiceSourceDetails(
+  summary: InvoicePdfSummaryData,
+  measure: (text: string) => number,
+  width = 1112,
+  linesPerPage = 48,
+): string[][] {
+  const lines: string[] = [];
+  for (const block of invoiceSourceDetailBlocks(summary)) {
+    for (const paragraph of block.split(/\r\n|\r|\n/)) {
+      let line = "";
+      for (const character of Array.from(paragraph)) {
+        if (line && measure(line + character) > width) {
+          lines.push(line);
+          line = "";
+        }
+        line += character;
+      }
+      lines.push(line);
+    }
+    lines.push("");
+  }
+  const pages: string[][] = [];
+  const size = Math.max(1, Math.floor(linesPerPage));
+  for (let i = 0; i < lines.length; i += size) pages.push(lines.slice(i, i + size));
+  return pages;
+}
+
+function appendInvoiceSourcePages(pdf: jsPDF, summary: InvoicePdfSummaryData): void {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1240;
+  canvas.height = 1754;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("تعذر تجهيز تفاصيل الفاتورة كاملة.");
+  ctx.font = '22px "Segoe UI", Tahoma, Arial, sans-serif';
+  const pages = paginateInvoiceSourceDetails(summary, (text) => ctx.measureText(text).width);
+  pages.forEach((lines, index) => {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.direction = "rtl";
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#07365d";
+    ctx.font = 'bold 30px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(`تفاصيل المستند ${summary.entryNumber}`, 1176, 80);
+    ctx.font = '20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText("الأرقام والخصومات كما حُفظت، دون إعادة احتساب الإجمالي", 1176, 120);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = '22px "Segoe UI", Tahoma, Arial, sans-serif';
+    lines.forEach((line, row) => ctx.fillText(line, 1176, 185 + row * 28));
+    ctx.fillStyle = "#64748b";
+    ctx.font = '18px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(`تفاصيل محفوظة · صفحة ${index + 1} من ${pages.length}`, 1176, 1700);
+    pdf.addPage();
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0,
+      pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(), undefined, "FAST");
+  });
+}
+
 function createInvoiceSummaryPdfDoc(summary: InvoicePdfSummaryData): { pdf: jsPDF; filename: string } {
   const canvas = drawInvoiceSummaryCanvas(summary);
   const imgData = canvas.toDataURL("image/png");
@@ -533,6 +629,7 @@ function createInvoiceSummaryPdfDoc(summary: InvoicePdfSummaryData): { pdf: jsPD
   const renderedHeight = (canvas.height * pageWidth) / canvas.width;
   const fitHeight = Math.min(renderedHeight, pageHeight);
   pdf.addImage(imgData, "PNG", 0, 0, pageWidth, fitHeight, undefined, "FAST");
+  appendInvoiceSourcePages(pdf, summary);
 
   const safeDate = (summary.entryDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, "");
   const filename = `nasqo-invoice-${summary.entryNumber}-${safeDate}.pdf`;

@@ -85,12 +85,20 @@ void main(){
       expect(readiness['readyForActivation'],false);
       expect(readiness['journalReconciled'],false);
       expect(await backup.exportReviewSource(),orderedEquals(original));
+      final archivedInventoryBefore=await db.query('backup_review_rows',where:'collection = ?',whereArgs:['inventory']);
       final snap=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((snap['accounts'] as List).single['name'],'Archived client');
       expect((snap['ledger'] as List).single['rawDain'],10);
       expect((snap['ledger'] as List).single['rawMadin'],2);
       expect((snap['ledger'] as List).single['postingStatus'],'historical_unposted');
       expect((snap['inventory'] as List).single['quantityUnverified'],true);
+      expect((snap['inventory'] as List).single['legacyCatalogCost'],3);
+      expect((snap['inventory'] as List).single['avgCost'],3);
+      expect((snap['inventory'] as List).single['quantity'],0);
+      expect(await db.query('backup_review_rows',where:'collection = ?',whereArgs:['inventory']),archivedInventoryBefore);
+      expect(await db.query('inventory_items'),isEmpty);
+      expect(await db.query('legacy_stock_openings'),isEmpty);
+      expect(await db.query('stock_movements'),isEmpty);
       expect((snap['capabilities'] as Map)['localDocumentPosting'],isNull);
       final detail=await db.transaction((t)=>LocalBackupRestore.reviewInvoice(t,'legacy-ent-1'));
       expect((detail!['lines'] as List).single['quantity'],2);
@@ -125,6 +133,9 @@ void main(){
       await backup.openReview(unified);
       final view=await HybridLocalSnapshotAdapter.readFromDevice();
       expect((view['inventory'] as List).single['computedQuantity'],13);
+      expect((view['inventory'] as List).single['legacyCatalogCost'],2);
+      expect((view['inventory'] as List).single['quantityUnverified'],true);
+      expect((view['inventory'] as List).single['quantity'],999);
       await backup.closeReview();
     }finally{await db.close();await dir.delete(recursive:true);}
   });

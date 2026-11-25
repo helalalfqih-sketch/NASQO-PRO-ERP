@@ -66,6 +66,8 @@ export const SCHEMA_LIMITS = {
 } as const;
 
 export type WorkspaceSettings = {
+  /** Identity of immutable imported evidence; never a mutable company setting. */
+  legacySourceSha?: string;
   id: string;
   ownerId: string;
   companyName: string;
@@ -163,6 +165,9 @@ export type LedgerEntryRecord = {
   exchangeRate: number;
   taxAmount?: number;
   discount?: number;
+  /** Source metadata only; never subtracted again from the stored amount. */
+  headerDiscount?: number;
+  sourceReference?: string;
   details: string;
   documentNumber: string;
   warehouseId: string;
@@ -246,6 +251,8 @@ export type InventoryItemRecord = {
   legacyTransferIncomplete?: boolean;
   legacyHistoryIncludesTransfers?: boolean;
   legacySourceItemId?: string;
+  /** Imported catalog reference only; never an approved inventory valuation. */
+  legacyCatalogCost?: number;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
   legacyRef?: string;

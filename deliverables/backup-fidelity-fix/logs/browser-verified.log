@@ -1,0 +1,19 @@
+PASS catalog-search-pages-and-reset
+PASS catalog-reference-cost-does-not-approve-stock
+PASS all-516-item-movements-without-duplicates
+PASS movement-date-filter-includes-dated-transfer-and-resets-page
+PASS closed-item-late-response-cannot-replace-new-item
+PASS movement-read-errors-retain-rows-and-retry-correct-offset
+PASS rapid-load-more-sends-one-page-request
+PASS invoice-full-note-reference-and-source-discounts
+PASS invoice-pdf-contains-multiple-pages-for-full-source-details
+PASS invoice-pdf-refuses-missing-line-details
+PASS imported-quotes-in-normal-destination-page-and-durable-draft
+PASS copied-draft-bound-to-source-sha-through-backup-aba-replacement
+PASS imported-trash-keeps-original-deleted-when-copying-draft
+PASS imported-alert-in-notifications-read-hide-and-show-again
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

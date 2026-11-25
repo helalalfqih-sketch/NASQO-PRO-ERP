@@ -421,6 +421,13 @@ describe("Hybrid Service Adapter Simulated Flutter Host Round-Trip", () => {
               },
             });
           } else if (req.action === "getInventoryMovementsReport") {
+            assert.deepEqual(req.payload, {
+              workspaceId: LOCAL_WORKSPACE_UID,
+              options: {
+                warehouseId: "wh_main", itemId: "item_1", fromDate: "2026-01-01", toDate: "2026-12-31",
+                movementOffset: 100, movementLimit: 100,
+              },
+            });
             hybridBridge.handleInbound({
               protocolVersion: HYBRID_PROTOCOL_VERSION,
               kind: "response",
@@ -439,6 +446,7 @@ describe("Hybrid Service Adapter Simulated Flutter Host Round-Trip", () => {
                   profitBasis: "avg",
                 },
                 movements: [],
+                movementPage: { offset: 100, limit: 100, totalCount: 516, nextOffset: 200, hasMore: true },
                 anomalies: {
                   unverifiedItemsCount: 0,
                   unresolvedTransfersCount: 0,
@@ -496,8 +504,14 @@ describe("Hybrid Service Adapter Simulated Flutter Host Round-Trip", () => {
 
     const invReport = await fetchInventoryMovementsReport(LOCAL_WORKSPACE_UID, {
       warehouseId: "wh_main",
+      itemId: "item_1",
+      fromDate: "2026-01-01",
+      toDate: "2026-12-31",
+      movementOffset: 100,
+      movementLimit: 100,
     });
     assert.equal(invReport.totals.totalRemainingValue, 504000);
+    assert.deepEqual(invReport.movementPage, { offset: 100, limit: 100, totalCount: 516, nextOffset: 200, hasMore: true });
 
     const cbReport = await fetchCashboxesReport(LOCAL_WORKSPACE_UID, { currency: "ريال" });
     assert.equal(cbReport.cashboxes[0].netBalance, 7500);

@@ -436,10 +436,11 @@ export async function saveWorkspaceSettings(
 ): Promise<void> {
   return runWithBrandLoader("جاري حفظ إعدادات النظام...", async () => {
     try {
+      const { legacySourceSha: _sourceIdentity, ...mutableUpdates } = updates;
       const res = await hybridBridge.invoke<
         "saveWorkspaceSettings",
         { workspace?: WorkspaceSettings; snapshot?: HybridWorkspaceSnapshot }
-      >("saveWorkspaceSettings", { workspaceId: uid || LOCAL_WORKSPACE_UID, updates });
+      >("saveWorkspaceSettings", { workspaceId: uid || LOCAL_WORKSPACE_UID, updates: mutableUpdates });
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else if (activeBundle && res?.workspace) {
@@ -870,6 +871,8 @@ export async function fetchInventoryMovementsReport(
     toDate?: string;
     currency?: string;
     profitBasis?: "avg" | "cost" | "last";
+    movementOffset?: number;
+    movementLimit?: number;
   },
 ) {
   try {
@@ -907,7 +910,15 @@ export async function fetchInventoryMovementsReport(
           totalRemainingQty: number;
           activeItemsCount: number;
         }>;
+        movementPage?: {
+          offset: number;
+          limit: number;
+          totalCount: number;
+          nextOffset: number | null;
+          hasMore: boolean;
+        };
         movements: Array<{
+          movementId?: string;
           source: "invoice" | "transfer";
           refId: string;
           entryNumber?: number;

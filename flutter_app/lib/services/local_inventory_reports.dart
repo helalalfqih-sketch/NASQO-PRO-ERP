@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_backup_restore.dart';
 import 'legacy_stock_projection.dart';
+import 'legacy_record_date.dart';
 
 /// Read model over immutable source lines and actual posted stock documents.
 /// Archived movements never get replayed into the current approved balance.
@@ -56,7 +57,9 @@ class LocalInventoryReports {
       if(date.compareTo(lastSourceDate)>0)lastSourceDate=date;
       if(e['deleted']==true||e['postingStatus']=='draft')continue;
       final kind=role(e);if(kind.isEmpty)continue;
-      for(final l in LocalBackupRestore.rows(e['lines']??[])){
+      final sourceLines=LocalBackupRestore.rows(e['lines']??[]);
+      for(var lineIndex=0;lineIndex<sourceLines.length;lineIndex++){
+        final l=sourceLines[lineIndex];
         if(l['lineKind']=='free')continue;
         final item=s(l['inventoryItemId']),p=source[item]??live[item];
         if(p==null){missingLines++;continue;}
@@ -70,7 +73,8 @@ class LocalInventoryReports {
         if(base<0||!base.isFinite){missingLines++;continue;}
         final c=s(e['currency']);
         final cost=l['unitCostAtSale'];
-        result.add({'itemId':location,'sourceItemId':item,'source':'invoice','historical':true,
+        result.add({'movementId':jsonEncode(['legacy-invoice',id,l['legacyId'],lineIndex]),
+          'itemId':location,'sourceItemId':item,'source':'invoice','historical':true,
           'role':kind,'refId':id,'entryNumber':n(e['entryNumber']),'date':date,
           'label':s(e['typeLabel']),'accountName':s(e['accountName']),'warehouseId':wh,
           'warehouseName':warehouses[wh],'quantity':quantity,'unit':s(l['unit']).isEmpty?s(p['unit']):s(l['unit']),
@@ -93,7 +97,8 @@ class LocalInventoryReports {
         final sale=d['sale']==true,returned=e['kind']=='return';
         final k=returned?(sale?'saleReturn':'purchaseReturn'):(sale?'sell':'buy');
         final wh=s(e['warehouseId']),base=n(row['quantity']),c=s(e['currency']);
-        result.add({'itemId':item,'sourceItemId':s(p['legacySourceItemId']).isEmpty?item:s(p['legacySourceItemId']),
+        result.add({'movementId':jsonEncode(['posted-invoice',id,row['id']]),
+          'itemId':item,'sourceItemId':s(p['legacySourceItemId']).isEmpty?item:s(p['legacySourceItemId']),
           'source':'invoice','historical':false,'role':k,'refId':id,'entryNumber':n(e['entryNumber']),
           'date':s(e['entryDate']),'label':s(e['typeLabel']),'accountName':s(e['accountName']),
           'warehouseId':wh,'warehouseName':warehouses[wh]??wh,'quantity':n(l['sold_quantity'],base),
@@ -114,7 +119,7 @@ class LocalInventoryReports {
       final from=normalized?s(h['store_id1']):rawWarehouses[s(h['store_id1'])]??'';
       final to=normalized?s(h['store_id2']):rawWarehouses[s(h['store_id2'])]??'';
       if(!warehouses.containsKey(from)||!warehouses.containsKey(to)){
-        unresolved[id]={'id':int.tryParse(id)??0,'transferDate':s(h['date']),'transferType':n(h['type'],1),
+        unresolved[id]={'id':int.tryParse(id)??0,'transferDate':LegacyRecordDate.read(h),'transferType':n(h['type'],1),
           'rawFromStoreId':int.tryParse(s(h['store_id1'])),'rawToStoreId':int.tryParse(s(h['store_id2'])),
           'details':s(h['details']),'linesCount':0};
       }
@@ -132,7 +137,8 @@ class LocalInventoryReports {
       }
       final qty=n(l['amount']),unit=n(l['unitnum'],1),base=qty*factor(p,unit);
       if(!base.isFinite||base<0){missingLines++;continue;}
-      final date=s(h['date']);
+      final date=LegacyRecordDate.read(h);
+      final transferKey=jsonEncode([hid,l['id']??lineIndex]);
       if(date.compareTo(lastSourceDate)>0)lastSourceDate=date;
       for(final wh in [from,to]){
         final item=locationItem(s(p['id']),wh);
@@ -140,8 +146,9 @@ class LocalInventoryReports {
         final k=wh==from?'transferOut':'transferIn';
         // A same-warehouse source record has no net effect.
         if(from==to)continue;
-        result.add({'itemId':item,'sourceItemId':s(p['id']),'source':'transfer','historical':true,
-          'role':k,'refId':'tx-$hid','transferLineKey':'$hid:$lineIndex','date':date,'label':wh==from?'تحويل صادر':'تحويل وارد',
+        result.add({'movementId':jsonEncode(['transfer',transferKey,wh]),
+          'itemId':item,'sourceItemId':s(p['id']),'source':'transfer','historical':true,
+          'role':k,'refId':'tx-$hid','transferLineKey':transferKey,'date':date,'label':wh==from?'تحويل صادر':'تحويل وارد',
           'accountName':"${warehouses[from]} ← ${warehouses[to]}",'warehouseId':wh,'warehouseName':warehouses[wh],
           'fromWarehouseId':from,'toWarehouseId':to,'quantity':qty,'unit':s(l['unit']),
           'unitNum':unit,'baseQuantity':base,'effectQty':positive(k)?base:-base,
@@ -152,7 +159,8 @@ class LocalInventoryReports {
     for(final o in openings){
       final item=s(o['item_id']),p=live[item];if(p==null)continue;
       final q=n(o['quantity']);
-      result.add({'itemId':item,'sourceItemId':s(o['source_item_id']),'source':'opening','historical':false,
+      result.add({'movementId':jsonEncode(['opening',item,o['warehouse_id']]),
+        'itemId':item,'sourceItemId':s(o['source_item_id']),'source':'opening','historical':false,
         'role':'opening','refId':s(o['ledger_id']),'date':s(o['entry_date']),'warehouseId':s(o['warehouse_id']),
         'baseQuantity':q,'effectQty':q,'currency':s(p['currencyCode']),'financial':false});
     }
@@ -176,6 +184,14 @@ class LocalInventoryReports {
   }
 
   static Future<Map<String,dynamic>> report(DatabaseExecutor db,Map<String,dynamic> snapshot,Map<String,dynamic> options)async{
+    int pageInteger(String key,int fallback,int min,int max){
+      final value=options[key];
+      if(value==null)return fallback;
+      if(value is! int||value<min||value>max)throw ArgumentError('Invalid movement pagination');
+      return value;
+    }
+    final movementOffset=pageInteger('movementOffset',0,0,2147483647);
+    final movementLimit=pageInteger('movementLimit',100,1,300);
     final data=await evidence(db,snapshot);
     final all=(data['events'] as List).cast<Map<String,dynamic>>();
     final items=(snapshot['inventory'] as List).cast<Map<String,dynamic>>();
@@ -282,6 +298,7 @@ class LocalInventoryReports {
           final row=<String,dynamic>{...e}..remove('financial')..remove('recordedCost');
           if(scope.isEmpty&&row['transferLineKey']!=null){
             final key=s(row['transferLineKey']);
+            row['movementId']=jsonEncode(['transfer',key]);
             final prior=transfers[key];
             if(prior!=null){prior['effectQty']=n(prior['effectQty'])+n(row['effectQty']);prior['label']='تحويل بين المخازن';prior['warehouseName']=row['accountName'];continue;}
             transfers[key]=row;
@@ -290,7 +307,15 @@ class LocalInventoryReports {
         }
       }
     }
-    movements.sort((a,b){final d=s(b['date']).compareTo(s(a['date']));return d!=0?d:n(b['entryNumber']).compareTo(n(a['entryNumber']));});
+    movements.sort((a,b){
+      final date=s(b['date']).compareTo(s(a['date']));
+      if(date!=0)return date;
+      final entry=n(b['entryNumber']).compareTo(n(a['entryNumber']));
+      return entry!=0?entry:s(a['movementId']).compareTo(s(b['movementId']));
+    });
+    final movementPage=movements.skip(movementOffset).take(movementLimit).toList();
+    final nextOffset=movementOffset+movementPage.length;
+    final hasMore=nextOffset<movements.length;
     final buckets=totals.values.map((b)=><String,dynamic>{...b,
       for(final k in ['totalSales','totalPurchases','totalProfit','totalRemainingValue'])k:round(n(b[k])),
       'totalRemainingQty':round(n(b['totalRemainingQty']),1000)}).toList();
@@ -299,12 +324,14 @@ class LocalInventoryReports {
     final note='الرصيد المعتمد من SQLite ولا تُعاد إضافة الحركات القديمة إليه. الكميات التاريخية غير المعتمدة تقديرية ولا تدخل في قيمة المخزون. '
       'الأرباح التاريخية تقديرية حسب أساس السعر المختار؛ الربح المسجل متاح للفواتير المحلية. قيمة المتبقي بسعر التكلفة الحالي وليست تقييمًا تاريخيًا. '
       'استثناءات: ${unresolved.length} تحويل غير مكتمل، ${data['missingLines']} بند غير مرتبط، $unknownValue بند دون قيمة مالية معتمدة، $mixed صنف متعدد العملات.'
-      + (data['incompleteTransferHistory']==true?' بعض التحويلات القديمة غير متوفرة في المصدر.':'') + (movements.length>300?' تظهر أحدث 300 حركة فقط.':'');
+      + (data['incompleteTransferHistory']==true?' بعض التحويلات القديمة غير متوفرة في المصدر.':'');
     return {'warehouses':warehouses,'warehouseStocks':warehouseStocks,'itemRows':rows,
       'totals':{'totalSales':one['totalSales']??0,'totalPurchases':one['totalPurchases']??0,
         'totalProfit':one['totalProfit']??0,'totalRemainingValue':one['totalRemainingValue']??0,
         'activeItemsCount':rows.where((r)=>r['hasMovement']==true).length,'profitBasis':basis},
-      'totalsByCurrency':buckets,'movements':movements.take(300).toList(),'dataScopeNote':note,
+      'totalsByCurrency':buckets,'movements':movementPage,'dataScopeNote':note,
+      'movementPage':{'offset':movementOffset,'limit':movementLimit,'totalCount':movements.length,
+        'hasMore':hasMore,'nextOffset':hasMore?nextOffset:null},
       'anomalies':{'unverifiedItemsCount':estimates,'unresolvedTransfersCount':unresolved.length,'unresolvedTransfers':unresolved,
         'negativeComputedItems':rows.where((r)=>n(r['availableQty'])<0).take(50).map((r)=>
           {'id':r['id'],'name':r['name'],'netComputedQty':r['availableQty']}).toList()}};

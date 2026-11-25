@@ -33,6 +33,8 @@ export function unifiedDetailToLegacyInvoice(detail: UnifiedInvoiceDetail): Lega
     quantity: line.quantity,
     unitPrice: line.price,
     discount: line.discount,
+    bonus: line.bonus,
+    expiryDate: line.expiryDate,
     total: line.total,
     storeId: null,
     kind: line.lineKind === "free" ? "free" : "priced",
@@ -78,6 +80,7 @@ export function unifiedDetailToLegacyInvoice(detail: UnifiedInvoiceDetail): Lega
     sourceBoxName: "",
     warehouseNames: warehouses,
     sourceTime: null,
-    headerDiscount: null,
+    headerDiscount: entry.headerDiscount ?? null,
+    sourceReference: entry.sourceReference,
   };
 }
