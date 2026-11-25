@@ -13,5 +13,11 @@
     "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197"
   ],
   "permissionsUnchanged": true,
-  "verificationScope": "Synthetic emulator upgrade; no user phone or production data"
+  "verificationScope": "Synthetic emulator upgrade; no user phone or production data",
+  "publishRun": 45692493179,
+  "evidenceSourceSha": "baa3869d9a973bb0d756e4689267ded8e5e79869",
+  "nativeEvidenceArtifact": 15057614835,
+  "launcherArabicNameVisuallyVerified": true,
+  "androidApi": 35,
+  "physicalPhoneTested": false
 }
