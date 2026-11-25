@@ -87,16 +87,21 @@ class FirebaseSyncAuth {
       email: email.trim(), password: password);
   }
 
-  static Future<String> token() async {
+  static Future<String> token({String? expectedUid}) async {
     await initialize();
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) throw StateError('Sign in required');
+    final uid = expectedUid ?? user.uid;
+    if (user.uid != uid) throw StateError('Authentication changed');
     await user.reload();
     final current = FirebaseAuth.instance.currentUser;
-    if (current == null || !current.emailVerified) {
+    if (current == null || current.uid != uid || !current.emailVerified) {
       throw StateError('Verified email required');
     }
     final token = await current.getIdToken();
+    if (FirebaseAuth.instance.currentUser?.uid != uid) {
+      throw StateError('Authentication changed');
+    }
     if (token == null || token.isEmpty) throw StateError('Missing ID token');
     return token;
   }
