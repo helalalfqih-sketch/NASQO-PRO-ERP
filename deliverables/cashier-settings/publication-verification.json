@@ -1,0 +1,14 @@
+{
+  "result": "PASS",
+  "run": 45719617523,
+  "runConclusion": "success",
+  "tag": "android-v1138",
+  "latest": "android-v1138",
+  "target": "9187db1919993cec63c80a1d85fa48b537e8bfce",
+  "publishedAt": "2026-11-25T23:16:47Z",
+  "releaseUrl": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/tag/android-v1138",
+  "apkUrl": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1138/NASQO-PRO-ERP.apk",
+  "bytes": 59580601,
+  "digest": "sha256:24b199bff5bb065f5f4296d06dd4958a69b51e81ed1994fa07948617ad667350",
+  "compatibilityAlias": "android-preview-v1138"
+}
