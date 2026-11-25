@@ -1,0 +1,25 @@
+{
+  "sourceSha": "b68789951f3c5088c0246ede21516af35fb1924a",
+  "buildRun": 45687704269,
+  "versionName": "1.0.126",
+  "versionCode": 1126,
+  "previousVersionCode": 1124,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "imageSource": "public/assets/aistudio/NASQO_PRO_ERP_800_022d325f.png",
+  "imageSha256": "022d325fa84df3f97d5573ea1d13cef1f128c610a4994a721da4f2d0c556ac90",
+  "artworkChanges": "none; byte-identical source, scaled by Android/Flutter at rendering",
+  "adaptiveIconInset": "24%",
+  "nativeSplashBeforeAndroid12": "192dp centered full logo",
+  "Android12Splash": "padded foreground icon with OS splash mask",
+  "flutterLoading": "180dp full logo above existing progress indicator",
+  "apkSha256": "a2f5e1971b73e9e3e8b4ea09c0a257cfca33db49e1198d47a7739886b0de04ad",
+  "androidVisualReview": {
+    "launcher": "whole logo visible within circular icon",
+    "nativeSplash": "whole logo visible at 1s frame",
+    "device": "Pixel 5 API35 emulator",
+    "physicalPhoneTested": false,
+    "olderAndroidTested": false,
+    "nightModeTested": false
+  },
+  "upgradeResult": "PASS"
+}

@@ -1,0 +1,7 @@
+Starting: Intent { cmp=com.indexesstore.nasqo_pro_erp/.MainActivity }
+Status: ok
+LaunchState: COLD
+Activity: com.indexesstore.nasqo_pro_erp/.MainActivity
+TotalTime: 2178
+WaitTime: 2197
+Complete
