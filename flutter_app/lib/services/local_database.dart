@@ -418,7 +418,333 @@ class LocalDatabase {
   /// Call only after validating an authenticated server acknowledgement.
   Future<void> acknowledgeOperation(String workspaceId, String operationId,
       String serverRevision) async {
-    if (serverRevision.isEmpty) throw ArgumentError('Missing server revision');
+    if (!RegExp(r'^[1-9][0-9]{0,17}
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('sync_outbox',
+          where: 'workspace_id = ? AND operation_id = ?',
+          whereArgs: [workspaceId, operationId]);
+      if (rows.length != 1) throw StateError('Unknown operation');
+      final previous = rows.single['server_revision'];
+      if (previous != null && previous != serverRevision) {
+        throw StateError('Conflicting acknowledgement');
+      }
+      if (previous == null) {
+        await txn.update('sync_outbox', {
+          'acknowledged_at': DateTime.now().toUtc().toIso8601String(),
+          'server_revision': serverRevision,
+        }, where: 'workspace_id = ? AND operation_id = ?',
+            whereArgs: [workspaceId, operationId]);
+      }
+    });
+  }
+
+  Future<bool> hasSeededData() async {
+    final db = await database;
+    final res = await db.rawQuery('SELECT COUNT(*) AS cnt FROM accounts');
+    final count = Sqflite.firstIntValue(res) ?? 0;
+    return count > 0;
+  }
+
+  Future<LocalDbSnapshot> loadSnapshot({DatabaseExecutor? executor}) async {
+    final db = executor ?? await database;
+    final accRows = await db.query('accounts', orderBy: 'codeNumber ASC');
+    final ledRows = await db.query('ledger_entries', orderBy: 'entryNumber DESC');
+    final whRows = await db.query('warehouses');
+    final invRows = await db.query('inventory_items');
+    final metaRows = await db.query('erp_state', where: 'stateKey = ?', whereArgs: ['settings']);
+    final prefsRows = await db.query('erp_state',
+        where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
+
+    final preferences = <String, dynamic>{};
+    if (prefsRows.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(prefsRows.first['payloadJson'] as String);
+        if (decoded is Map<String, dynamic>) preferences.addAll(decoded);
+      } on FormatException {
+        // A malformed appearance row must not hide or erase financial data.
+      }
+    }
+
+    String? companyName;
+    bool? isDarkMode;
+    int? nextEntryNumber;
+    if (metaRows.isNotEmpty) {
+      final decoded = jsonDecode(metaRows.first['payloadJson'] as String) as Map<String, dynamic>;
+      companyName = decoded['companyName'] as String?;
+      isDarkMode = decoded['isDarkMode'] as bool?;
+      nextEntryNumber = decoded['nextEntryNumber'] as int?;
+    }
+
+    return LocalDbSnapshot(
+      accounts: accRows.map(_accountFromMap).toList(),
+      ledger: ledRows.map(_ledgerFromMap).toList(),
+      warehouses: whRows.map(_warehouseFromMap).toList(),
+      inventory: invRows.map(_inventoryFromMap).toList(),
+      companyName: companyName,
+      isDarkMode: isDarkMode,
+      nextEntryNumber: nextEntryNumber,
+      uiPreferences: preferences,
+    );
+  }
+
+  /// Non-financial UI preferences are stored independently of the accounting
+  /// snapshot, so saving a theme cannot replace any invoice, stock or ledger.
+  Future<void> saveUiPreferences(Map<String, dynamic> updates) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      final rows = await txn.query('erp_state',
+          where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
+      final previous = <String, dynamic>{};
+      if (rows.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(rows.first['payloadJson'] as String);
+          if (decoded is Map<String, dynamic>) previous.addAll(decoded);
+        } on FormatException {
+          // Recover only the independent UI row; financial data is untouched.
+        }
+      }
+      final next = <String, dynamic>{...previous, ...updates};
+      await txn.insert('erp_state', {
+        'stateKey': 'hybridUiPreferences',
+        'payloadJson': jsonEncode(next),
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
+  }
+
+  Future<void> saveSnapshot({
+    required List<AccountRecord> accounts,
+    required List<LedgerEntryRecord> ledger,
+    required List<WarehouseRecord> warehouses,
+    required List<InventoryItemRecord> inventory,
+    required String companyName,
+    required bool isDarkMode,
+    required int nextEntryNumber,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await requireLiveWorkspace(txn);
+      if(await hasLegacyOperational(txn))throw StateError('Imported workspace cannot be replaced by snapshot');
+      final history = await txn.query('bridge_idempotency_keys', limit: 1);
+      if (history.isNotEmpty) {
+        throw StateError('Legacy snapshot writes disabled after transactional operations');
+      }
+      await txn.delete('accounts');
+      for (final a in accounts) {
+        await txn.insert('accounts', _accountToMap(a), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      await txn.delete('ledger_entries');
+      for (final l in ledger) {
+        await txn.insert('ledger_entries', _ledgerToMap(l), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      await txn.delete('warehouses');
+      for (final w in warehouses) {
+        await txn.insert('warehouses', _warehouseToMap(w), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      await txn.delete('inventory_unit_settings');
+      await txn.delete('inventory_items');
+      for (final i in inventory) {
+        await txn.insert('inventory_items', _inventoryToMap(i), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+
+      await txn.insert(
+        'erp_state',
+        {
+          'stateKey': 'settings',
+          'payloadJson': jsonEncode({
+            'companyName': companyName,
+            'isDarkMode': isDarkMode,
+            'nextEntryNumber': nextEntryNumber,
+          }),
+          'updatedAt': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  Future<Map<String, int>> getTableCounts() async {
+    final db = await database;
+    final acc = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM accounts')) ?? 0;
+    final led = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM ledger_entries')) ?? 0;
+    final wh = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM warehouses')) ?? 0;
+    final inv = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM inventory_items')) ?? 0;
+    return {
+      'accounts': acc,
+      'ledger': led,
+      'warehouses': wh,
+      'inventory': inv,
+    };
+  }
+
+  Future<void> clearAll() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await requireLiveWorkspace(txn);
+      if(await hasLegacyOperational(txn))throw StateError('Imported workspace cannot be cleared through legacy reset');
+      final pending = await txn.query('sync_outbox',
+          where: 'acknowledged_at IS NULL', limit: 1);
+      if (pending.isNotEmpty) throw StateError('Unsynced operations exist');
+      // Do not erase synchronized financial history through the legacy reset.
+      final history = await txn.query('bridge_idempotency_keys', limit: 1);
+      if (history.isNotEmpty) throw StateError('Transactional history exists');
+      await txn.delete('journal_lines');
+      await txn.delete('journal_entries');
+      await txn.delete('stock_posting_lines');
+      await txn.delete('stock_posting_documents');
+      await txn.delete('invoice_lines');
+      await txn.delete('stock_movements');
+      await txn.delete('ledger_entries');
+      await txn.delete('accounts');
+      await txn.delete('warehouses');
+      await txn.delete('inventory_unit_settings');
+      await txn.delete('inventory_items');
+      await txn.delete('erp_state');
+    });
+  }
+
+  Map<String, Object?> _accountToMap(AccountRecord a) => {
+        'id': a.id,
+        'name': a.name,
+        'category': a.category.name,
+        'phone': a.phone,
+        'creditLimit': a.creditLimit,
+        'currency': a.currency.name,
+        'isCashAccount': a.isCashAccount ? 1 : 0,
+        'note': a.note,
+        'openingBalance': a.openingBalance,
+        'openingDirection': a.openingDirection.name,
+        'codeNumber': a.codeNumber,
+      };
+
+  AccountRecord _accountFromMap(Map<String, Object?> m) => AccountRecord(
+        id: m['id'] as String,
+        name: m['name'] as String,
+        category: AccountCategory.values.firstWhere(
+          (e) => e.name == m['category'],
+          orElse: () => AccountCategory.clients,
+        ),
+        phone: (m['phone'] as String?) ?? '',
+        creditLimit: (m['creditLimit'] as num?)?.toDouble() ?? 50000,
+        currency: CurrencyCode.values.firstWhere(
+          (e) => e.name == m['currency'],
+          orElse: () => CurrencyCode.sar,
+        ),
+        isCashAccount: (m['isCashAccount'] as int? ?? 0) == 1,
+        note: (m['note'] as String?) ?? '',
+        openingBalance: (m['openingBalance'] as num?)?.toDouble() ?? 0,
+        openingDirection: EntryDirection.values.firstWhere(
+          (e) => e.name == m['openingDirection'],
+          orElse: () => EntryDirection.credit,
+        ),
+        codeNumber: (m['codeNumber'] as int?) ?? 1,
+      );
+
+  Map<String, Object?> _ledgerToMap(LedgerEntryRecord l) => {
+        'id': l.id,
+        'accountId': l.accountId,
+        'accountName': l.accountName,
+        'counterpartAccountId': l.counterpartAccountId,
+        'counterpartAccountName': l.counterpartAccountName,
+        'invoiceContent': l.invoiceContent,
+        'postingStatus': l.postingStatus,
+        'kind': l.kind.name,
+        'typeLabel': l.typeLabel,
+        'payment': l.payment.name,
+        'direction': l.direction.name,
+        'amount': l.amount,
+        'currency': l.currency.name,
+        'exchangeRate': l.exchangeRate,
+        'details': l.details,
+        'documentNumber': l.documentNumber,
+        'warehouseId': l.warehouseId,
+        'warehouseName': l.warehouseName,
+        'expenseCategory': l.expenseCategory,
+        'entryNumber': l.entryNumber,
+        'deleted': l.deleted ? 1 : 0,
+        'entryDate': l.entryDate,
+      };
+
+  LedgerEntryRecord _ledgerFromMap(Map<String, Object?> m) => LedgerEntryRecord(
+        id: m['id'] as String,
+        accountId: m['accountId'] as String,
+        accountName: m['accountName'] as String,
+        counterpartAccountId: (m['counterpartAccountId'] as String?) ?? '',
+        counterpartAccountName: (m['counterpartAccountName'] as String?) ?? '',
+        invoiceContent: (m['invoiceContent'] as String?) ?? 'none',
+        postingStatus: m['postingStatus'] as String?,
+        kind: LedgerKind.values.firstWhere(
+          (e) => e.name == (m['kind']=='return'?'returnEntry':m['kind']=='simple-entry'?'simpleEntry':m['kind']),
+          orElse: () => LedgerKind.invoice,
+        ),
+        typeLabel: m['typeLabel'] as String,
+        payment: PaymentMethod.values.firstWhere(
+          (e) => e.name == m['payment'],
+          orElse: () => PaymentMethod.cash,
+        ),
+        direction: EntryDirection.values.firstWhere(
+          (e) => e.name == m['direction'],
+          orElse: () => EntryDirection.debit,
+        ),
+        amount: (m['amount'] as num).toDouble(),
+        currency: CurrencyCode.values.firstWhere(
+          (e) => e.name == m['currency'],
+          orElse: () => CurrencyCode.sar,
+        ),
+        exchangeRate: (m['exchangeRate'] as num?)?.toDouble() ?? 1.0,
+        details: (m['details'] as String?) ?? '',
+        documentNumber: (m['documentNumber'] as String?) ?? '',
+        warehouseId: (m['warehouseId'] as String?) ?? 'wh_1',
+        warehouseName: (m['warehouseName'] as String?) ?? 'المخزن الرئيسي',
+        expenseCategory: (m['expenseCategory'] as String?) ?? '',
+        entryNumber: (m['entryNumber'] as int?) ?? 1,
+        deleted: (m['deleted'] as int? ?? 0) == 1,
+        entryDate: (m['entryDate'] as String?) ?? '',
+      );
+
+  Map<String, Object?> _warehouseToMap(WarehouseRecord w) => {
+        'id': w.id,
+        'name': w.name,
+        'details': w.details,
+        'isDefault': w.isDefault ? 1 : 0,
+      };
+
+  WarehouseRecord _warehouseFromMap(Map<String, Object?> m) => WarehouseRecord(
+        id: m['id'] as String,
+        name: m['name'] as String,
+        details: (m['details'] as String?) ?? '',
+        isDefault: (m['isDefault'] as int? ?? 0) == 1,
+      );
+
+  Map<String, Object?> _inventoryToMap(InventoryItemRecord i) => {
+        'id': i.id,
+        'name': i.name,
+        'unit': i.unit,
+        'quantity': i.quantity,
+        'avgCost': i.avgCost,
+        'warehouseId': i.warehouseId,
+        'minThreshold': i.minThreshold,
+        'sku': i.sku,
+      };
+
+  InventoryItemRecord _inventoryFromMap(Map<String, Object?> m) => InventoryItemRecord(
+        id: m['id'] as String,
+        name: m['name'] as String,
+        unit: m['unit'] as String,
+        quantity: (m['quantity'] as num).toDouble(),
+        avgCost: (m['avgCost'] as num).toDouble(),
+        warehouseId: (m['warehouseId'] as String?) ?? 'wh_1',
+        minThreshold: (m['minThreshold'] as num?)?.toDouble() ?? 25,
+        sku: (m['sku'] as String?) ?? '',
+      );
+}
+).hasMatch(serverRevision)) {
+      throw ArgumentError('Invalid server revision');
+    }
     final db = await database;
     await db.transaction((txn) async {
       final rows = await txn.query('sync_outbox',
