@@ -1,0 +1,46 @@
+{
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "versionCode": 1149,
+  "versionName": "1.0.149",
+  "targetSdk": 36,
+  "minSdk": 24,
+  "debuggable": false,
+  "bundleAlignment": "PAGE_ALIGNMENT_16K",
+  "libraries": [
+    {
+      "name": "base/lib/arm64-v8a/libapp.so",
+      "loadAlignments": [
+        65536,
+        65536,
+        65536
+      ]
+    },
+    {
+      "name": "base/lib/arm64-v8a/libflutter.so",
+      "loadAlignments": [
+        65536,
+        65536,
+        65536,
+        65536
+      ]
+    },
+    {
+      "name": "base/lib/x86_64/libapp.so",
+      "loadAlignments": [
+        65536,
+        65536,
+        65536
+      ]
+    },
+    {
+      "name": "base/lib/x86_64/libflutter.so",
+      "loadAlignments": [
+        65536,
+        65536,
+        65536,
+        65536
+      ]
+    }
+  ],
+  "scope": "Static bundle/ELF validation, not execution on a 16 KB device"
+}

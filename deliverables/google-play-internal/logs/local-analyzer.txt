@@ -1,0 +1,3 @@
+flutter pub get --offline: PASS using existing /workspace/toolchains/pub-cache.
+flutter analyze --no-pub --no-fatal-infos: exit 0; 153 existing informational findings, no warning/error diagnostics.
+Initial --no-pub analysis before package resolution failed due to absent package_config; resolved without dependency source changes.

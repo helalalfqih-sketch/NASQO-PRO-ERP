@@ -1,0 +1,37 @@
+11-26 17:32:30.214  3812 22371 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:32:30.214  3812 22371 E ActivityManager:   48% 3812/system_server: 21% user + 26% kernel / faults: 3588 minor
+11-26 17:32:30.214  3812 22371 E ActivityManager:  +0% 22268/com.google.android.gms: 0% user + 0% kernel
+11-26 17:34:04.509  3812 22544 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:34:04.509  3812 22544 E ActivityManager:   55% 3812/system_server: 23% user + 31% kernel / faults: 9265 minor
+11-26 17:34:04.509  3812 22544 E ActivityManager:  +0% 22381/com.google.android.gms: 0% user + 0% kernel
+11-26 17:35:09.999  3812 22670 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:35:09.999  3812 22670 E ActivityManager:   52% 3812/system_server: 23% user + 28% kernel / faults: 5792 minor
+11-26 17:35:09.999  3812 22670 E ActivityManager:  +0% 22557/com.google.android.gms: 0% user + 0% kernel
+11-26 17:36:18.856  3812 22836 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:36:18.856  3812 22836 E ActivityManager:   82% 22680/com.google.android.gms: 44% user + 37% kernel / faults: 4583 minor
+11-26 17:36:18.856  3812 22836 E ActivityManager:   48% 3812/system_server: 20% user + 27% kernel / faults: 432 minor
+11-26 17:36:52.117  3812 22921 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:36:52.117  3812 22921 E ActivityManager:   52% 3812/system_server: 21% user + 30% kernel / faults: 2861 minor
+11-26 17:36:52.117  3812 22921 E ActivityManager:  +0% 22843/com.google.android.gms: 0% user + 0% kernel
+11-26 17:37:29.102  3812 23041 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:37:29.102  3812 23041 E ActivityManager:   36% 3812/system_server: 15% user + 21% kernel / faults: 1682 minor
+11-26 17:37:29.102  3812 23041 E ActivityManager:  +0% 22927/com.google.android.gms: 0% user + 0% kernel
+11-26 17:38:02.133  3812 23118 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:38:02.133  3812 23118 E ActivityManager:   53% 3812/system_server: 21% user + 32% kernel / faults: 3796 minor
+11-26 17:38:02.133  3812 23118 E ActivityManager:  +0% 23053/com.google.android.gms: 0% user + 0% kernel
+11-26 17:38:39.093  3812 23189 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 17:38:39.093  3812 23189 E ActivityManager:   60% 3812/system_server: 26% user + 34% kernel / faults: 4286 minor
+11-26 17:38:39.093  3812 23189 E ActivityManager:  +0% 23124/com.google.android.gms: 0% user + 0% kernel
+11-26 21:02:54.579  3812 25334 E ActivityManager: Load: 0.0 / 0.0 / 0.0
+11-26 21:02:54.579  3812 25334 E ActivityManager:   26% 3812/system_server: 13% user + 12% kernel / faults: 9435 minor
+11-26 21:02:54.579  3812 25334 E ActivityManager:   5.9% 23197/com.google.android.gms: 3.2% user + 2.7% kernel / faults: 1974 minor
+11-26 21:02:54.580  3812 25334 E ActivityManager:  +0% 25279/com.indexesstore.nasqo_pro_erp: 0% user + 0% kernel
+11-26 21:50:48.102  3812 26216 E ActivityManager: ANR in com.indexesstore.nasqo_pro_erp (com.indexesstore.nasqo_pro_erp/.MainActivity)
+11-26 21:50:48.102  3812 26216 E ActivityManager: Reason: Input dispatching timed out (d7bf60a com.indexesstore.nasqo_pro_erp/com.indexesstore.nasqo_pro_erp.MainActivity (server) is not responding. Waited 5001ms for FocusEvent(hasFocus=true))
+11-26 21:50:48.102  3812 26216 E ActivityManager: Load: 7.78 / 2.36 / 1.17
+11-26 21:50:48.102  3812 26216 E ActivityManager:   39% 3812/system_server: 15% user + 23% kernel / faults: 7295 minor
+11-26 21:50:48.102  3812 26216 E ActivityManager:   30% 23197/com.google.android.gms: 18% user + 12% kernel / faults: 688 minor
+11-26 21:50:48.102  3812 26216 E ActivityManager:   26% 26134/com.indexesstore.nasqo_pro_erp: 11% user + 14% kernel / faults: 11688 minor
+11-26 21:50:48.103  3812 26216 E ActivityManager:   96% 3812/system_server: 39% user + 56% kernel / faults: 322 minor
+11-26 21:50:48.103  3812 26216 E ActivityManager:   24% 23197/com.google.android.gms: 15% user + 9.3% kernel / faults: 55 minor
+11-26 21:50:48.103  3812 26216 E ActivityManager:   15% 26134/com.indexesstore.nasqo_pro_erp: 7.8% user + 7.8% kernel / faults: 11 minor
