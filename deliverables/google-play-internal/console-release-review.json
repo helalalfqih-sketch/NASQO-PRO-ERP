@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-26",
+  "timezone": "Asia/Aden",
+  "source": "User-provided Google Play Console internal release review page text",
+  "directConsoleInspection": false,
+  "versionCode": 1149,
+  "versionName": "1.0.149",
+  "minSdk": 24,
+  "targetSdk": 36,
+  "bundleUploadConfirmed": true,
+  "blockingErrorsReported": 0,
+  "warnings": [
+    {
+      "code": "NO_TESTERS_SELECTED",
+      "message": "Release unavailable to users until testers are selected",
+      "resolved": false
+    },
+    {
+      "code": "NATIVE_DEBUG_SYMBOLS_MISSING",
+      "message": "Native debug symbols were not uploaded; Google recommends them for crash and ANR diagnosis",
+      "resolved": false
+    }
+  ],
+  "releaseNotesPresent": true,
+  "nativeSymbolArchiveAvailableInBuildArtifacts": false,
+  "internalRolloutConfirmed": false,
+  "testerSelectionConfirmed": false,
+  "playInstalledUpgradeTested": false
+}

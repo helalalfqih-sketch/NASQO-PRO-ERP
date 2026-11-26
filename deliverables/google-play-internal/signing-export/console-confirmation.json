@@ -11,7 +11,8 @@
   "bundleVersionName": "1.0.149",
   "bundleVersionCode": 1149,
   "bundleSha256": "8f7d59d4dcde6d5c4fbdeaf869cd50e319877f20ffccd80332249477b5abad26",
-  "bundleUploadConfirmed": false,
+  "bundleUploadConfirmed": true,
   "internalRolloutConfirmed": false,
-  "playInstalledUpgradeTested": false
+  "playInstalledUpgradeTested": false,
+  "bundleUploadEvidence": "../console-release-review.json"
 }
