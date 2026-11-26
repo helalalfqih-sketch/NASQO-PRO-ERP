@@ -10,6 +10,15 @@ class StockQuantityApprovalState {
     for(final r in await db.query('erp_state',where:'stateKey GLOB ?',whereArgs:['$prefix*']))
       (r['stateKey'] as String).substring(prefix.length):Map<String,dynamic>.from(jsonDecode(r['payloadJson'] as String) as Map),
   };
+  /// Read already-validated posting balances in one query for large catalogs.
+  /// Posting and backup restore use pending() to verify the entire chain.
+  static Future<Map<String,double>> purchaseValues(DatabaseExecutor db)async => {
+    for(final r in await db.rawQuery('''SELECT l.item_id,l.after_value FROM stock_posting_lines l
+      JOIN (SELECT item_id,MAX(rowid) AS last_row FROM stock_posting_lines GROUP BY item_id) latest ON latest.last_row=l.rowid
+      JOIN legacy_unverified_stock u ON u.item_id=l.item_id
+      JOIN erp_state a ON a.stateKey=?||l.item_id''',[prefix]))
+      r['item_id'] as String:(r['after_value'] as num).toDouble()/100,
+  };
   /// Purchases have their own known acquisition value even when the approved
   /// opening quantity has no approved cost. Never average that opening at zero.
   static Future<PendingPurchaseBalance?> pending(DatabaseExecutor db,String id,

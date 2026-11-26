@@ -234,6 +234,7 @@ class LegacyOperationalRestore {
     final unverified=(await db.query('legacy_unverified_stock',columns:['item_id'])).map((r)=>r['item_id']).toSet();
     final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o};
     final quantityApprovals=await StockQuantityApprovalState.read(db);
+    final purchaseValues=await StockQuantityApprovalState.purchaseValues(db);
     final approvedWarehouses=<String,Set<String>>{};
     for(final o in openings.values){approvedWarehouses.putIfAbsent(o['source_item_id'] as String,()=> <String>{}).add(o['warehouse_id'] as String);}
     for(final o in quantityApprovals.values){approvedWarehouses.putIfAbsent(o['source_item_id'] as String,()=> <String>{}).add(o['warehouse_id'] as String);}
@@ -285,8 +286,7 @@ class LegacyOperationalRestore {
           row['quantityUnverified']=false;
           row['costUnverified']=unverified.contains(row['id']);
           if(row['costUnverified']==true){
-            final purchases=await StockQuantityApprovalState.pending(db,row['id'] as String);
-            row['approvedStockValue']=(purchases?.valueMinor??0)/100;
+            row['approvedStockValue']=purchaseValues[row['id']]??0;
             row['unvaluedOpeningQuantity']=qa['quantity'];
           }
           row['legacyCatalogCost']=old['avgCost'];

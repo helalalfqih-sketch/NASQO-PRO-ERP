@@ -318,6 +318,7 @@ test("4. multi-line native invoice persistence, cashbox mapping, currency-scoped
 
     const priceStats = getProductPriceStats(db, DEFAULT_WORKSPACE_ID, item.id);
     assert.equal(priceStats.lastPrice, 1500);
+    assert.equal(priceStats.lastPurchasePrice, 1500);
     assert.equal(priceStats.minPrice, 1500);
     assert.equal(priceStats.maxPrice, 1500);
 

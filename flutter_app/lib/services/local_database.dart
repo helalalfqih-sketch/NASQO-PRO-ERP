@@ -465,11 +465,7 @@ class LocalDatabase {
     final ledRows = await db.query('ledger_entries', orderBy: 'entryNumber DESC');
     final whRows = await db.query('warehouses');
     final invRows = await db.query('inventory_items');
-    final approvedValues=<String,double>{};
-    for(final id in (await StockQuantityApprovalState.read(db)).keys){
-      final p=await StockQuantityApprovalState.pending(db,id);
-      if(p!=null)approvedValues[id]=p.valueMinor/100;
-    }
+    final approvedValues=await StockQuantityApprovalState.purchaseValues(db);
     final metaRows = await db.query('erp_state', where: 'stateKey = ?', whereArgs: ['settings']);
     final prefsRows = await db.query('erp_state',
         where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
