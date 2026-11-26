@@ -1,0 +1,14 @@
+{
+  "runId": 45891984649,
+  "appSourceSha": "f2b2d8a6ea7a04f2203d200e0af924430745b75f",
+  "versionCode": 1153,
+  "upgrade": "PASS",
+  "navigation": "PASS",
+  "catalog": "BLOCKED_BY_TEST_SELECTOR",
+  "failure": "Visible control missing: اسم الصنف",
+  "observedCause": "Android EditText has blank text/content-desc and exposes إسم الصنف in hint. The selector ignored hint.",
+  "correctedHarnessSha": "d2f258f6c302348b9e519e60367e9a58cd476f60",
+  "retryRunId": 45893650334,
+  "rebuild": false,
+  "visualObservation": "Catalog name field is visible. Some existing form rows extend to the left screen edge; this attempt is not full catalog visual acceptance."
+}
