@@ -1,0 +1,70 @@
+[WebServer] (node:17143) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17156) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:17180) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 320px (710ms)
+(node:17260) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 616px (544ms)
+
+
+  1) tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 320px ────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 616
+    Received: 0
+
+      12 |     await page.goto("/tests/hybrid-viewport-fixture.html");
+      13 |     const bounds = await page.getByTestId("hybrid-viewport").boundingBox();
+    > 14 |     expect(bounds?.height).toBe(viewport.height);
+         |                            ^
+      15 |     await expect(page.getByRole("heading", { name: "Synthetic home" })).toBeVisible();
+      16 |     await page.getByRole("button", { name: "Open settings" }).click();
+      17 |     await expect(page.getByRole("heading", { name: "Synthetic settings" })).toBeVisible();
+        at /workspace/NASQO-webview83-fix/tests/hybrid-viewport.spec.ts:14:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    deliverables/batch1/browser-artifacts/hybrid-viewport-viewport-a-cafcc-usable-without-dvh-at-320px/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    deliverables/batch1/browser-artifacts/hybrid-viewport-viewport-a-cafcc-usable-without-dvh-at-320px/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: deliverables/batch1/browser-artifacts/hybrid-viewport-viewport-a-cafcc-usable-without-dvh-at-320px/error-context.md
+
+  2) tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 616px ────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 320
+    Received: 0
+
+      12 |     await page.goto("/tests/hybrid-viewport-fixture.html");
+      13 |     const bounds = await page.getByTestId("hybrid-viewport").boundingBox();
+    > 14 |     expect(bounds?.height).toBe(viewport.height);
+         |                            ^
+      15 |     await expect(page.getByRole("heading", { name: "Synthetic home" })).toBeVisible();
+      16 |     await page.getByRole("button", { name: "Open settings" }).click();
+      17 |     await expect(page.getByRole("heading", { name: "Synthetic settings" })).toBeVisible();
+        at /workspace/NASQO-webview83-fix/tests/hybrid-viewport.spec.ts:14:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    deliverables/batch1/browser-artifacts/hybrid-viewport-viewport-a-b5fad-usable-without-dvh-at-616px/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    deliverables/batch1/browser-artifacts/hybrid-viewport-viewport-a-b5fad-usable-without-dvh-at-616px/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: deliverables/batch1/browser-artifacts/hybrid-viewport-viewport-a-b5fad-usable-without-dvh-at-616px/error-context.md
+
+  2 failed
+    tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 320px ─────
+    tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 616px ─────

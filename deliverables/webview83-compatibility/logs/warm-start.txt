@@ -1,0 +1,8 @@
+Starting: Intent { cmp=com.indexesstore.nasqo_pro_erp/.MainActivity }
+Warning: Activity not started, its current task has been brought to the front
+Status: ok
+LaunchState: HOT
+Activity: com.indexesstore.nasqo_pro_erp/.MainActivity
+TotalTime: 1575
+WaitTime: 1720
+Complete
