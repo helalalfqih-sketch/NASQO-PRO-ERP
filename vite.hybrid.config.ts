@@ -60,6 +60,10 @@ export default defineConfig({
   },
   plugins: [nasqoHybridIsolationPlugin(), react()],
   build: {
+    // Android's API level does not guarantee an updated WebView. Keep the
+    // offline bundle parseable by the WebView 83 used by our Android test device.
+    target: ["es2020", "chrome83"],
+    cssTarget: "chrome83",
     outDir: "dist/hybrid",
     emptyOutDir: true,
     assetsDir: "assets",

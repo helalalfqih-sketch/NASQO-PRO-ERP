@@ -1,0 +1,12 @@
+11-26 21:16:39.297 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=75db0e24-dc98-495c-8835-f3f7dc93a204 event=activity-created savedState=false
+11-26 21:16:39.359 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=75db0e24-dc98-495c-8835-f3f7dc93a204 event=activity-resumed 
+11-26 21:16:50.371 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=webview-created 
+11-26 21:17:46.035 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=page-finished loads=1
+11-26 21:19:56.927 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=75db0e24-dc98-495c-8835-f3f7dc93a204 event=activity-paused 
+11-26 21:19:57.032 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=flutter-inactive loads=1
+11-26 21:20:01.128 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=flutter-hidden loads=1
+11-26 21:20:01.148 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=flutter-paused loads=1
+11-26 21:20:12.207 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=75db0e24-dc98-495c-8835-f3f7dc93a204 event=activity-resumed 
+11-26 21:20:13.774 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=flutter-hidden loads=1
+11-26 21:20:13.842 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=flutter-inactive loads=1
+11-26 21:20:14.265 25652 25652 I NASQO_LIFECYCLE: process=66c6cbf1-1639-4add-a484-656682f6f33a instance=009930c0-f5fe-416a-8f86-555173691960 event=flutter-resumed loads=1

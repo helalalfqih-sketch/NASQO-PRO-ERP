@@ -1,0 +1,15 @@
+NASQO-UI-INVENTORY-AR.md
+deliverables/webview83-compatibility/REPORT-AR.md
+package-lock.json
+package.json
+scripts/build-hybrid.mjs
+src/hybrid/hybrid.css
+src/hybrid/mobileAdapter.tsx
+src/legacy/unifiedView.ts
+tests/hybrid-back-resume.spec.ts
+tests/hybrid-viewport-fixture.html
+tests/hybrid-viewport-fixture.tsx
+tests/hybrid-viewport.spec.ts
+tests/legacy-invoice-preview.test.ts
+tests/playwright.hybrid-back.config.ts
+vite.hybrid.config.ts

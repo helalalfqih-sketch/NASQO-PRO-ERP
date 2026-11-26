@@ -1,0 +1,21 @@
+[WebServer] (node:17469) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17482) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 10 tests using 1 worker
+
+(node:17506) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/hybrid-back-resume.spec.ts:24:1 › one correlated host back returns exactly one screen; home alone authorizes confirmation (1.4s)
+  ✓   2 tests/hybrid-back-resume.spec.ts:38:1 › nested React overlay is consumed before its menu and supplier route (1.2s)
+  ✓   3 tests/hybrid-back-resume.spec.ts:53:1 › re-delivery of one request never pops another screen (655ms)
+  ✓   4 tests/hybrid-back-resume.spec.ts:66:1 › real account combobox consumes back before its containing form layer (1.1s)
+  ✓   5 tests/hybrid-back-resume.spec.ts:81:1 › two distinct rapid presses do not skip an additional route or request exit (723ms)
+  ✓   6 tests/hybrid-back-resume.spec.ts:95:1 › uncorrelated host events cannot pop or grant home exit (513ms)
+  ✓   7 tests/hybrid-back-resume.spec.ts:102:1 › missing native reply transport never leaves the current document (5.0s)
+  ✓   8 tests/hybrid-back-resume.spec.ts:116:1 › visible keyboard consumes back before a route and preserves entered text (749ms)
+  ✓   9 tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 320px (438ms)
+  ✓  10 tests/hybrid-viewport.spec.ts:4:3 › viewport and footer remain usable without dvh at 616px (401ms)
+
+  10 passed (14.8s)

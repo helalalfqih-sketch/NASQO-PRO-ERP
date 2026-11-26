@@ -1,0 +1,3 @@
+2026-11-26T18:19:24.7882477Z   script: bash scripts/verify-android-release-upgrade.sh
+2026-11-26T18:21:55.6959173Z Artifact nasqo-signed-upgrade-evidence.zip successfully finalized. Artifact ID 15144822381
+2026-11-26T18:21:55.6959933Z Artifact nasqo-signed-upgrade-evidence has been successfully uploaded! Final size is 846041 bytes. Artifact ID is 15144822381

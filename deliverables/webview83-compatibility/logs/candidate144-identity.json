@@ -1,0 +1,17 @@
+{
+  "sourceSha": "1825c4063b8cde797da45d2f02fc5f71994e0249",
+  "runId": 45873463785,
+  "artifactId": 15143942026,
+  "versionName": "1.0.144",
+  "versionCode": 1144,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "certificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "apkSha256": "1cdd44f1a3d1ae13a2073c9145685f8dc4785e9096b680ac2b691281573790e2",
+  "apkBytes": 59671326,
+  "viewportFallbackPresentInApk": true,
+  "uidBefore": 10169,
+  "uidAfter": 10169,
+  "nativeAcceptance": "passed: startup, settings, Home/resume, Back to home, exit confirmation/cancel",
+  "githubUpgradeAttempt": 2,
+  "githubUpgradeResult": "success"
+}

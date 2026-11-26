@@ -1,0 +1,12 @@
+{
+  "sourceSha": "b69233cc166c4e5c9e5182c70ded6d8e29460a48",
+  "runId": 45871658415,
+  "versionName": "1.0.143",
+  "versionCode": 1143,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "certificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "apkSha256": "87f44c39caf4e1c4931adc942cf1c5d47a7f1e16de7f4dd49d919f926c1aa4f0",
+  "uidBefore": 10169,
+  "uidAfter": 10169,
+  "acceptance": "rejected: collapsed viewport after successful JS bootstrap"
+}
