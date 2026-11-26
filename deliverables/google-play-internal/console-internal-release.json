@@ -1,0 +1,19 @@
+{
+  "confirmationDate": "2026-11-26",
+  "source": "User-provided Google Play Console internal track releases page after Save and publish",
+  "directConsoleInspection": false,
+  "packageName": "com.indexesstore.nasqo_pro_erp",
+  "versionName": "1.0.149",
+  "versionCode": 1149,
+  "releaseStatusReported": "متاح للمختبِرين الداخليين",
+  "releaseDateDisplayed": "26 نوفمبر 10:54 م",
+  "internalRolloutConfirmed": true,
+  "trackSummaryReported": "غير نشط",
+  "trackActiveConfirmed": false,
+  "temporaryStoreName": "com.indexesstore.nasqo_pro_erp (unreviewed)",
+  "reviewStatusReported": "لم تتم المراجعة",
+  "testerSelectionConfirmed": false,
+  "optInLinkConfirmed": false,
+  "playInstalledUpgradeTested": false,
+  "publicProductionReleaseConfirmed": false
+}

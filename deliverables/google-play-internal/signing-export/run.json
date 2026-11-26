@@ -8,6 +8,7 @@
   "encryptedExportOnly": true,
   "playImportConfirmed": true,
   "playImportEvidence": "console-confirmation.json",
-  "playRolloutConfirmed": false,
-  "playUpgradeTested": false
+  "playRolloutConfirmed": true,
+  "playUpgradeTested": false,
+  "playRolloutEvidence": "../console-internal-release.json"
 }
