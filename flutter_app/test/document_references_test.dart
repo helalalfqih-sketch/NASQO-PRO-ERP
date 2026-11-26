@@ -27,6 +27,7 @@ void main(){test('document references validate all hierarchy levels and survive 
  await expectLater(settings.save(workspace,{'referenceDefaults':{...prefs,...patch}}),throwsArgumentError);expect(await LocalBackupRestore(local).exportNative(),orderedEquals(before));}
  await settings.save(workspace,{'companyName':'Synthetic company'});expect((await LocalWorkspaceSettings.read(db))['referenceDefaults'],prefs);
  await settings.save(workspace,{'referenceDefaults':{...prefs,'accountCashboxes':<String,dynamic>{}}});expect((await LocalWorkspaceSettings.read(db))['referenceDefaults']['accountCashboxes'],isEmpty);
+ expect((await db.query('inventory_items')).map((r)=>r['id']),contains(item));
  expect(jsonEncode(await db.query('inventory_items')),beforeItems);expect(jsonEncode(await db.query('accounts')),beforeAccounts);
  final file=File('${dir.path}/synthetic.back');await file.writeAsBytes(before);
  final candidate=await LocalBackupRestore(local).inspect(file,'synthetic.back');await LocalBackupRestore(local).restoreNative(candidate,replacementSha:sha256.convert(await LocalBackupRestore(local).exportNative()).toString());
