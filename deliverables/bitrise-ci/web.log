@@ -1,0 +1,176 @@
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.hirok.io
+npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.hirok.io
+
+added 596 packages in 16s
+npm warn install-scripts 6 packages have install scripts not yet covered by allowScripts:
+npm warn install-scripts   esbuild@0.18.20 (postinstall: node install.js)
+npm warn install-scripts   @firebase/util@1.15.3 (postinstall: node ./postinstall.js)
+npm warn install-scripts   core-js@3.51.0 (postinstall: node -e "try{require('./postinstall')}catch(e){}")
+npm warn install-scripts   esbuild@0.25.12 (postinstall: node install.js)
+npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+npm warn install-scripts   protobufjs@7.6.6 (postinstall: node scripts/postinstall)
+npm warn install-scripts
+npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+
+> nasqo-pro-mobile@0.1.0 check:runtime
+> node scripts/check-mobile-runtime.mjs
+
+Mobile runtime integrity check passed (28 protected files).
+Public directory backup guard: PASS
+
+> nasqo-pro-mobile@0.1.0 sync:flutter-hybrid
+> node scripts/sync-hybrid-to-flutter.mjs
+
+[sync-flutter-hybrid] Building offline React hybrid bundle first...
+[hybrid-build] Building offline React bundle for Flutter Android WebView...
+vite v8.1.3 building client environment for production...
+[2Ktransforming...✓ 804 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/hybrid/hybrid.html                                                          1.05 kB │ gzip:   0.55 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-700-normal-C7GcWn11.woff       5.08 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-400-normal-BeVLg08x.woff       5.10 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-500-normal-eJxPnL1P.woff       5.11 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-600-normal-DT29Q8HW.woff       5.12 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-500-normal-Ck_W4G78.woff2      6.54 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-700-normal-BSbyEp0V.woff2      6.56 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-400-normal-BpLfq-63.woff2      6.65 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-ext-600-normal-DjDAeNQD.woff2      6.68 kB
+dist/hybrid/assets/cairo-latin-ext-800-normal-ChnkP8hn.woff2                     7.42 kB
+dist/hybrid/assets/cairo-latin-ext-700-normal-Cscux539.woff2                     7.46 kB
+dist/hybrid/assets/cairo-latin-ext-600-normal-DuRnqffh.woff2                     7.48 kB
+dist/hybrid/assets/cairo-latin-ext-600-normal-DAfLYaOC.woff                     10.24 kB
+dist/hybrid/assets/cairo-latin-ext-700-normal-htXca11Z.woff                     10.25 kB
+dist/hybrid/assets/cairo-latin-ext-800-normal-RObK5hVW.woff                     10.25 kB
+dist/hybrid/assets/cairo-arabic-800-normal-G1qvPr6G.woff2                       13.88 kB
+dist/hybrid/assets/cairo-arabic-600-normal-rkrvveqO.woff2                       13.89 kB
+dist/hybrid/assets/cairo-arabic-700-normal-D3nDedWX.woff2                       13.95 kB
+dist/hybrid/assets/cairo-latin-600-normal-mGS0uvCM.woff2                        15.28 kB
+dist/hybrid/assets/cairo-latin-700-normal-C3GYtKbV.woff2                        15.28 kB
+dist/hybrid/assets/cairo-latin-800-normal-BBdTpBXf.woff2                        15.32 kB
+dist/hybrid/assets/cairo-arabic-700-normal-CyOqhaeK.woff                        17.26 kB
+dist/hybrid/assets/cairo-arabic-800-normal-CVTPwINa.woff                        17.30 kB
+dist/hybrid/assets/cairo-arabic-600-normal-B3EOalmC.woff                        17.33 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-400-normal-CFZh1unN.woff          17.51 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-700-normal-Cl4F7CZR.woff          17.78 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-500-normal-BletK1Hp.woff          18.64 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-600-normal-Dk5eISD_.woff          18.88 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-400-normal-Bo5KPYvw.woff2         19.16 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-700-normal-BzSf6GNr.woff2         19.50 kB
+dist/hybrid/assets/cairo-latin-600-normal-buYOP1M3.woff                         19.68 kB
+dist/hybrid/assets/cairo-latin-700-normal-6fcUy4Rc.woff                         19.74 kB
+dist/hybrid/assets/cairo-latin-800-normal-ReWrxM5E.woff                         19.75 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-500-normal-Cd6jVIg7.woff2         20.08 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-latin-600-normal-KrqB56Mw.woff2         20.50 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-400-normal-CyU-ddYS.woff2        42.84 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-400-normal-EA1o-u_Q.woff         44.13 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-700-normal-DrtBj6UE.woff2        44.28 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-700-normal-9rXc6cUL.woff         44.36 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-500-normal-C4MQITzh.woff2        45.29 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-600-normal-0pRdybE_.woff2        45.68 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-600-normal-MJZ0liF5.woff         46.78 kB
+dist/hybrid/assets/ibm-plex-sans-arabic-arabic-500-normal-DPXcppbm.woff         46.92 kB
+dist/hybrid/assets/NASQO_PRO_ERP_800_022d325f-47T0dSRW.png                     511.63 kB
+dist/hybrid/assets/style-CG4kj2ZE.css                                          388.85 kB │ gzip:  71.28 kB
+dist/hybrid/assets/chunk-liveSafety-DMCFaBr2.js                                  0.33 kB │ gzip:   0.22 kB
+dist/hybrid/assets/chunk-rolldown-runtime-CNC7AqOf.js                            0.87 kB │ gzip:   0.50 kB
+dist/hybrid/assets/chunk-erpRecordChanges-DmwXSFAh.js                            0.91 kB │ gzip:   0.55 kB
+dist/hybrid/assets/chunk-smartProOfflineAdapter-Dm4izrSJ.js                      5.88 kB │ gzip:   2.07 kB
+dist/hybrid/assets/chunk-jsx-runtime-4LXaqyMR.js                                 7.90 kB │ gzip:   2.99 kB
+dist/hybrid/assets/chunk-ErpHubScreen-CZCttTiY.js                                8.02 kB │ gzip:   2.60 kB
+dist/hybrid/assets/chunk-ErpProcurementScreen-D-Tzgi1h.js                        8.42 kB │ gzip:   3.08 kB
+dist/hybrid/assets/chunk-ErpManufacturingScreen-BrDQFPlR.js                      9.14 kB │ gzip:   3.09 kB
+dist/hybrid/assets/chunk-ErpHrScreen-ZU5_0fcC.js                                 9.84 kB │ gzip:   3.24 kB
+dist/hybrid/assets/chunk-bridge-DxLFozN7.js                                     11.01 kB │ gzip:   3.82 kB
+dist/hybrid/assets/chunk-FullSqliteImportModal-FMjJMpUU.js                      14.60 kB │ gzip:   4.55 kB
+dist/hybrid/assets/chunk-ErpFinanceScreen-OMf-54pv.js                           26.94 kB │ gzip:   6.61 kB
+dist/hybrid/assets/chunk-purify.es-Cu8FNuDu.js                                  28.56 kB │ gzip:  11.43 kB
+dist/hybrid/assets/chunk-ErpCrmPosScreen-DwNcBKSS.js                            29.72 kB │ gzip:   7.83 kB
+dist/hybrid/assets/chunk-QrScannerModal-CeZc6liK.js                            142.44 kB │ gzip:  52.10 kB
+dist/hybrid/assets/chunk-index.es-CDod4sMl.js                                  151.51 kB │ gzip:  48.95 kB
+dist/hybrid/assets/chunk-html2canvas-DL_87MDo.js                               199.57 kB │ gzip:  46.79 kB
+dist/hybrid/assets/nasqo-hybrid-6UKcJxm2.js                                  2,001.02 kB │ gzip: 600.86 kB
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/erp.ts is dynamically imported by src/hybrid/entry.tsx but also statically imported by src/Prototype.tsx, src/components/erp/ErpCrmPosScreen.tsx, src/components/erp/ErpFinanceScreen.tsx, src/components/erp/ErpHrScreen.tsx, src/components/erp/ErpHubScreen.tsx, ..., dynamic import will not move module into another chunk.
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/hybrid/serviceAdapter.ts is dynamically imported by src/utils/exportPdf.ts but also statically imported by src/Prototype.tsx, src/components/CashboxReferenceManager.tsx, src/components/CustomerList.tsx, src/components/FullSqliteImportModal.tsx, src/components/GoogleDriveModal.tsx, ..., dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0mnode_modules/jspdf/dist/jspdf.es.min.js is dynamically imported by src/utils/reportDocument.ts but also statically imported by src/utils/exportPdf.ts, dynamic import will not move module into another chunk.
+
+[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0mnode_modules/xlsx/xlsx.mjs is dynamically imported by src/utils/reportDocument.ts but also statically imported by src/utils/importItemsFile.ts, dynamic import will not move module into another chunk.
+
+✓ built in 1.22s
+[hybrid-build] SUCCESS: 63 files (4267.0 KB) written to dist/hybrid/ with 0 security/offline violations.
+[sync-flutter-hybrid] SUCCESS: Synced & verified 63 files (4267.0 KB) -> flutter_app/assets/web/ (bridge=NasqoHome, protocol=1.0.0)
+✔ 165 USD and 21 SAR remain separate, selected currency/date/search and empty result affect exact rows (44.325368ms)
+✔ XLSX has numeric amount/balance and currency column, genuine OOXML container (42.652117ms)
+✔ ERP diff sends only changed records, preserves revision, rejects whole-store deletion/financial markers (0.982767ms)
+✔ conversion without an approved rate source is refused, not silently 1:1 (0.161662ms)
+✔ formatNasqoBackupFilename matches backup_YYYY.MM.DD_HH.MM.SS.back convention (2.091185ms)
+✔ buildLocalBackupDownloadName preserves .back or .json and appends .back when missing (0.914092ms)
+✔ inspectBackupBytes detects valid JSON .back files, SQLite .back files, and ZIP .back files, and rejects invalid/empty JSON objects (3.827725ms)
+✔ account then group then cashier then system, never arbitrary or incompatible box (1.677701ms)
+✔ workspace SQLite settings reject foreign references atomically; backup remaps all IDs without ledger or stock writes (97.79177ms)
+✔ a recreated store retains a pending ID without storing financial payload (10.490667ms)
+✔ lost acknowledgement, recreated bridge and explicit Save recover by reads only (19.569293ms)
+✔ an absent receipt after timeout blocks resending but not an unrelated document (6.456833ms)
+✔ storage quota denial prevents sending a financial request (2.644372ms)
+✔ a different workspace cannot confirm a saved document with the same ID (2.207889ms)
+✔ a malformed success acknowledgement preserves the pending marker (3.818247ms)
+✔ acknowledged validation rejection permits correcting the same draft (4.155443ms)
+✔ fresh reads recover search, filters, scroll and draft identity without a memory cache (2.094477ms)
+✔ a missing/deleted record truncates restoration before its dependent routes (1.274919ms)
+✔ corrupt/version-mismatched or cross-workspace envelopes fall back safely (0.579244ms)
+✔ schema checks reject malformed UI fields and storage failure never claims success (2.39825ms)
+✔ discard removes only the selected UI draft, without touching records or other workspaces (0.51747ms)
+▶ Hybrid Bridge Contracts & Security Validation
+  ✔ accepts all 12 core commands plus domain commands in strict allowlist (1.435639ms)
+  ✔ rejects unauthorized actions and raw SQL/shell injection keys (0.815784ms)
+  ✔ enforces mandatory idempotencyKey on financial mutations (0.66749ms)
+  ✔ validates inbound responses and rejects malformed or unknown host events (0.462155ms)
+✔ Hybrid Bridge Contracts & Security Validation (5.317143ms)
+▶ NasqoHybridBridge Runtime & Duplicate Prevention
+  ✔ blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST (3.066856ms)
+  ✔ propagates Flutter service errors and timeouts without faking success (35.706117ms)
+  ✔ rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached (0.433195ms)
+✔ NasqoHybridBridge Runtime & Duplicate Prevention (39.838029ms)
+▶ Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ✔ hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge (3.851209ms)
+✔ Hybrid Service Adapter Simulated Flutter Host Round-Trip (4.201404ms)
+▶ Hybrid Routes Canonical Mapping
+  ✔ normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches (0.360744ms)
+✔ Hybrid Routes Canonical Mapping (0.476317ms)
+▶ Offline Hybrid Build Output Integrity (dist/hybrid)
+  ✔ produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code (22.500391ms)
+  ✔ prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge (0.972577ms)
+✔ Offline Hybrid Build Output Integrity (dist/hybrid) (23.622104ms)
+▶ Stage 2 Home Screen Batch 1 Requirements
+  ✔ validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads (0.707317ms)
+  ✔ computes signed multi-currency group balances accurately without mixing currencies (1.521067ms)
+  ✔ blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences (0.920571ms)
+  ✔ supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout (0.937008ms)
+✔ Stage 2 Home Screen Batch 1 Requirements (4.305547ms)
+✔ uses explicit journal legs for stock cost, tax and account reports (3.105278ms)
+▶ Legacy register restoration parity
+  ✔ preserves both original sides in account, statement and group reports, without fictitious counterpart (0.817379ms)
+✔ Legacy register restoration parity (0.901404ms)
+✔ cashbox metadata needs catalog capability and an idempotency key in read-only financial mode (0.582465ms)
+✔ owner-scoped v2 records never overwrite other workspaces, even with same source IDs (27.562819ms)
+✔ version-one IndexedDB snapshot remains readable and is copied only for its owner (4.487366ms)
+✔ empty v1 mirror cannot mask surviving localStorage after older cross-workspace overwrite (4.065898ms)
+✔ read-only startup does not create an empty DB or force a version upgrade (2.253309ms)
+✔ read-only startup reads v1 while a prior tab keeps its v1 connection open (2.636205ms)
+ℹ tests 44
+ℹ suites 7
+ℹ pass 44
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1251.751334
