@@ -694,17 +694,28 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
 
   @override
   Widget build(BuildContext context) {
+    // Android 16 draws transparent system bars over this scaffold. Match icon
+    // contrast to the safe-area background even though the React UI has no AppBar.
+    final barStyle = Theme.of(context).scaffoldBackgroundColor.computeLuminance() > 0.5
+        ? SystemUiOverlayStyle.dark
+        : SystemUiOverlayStyle.light;
     return PopScope<Object?>(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) unawaited(_handleSystemBack());
       },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+      value: barStyle.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+      ),
       child: Scaffold(
       body: SafeArea(
         child: _error!=null
           ? Center(child:Padding(padding:const EdgeInsets.all(18),child:Text(_error!,textAlign:TextAlign.center)))
           : !_backupStateLoaded ? Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/branding/nasqo_logo.png',width:180,height:180,fit:BoxFit.contain),const SizedBox(height:24),const CircularProgressIndicator()])) : AndroidView(
               key:ValueKey(_viewGeneration),viewType:'nasqo/offline_hybrid',onPlatformViewCreated:_attach),
+      ),
       ),
       ),
     );
