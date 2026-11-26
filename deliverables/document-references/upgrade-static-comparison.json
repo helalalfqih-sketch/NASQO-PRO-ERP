@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "errors": [],
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "previousVersionName": "1.0.138",
+  "currentVersionName": "1.0.141",
+  "previousVersionCode": 1138,
+  "currentVersionCode": 1141,
+  "signerCertificateSha256": [
+    "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197"
+  ],
+  "previousApkSha256": "24b199bff5bb065f5f4296d06dd4958a69b51e81ed1994fa07948617ad667350",
+  "currentApkSha256": "79450f26a2e08424fbf109f6a4087756c1f4ec7419eafa701b4fcb8ebe33a361",
+  "limits": "Static downloaded APK verification only; does not prove data retention after a real device upgrade or runtime behavior."
+}

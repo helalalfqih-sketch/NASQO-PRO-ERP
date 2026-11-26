@@ -1,0 +1,29 @@
+{
+  "version": "1.0.141",
+  "versionCode": 1141,
+  "sourceSha": "b597afed1cd9d3a07e7d2483d214c5519830eadc",
+  "buildRun": 45824031255,
+  "artifactId": 15120580056,
+  "apkSha256": "79450f26a2e08424fbf109f6a4087756c1f4ec7419eafa701b4fcb8ebe33a361",
+  "bytes": 59664817,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "certificateSha256": [
+    "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197"
+  ],
+  "flutterTests": 94,
+  "javaScriptTests": 30,
+  "ciBridgeTests": 18,
+  "exactApkUiCases": 13,
+  "protectedFiles": 28,
+  "physicalAndroidUiTested": false,
+  "androidUpgrade": {
+    "result": "PASS",
+    "package": "com.indexesstore.nasqo_pro_erp",
+    "oldCode": 1138,
+    "newCode": 1141,
+    "uidRetained": true,
+    "method": "adb install -r; no uninstall or clear",
+    "scope": "Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow."
+  },
+  "publication": "verified-candidate"
+}
