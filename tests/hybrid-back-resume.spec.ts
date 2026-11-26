@@ -14,6 +14,9 @@ async function results(page: Page) {
 const current = (page: Page) => page.getByTestId("flow-current");
 
 test.beforeEach(async ({ page }) => {
+  // Old Android WebViews do not have Array.prototype.at. Back must still
+  // acknowledge the native request, including after a route has been popped.
+  await page.addInitScript(() => { delete (Array.prototype as any).at; });
   await page.goto("/tests/hybrid-back-fixture.html");
   await expect(current(page).getByRole("heading", { name: "Screen 1", exact: true })).toBeVisible();
 });

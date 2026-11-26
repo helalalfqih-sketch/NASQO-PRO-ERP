@@ -544,7 +544,7 @@ export function FlowStack({
       }
       hybridBridge.notify("goBack", {
         requestId, outcome,
-        currentRoute: outcome === "home" ? "home" : normalizeFlowScreenIdToHybridRoute(stackRef.current.at(-1)?.id ?? ""),
+        currentRoute: outcome === "home" ? "home" : normalizeFlowScreenIdToHybridRoute(stackRef.current[stackRef.current.length - 1]?.id ?? ""),
         stackDepth: stackRef.current.length,
       });
     });

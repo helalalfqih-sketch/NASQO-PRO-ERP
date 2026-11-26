@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "acorn";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -72,6 +73,15 @@ for (const absPath of allFiles) {
 
   if (/\.(html|js|css)$/i.test(relPath)) {
     const text = buf.toString("utf8");
+    // Inspect the emitted chunks, not just our TS: a dependency or a changed
+    // bundler default can otherwise introduce syntax that blanks old WebViews.
+    if (/\.js$/i.test(relPath)) {
+      try {
+        parse(text, { ecmaVersion: 2020, sourceType: "module" });
+      } catch (error) {
+        auditViolations.push(`${relPath}: JavaScript exceeds the ES2020/WebView 83 syntax baseline (${error.message})`);
+      }
+    }
     for (const rule of FORBIDDEN_PATTERNS) {
       if (rule.regex.test(text)) {
         auditViolations.push(`${relPath}: matched forbidden pattern [${rule.label}]`);
@@ -105,6 +115,8 @@ const manifest = {
   offlineReady: true,
   cspEnforced: true,
   mockHostStripped: true,
+  minimumWebViewMajor: 83,
+  javascriptSyntax: "ES2020",
   totalFiles: manifestEntries.length,
   totalBytes,
   builtAtIso: new Date().toISOString(),

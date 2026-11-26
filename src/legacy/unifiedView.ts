@@ -18,7 +18,8 @@ function roleFromEntry(detail: UnifiedInvoiceDetail): DocumentRole {
 
 export function unifiedDetailToLegacyInvoice(detail: UnifiedInvoiceDetail): LegacyInvoice {
   const { entry, lines } = detail;
-  const legacyIdNum = Number(entry.legacyRef?.split(":").at(-1) ?? entry.entryNumber ?? 0);
+  const legacyRefParts = entry.legacyRef?.split(":");
+  const legacyIdNum = Number(legacyRefParts?.[legacyRefParts.length - 1] ?? entry.entryNumber ?? 0);
   const id = Number.isFinite(legacyIdNum) && legacyIdNum > 0 ? legacyIdNum : entry.entryNumber;
   const role = roleFromEntry(detail);
 
