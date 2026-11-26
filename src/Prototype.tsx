@@ -1,3 +1,4 @@
+import { emptyReferenceDefaults, eligibleCashbox, resolveCashbox } from "./utils/documentReferences";
 import { ReferenceManagerDialog } from "./components/ReferenceManagerDialog";
 import { CashboxReferenceManager } from "./components/CashboxReferenceManager";
 import { useReportPreview, reportTotalText, reportSources, useReportSource, buildStatementReport, reportSummaryText, exportReport, type ReportSource, type ReportDocument, outputBytes } from "./utils/reportDocument";
@@ -1521,12 +1522,12 @@ export function AuthenticatedWorkspace({
   const openTransaction = useCallback(
     (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => {
       dismissKeyboard();
-      const targetAccount = account ?? accounts[0];
+      const targetAccount = account ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       setTransactionTarget({ account: targetAccount, editingEntry });
       setOverlay("transaction");
       hybrid.notifyOpenVoucher({ accountId: targetAccount?.id, entryId: editingEntry?.id });
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, workspace, dismissKeyboard, hybrid],
   );
 
   const openAccountCreate = useCallback(
@@ -1561,7 +1562,7 @@ export function AuthenticatedWorkspace({
       dismissKeyboard();
       if (recoverExistingInvoiceDraft()) return;
       const matchingAccount =
-        (defaultCategory ? accounts.find((a) => a.category === defaultCategory) : undefined) ?? accounts[0];
+        accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       const kindOverride =
         defaultCategory === "sales" ? "sale" : defaultCategory === "purchases" ? "purchase" : undefined;
       setInvoiceSeed((value) => ({
@@ -1578,14 +1579,14 @@ export function AuthenticatedWorkspace({
         kindOverride,
       });
     },
-    [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
+    [accounts, workspace, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
 
   const openCashier = useCallback(() => {
     dismissKeyboard();
     if (recoverExistingInvoiceDraft()) return;
     const prefs = workspace?.cashierSettings;
-    setInvoiceSeed(value => ({ account: accounts.find(a => a.id === prefs?.accountId),
+    setInvoiceSeed(value => ({ account: accounts.find(a => a.id === (prefs?.accountId ?? workspace?.referenceDefaults?.accountId)),
       intent: "invoice", kindOverride: "sale", cashier: true, revision: value.revision + 1 }));
     setOverlay("invoice");
   }, [accounts, workspace, dismissKeyboard, recoverExistingInvoiceDraft]);
@@ -1594,7 +1595,7 @@ export function AuthenticatedWorkspace({
     (account?: AccountRecord, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
       if (recoverExistingInvoiceDraft()) return;
-      const targetAccount = account ?? accounts[0];
+      const targetAccount = account ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       const kindOverride = targetAccount ? (targetAccount.category === "sales" ? "sale" : "purchase") : undefined;
       setInvoiceSeed((value) => ({
         account: targetAccount,
@@ -1610,7 +1611,7 @@ export function AuthenticatedWorkspace({
         kindOverride,
       });
     },
-    [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
+    [accounts, workspace, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
 
   const openInvoiceEdit = useCallback(
@@ -2252,7 +2253,7 @@ export function AuthenticatedWorkspace({
       const simple: Record<string, () => FlowScreen> = { shop: shopScreen, warehouses: warehousesScreen,
         "items-catalog": itemsScreen, "daily-journal": dailyJournalScreen,
         "analytics-dashboard": analyticsDashboardScreen, "system-settings": systemSettingsScreen,
-        "cashier-settings": cashierSettingsScreen, "whatsapp-settings": whatsappSettingsScreen };
+        "reference-defaults": referenceDefaultsScreen, "cashier-settings": cashierSettingsScreen, "whatsapp-settings": whatsappSettingsScreen };
       return simple[id]?.() ?? null;
     };
     const restored = readValidatedRoutes(user.uid, (id) => Boolean(resolve(id)));
@@ -2626,12 +2627,12 @@ export function AuthenticatedWorkspace({
       return;
     }
     if (target === "currency") {
-      flowRef.current?.push(currencyScreen(accounts[0]?.id));
+      flowRef.current?.push(currencyScreen());
       return;
     }
     if (target === "quotes" || target === "orders") {
       if (target === "quotes" && hybrid.isHybrid) setOverlay("quotes-list");
-      else openVendorInvoice(accounts[0], target === "quotes" ? "quote" : "order");
+      else openVendorInvoice(undefined, target === "quotes" ? "quote" : "order");
       return;
     }
     if (target === "warehouses") {
@@ -2910,6 +2911,7 @@ export function AuthenticatedWorkspace({
           onNotify={showToast}
         />
         <TransferModal
+          workspace={workspace}
           open={overlay === "transfer"}
           uid={user.uid}
           accounts={accounts}
@@ -6394,12 +6396,15 @@ function InvoiceModal({
 }) {
   const ctx = useWorkspace();
   const cashierPrefs = cashier && !editingEntry ? ctx.workspace?.cashierSettings : undefined;
+  const defaults = useRef(ctx.workspace?.referenceDefaults).current;
+  const initialReferenceAccount = initialAccount ?? ctx.accounts.find(a=>a.id===(cashier ? cashierPrefs?.accountId ?? defaults?.accountId : defaults?.accountId));
+  const initialCurrency = editingEntry?.currency ?? cashierPrefs?.currency ?? initialReferenceAccount?.currency ?? ctx.workspace?.defaultCurrency ?? "ريال";
 
   const [restoredDraft] = useState(() => {
     if (import.meta.env.VITE_NASQO_HYBRID !== "1") return null;
     const saved = readUiState<InvoiceUiDraft | null>(ctx.uid, "invoice-draft", null, isInvoiceUiDraft);
     if (!saved || saved.intent !== intent || saved.editingEntryId !== editingEntry?.id ||
-        saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? (cashier ? "" : ctx.accounts[0]?.id ?? ""))) return null;
+        saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? initialReferenceAccount?.id ?? "")) return null;
     if (!canRestoreInvoiceDraft(saved, ctx)) return null;
     return saved;
   });
@@ -6439,23 +6444,33 @@ function InvoiceModal({
   );
   const [expenseCategory, setExpenseCategory] = useState(restoreField("expenseCategory", editingEntry?.expenseCategory ?? ""));
   const [currency, setCurrency] = useState<CurrencyCode>(
-    restoreField("currency", editingEntry?.currency ?? cashierPrefs?.currency ?? initialAccount?.currency ?? "ريال"),
+    restoreField("currency", initialCurrency),
   );
   const [exchangeRate, setExchangeRate] = useState(
     restoreField("exchangeRate", editingEntry ? String(editingEntry.exchangeRate || 1) : "1"),
   );
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    () => restoreField("cashboxId", editingEntry?.cashboxId ?? (cashier ? cashierPrefs?.cashboxId ?? undefined : ctx.cashboxes[0]?.id)),
+    () => restoredDraft ? restoredDraft.fields.cashboxId as number | undefined : editingEntry ? editingEntry.cashboxId : resolveCashbox(defaults,ctx.cashboxes,initialCurrency,initialReferenceAccount,cashierPrefs?.cashboxId),
   );
   const [warehouseId, setWarehouseId] = useState(
-    restoreField("warehouseId", editingEntry?.warehouseId || (cashier ? cashierPrefs?.warehouseId || "" :
-      ctx.warehouses.find((w) => w.isDefault)?.id ||
-      ctx.warehouses[0]?.id ||
+    restoreField("warehouseId", editingEntry ? editingEntry.warehouseId ?? "" : (cashier ? cashierPrefs?.warehouseId ?? defaults?.warehouseId ?? "" :
+      (defaults ? defaults.warehouseId : ctx.warehouses.find((w) => w.isDefault)?.id) ||
       "")),
   );
   const [accountId, setAccountId] = useState(
-    restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? (cashier ? "" : ctx.accounts[0]?.id ?? "")),
+    restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? initialReferenceAccount?.id ?? ""),
   );
+  const manualCashbox = useRef(Boolean(editingEntry || restoredDraft));
+  const chooseCashbox = (id:number|undefined) => { manualCashbox.current=true;setCashboxId(id); };
+  const chooseAccount = (id:string) => {
+    setAccountId(id);
+    if(!manualCashbox.current) setCashboxId(resolveCashbox(defaults,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id),cashierPrefs?.cashboxId));
+  };
+  const chooseCurrency = (value:CurrencyCode) => {
+    setCurrency(value);
+    if(manualCashbox.current) setCashboxId(eligibleCashbox(ctx.cashboxes,cashboxId,value));
+    else setCashboxId(resolveCashbox(defaults,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId),cashierPrefs?.cashboxId));
+  };
   const [itemSearch, setItemSearch] = useState(restoreField("itemSearch", ""));
   const [quickPage, setQuickPage] = useState(0);
   const quickItems = (cashierPrefs?.quickItemIds ?? []).map(id => ctx.inventory.find(i => i.id === id && i.isActive !== false)).filter((i): i is InventoryItemRecord => Boolean(i));
@@ -6551,12 +6566,6 @@ function InvoiceModal({
       document.removeEventListener("visibilitychange", checkpoint);
     };
   }, [hybridLocal, open, dirty, fieldJson, ctx.uid]);
-
-  useEffect(() => {
-    if (!cashier && !cashboxId && ctx.cashboxes[0]?.id) {
-      setCashboxId(ctx.cashboxes[0].id);
-    }
-  }, [cashier, cashboxId, ctx.cashboxes]);
 
   useEffect(() => {
     if (!open) {
@@ -6671,8 +6680,8 @@ function InvoiceModal({
 
   const invoiceAccounts=(hybridLocal||cashier)&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount):ctx.accounts;
   const invoiceCashboxes=(hybridLocal||cashier)?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
-  const effectiveCashboxId=(hybridLocal||cashier)?(invoiceCashboxes.find(cb=>cb.id===cashboxId)?.id??(cashier?undefined:invoiceCashboxes[0]?.id)):cashboxId;
-  const selectedAccount = invoiceAccounts.find((a) => a.id === accountId) ?? (cashier ? undefined : invoiceAccounts[0]);
+  const effectiveCashboxId=eligibleCashbox(ctx.cashboxes,cashboxId,currency);
+  const selectedAccount = invoiceAccounts.find((a) => a.id === accountId);
   const selectedWarehouse = ctx.warehouses.find((w) => w.id === warehouseId);
   const accountSummary = selectedAccount
     ? computeAccountSummary(selectedAccount, ctx.ledger, currency)
@@ -6944,10 +6953,10 @@ function InvoiceModal({
       return;
     }
 
-    if(cashier && content === "items" && !selectedWarehouse) {
+    if(!editingEntry && !localDraft && !isReturn && content === "items" && !selectedWarehouse) {
       focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر مخزنًا للفاتورة قبل الحفظ."}); return;
     }
-    if(cashier && payment === "cash" && !effectiveCashboxId) {
+    if(!editingEntry && !localDraft && !isReturn && payment === "cash" && !effectiveCashboxId) {
       focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر صندوقًا نقديًا من عملة الفاتورة قبل الحفظ."}); return;
     }
     if(metadataOnly&&editingEntry){
@@ -7344,7 +7353,7 @@ function InvoiceModal({
               value={selectedAccount?.id ?? ""}
               onChange={(nextId) => {
                 if (formError?.field === "account") setFormError(null);
-                setAccountId(nextId);
+                chooseAccount(nextId);
               }}
               preferredCategories={
                 kind === "sale" ? ["sales", "clients", "shop"] : ["purchases", "shop"]
@@ -7360,7 +7369,7 @@ function InvoiceModal({
               listTestId="invoice-account-list"
               addTestId="invoice-account-add"
               invalid={formError?.field === "account"}
-              onAddAccount={()=>ctx.openAccountReference(setAccountId,false,currency)}
+              onAddAccount={()=>ctx.openAccountReference(chooseAccount,false,currency)}
               addAccountAriaLabel="إضافة حساب للفاتورة"
               triggerRef={accountSelectRef}
             />
@@ -7438,7 +7447,7 @@ function InvoiceModal({
                 value={warehouseId}
                 onChange={(e) => setWarehouseId(e.target.value)}
               >
-                {cashier ? <option value="">غير محدد</option> : ctx.warehouses.length === 0 ? <option value="">المخزن الافتراضي</option> : null}
+                <option value="">غير محدد</option>
                 {ctx.warehouses.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
@@ -7446,15 +7455,15 @@ function InvoiceModal({
                 ))}
               </select>
             </label>
-            {payment === "cash" && (cashier || invoiceCashboxes.length > 0) ? (
+            {payment === "cash" ? (
               <label className="invoice-field-box">
                 <span>الصندوق</span>
                 <select
                   aria-label="صندوق النقدية"
                   value={effectiveCashboxId ?? ""}
-                  onChange={(e) => setCashboxId(e.target.value ? Number(e.target.value) : undefined)}
+                  onChange={(e) => chooseCashbox(e.target.value ? Number(e.target.value) : undefined)}
                 >
-                  {cashier ? <option value="">غير محدد</option> : null}
+                  <option value="">غير محدد</option>
                   {invoiceCashboxes.map((cb) => (
                     <option key={cb.id} value={cb.id}>
                       {cb.name}
@@ -7478,7 +7487,7 @@ function InvoiceModal({
               <select
                 aria-label="عملة الفاتورة"
                 value={currency}
-                onChange={(event) => setCurrency(event.target.value as CurrencyCode)}
+                onChange={(event) => chooseCurrency(event.target.value as CurrencyCode)}
               >
                 {ctx.currencyCodes.map((c) => (
                   <option key={c}>{c}</option>
@@ -10594,9 +10603,14 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
       ["buy", "sell"].includes((value as Record<string, string>).mode) && ["account", "cash"].includes((value as Record<string, string>).settlement)));
   const [invalidDraft, setInvalidDraft] = useState(Boolean(originalStoredDraft) && !savedDraft);
   const documentId = useRef(savedDraft?.id ?? `currency_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
-  const [selectedAccountId, setSelectedAccountId] = useState(savedDraft?.selectedAccountId ?? initialAccountId ?? ctx.accounts[0]?.id ?? "");
+  const [selectedAccountId, setSelectedAccountId] = useState(savedDraft?.selectedAccountId ?? initialAccountId ?? ctx.workspace?.referenceDefaults?.accountId ?? "");
   const [fromCurrency, setFromCurrency] = useState<CurrencyCode>((savedDraft?.fromCurrency) ?? ctx.currencyCodes[1] ?? ctx.currencyCodes[0] ?? "ريال");
-  const [toCurrency, setToCurrency] = useState<CurrencyCode>((savedDraft?.toCurrency) ?? ctx.currencyCodes[0] ?? "ريال");
+  const [toCurrency, setToCurrency] = useState<CurrencyCode>((savedDraft?.toCurrency) ?? ctx.workspace?.defaultCurrency ?? "ريال");
+  const defaults=useRef(ctx.workspace?.referenceDefaults).current;
+  const manualBox=useRef(Boolean(savedDraft));
+  const [cashboxId,setCashboxId]=useState<number|undefined>(()=>savedDraft ? (savedDraft.cashboxId ? Number(savedDraft.cashboxId) : undefined) : resolveCashbox(defaults,ctx.cashboxes,toCurrency,ctx.accounts.find(a=>a.id===selectedAccountId)));
+  const chooseAccount=(id:string)=>{setSelectedAccountId(id);if(!manualBox.current)setCashboxId(resolveCashbox(defaults,ctx.cashboxes,toCurrency,ctx.accounts.find(a=>a.id===id)));};
+  const chooseCurrency=(c:CurrencyCode)=>{setToCurrency(c);setCashboxId(manualBox.current?eligibleCashbox(ctx.cashboxes,cashboxId,c):resolveCashbox(defaults,ctx.cashboxes,c,ctx.accounts.find(a=>a.id===selectedAccountId)));};
   const [rate, setRate] = useState((savedDraft?.rate) ?? "530");
   const [amount, setAmount] = useState((savedDraft?.amount) ?? "");
   const [note, setNote] = useState((savedDraft?.note) ?? "");
@@ -10604,7 +10618,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
   const [settlement, setSettlement] = useState<"account" | "cash">((savedDraft?.settlement as "account" | "cash" | undefined) ?? "account");
   const [saving, setSaving] = useState(false);
 
-  const draftFields = { id: documentId.current, selectedAccountId, fromCurrency, toCurrency, rate, amount, note, mode, settlement };
+  const draftFields = { id: documentId.current, selectedAccountId, fromCurrency, toCurrency, rate, amount, note, mode, settlement, cashboxId:cashboxId===undefined?"":String(cashboxId) };
   const draftJson = JSON.stringify(draftFields);
   const initialDraftJson = useRef(draftJson);
   const dirty = Boolean(savedDraft) || initialDraftJson.current !== draftJson;
@@ -10617,7 +10631,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
     () => { if (completed.current) return false; ctx.showToast("تحقّق من نتيجة الحفظ قبل المغادرة."); return true; }, 200);
   useLayoutEffect(() => { if (hybridLocal && dirty && !saving && !completed.current) persist(); }, [draftJson, dirty, hybridLocal]);
 
-  const selectedAccount = ctx.accounts.find((a) => a.id === selectedAccountId) ?? ctx.accounts[0];
+  const selectedAccount = ctx.accounts.find((a) => a.id === selectedAccountId) ;
   const parsedAmount = parseArabicNumber(amount);
   const isSameCurrency = fromCurrency === toCurrency;
   const parsedRate = isSameCurrency ? 1 : Math.max(0.0001, parseArabicNumber(rate) || 1);
@@ -10638,6 +10652,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
       ctx.showToast("أدخل المبلغ واختر الحساب أولًا");
       return;
     }
+    if(settlement==="cash"&&!eligibleCashbox(ctx.cashboxes,cashboxId,toCurrency)){ctx.showToast("اختر صندوقًا من عملة الناتج قبل الحفظ.");return;}
     if (isSameCurrency) {
       triggerHaptic("warning");
       ctx.showToast("اختر عملتين مختلفتين لإتمام عملية صرف العملات (أو أضف عملة من نافذة العملات)");
@@ -10653,6 +10668,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
         kind: "currency",
         typeLabel: mode === "buy" ? "صرف شراء" : "صرف بيع",
         payment: settlement === "cash" ? "cash" : "balance",
+        ...(settlement==="cash" ? {cashboxId} : {}),
         direction: mode === "buy" ? "credit" : "debit",
         amount: converted,
         currency: toCurrency,
@@ -10686,7 +10702,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
           <AccountSelectCombobox
             accounts={ctx.accounts}
             value={selectedAccount?.id ?? ""}
-            onChange={(nextId) => setSelectedAccountId(nextId)}
+            onChange={chooseAccount}
             label="الحساب"
             placeholder="اختر الحساب"
             searchPlaceholder="ابحث عن الاسم هنا..."
@@ -10742,7 +10758,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
                 className="currency-rate-select"
                 aria-label="إلى عملة"
                 value={toCurrency}
-                onChange={(e) => setToCurrency(e.target.value as CurrencyCode)}
+                onChange={(e) => chooseCurrency(e.target.value as CurrencyCode)}
               >
                 {ctx.currencyCodes.map((c) => (
                   <option key={c}>{c}</option>
@@ -10782,6 +10798,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
               <input type="radio" name="currency-mode" checked={mode === "sell"} onChange={() => setMode("sell")} /> بيع
             </label>
           </div>
+          {settlement==="cash"?<label className="invoice-field-box"><span>الصندوق — {toCurrency}</span><select aria-label="صندوق المصارفة" value={cashboxId??""} onChange={e=>{manualBox.current=true;setCashboxId(e.target.value?Number(e.target.value):undefined);}}><option value="">غير محدد</option>{ctx.cashboxes.filter(b=>eligibleCashbox(ctx.cashboxes,b.id,toCurrency)!==undefined).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>:null}
           <div className="inline-radio-group settlement-group" aria-label="طريقة المصادقة">
             <label className={settlement === "account" ? "selected" : ""}>
               <input
@@ -11012,6 +11029,7 @@ function AppDrawer({
         { label: "الطلبيات", icon: FilePlusIcon, target: "orders" },
         { label: "سلة المحذوفات", icon: TrashIcon, target: "trash" },
         { label: "الكاشير", icon: ReaderIcon, action: () => { onClose(); ctx.openCashier(); } },
+        { label: "مراجع المستندات الافتراضية", icon: GearIcon, action: () => { onClose(); ctx.flowRef.current?.push(referenceDefaultsScreen()); } },
         { label: "إعدادات الكاشير", icon: GearIcon, action: () => { onClose(); ctx.flowRef.current?.push(cashierSettingsScreen()); } },
         { label: "الإعدادات", icon: GearIcon, target: "settings" },
       ],
@@ -11372,17 +11390,22 @@ function TransactionModal({
   onClose: () => void;
 }) {
   const ctx = useWorkspace();
+  const defaultsRef=useRef(ctx.workspace?.referenceDefaults);
+  const referenceAccount=initialAccount ?? ctx.accounts.find(a=>a.id===ctx.workspace?.referenceDefaults?.accountId);
+  const referenceCurrency=editingEntry?.currency ?? referenceAccount?.currency ?? ctx.workspace?.defaultCurrency ?? "ريال";
+  const initialBox=()=>editingEntry ? editingEntry.cashboxId : resolveCashbox(defaultsRef.current,ctx.cashboxes,referenceCurrency,referenceAccount);
+  const manualCashbox=useRef(false);
   const scope = ctx.workspace?.id ?? ctx.uid;
   const [accountId, setAccountId] = useState(
-    editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
+    editingEntry?.accountId ?? referenceAccount?.id ?? "",
   );
   const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
   const localDraftId = useRef("");
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
+    initialBox(),
   );
   const [currency, setCurrency] = useState<CurrencyCode>(
-    editingEntry?.currency ?? initialAccount?.currency ?? "ريال",
+    referenceCurrency,
   );
   const [amount, setAmount] = useState(editingEntry ? String(editingEntry.amount) : "");
   const [note, setNote] = useState(editingEntry?.details ?? "");
@@ -11437,10 +11460,11 @@ function TransactionModal({
   useEffect(() => {
     if (!open) { setDraftReady(false); return; }
     completed.current = false;
+    defaultsRef.current=ctx.workspace?.referenceDefaults;
     const defaults = {
-      accountId: editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
-      cashboxId: editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
-      currency: editingEntry?.currency ?? initialAccount?.currency ?? "ريال",
+      accountId: editingEntry?.accountId ?? referenceAccount?.id ?? "",
+      cashboxId: initialBox(),
+      currency: referenceCurrency,
       amount: editingEntry ? String(editingEntry.amount) : "", note: editingEntry?.details ?? "",
       payment: editingEntry?.payment === "balance" ? "balance" as const : "cash" as const,
       direction: editingEntry?.direction ?? "debit", expenseCategory: editingEntry?.expenseCategory ?? "",
@@ -11462,6 +11486,7 @@ function TransactionModal({
     const next = saved?.fields ?? defaults;
     localDraftId.current = saved?.entryId ?? `voucher_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     initialFields.current = JSON.stringify(defaults);
+    manualCashbox.current=Boolean(editingEntry||saved);
     setRestored(Boolean(saved));
     setTxError(null); setAccountId(next.accountId); setCashboxId(next.cashboxId); setCurrency(next.currency);
     setAmount(next.amount); setNote(next.note); setPayment(next.payment); setDirection(next.direction);
@@ -11483,12 +11508,15 @@ function TransactionModal({
     };
   }, [hybridLocal, open, dirty, fieldJson, scope]);
 
+  const chooseCashbox=(id:number|undefined)=>{manualCashbox.current=true;setCashboxId(id);};
+  const chooseAccount=(id:string)=>{setAccountId(id);if(!manualCashbox.current)setCashboxId(resolveCashbox(defaultsRef.current,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id)));};
+  const chooseCurrency=(value:CurrencyCode)=>{setCurrency(value);setCashboxId(manualCashbox.current?eligibleCashbox(ctx.cashboxes,cashboxId,value):resolveCashbox(defaultsRef.current,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId)));};
   if (!open) return null;
 
   const voucherAccounts=hybridLocal?ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount):ctx.accounts;
   const voucherCashboxes=hybridLocal?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
-  const effectiveCashboxId=hybridLocal?(voucherCashboxes.find(cb=>cb.id===cashboxId)?.id??voucherCashboxes[0]?.id):cashboxId;
-  const selectedAccount = voucherAccounts.find((a) => a.id === accountId) ?? (!hybridLocal?initialAccount:undefined) ?? voucherAccounts[0];
+  const effectiveCashboxId=eligibleCashbox(ctx.cashboxes,cashboxId,currency);
+  const selectedAccount = voucherAccounts.find((a) => a.id === accountId);
   const summary = selectedAccount ? computeAccountSummary(selectedAccount, ctx.ledger, currency) : null;
   const currentTime = new Intl.DateTimeFormat("ar-SA", {
     weekday: "short",
@@ -11535,6 +11563,7 @@ function TransactionModal({
       finally{setSaving(false);}
       return;
     }
+    if(payment==="cash"&&!effectiveCashboxId){setTxError({field:"submit",message:"اختر صندوقًا نقديًا من عملة السند قبل الحفظ."});return;}
     const parsedAmount = parseArabicNumber(amount);
     if (parsedAmount <= 0) {
       triggerHaptic("warning");
@@ -11648,7 +11677,7 @@ function TransactionModal({
           value={selectedAccount?.id ?? ""}
           onChange={(nextId) => {
             if (txError?.field === "account") setTxError(null);
-            setAccountId(nextId);
+            chooseAccount(nextId);
           }}
           placeholder="اختر حساب السند"
           searchPlaceholder="بحث سريع عن الحساب..."
@@ -11658,18 +11687,19 @@ function TransactionModal({
           searchTestId="transaction-account-search"
           listTestId="transaction-account-list"
           invalid={txError?.field === "account"}
-          onAddAccount={()=>ctx.openAccountReference(setAccountId,false,currency)}
+          onAddAccount={()=>ctx.openAccountReference(chooseAccount,false,currency)}
           compact
         />
         <div className="transaction-cashbox-row">
-          {hybridLocal?<button type="button" aria-label="إدارة صندوق السند" onClick={()=>{keyboard.hide();ctx.openCashboxReference(setCashboxId,currency);}}>+ صندوق</button>:null}
-          {(voucherCashboxes.length > 0 && (!hybridLocal||payment==="cash")) || editingEntry?.cashboxId ? (
+          {hybridLocal?<button type="button" aria-label="إدارة صندوق السند" onClick={()=>{keyboard.hide();ctx.openCashboxReference(chooseCashbox,currency);}}>+ صندوق</button>:null}
+          {payment==="cash" || editingEntry?.cashboxId ? (
             <select
               className="transaction-fund"
               aria-label="صندوق النقد"
               value={effectiveCashboxId ?? ""}
-              onChange={(e) => setCashboxId(Number(e.target.value))}
+              onChange={(e) => chooseCashbox(e.target.value?Number(e.target.value):undefined)}
             >
+              <option value="">غير محدد</option>
               {voucherCashboxes.map((cb) => (
                 <option key={cb.id} value={cb.id}>
                   {cb.name}
@@ -11686,7 +11716,7 @@ function TransactionModal({
             className="transaction-fund"
             aria-label="عملة السند"
             value={currency}
-            onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+            onChange={(e) => chooseCurrency(e.target.value as CurrencyCode)}
           >
             {ctx.currencyCodes.map((c) => (
               <option key={c} value={c}>
@@ -13801,6 +13831,70 @@ function ResetDatabaseConfirmModal({
   );
 }
 
+function referenceDefaultsScreen(): FlowScreen {
+  const screen: FlowScreen = { id: "reference-defaults", headerHeight: 50,
+    header: () => <SimpleAppHeader title="مراجع المستندات الافتراضية" onBack={() => window.dispatchEvent(new Event("nasqo:references-back"))} />,
+    render: flow => <ReferenceDefaultsBody flow={flow} active={flow.current.render === screen.render} /> };
+  return screen;
+}
+function ReferenceDefaultsBody({ flow, active }: { flow: FlowControls; active: boolean }) {
+  const ctx=useWorkspace(), keyboard=useKeyboard();
+  const [draft,setDraft]=useState(()=>ctx.workspace?.referenceDefaults ?? emptyReferenceDefaults());
+  const [currency,setCurrency]=useState(()=>ctx.workspace?.defaultCurrency ?? "ريال");
+  const [boxCurrency,setBoxCurrency]=useState(currency);
+  const [account,setAccount]=useState(""); const [group,setGroup]=useState("");
+  const [saving,setSaving]=useState(false), [error,setError]=useState(""), [notice,setNotice]=useState("");
+  const [leave,setLeave]=useState(false),[saved,setSaved]=useState(JSON.stringify({draft,currency}));
+  const dirty=JSON.stringify({draft,currency})!==saved, allowLeave=useRef(false);
+  const source=useRef({uid:ctx.uid,sha:ctx.workspace?.legacySourceSha});
+  const selectedAccount=ctx.accounts.find(a=>a.id===account), selectedGroup=ctx.accountGroups.find(g=>String(g.id)===group);
+  const back=()=>{keyboard.hide();if(saving)return;if(dirty)setLeave(true);else flow.pop();};
+  useBackLayer(active,()=>{if(allowLeave.current)return false;keyboard.hide();if(saving)return true;if(leave)setLeave(false);else if(dirty)setLeave(true);else return false;return true;},30);
+  useEffect(()=>{if(!active)return;window.addEventListener("nasqo:references-back",back);return()=>window.removeEventListener("nasqo:references-back",back);});
+  const change=(patch:Partial<typeof draft>)=>{setDraft(d=>({...d,...patch}));setNotice("");setError("");};
+  const setBox=(key:"systemCashboxes"|"accountCashboxes"|"groupCashboxes",id:string,value:string)=>{
+    const next={...draft[key]};if(value)next[id]=Number(value);else delete next[id];change({[key]:next});
+  };
+  const boxSelect=(label:string,key:"systemCashboxes"|"accountCashboxes"|"groupCashboxes",id:string,c:string)=>{
+    const boxes=ctx.cashboxes.filter(b=>eligibleCashbox(ctx.cashboxes,b.id,c)!==undefined),value=draft[key][id];
+    return <label className="cashier-settings-card">{label}<select aria-label={label} value={value??""} disabled={!id} onChange={e=>setBox(key,id,e.target.value)}>
+      <option value="">غير محدد — استخدام المستوى التالي</option>{boxes.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+      {value&&!boxes.some(b=>b.id===value)?<option value={value}>اختيار غير متاح — أعد الاختيار</option>:null}
+    </select></label>;
+  };
+  const cleaned={...draft,
+    warehouseId:ctx.warehouses.some(w=>w.id===draft.warehouseId)?draft.warehouseId:"",
+    accountId:ctx.accounts.some(a=>a.id===draft.accountId&&!a.isCashAccount&&a.currency===currency)?draft.accountId:"",
+    systemCashboxes:Object.fromEntries(Object.entries(draft.systemCashboxes).filter(([c,b])=>ctx.currencyCodes.includes(c)&&eligibleCashbox(ctx.cashboxes,b,c)!==undefined)),
+    accountCashboxes:Object.fromEntries(Object.entries(draft.accountCashboxes).filter(([id,b])=>{const a=ctx.accounts.find(a=>a.id===id);return a&&eligibleCashbox(ctx.cashboxes,b,a.currency)!==undefined;})),
+    groupCashboxes:Object.fromEntries(Object.entries(draft.groupCashboxes).filter(([id,b])=>{const g=ctx.accountGroups.find(g=>String(g.id)===id);return g&&eligibleCashbox(ctx.cashboxes,b,g.currencyCode)!==undefined;})),
+  };
+  const hasUnavailable=JSON.stringify(cleaned)!==JSON.stringify(draft);
+  const save=async()=>{
+    keyboard.hide();setError("");setNotice("");
+    if(!ctx.workspace||source.current.uid!==ctx.uid||source.current.sha!==ctx.workspace.legacySourceSha){setError("تغيرت مساحة العمل. افتح الإعدادات من جديد.");return;}
+    setSaving(true);
+    try{await saveWorkspaceSettings(ctx.uid,{...ctx.workspace,defaultCurrency:currency,referenceDefaults:draft});setSaved(JSON.stringify({draft,currency}));setNotice("تم حفظ المراجع للمستندات الجديدة. لم يتغير أي مستند أو رصيد.");}
+    catch(e){setError(e instanceof Error?e.message:"لم تحفظ الإعدادات.");}finally{setSaving(false);}
+  };
+  return <MobileScroll className="app-screen"><main className="cashier-settings-page" data-testid="reference-defaults-screen">
+    <p>يُختار الصندوق حسب الحساب، ثم تصنيفه، ثم افتراضي النظام من العملة نفسها. اختيارك اليدوي له الأولوية. الكاشير يستخدم صندوقه المخصص قبل افتراضي النظام.</p>
+    <p>تطبق على مستند جديد فقط. لا تغيّر مستندًا محفوظًا أو مسودة مفتوحة، ولا تعتمد كمية أو تكلفة.</p>
+    <fieldset disabled={saving}>
+      <label className="cashier-settings-card">العملة الافتراضية<select aria-label="عملة المستندات الافتراضية" value={currency} onChange={e=>{setCurrency(e.target.value);change({accountId:""});}}>{ctx.currencyCodes.map(c=><option key={c}>{c}</option>)}</select></label>
+      <label className="cashier-settings-card">المخزن الافتراضي<select aria-label="مخزن المستندات الافتراضي" value={draft.warehouseId} onChange={e=>change({warehouseId:e.target.value})}><option value="">غير محدد</option>{ctx.warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+      <section className="cashier-settings-card"><h3>حساب المستند الافتراضي</h3><AccountSelectCombobox accounts={ctx.accounts.filter(a=>!a.isCashAccount&&a.currency===currency)} value={draft.accountId} onChange={id=>change({accountId:id})} ariaLabel="حساب المستند الافتراضي" placeholder="غير محدد"/><button className="ref-btn" onClick={()=>change({accountId:""})}>إلغاء الحساب الافتراضي</button></section>
+      <section className="cashier-settings-card"><h3>صندوق النظام لكل عملة</h3><select aria-label="عملة صندوق النظام" value={boxCurrency} onChange={e=>setBoxCurrency(e.target.value)}>{ctx.currencyCodes.map(c=><option key={c}>{c}</option>)}</select>{boxSelect("صندوق النظام","systemCashboxes",boxCurrency,boxCurrency)}</section>
+      <section className="cashier-settings-card"><h3>صندوق التصنيف</h3><select aria-label="تصنيف الحساب الافتراضي" value={group} onChange={e=>setGroup(e.target.value)}><option value="">اختر التصنيف</option>{ctx.accountGroups.map(g=><option key={g.id} value={g.id}>{g.name} — {g.currencyCode}</option>)}</select>{boxSelect("الصندوق الخاص بالتصنيف","groupCashboxes",group,selectedGroup?.currencyCode??"")}</section>
+      <section className="cashier-settings-card"><h3>صندوق الحساب</h3><AccountSelectCombobox accounts={ctx.accounts} value={account} onChange={setAccount} ariaLabel="الحساب لتخصيص الصندوق" placeholder="اختر الحساب"/>{boxSelect("الصندوق الخاص بالحساب","accountCashboxes",account,selectedAccount?.currency??"")}</section>
+      {hasUnavailable?<section className="cashier-settings-card"><p role="alert">توجد مراجع محذوفة أو صناديق غير متاحة أو مختلفة العملة. لن تُستخدم تلقائيًا.</p><button className="ref-btn" onClick={()=>change(cleaned)}>إزالة التخصيصات غير المتاحة من النموذج</button><small>يلزم الحفظ لتثبيت الإزالة. لا يُحذف أي حساب أو صندوق.</small></section>:null}
+      {error?<p role="alert" className="auth-error">{error}</p>:null}{notice?<p role="status">{notice}</p>:null}
+      <div className="cashier-settings-actions"><button className="ref-btn green" onClick={()=>void save()}>{saving?"جارٍ الحفظ…":"حفظ مراجع المستندات"}</button><button className="ref-btn" onClick={back}>إلغاء والعودة</button></div>
+      {leave?<div role="alert"><p>هناك تعديلات لم تحفظ.</p><button className="ref-btn" onClick={()=>setLeave(false)}>متابعة التعديل</button><button className="ref-btn" onClick={()=>{allowLeave.current=true;flow.pop();}}>تجاهل والعودة</button></div>:null}
+    </fieldset>
+  </main></MobileScroll>;
+}
+
 function cashierSettingsScreen(): FlowScreen {
   const screen: FlowScreen = { id: "cashier-settings", headerHeight: 50,
     header: () => <SimpleAppHeader title="إعدادات الكاشير" onBack={() => window.dispatchEvent(new Event("nasqo:cashier-back"))} />,
@@ -13902,6 +13996,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
   ctx.flowRef.current = flow;
   return (
     <SystemSettingsPage
+      onOpenReferenceDefaults={() => flow.push(referenceDefaultsScreen())}
       onOpenCashierSettings={() => flow.push(cashierSettingsScreen())}
       uid={ctx.uid}
       userEmail={ctx.userEmail}

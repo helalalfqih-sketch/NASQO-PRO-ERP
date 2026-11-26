@@ -173,3 +173,10 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Defaults initialize a new cashier invoice only. Reuse the existing invoice posting path; never alter old invoices or stock when saving settings. Missing defaults remain explicit, without selecting an arbitrary account/cashbox.
 - Clear shortcuts only after confirmation, and persist on Save; never delete products or stock. All shortcut selections and cashier buttons remain reachable by paging.
 - Changing currency clears incompatible customer/cashbox choices. Preserve edits on failed settings save; header/system Back must handle unsaved changes. Keep the NASQO visual style and narrow/dark layouts.
+
+## Document reference defaults (user direction, 2026-11-26)
+
+- Continue the current worktree when adding catalog features. Batch one shares workspace references (warehouse, account, cashbox, currency), not a separate app/database.
+- Resolve a new document's cashbox by account, then account group, then system, always matching its currency and active status. Cashier-specific cashbox is a fallback before system. Explicit manual selection takes priority; changing currency must not silently substitute another box.
+- Save defaults in workspace SQLite settings and round-trip backups, remapping web IDs. Defaults never change a saved document or an open/restored draft, post entries, replay history, or approve stock/cost.
+- Keep missing defaults explicit. Saving or cancelling reference management never submits its originating invoice/voucher. Existing native posting restrictions still apply.

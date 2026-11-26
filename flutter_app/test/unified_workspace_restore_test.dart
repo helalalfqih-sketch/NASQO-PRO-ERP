@@ -32,7 +32,9 @@ void main(){
         'invoiceContent':'none','postingStatus':'posted','deleted':false};
       final bundle=<String,dynamic>{
         'format':'nasqo-unified-sqlite-export-v2','version':2,
-        'workspace':{'companyName':'Unified fixture','defaultCurrency':'ريال'},
+        'workspace':{'companyName':'Unified fixture','defaultCurrency':'ريال',
+          'referenceDefaults':{'warehouseId':'wh-b','accountId':'client','systemCashboxes':{'ريال':1},'accountCashboxes':{'client':1},'groupCashboxes':{'1':1}},
+          'cashierSettings':{'warehouseId':'wh-a','accountId':'client','cashboxId':1,'currency':'ريال','quickItemIds':['verified']}},
         'currencies':[{'id':1,'name':'ريال','code':'ريال'}],
         'accountGroups':[{'id':1,'name':'Group','category':'shop','currencyCode':'ريال'}],
         'cashboxes':[{'id':1,'name':'Cash','currencyCode':'ريال','isActive':true}],
@@ -68,6 +70,8 @@ void main(){
       expect(await LegacyOperationalRestore.original(db),orderedEquals(await file.readAsBytes()));
       var snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
       expect(snapshot['workspace']['companyName'],'Unified fixture');
+      expect(snapshot['workspace']['referenceDefaults'],(bundle['workspace'] as Map)['referenceDefaults']);
+      expect(snapshot['workspace']['cashierSettings'],(bundle['workspace'] as Map)['cashierSettings']);
       final ledger=(snapshot['ledger'] as List).cast<Map<String,dynamic>>();
       expect(ledger.firstWhere((e)=>e['id']=='legacy')['rawMadin'],3);
       expect(ledger.firstWhere((e)=>e['id']=='draft')['postingStatus'],'draft');

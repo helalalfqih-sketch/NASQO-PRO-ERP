@@ -1,0 +1,13 @@
+OBSERVED voucher-new-cashbox-return
+OBSERVED reference-defaults-settings
+OBSERVED reference-defaults-invoice-account
+OBSERVED reference-defaults-invoice-group
+OBSERVED reference-defaults-invoice-system
+OBSERVED reference-defaults-invoice-none
+OBSERVED reference-defaults-draft
+OBSERVED reference-defaults-cashier
+OBSERVED reference-defaults-currency
+OBSERVED reference-defaults-voucher
+OBSERVED reference-defaults-transfer
+OBSERVED cashier-missing-defaults-explicit
+OBSERVED cashier-settings-persist-and-invoice

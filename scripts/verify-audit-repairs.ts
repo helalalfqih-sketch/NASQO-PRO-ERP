@@ -13,8 +13,13 @@ s.accounts=s.accounts.map((a,i)=>({...a,name:`حساب اصطناعي ${i+1}`,ph
 s.ledger=Array.from({length:12},(_,i)=>({...s.ledger[0],id:`audit-${i}`,accountId:'acc_sup_usd',accountName:'حساب اصطناعي 2',entryNumber:2000+i,amount:10+i,currency:i===11?'ريال':'دولار',entryDate:i===11?'2025-01-01':'2026-11-25',details:`بند اصطناعي ${i+1}`,createdAtMs:1795564800000,invoiceContent:'free' as const}));
 s.inventory=Array.from({length:12},(_,i)=>({...s.inventory[0],id:`item-${i}`,name:`صنف اصطناعي ${i+1}`,quantity:i+1,avgCost:2,warehouseId:i===11?'wh_branch':'wh_main'}));
 function host(state:any){
- const w=window as any;sessionStorage.clear();const erpKey="acceptance-erp:"+location.search;const keptCashier=localStorage.getItem(erpKey+':cashier');const keptErp=localStorage.getItem(erpKey);localStorage.clear();if(keptCashier){localStorage.setItem(erpKey+':cashier',keptCashier);state.workspace.cashierSettings=JSON.parse(keptCashier);}if(keptErp)localStorage.setItem(erpKey,keptErp);state.erpData=JSON.parse(localStorage.getItem(erpKey)||'{"employees":[],"leaveRequests":[],"deals":[],"purchaseOrders":[],"boms":[],"productionOrders":[],"costCenters":[]}');if(location.search.includes("empty"))state.inventory=[];if(location.search.includes("large"))state.ledger=Array.from({length:516},(_,i)=>({...state.ledger[0],id:"row-"+i,entryNumber:i+1,amount:1,details:"حركة عربية "+(i+1),currency:"دولار"}));w.auditCommands=[];w.auditFiles=[];w.canvasText=[];
+ const w=window as any;sessionStorage.clear();const keepDraft=localStorage.getItem('keep-reference-draft')===location.search?Object.entries(localStorage).filter(([k])=>k.startsWith('nasqo-ui-resume-v1:')):[];const erpKey="acceptance-erp:"+location.search;const keptReferences=localStorage.getItem('references:'+location.search);const keptCashier=localStorage.getItem(erpKey+':cashier');const keptErp=localStorage.getItem(erpKey);localStorage.clear();if(keepDraft.length){for(const [k,v] of keepDraft)localStorage.setItem(k,v);localStorage.setItem('keep-reference-draft',location.search);}if(keptReferences)localStorage.setItem('references:'+location.search,keptReferences);if(keptCashier){localStorage.setItem(erpKey+':cashier',keptCashier);state.workspace.cashierSettings=JSON.parse(keptCashier);}if(keptErp)localStorage.setItem(erpKey,keptErp);state.erpData=JSON.parse(localStorage.getItem(erpKey)||'{"employees":[],"leaveRequests":[],"deals":[],"purchaseOrders":[],"boms":[],"productionOrders":[],"costCenters":[]}');if(location.search.includes("empty"))state.inventory=[];if(location.search.includes("large"))state.ledger=Array.from({length:516},(_,i)=>({...state.ledger[0],id:"row-"+i,entryNumber:i+1,amount:1,details:"حركة عربية "+(i+1),currency:"دولار"}));w.auditCommands=[];w.auditFiles=[];w.canvasText=[];
  const fill=CanvasRenderingContext2D.prototype.fillText;CanvasRenderingContext2D.prototype.fillText=function(t:any,...args:any[]){w.canvasText.push(String(t));return (fill as any).call(this,t,...args)};
+ if(location.search.includes('reference-defaults')){
+   state.cashboxes=[1,2,3,4].map(id=>({...state.cashboxes[0],id,name:'صندوق اصطناعي '+id}));
+   if(!location.search.includes('reference-defaults-settings'))state.workspace.referenceDefaults={warehouseId:'wh_branch',accountId:'acc_cli_1',systemCashboxes:location.search.includes('-none')?{}:{'ريال':1},groupCashboxes:/-system|-none/.test(location.search)?{}:{'3':2},accountCashboxes:/-group|-system|-none/.test(location.search)?{}:{acc_cli_1:3}};
+   const kept=localStorage.getItem('references:'+location.search);if(kept)state.workspace.referenceDefaults=JSON.parse(kept);
+ }
  if(location.search.includes('cashier-pages')){state.inventory=Array.from({length:65},(_,i)=>({...state.inventory[0],id:'quick-'+i,name:'صنف سريع '+(i+1)}));state.workspace.cashierSettings={warehouseId:'wh_main',accountId:'acc_cli_1',cashboxId:state.cashboxes[0].id,currency:'ريال',quickItemIds:state.inventory.map((i:any)=>i.id)};}
  if(location.search.includes('catalog-precise-cost'))state.inventory[0].avgCost=1.234567;
  if(location.search.includes('catalog-create'))state.capabilities.localStockPosting=true;
@@ -25,7 +30,7 @@ function host(state:any){
  w.auditEmit=(event:string,payload:any)=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'event',event,payload,timestampMs:Date.now()});
  w.NasqoHome={postMessage(raw:string){const r=JSON.parse(raw);w.auditCommands.push(r);let data:any={ok:true};
   if(r.action==='getSnapshot')data=state;
-  if(r.action==='saveWorkspaceSettings'&&!w.rejectSettings){state.workspace={...state.workspace,...r.payload.updates};data={workspace:state.workspace};if(state.workspace.cashierSettings)localStorage.setItem(erpKey+':cashier',JSON.stringify(state.workspace.cashierSettings));}
+  if(r.action==='saveWorkspaceSettings'&&!w.rejectSettings){state.workspace={...state.workspace,...r.payload.updates};data={workspace:state.workspace};if(state.workspace.referenceDefaults)localStorage.setItem('references:'+location.search,JSON.stringify(state.workspace.referenceDefaults));if(state.workspace.cashierSettings)localStorage.setItem(erpKey+':cashier',JSON.stringify(state.workspace.cashierSettings));}
   if(r.action==='saveErpRecords'){
     if(!w.rejectErp){for(const c of r.payload.changes){const row={...c.record,_revision:c.expectedRevision+1};if(c.collection==='vatConfig')state.erpData.vatConfig=row;else {const list=state.erpData[c.collection];const i=list.findIndex((x:any)=>x.id===row.id);if(i<0)list.push(row);else list[i]=row;}}localStorage.setItem(erpKey,JSON.stringify(state.erpData));data={erpData:state.erpData};}
   }
@@ -182,6 +187,44 @@ try{
  for(const mode of ['on','off'])await run('settings-legacy-'+mode,async()=>{
  await emit('settings');await page.getByRole('tab',{name:'المنشأة',exact:true}).click();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).toBeDisabled();await expect(page.getByLabel('بيع بدون رصيد',{exact:true})).not.toBeChecked();
  await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await expect(page.getByRole('switch')).toBeDisabled();await expect(page.getByRole('switch')).not.toBeChecked();await expect(page.getByLabel('التذكير عند الإغلاق — غير متاح؛ احفظ نسخة يدويًا',{exact:true})).toBeDisabled();return{correct:true,storedPreference:mode,actualProtection:false,negativeStockSupported:false};
+ });
+ await run('reference-defaults-settings',async()=>{
+  await drawer('مراجع المستندات الافتراضية');const form=page.getByTestId('reference-defaults-screen');
+  await form.getByLabel('مخزن المستندات الافتراضي',{exact:true}).selectOption('wh_branch');
+  await form.getByRole('combobox',{name:'حساب المستند الافتراضي',exact:true}).click();await form.getByRole('option').filter({hasText:'حساب اصطناعي 3'}).click();
+  await form.getByLabel('صندوق النظام',{exact:true}).selectOption('1');
+  await form.getByLabel('تصنيف الحساب الافتراضي',{exact:true}).selectOption('3');await form.getByLabel('الصندوق الخاص بالتصنيف',{exact:true}).selectOption('2');
+  await form.getByRole('combobox',{name:'الحساب لتخصيص الصندوق',exact:true}).click();await form.getByRole('option').filter({hasText:'حساب اصطناعي 3'}).click();await form.getByLabel('الصندوق الخاص بالحساب',{exact:true}).selectOption('3');
+  await page.evaluate(()=>{(window as any).rejectSettings=true;});await form.getByRole('button',{name:'حفظ مراجع المستندات',exact:true}).click();await expect(form.getByRole('alert')).toBeVisible();await expect(form.getByLabel('الصندوق الخاص بالحساب',{exact:true})).toHaveValue('3');
+  await page.evaluate(()=>{(window as any).rejectSettings=false;});await form.getByRole('button',{name:'حفظ مراجع المستندات',exact:true}).click();await expect(form.getByRole('status')).toContainText('تم حفظ');
+  await page.setViewportSize({width:320,height:740});await page.evaluate(()=>document.documentElement.classList.add('dark'));await form.getByRole('button',{name:'حفظ مراجع المستندات',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:`${out}/reference-defaults-dark.png`});
+  await form.getByLabel('الصندوق الخاص بالحساب',{exact:true}).selectOption('2');await page.getByTestId('flow-fixed-header').getByRole('button',{name:'رجوع',exact:true}).click();await expect(form.getByText('هناك تعديلات لم تحفظ.',{exact:true})).toBeVisible();await form.getByRole('button',{name:'تجاهل والعودة',exact:true}).click();
+  await page.reload();await expect(page.getByTestId('dashboard-screen')).toBeVisible();await drawer('مراجع المستندات الافتراضية');await expect(form.getByLabel('مخزن المستندات الافتراضي',{exact:true})).toHaveValue('wh_branch');
+  assert(!(await commands()).some((r:any)=>/createLedgerEntry|postStockInvoice|updateInventoryItem/.test(r.action)));return{correct:true,persisted:true,failedSaveRetains:true,discardKeepsSaved:true,darkNarrow:true};
+ });
+ for(const variant of ['account','group','system','none'])await run('reference-defaults-invoice-'+variant,async()=>{
+  await page.getByRole('button',{name:'الإجراءات السريعة',exact:true}).click();await page.getByTestId('home-quick-invoice').click();
+  await expect(page.getByTestId('invoice-account-trigger')).toContainText('حساب اصطناعي 3');await page.getByRole('radio',{name:'نقدي',exact:true}).check();
+  const box=page.getByLabel('صندوق النقدية',{exact:true});await expect(box).toHaveValue(({account:'3',group:'2',system:'1',none:''})[variant]!);
+  await box.selectOption('4');await page.getByTestId('invoice-account-trigger').click();await page.getByRole('option').filter({hasText:'حساب اصطناعي 1'}).click();await expect(box).toHaveValue('4');
+  await page.getByLabel('عملة الفاتورة',{exact:true}).selectOption('دولار');await expect(box).toHaveValue('');await expect(box.locator('option[value="4"]')).toHaveCount(0);
+  assert(!(await commands()).some((r:any)=>/createLedgerEntry|postStockInvoice/.test(r.action)));return{correct:true,priority:variant,manualPreserved:true,incompatibleCleared:true};
+ });
+ await run('reference-defaults-draft',async()=>{
+  await page.getByRole('button',{name:'الإجراءات السريعة',exact:true}).click();await page.getByTestId('home-quick-invoice').click();await page.getByRole('radio',{name:'نقدي',exact:true}).check();await page.getByLabel('صندوق النقدية',{exact:true}).selectOption('4');
+  await page.evaluate(()=>{localStorage.setItem('keep-reference-draft',location.search);localStorage.setItem('references:'+location.search,JSON.stringify({warehouseId:'wh_main',accountId:'acc_cli_1',systemCashboxes:{'ريال':1},accountCashboxes:{acc_cli_1:1},groupCashboxes:{}}));});
+  await page.reload();await expect(page.getByLabel('صندوق النقدية',{exact:true})).toHaveValue('4');
+  const wh=page.locator('select').filter({has:page.locator('option[value="wh_main"]')});await expect(wh).toHaveValue('wh_branch');assert(!(await commands()).some((r:any)=>/createLedgerEntry|postStockInvoice/.test(r.action)));return{correct:true,restoredDraftIgnoresNewDefaults:true,noReplay:true};
+ });
+ await run('reference-defaults-cashier',async()=>{await drawer('الكاشير');await expect(page.getByTestId('invoice-account-trigger')).toContainText('حساب اصطناعي 3');await expect(page.getByLabel('صندوق النقدية',{exact:true})).toHaveValue('3');return{correct:true,inheritsSystemWhenUnconfigured:true};});
+ await run('reference-defaults-currency',async()=>{await drawer('صرف عملات');await page.getByRole('radio',{name:'مصادقة نقدية في الصندوق',exact:true}).check();await expect(page.getByLabel('صندوق المصارفة',{exact:true})).toHaveValue('3');await page.getByLabel('صندوق المصارفة',{exact:true}).selectOption('4');return{correct:true,currencyReferenceOnly:true,postingNotTested:true};});
+ await run('reference-defaults-voucher',async()=>{
+  await page.getByRole('button',{name:'الإجراءات السريعة',exact:true}).click();await page.getByTestId('home-quick-voucher').click();await expect(page.getByLabel('صندوق النقد',{exact:true})).toHaveValue('3');
+  await page.getByTestId('transaction-amount').fill('23');await page.getByLabel('صندوق النقد',{exact:true}).selectOption('4');await page.getByTestId('transaction-account-trigger').click();await page.getByRole('option').filter({hasText:'حساب اصطناعي 1'}).click();await expect(page.getByLabel('صندوق النقد',{exact:true})).toHaveValue('4');
+  await page.getByRole('button',{name:'إدارة صندوق السند',exact:true}).click();await page.getByTestId('cashbox-reference-manager').getByRole('button',{name:'إلغاء والعودة',exact:true}).click();await expect(page.getByTestId('transaction-amount')).toHaveValue('23');await expect(page.getByLabel('صندوق النقد',{exact:true})).toHaveValue('4');return{correct:true,parentPreserved:true};
+ });
+ await run('reference-defaults-transfer',async()=>{
+  await page.getByRole('button',{name:'الإجراءات السريعة',exact:true}).click();await page.getByTestId('home-quick-transfer').click();await expect(page.getByLabel('صندوق النقدية للحوالة',{exact:true})).toHaveValue('3');return{correct:true,transferHierarchy:true};
  });
  await run('cashier-missing-defaults-explicit',async()=>{
   await drawer('الكاشير');await expect(page.getByTestId('invoice-account-trigger')).toContainText('اختر');await expect(page.getByLabel('صندوق النقدية',{exact:true})).toHaveValue('');await expect(page.getByLabel('صندوق النقدية',{exact:true}).locator('option:checked')).toHaveText('غير محدد');

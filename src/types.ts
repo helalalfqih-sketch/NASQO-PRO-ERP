@@ -69,7 +69,13 @@ export type CashierSettings = {
   warehouseId: string; cashboxId: number | null; accountId: string; currency: CurrencyCode; quickItemIds: string[];
 };
 
+export type ReferenceDefaults = {
+  warehouseId: string; accountId: string;
+  systemCashboxes: Record<string, number>; accountCashboxes: Record<string, number>; groupCashboxes: Record<string, number>;
+};
+
 export type WorkspaceSettings = {
+  referenceDefaults?: ReferenceDefaults;
   cashierSettings?: CashierSettings;
   /** Identity of immutable imported evidence; never a mutable company setting. */
   legacySourceSha?: string;

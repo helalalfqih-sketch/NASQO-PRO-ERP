@@ -16263,3 +16263,5 @@ button.currencies-footer-hint:hover {
 .cashier-settings-page .ref-btn:not(.green), .cashier-quick-grid .ref-btn { background: var(--nasqo-home-primary-bg, #4338ca); color: #fff; }
 .cashier-settings-page .ref-btn:disabled, .cashier-quick-grid .ref-btn:disabled { cursor: default; opacity: .5; }
 .cashier-quick-grid .ref-btn { overflow-wrap: anywhere; }
+
+.cashier-settings-page > p, .cashier-settings-page fieldset > p[role="status"] { color: var(--nasqo-ink, #172234); line-height: 1.8; }

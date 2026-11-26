@@ -1,3 +1,4 @@
+import 'local_workspace_settings.dart';
 import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -151,6 +152,20 @@ class LegacyOperationalRestore {
         }
       }
       await batch.commit(noResult:true);
+      if(unified){
+        final ws=LocalBackupRestore.object(candidate.meta['workspace']);
+        final preferences=<String,dynamic>{'defaultCurrency':s(ws['defaultCurrency'],'ريال')};
+        if(ws.containsKey('referenceDefaults')){
+          await LocalWorkspaceSettings.validateReferences(t,ws['referenceDefaults'],preferences['defaultCurrency']);
+          preferences['referenceDefaults']=ws['referenceDefaults'];
+        }
+        if(ws.containsKey('cashierSettings')){
+          await LocalWorkspaceSettings.validateCashier(t,ws['cashierSettings']);
+          preferences['cashierSettings']=ws['cashierSettings'];
+        }
+        await t.insert('erp_state',{'stateKey':LocalWorkspaceSettings.stateKey,'payloadJson':jsonEncode(preferences),
+          'updatedAt':DateTime.now().toUtc().toIso8601String()},conflictAlgorithm:ConflictAlgorithm.replace);
+      }
       if((await t.rawQuery('PRAGMA foreign_key_check')).isNotEmpty)throw StateError('Foreign key verification failed');
       if(Sqflite.firstIntValue(await t.rawQuery('SELECT COUNT(*) FROM ledger_entries'))!=ledger.length)throw StateError('Historical record count mismatch');
       await t.delete('backup_review_active');

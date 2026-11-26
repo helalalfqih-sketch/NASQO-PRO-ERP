@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { eligibleCashbox, resolveCashbox } from "../utils/documentReferences";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { KeyboardInput, useKeyboard } from "../mobile";
 import {
   computeAccountSummary,
@@ -11,6 +12,7 @@ import { createLedgerEntry } from "../firebase";
 import {
   CURRENCIES,
   type AccountRecord,
+  type WorkspaceSettings,
   type CashboxRecord,
   type CurrencyCode,
   type LedgerEntryRecord,
@@ -22,6 +24,7 @@ import { OutlinedAmountField } from "./OutlinedAmountField";
 interface TransferModalProps {
   open: boolean;
   uid: string;
+  workspace?: WorkspaceSettings | null;
   accounts: readonly AccountRecord[];
   cashboxes?: readonly CashboxRecord[];
   currencyOptions?: readonly string[];
@@ -45,7 +48,7 @@ interface TransferModalProps {
 
 export function TransferModal({
   open,
-  uid,
+  uid, workspace,
   accounts,
   cashboxes: sqliteCashboxes = [],
   currencyOptions = CURRENCIES,
@@ -60,18 +63,18 @@ export function TransferModal({
 }: TransferModalProps) {
   const keyboard = useKeyboard();
   const [closeAfterSave, setCloseAfterSave] = useState(true);
-  const [selectedAccountId, setSelectedAccountId] = useState(defaultAccountId ?? accounts[0]?.id ?? "");
+  const [selectedAccountId, setSelectedAccountId] = useState(defaultAccountId ?? workspace?.referenceDefaults?.accountId ?? "");
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<CurrencyCode>("ريال");
+  const [currency, setCurrency] = useState<CurrencyCode>(workspace?.defaultCurrency ?? "ريال");
   const [commission, setCommission] = useState("");
-  const [commissionCurrency, setCommissionCurrency] = useState<CurrencyCode>("ريال");
+  const [commissionCurrency, setCommissionCurrency] = useState<CurrencyCode>(workspace?.defaultCurrency ?? "ريال");
   const [senderName, setSenderName] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [transferCompany, setTransferCompany] = useState("");
   const [transferNumber, setTransferNumber] = useState("");
   const [details, setDetails] = useState("");
   const [cashboxId, setCashboxId] = useState("");
-  const [sqliteCashboxId, setSqliteCashboxId] = useState<number | undefined>(() => sqliteCashboxes[0]?.id);
+  const [sqliteCashboxId, setSqliteCashboxId] = useState<number | undefined>(() => resolveCashbox(workspace?.referenceDefaults,sqliteCashboxes,currency,accounts.find(a=>a.id===selectedAccountId)));
   const [direction, setDirection] = useState<"outgoing" | "incoming">("outgoing");
   const [saving, setSaving] = useState(false);
 
@@ -80,23 +83,21 @@ export function TransferModal({
     [accounts, open],
   );
 
-  useEffect(() => {
-    if (!open) return;
-    if (defaultAccountId) {
-      setSelectedAccountId(defaultAccountId);
-    } else if (!selectedAccountId && accounts[0]) {
-      setSelectedAccountId(accounts[0].id);
-    }
-    if (!cashboxId && (cashboxes[0] || accounts[0])) {
-      setCashboxId((cashboxes[0] ?? accounts[0])?.id ?? "");
-    }
-    if (!sqliteCashboxId && sqliteCashboxes[0]?.id) {
-      setSqliteCashboxId(sqliteCashboxes[0].id);
-    }
-  }, [accounts, cashboxId, cashboxes, defaultAccountId, open, selectedAccountId, sqliteCashboxId, sqliteCashboxes]);
-
+  const opened=useRef(false),manualBox=useRef(false),defaults=useRef(workspace?.referenceDefaults);
+  useEffect(()=>{
+    if(!open){opened.current=false;return;}
+    if(opened.current)return;
+    opened.current=true;defaults.current=workspace?.referenceDefaults;manualBox.current=false;
+    const id=defaultAccountId??workspace?.referenceDefaults?.accountId??"",account=accounts.find(a=>a.id===id);
+    const c=account?.currency??workspace?.defaultCurrency??"ريال";
+    setSelectedAccountId(id);setCurrency(c);setCashboxId("");
+    setSqliteCashboxId(resolveCashbox(defaults.current,sqliteCashboxes,c,account));
+  },[open,defaultAccountId,workspace,accounts,sqliteCashboxes]);
+  const chooseBox=(id:number|undefined)=>{manualBox.current=true;setSqliteCashboxId(id);};
+  const chooseAccount=(id:string)=>{setSelectedAccountId(id);if(!manualBox.current)setSqliteCashboxId(resolveCashbox(defaults.current,sqliteCashboxes,currency,accounts.find(a=>a.id===id)));};
+  const chooseCurrency=(c:CurrencyCode)=>{setCurrency(c);setSqliteCashboxId(manualBox.current?eligibleCashbox(sqliteCashboxes,sqliteCashboxId,c):resolveCashbox(defaults.current,sqliteCashboxes,c,accounts.find(a=>a.id===selectedAccountId)));};
   const activeAccount =
-    accounts.find((a) => a.id === selectedAccountId) ?? accounts[0];
+    accounts.find((a) => a.id === selectedAccountId);
 
   const activeSummary = useMemo(
     () => (open && activeAccount ? computeAccountSummary(activeAccount, ledger) : null),
@@ -149,6 +150,7 @@ export function TransferModal({
       onNotify("أدخل مبلغ الحوالة واختر الحساب أولًا");
       return;
     }
+    if(!eligibleCashbox(sqliteCashboxes,sqliteCashboxId,currency)){onNotify("اختر صندوقًا نقديًا من عملة الحوالة قبل الحفظ.");return;}
     const cashboxAcc = accounts.find((a) => a.id === cashboxId);
     if (cashboxAcc && cashboxAcc.id === activeAccount.id && accounts.length > 1) {
       triggerHaptic("warning");
@@ -257,7 +259,7 @@ export function TransferModal({
         <AccountSelectCombobox
           accounts={accounts}
           value={activeAccount?.id ?? ""}
-          onChange={(nextId) => setSelectedAccountId(nextId)}
+          onChange={chooseAccount}
           preferredCategories={["transfers", "clients", "shop"]}
           placeholder="اختر حساب الحوالة"
           searchPlaceholder="ابحث عن حساب للحوالة..."
@@ -266,7 +268,7 @@ export function TransferModal({
           triggerTestId="transfer-account-trigger"
           searchTestId="transfer-account-search"
           listTestId="transfer-account-list"
-          onAddAccount={()=>onManageAccount?onManageAccount(setSelectedAccountId):onCreateAccount()}
+          onAddAccount={()=>onManageAccount?onManageAccount(chooseAccount):onCreateAccount()}
           addAccountAriaLabel="إضافة حساب جديد"
           compact
         />
@@ -292,7 +294,7 @@ export function TransferModal({
               <select
                 aria-label="عملة الحوالة"
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                onChange={(e) => chooseCurrency(e.target.value as CurrencyCode)}
               >
                 {currencyOptions.map((c) => (
                   <option key={c} value={c}>
@@ -381,16 +383,17 @@ export function TransferModal({
           </select>
         </label>
 
-        {onManageCashbox?<button type="button" onClick={()=>{keyboard.hide();onManageCashbox(setSqliteCashboxId,currency);}}>+ إدارة صندوق الحوالة</button>:null}
+        {onManageCashbox?<button type="button" onClick={()=>{keyboard.hide();onManageCashbox(chooseBox,currency);}}>+ إدارة صندوق الحوالة</button>:null}
         {sqliteCashboxes.length > 0 ? (
           <label className="transfer-cashbox-row">
             <span>صندوق النقدية</span>
             <select
               aria-label="صندوق النقدية للحوالة"
               value={sqliteCashboxId ?? ""}
-              onChange={(e) => setSqliteCashboxId(Number(e.target.value))}
+              onChange={(e) => chooseBox(e.target.value?Number(e.target.value):undefined)}
             >
-              {sqliteCashboxes.map((cb) => (
+              <option value="">غير محدد</option>
+              {sqliteCashboxes.filter(b=>eligibleCashbox(sqliteCashboxes,b.id,currency)!==undefined).map((cb) => (
                 <option key={cb.id} value={cb.id}>
                   {cb.name}
                 </option>
