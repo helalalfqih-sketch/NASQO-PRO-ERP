@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 // No application HTTP server/database; Vite serves an isolated synthetic fixture.
 export default defineConfig({
   testDir: ".",
-  testMatch: "hybrid-back-resume.spec.ts",
+  testMatch: /hybrid-(back-resume|viewport)\.spec\.ts/,
   workers: 1,
   timeout: 20_000,
   outputDir: "../deliverables/batch1/browser-artifacts",
