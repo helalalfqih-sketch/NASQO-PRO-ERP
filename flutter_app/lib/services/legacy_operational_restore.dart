@@ -284,6 +284,11 @@ class LegacyOperationalRestore {
           row['quantityApprovalDate']=qa['entry_date'];
           row['quantityUnverified']=false;
           row['costUnverified']=unverified.contains(row['id']);
+          if(row['costUnverified']==true){
+            final purchases=await StockQuantityApprovalState.pending(db,row['id'] as String);
+            row['approvedStockValue']=(purchases?.valueMinor??0)/100;
+            row['unvaluedOpeningQuantity']=qa['quantity'];
+          }
           row['legacyCatalogCost']=old['avgCost'];
           row.remove('computedQuantity');
         }

@@ -15812,6 +15812,18 @@ button.currencies-footer-hint:hover {
   border-inline-end: 0;
 }
 
+.invoice-erp-cell.col-price {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.invoice-erp-cell.col-price > small {
+  font-size: 10px;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--proto-muted, #64748b);
+}
+
 .invoice-erp-qty-stepper {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) 28px;

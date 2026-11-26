@@ -127,12 +127,13 @@ class LegacyStockOpening {
         final item=master.single['warehouseId']==wh?source:'legacy-location-$digest';
         final existing=await t.query('inventory_items',where:'id = ?',whereArgs:[item]);
         final qa=(await StockQuantityApprovalState.read(t))[item];
+        final pending=qa==null?null:await StockQuantityApprovalState.pending(t,item,inventoryAccountId:asset,entryDate:date);
         if(qa!=null){
           if(qa['source_item_id']!=source||qa['warehouse_id']!=wh||qa['quantity']!=quantity||
               date.compareTo(qa['entry_date'] as String)<0||existing.length!=1||
-              existing.single['quantity']!=quantity||existing.single['avgCost']!=0||
-              (await t.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[item])).length!=1||
-              (await t.query('stock_movements',where:'item_id = ?',whereArgs:[item],limit:1)).isNotEmpty) {
+              pending==null||StockQuantity.ticks(existing.single['quantity'])!=StockQuantity.ticks(quantity)+pending.purchasedTicks||
+              existing.single['avgCost']!=0||
+              (await t.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[item])).length!=1) {
             throw StateError('اعتمد تكلفة الكمية المثبتة دون تغييرها؛ يلزم مسار مستقل لتعديل الكمية.');
           }
         }else if(item==source){
@@ -142,9 +143,11 @@ class LegacyStockOpening {
             throw StateError('Source stock already contains operational history');
           }
         }else if(existing.isNotEmpty){throw StateError('Warehouse stock identity already exists');}
-        final avg=quantity==0?0.0:value/quantity/100;
+        final currentQuantity=StockQuantity.units(StockQuantity.boundedTicks(StockQuantity.ticks(quantity)+(pending?.purchasedTicks??0)));
+        final currentValue=value+(pending?.valueMinor??0);
+        final avg=currentQuantity==0?0.0:currentValue/currentQuantity/100;
         if(item==source||qa!=null){
-          await t.update('inventory_items',{'quantity':quantity,'avgCost':avg},where:'id = ?',whereArgs:[item]);
+          await t.update('inventory_items',{'quantity':currentQuantity,'avgCost':avg},where:'id = ?',whereArgs:[item]);
           await t.delete('legacy_unverified_stock',where:'item_id = ?',whereArgs:[item]);
         }else{
           await t.insert('inventory_items',{...master.single,'id':item,'warehouseId':wh,'quantity':quantity,'avgCost':avg});

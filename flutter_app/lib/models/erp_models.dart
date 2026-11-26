@@ -193,6 +193,7 @@ class InventoryItemRecord {
     this.warehouseId = 'wh_1',
     this.minThreshold = 25,
     this.sku = '',
+    this.approvedStockValue,
   });
 
   final String id;
@@ -203,6 +204,7 @@ class InventoryItemRecord {
   final String warehouseId;
   final double minThreshold;
   final String sku;
+  final double? approvedStockValue;
 
   InventoryItemRecord copyWith({
     double? quantity,
@@ -217,6 +219,7 @@ class InventoryItemRecord {
       warehouseId: warehouseId,
       minThreshold: minThreshold,
       sku: sku,
+      approvedStockValue: approvedStockValue,
     );
   }
 }

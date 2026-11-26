@@ -150,7 +150,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
           const SizedBox(height:12),
           if(o!=null)Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('معتمد بتاريخ ${o['entry_date']}\nكمية الافتتاح: ${o['quantity']}\nقيمة الافتتاح: ${(o['value_minor'] as num)/100} ريال\nلا يمكن تكرار الافتتاح. هذه ليست الكمية الحالية.'))),
           if(o==null&&warehouse!=null)...[
-            if(approvedQuantity!=null)const Text('الكمية معتمدة؛ هذه الخطوة لاعتماد التكلفة فقط، ولن تضيف الكمية مرة أخرى.'),
+            if(approvedQuantity!=null)const Text('أدخل تكلفة الكمية القديمة المعتمدة فقط. المشتريات الجديدة مسجلة بسعر فواتيرها وتُضاف قيمتها تلقائيًا؛ لن تتكرر الكمية أو قيمة الشراء.'),
             if(p['legacyInvoiceQtyByWarehouse'] is Map&&(p['legacyInvoiceQtyByWarehouse'] as Map).containsKey(warehouse))
               Text('صافي الفواتير التاريخية لهذا المخزن: ${(p['legacyInvoiceQtyByWarehouse'] as Map)[warehouse]} (ليس جردًا معتمدًا؛ لا يشمل التحويلات).'),
             if(transfers is Map&&transfers.containsKey(warehouse))

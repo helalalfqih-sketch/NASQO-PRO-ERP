@@ -182,9 +182,12 @@ class LocalInventoryReports {
       e['source']=='invoice'&&(e['itemId']==itemId||e['sourceItemId']==sourceId)&&e['currency']==c).toList()
       ..sort((a,b){final d=s(b['date']).compareTo(s(a['date']));return d!=0?d:n(b['entryNumber']).compareTo(n(a['entryNumber']));});
     final values=lines.map((l)=>n(l['price'])).where((v)=>v>0).toList();
-    if(values.isEmpty)return {'minPrice':0,'maxPrice':0,'lastPrice':0,'txCount':lines.length};
+    final purchases=lines.where((l)=>l['role']=='buy'&&n(l['price'])>0&&n(l['quantity'])>0&&n(l['baseQuantity'])>0).toList();
+    final lastPurchase=purchases.isEmpty?null:purchases.first;
+    final purchasePrice=lastPurchase==null?0:round(n(lastPurchase['price'])*n(lastPurchase['quantity'])/n(lastPurchase['baseQuantity']));
+    if(values.isEmpty)return {'minPrice':0,'maxPrice':0,'lastPrice':0,'txCount':lines.length,'lastPurchasePrice':0};
     return {'minPrice':values.reduce((a,b)=>a<b?a:b),'maxPrice':values.reduce((a,b)=>a>b?a:b),
-      'lastPrice':values.first,'txCount':lines.length};
+      'lastPrice':values.first,'txCount':lines.length,'lastPurchasePrice':purchasePrice};
   }
 
   static Future<Map<String,dynamic>> report(DatabaseExecutor db,Map<String,dynamic> snapshot,Map<String,dynamic> options)async{
@@ -253,7 +256,9 @@ class LocalInventoryReports {
       final periodNet=sum(endEvents.where((e)=>from.isEmpty||s(e['date']).compareTo(from)>=0),'effectQty');
       final openingQty=available-periodNet;
       final costPending=item['costUnverified']==true;
-      final value=historicalOnly||costPending||rowCurrency!=c?0:round(available*catalogCost);
+      final valuedPurchases=endEvents.where((e)=>e['historical']!=true&&e['financial']==true&&e['currency']==rowCurrency);
+      final purchaseValue=round(netRole(valuedPurchases,'buy','total')-netRole(valuedPurchases,'purchaseReturn','total'));
+      final value=historicalOnly||rowCurrency!=c?0:costPending?purchaseValue:round(available*catalogCost);
       // A comparison estimate is not an approved balance. Keep remainingValue
       // unchanged for financial consumers and never write an opening here.
       final purchases=events.where((e)=>e['financial']==true&&e['currency']==rowCurrency);
@@ -289,6 +294,7 @@ class LocalInventoryReports {
         'unitCost':round(unitCost),'remainingValue':value,'profit':round(profit),'avgCost':catalogCost,
         if(estimatedValue!=null)'estimatedRemainingValue':estimatedValue,
         'sellingPrice':item['sellingPrice'],'catalogQuantity':current,'quantityUnverified':historicalOnly,'costUnverified':costPending,
+        if(costPending)'unvaluedOpeningQuantity':item['unvaluedOpeningQuantity'],
         'hasMovement':relevant.isNotEmpty,'balanceBasis':historicalOnly?'historical':'operational'});
       // Keep money in its own currency. The row shows one currency, while
       // report totals include each movement currency separately.

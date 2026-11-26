@@ -19,6 +19,7 @@ import {
 } from "./types.ts";
 import { buildDateSearchTokens, isWithinDateRange } from "./utils/dateUtils.ts";
 import { addMoney, mulMoney, roundMoney, subMoney } from "./utils/moneyMath.ts";
+import { approvedInventoryValue } from "./utils/catalogCosts.ts";
 
 const ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩";
 const PERSIAN_INDIC = "۰۱۲۳۴۵۶۷۸۹";
@@ -823,7 +824,7 @@ export function computeInventorySummary(items: readonly InventoryItemRecord[], w
     }
     verifiedCount += 1;
     totalQuantity += item.quantity;
-    totalValue += item.quantity * item.avgCost;
+    totalValue += approvedInventoryValue(item);
   }
   return {
     items: filtered,
@@ -986,7 +987,7 @@ export function computeDashboardSummary(
           item.quantity <= Math.max(5, Math.floor(effectiveThreshold * 0.5))
             ? ("critical" as const)
             : ("warning" as const),
-        stockValue: item.quantity * item.avgCost,
+        stockValue: approvedInventoryValue(item),
         isBelow,
       };
     })
@@ -1878,6 +1879,7 @@ export function computeTrialBalanceReport(
   for (const item of inventory) {
     const itemCurr = (item.currencyCode || "ريال").trim();
     if (currency !== "الكل" && itemCurr !== currency) continue;
+    if (item.costUnverified) { inventoryValue = addMoney(inventoryValue, approvedInventoryValue(item)); continue; }
     const qty = item.quantityUnverified ? (item.computedQuantity ?? 0) : item.quantity;
     if (qty > 0 && item.avgCost > 0) {
       inventoryValue = addMoney(inventoryValue, mulMoney(qty, item.avgCost, 2));

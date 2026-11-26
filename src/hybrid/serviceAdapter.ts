@@ -628,11 +628,11 @@ export async function deleteAccount(uid: string, accountId: string): Promise<voi
 export async function fetchProductPriceStats(
   uid: string,
   itemId: string,
-): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }> {
+): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }> {
   try {
     return await hybridBridge.invoke<
       "getProductPriceStats",
-      { minPrice: number; maxPrice: number; lastPrice: number; txCount: number }
+      { minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }
     >("getProductPriceStats", { workspaceId: uid || LOCAL_WORKSPACE_UID, itemId });
   } catch (err) {
     throw mapBridgeError(err);

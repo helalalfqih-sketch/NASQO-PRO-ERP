@@ -465,6 +465,11 @@ class LocalDatabase {
     final ledRows = await db.query('ledger_entries', orderBy: 'entryNumber DESC');
     final whRows = await db.query('warehouses');
     final invRows = await db.query('inventory_items');
+    final approvedValues=<String,double>{};
+    for(final id in (await StockQuantityApprovalState.read(db)).keys){
+      final p=await StockQuantityApprovalState.pending(db,id);
+      if(p!=null)approvedValues[id]=p.valueMinor/100;
+    }
     final metaRows = await db.query('erp_state', where: 'stateKey = ?', whereArgs: ['settings']);
     final prefsRows = await db.query('erp_state',
         where: 'stateKey = ?', whereArgs: ['hybridUiPreferences']);
@@ -493,7 +498,7 @@ class LocalDatabase {
       accounts: accRows.map(_accountFromMap).toList(),
       ledger: ledRows.map(_ledgerFromMap).toList(),
       warehouses: whRows.map(_warehouseFromMap).toList(),
-      inventory: invRows.map(_inventoryFromMap).toList(),
+      inventory: invRows.map((r)=>_inventoryFromMap({...r,if(approvedValues.containsKey(r['id']))'approvedStockValue':approvedValues[r['id']]})).toList(),
       companyName: companyName,
       isDarkMode: isDarkMode,
       nextEntryNumber: nextEntryNumber,
@@ -753,5 +758,6 @@ class LocalDatabase {
         warehouseId: (m['warehouseId'] as String?) ?? 'wh_1',
         minThreshold: (m['minThreshold'] as num?)?.toDouble() ?? 25,
         sku: (m['sku'] as String?) ?? '',
+        approvedStockValue: (m['approvedStockValue'] as num?)?.toDouble(),
       );
 }

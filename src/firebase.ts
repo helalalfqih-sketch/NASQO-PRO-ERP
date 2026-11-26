@@ -694,8 +694,8 @@ export async function createOrUpdateAccount(
 export async function fetchProductPriceStats(
   uid: string,
   itemId: string,
-): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }> {
-  return dbFetch<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }>(
+): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }> {
+  return dbFetch<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }>(
     `/workspace/${encodeURIComponent(effectiveUid(uid))}/products/${encodeURIComponent(itemId)}/prices`,
   );
 }

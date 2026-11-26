@@ -4375,11 +4375,22 @@ export function getProductPriceStats(db: DatabaseSync, workspaceId: string, inve
     )
     .get(workspaceId, inventoryItemId) as { last_price: number | null } | undefined;
 
+  const purchase = db.prepare(`SELECT il.price / CASE WHEN COALESCE(il.unit_num,1)=1 THEN 1.0
+      WHEN il.unit_num=2 THEN i.count2 ELSE i.count2*i.count3 END AS price
+    FROM invoice_lines il JOIN ledger_entries le ON le.id=il.entry_id
+    JOIN inventory_items i ON i.id=il.inventory_item_id AND i.workspace_id=il.workspace_id
+    WHERE il.workspace_id=? AND il.inventory_item_id=? AND il.price>0
+      AND le.kind='invoice' AND le.direction='credit' AND le.deleted=0
+      AND le.currency=COALESCE(NULLIF(i.currency_code,''),'ريال')
+      AND (COALESCE(il.unit_num,1)=1 OR (il.unit_num=2 AND i.count2>0) OR (il.unit_num=3 AND i.count2>0 AND i.count3>0))
+    ORDER BY le.entry_date DESC,le.entry_number DESC,il.id DESC LIMIT 1`).get(workspaceId,inventoryItemId) as {price:number}|undefined;
+
   return {
     minPrice: Number(agg?.min_price ?? 0),
     maxPrice: Number(agg?.max_price ?? 0),
     lastPrice: Number(latest?.last_price ?? 0),
     txCount: Number(agg?.tx_count ?? 0),
+    lastPurchasePrice: Math.round(Number(purchase?.price ?? 0)*100)/100,
   };
 }
 

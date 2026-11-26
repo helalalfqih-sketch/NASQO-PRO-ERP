@@ -310,7 +310,7 @@ class AccountingEngine {
   }
 
   static double computeInventoryValue(List<InventoryItemRecord> items) {
-    return items.fold(0.0, (sum, item) => sum + item.quantity * item.avgCost);
+    return items.fold(0.0, (sum, item) => sum + (item.approvedStockValue ?? item.quantity * item.avgCost));
   }
 
   static double computeWeightedAverageCost(

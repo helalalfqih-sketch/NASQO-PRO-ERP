@@ -75,3 +75,6 @@ if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
   python3 scripts/verify-android-navigation.py
   python3 scripts/verify-android-catalog.py
 fi
+if [[ "${NASQO_ANDROID_PENDING_PURCHASE:-false}" == true ]]; then
+  python3 scripts/verify-android-pending-purchase.py
+fi

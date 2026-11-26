@@ -5,6 +5,7 @@ import 'local_document_commands.dart';
 import 'stock_quantity.dart';
 import 'local_invoice_roles.dart';
 import 'unassigned_catalog.dart';
+import 'stock_quantity_approval_state.dart';
 
 /// Cash/credit stock invoice engine. Money is integer minor units; stock uses
 /// integer thousandths internally. Linked returns use original prices and costs.
@@ -172,7 +173,8 @@ class StockInvoiceCommands {
           if(!sale)await UnassignedCatalog.bindFirstPurchase(t,item,warehouse);
           final rows=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,warehouse]);
           if(rows.length!=1) throw StateError('Stock item not in selected warehouse');
-          await LocalDatabase.requireVerifiedStock(t,item);
+          final pending=sale?null:await StockQuantityApprovalState.pending(t,item,inventoryAccountId:inventoryAccount,entryDate:entryDate);
+          if(pending==null)await LocalDatabase.requireVerifiedStock(t,item);
           await LocalDatabase.requireOpeningStockAccount(t,item,inventoryAccount,entryDate);
           final row=rows.single;
           final savedUnits=await t.query('inventory_unit_settings',where:'item_id = ?',whereArgs:[item]);
@@ -182,7 +184,7 @@ class StockInvoiceCommands {
           final unit=unitNum==1?row['unit']:units['unit$unitNum'];
           if(factor<1||unit is! String||unit.isEmpty) throw ArgumentError('Undefined item unit');
           final q=StockQuantity.boundedTicks(sold*factor);
-          final before=StockQuantity.ticks(row['quantity']),value=valuation(row);
+          final before=StockQuantity.ticks(row['quantity']),value=pending?.valueMinor??valuation(row);
           if(sale && before<q) throw StateError('Insufficient stock');
           final after=sale?before-q:before+q;
           StockQuantity.boundedTicks(after);
@@ -191,7 +193,7 @@ class StockInvoiceCommands {
           costTotal=bounded(costTotal+cost);
           final lineId='$id:$i';
           final actual=StockQuantity.units(q),afterUnits=StockQuantity.units(after);
-          await t.update('inventory_items',{'quantity':afterUnits,'avgCost':after==0?0:next/afterUnits/100},where:'id = ?',whereArgs:[item]);
+          await t.update('inventory_items',{'quantity':afterUnits,'avgCost':pending!=null||after==0?0:next/afterUnits/100},where:'id = ?',whereArgs:[item]);
           await t.insert('invoice_lines',{'id':lineId,'ledger_id':id,'item_id':item,'quantity':actual,'unit_price_minor':l['price_minor']});
           final detail={...l,'quantity':actual,'unit_factor':factor,'itemName':row['name'],'unit':unit,'cost_minor':cost};
           await t.insert('stock_posting_lines',{'id':lineId,'document_id':id,'item_id':item,'quantity':actual,
@@ -271,9 +273,12 @@ class StockInvoiceCommands {
           final base=q*factor;
           final stock=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,entry['warehouseId']]);
           if(stock.length!=1) throw StateError('Stock item missing');
-          await LocalDatabase.requireVerifiedStock(t,item);
+          final pending=sale?null:await StockQuantityApprovalState.pending(t,item,
+            inventoryAccountId:identity(details['inventoryAccountId']),entryDate:entryDate);
+          if(pending==null)await LocalDatabase.requireVerifiedStock(t,item);
           await LocalDatabase.requireOpeningStockAccount(t,item,identity(details['inventoryAccountId']),entryDate);
-          final before=StockQuantity.ticks(stock.single['quantity']),beforeValue=valuation(stock.single);
+          final before=StockQuantity.ticks(stock.single['quantity']),beforeValue=pending?.valueMinor??valuation(stock.single);
+          if(pending!=null&&base>pending.purchasedTicks)throw StateError('Return exceeds valued purchases');
           final after=sale?before+base:before-base;
           final afterValue=sale?beforeValue+costPart:beforeValue-costPart;
           if(after<0||afterValue<0||(after==0&&afterValue!=0)) throw StateError('Purchase return needs stock or cost variance reconciliation');
@@ -281,7 +286,7 @@ class StockInvoiceCommands {
           net=bounded(net+netPart);tax=bounded(tax+taxPart);cost=bounded(cost+costPart);
           final lineData=<String,dynamic>{...data,'quantity':StockQuantity.units(base),'sold_quantity':StockQuantity.units(q),'unit_factor':factor,
             'net_minor':netPart,'tax_minor':taxPart,'cost_minor':costPart,'discount_minor':discountPart};
-          changes.add({'item':item,'before':before,'after':after,'beforeValue':beforeValue,'afterValue':afterValue,'data':lineData});
+          changes.add({'item':item,'before':before,'after':after,'beforeValue':beforeValue,'afterValue':afterValue,'data':lineData,'costPending':pending!=null});
         }
         if(remainingSelection.isNotEmpty||changes.isEmpty||net+tax<=0) throw ArgumentError('No eligible return lines');
         final total=bounded(net+tax);
@@ -311,7 +316,7 @@ class StockInvoiceCommands {
           final before=c['before'] as int,after=c['after'] as int,afterValue=c['afterValue'] as int;
           final lineId='$id:$i';
           final afterUnits=StockQuantity.units(after);
-          await t.update('inventory_items',{'quantity':afterUnits,'avgCost':after==0?0:afterValue/afterUnits/100},where:'id = ?',whereArgs:[item]);
+          await t.update('inventory_items',{'quantity':afterUnits,'avgCost':c['costPending']==true||after==0?0:afterValue/afterUnits/100},where:'id = ?',whereArgs:[item]);
           await t.insert('invoice_lines',{'id':lineId,'ledger_id':id,'item_id':item,'quantity':d['quantity'],'unit_price_minor':d['price_minor']});
           await t.insert('stock_posting_lines',{'id':lineId,'document_id':id,'item_id':item,'quantity':d['quantity'],
             'before_quantity':StockQuantity.units(before),'after_quantity':afterUnits,'before_value':c['beforeValue'],'after_value':afterValue,'line_json':jsonEncode(d)});

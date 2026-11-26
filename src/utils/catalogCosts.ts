@@ -15,3 +15,10 @@ export function getCatalogReferenceCost(
   }
   return undefined;
 }
+
+/** Only priced operational purchases contribute while opening cost is pending. */
+export function approvedInventoryValue(item: Pick<InventoryItemRecord, "quantityUnverified" | "costUnverified" | "approvedStockValue" | "quantity" | "avgCost">): number {
+  if (item.quantityUnverified) return 0;
+  if (item.costUnverified) return Number.isFinite(item.approvedStockValue) ? item.approvedStockValue ?? 0 : 0;
+  return item.quantity * item.avgCost;
+}

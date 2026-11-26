@@ -29,6 +29,10 @@ on:
         description: Test an existing signed APK on Android 16 without rebuilding or publishing (source run ID)
         type: string
         default: ''
+      test_pending_purchase:
+        description: Post a synthetic purchase with pending opening cost on the isolated Android emulator
+        type: boolean
+        default: false
       inspect_play_signing_tool:
         description: Inspect Google's public PEPK tool only (no signing secrets or app build)
         type: boolean
@@ -186,9 +190,20 @@ jobs:
 
       - name: Analyze and test Flutter/Dart
         working-directory: flutter_app
+        env:
+          NASQO_PENDING_DB: ${{ runner.temp }}/nasqo-pending-qa.db
         run: |
           flutter analyze --no-fatal-infos
           bash ../scripts/test-flutter-audit.sh
+
+      - name: Upload synthetic purchase fixture
+        if: inputs.test_pending_purchase == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-purchase-test-fixture
+          path: ${{ runner.temp }}/nasqo-pending-qa.db
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Build debug APK for review only
         if: inputs.signed_candidate != true
@@ -307,6 +322,7 @@ jobs:
     timeout-minutes: 20
     env:
       NASQO_ANDROID_NAV_SMOKE: ${{ inputs.build_play_bundle }}
+      NASQO_ANDROID_PENDING_PURCHASE: ${{ inputs.test_pending_purchase }}
     permissions:
       contents: read
       actions: read
@@ -316,6 +332,11 @@ jobs:
         with:
           name: nasqo-signed-preview
           path: release-output
+      - uses: actions/download-artifact@v4
+        if: inputs.test_pending_purchase == true
+        with:
+          name: nasqo-purchase-test-fixture
+          path: synthetic-fixture
       - name: Get prior published APK and verify identity
         env:
           GH_TOKEN: ${{ github.token }}
@@ -359,6 +380,7 @@ jobs:
     timeout-minutes: 20
     env:
       NASQO_ANDROID_NAV_SMOKE: ${{ inputs.verify_existing_run != '' }}
+      NASQO_ANDROID_PENDING_PURCHASE: ${{ inputs.test_pending_purchase }}
     permissions:
       contents: read
       actions: read
@@ -377,6 +399,13 @@ jobs:
           name: nasqo-signed-preview
           path: release-output
           run-id: ${{ inputs.verify_existing_run || '45824031255' }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: inputs.test_pending_purchase == true
+        with:
+          name: nasqo-purchase-test-fixture
+          path: synthetic-fixture
+          run-id: ${{ inputs.verify_existing_run }}
           github-token: ${{ github.token }}
       - name: Get prior published APK and verify identity
         env:

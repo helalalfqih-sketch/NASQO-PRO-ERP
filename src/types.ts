@@ -270,6 +270,9 @@ export type InventoryItemRecord = {
   quantityUnverified?: boolean;
   /** Quantity can be approved while inventory valuation is still pending. */
   costUnverified?: boolean;
+  /** Recorded new purchase value, excluding the unvalued opening balance. */
+  approvedStockValue?: number;
+  unvaluedOpeningQuantity?: number;
   quantityApprovalDate?: string;
   legacyRef?: string;
 };

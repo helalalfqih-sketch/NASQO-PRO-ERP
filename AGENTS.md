@@ -186,3 +186,10 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Adding a product card must work before any warehouse exists. Do not require a warehouse field, assign a hidden default warehouse, or create a placeholder warehouse.
 - New cards have zero stock and cost, with no journal or stock movement. Keep native backup/restore and metadata editing operational for unassigned cards.
 - In the current per-warehouse stock model, the first explicitly posted purchase assigns a pristine local card to the invoice warehouse atomically. A failed/repeated posting must not leave a binding or duplicate movement; existing or imported stock must never be rebound or approved through this path.
+
+## Purchases while old inventory cost is pending (reported invoice defect, 2026-11-26)
+
+- Quantity-approved imported stock may receive a new purchase at its explicit invoice price. Keep the old opening quantity and its unapproved cost separate from the recorded value of new purchases; never average the unknown opening cost as zero or approve it implicitly.
+- Apply the same rule in invoice UI, posting-account resolution, native posting, linked purchase returns, reports and native backup validation. A later opening-cost approval posts only the old value and preserves subsequent purchase quantities/value.
+- Purchase price suggestions use recorded purchase prices in the correct base unit/currency, with the catalog reference as a fallback. Show that the suggestion is editable; delayed statistics must never overwrite manual prices or a different invoice context.
+- Acceptance must exercise the posted purchase and its persisted stock/journal on an isolated Android emulator, not just saving an empty product card. Keep private user data out of fixtures and artifacts.

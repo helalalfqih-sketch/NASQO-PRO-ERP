@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
 import 'local_database.dart';
 import 'local_master_catalog.dart';
+import 'stock_quantity_approval_state.dart';
 
 /// A business chooses posting accounts once. Imported customer/supplier
 /// categories are not sufficient evidence of a GL role.
@@ -137,8 +138,13 @@ class LocalInvoiceRoles {
         for(final line in lines){
           if(line is! Map||line['inventoryItemId'] is! String)throw ArgumentError('Invalid invoice line');
           final id=line['inventoryItemId'] as String;
-          try{await LocalDatabase.requireVerifiedStock(t,id);}
+          PendingPurchaseBalance? pending;
+          try{
+            if(!sale)pending=await StockQuantityApprovalState.pending(t,id);
+            if(pending==null)await LocalDatabase.requireVerifiedStock(t,id);
+          }
           on StateError catch(e){throw InvoicePostingSetupRequired(e.message.toString());}
+          if(pending?.inventoryAccountId!=null){ids.add(pending!.inventoryAccountId!);continue;}
           final opening=await t.query('legacy_stock_openings',columns:['inventory_account_id'],where:'item_id = ?',whereArgs:[id]);
           if(opening.isEmpty){unassigned=true;}else{ids.add(opening.single['inventory_account_id'] as String);}
         }

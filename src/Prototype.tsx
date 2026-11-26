@@ -116,7 +116,7 @@ import {
   stepInvoiceQuantity,
 } from "./utils/invoiceGridUtils";
 import { findInvoiceCatalogItems } from "./utils/invoiceCatalog";
-import { getCatalogReferenceCost } from "./utils/catalogCosts";
+import { getCatalogReferenceCost, approvedInventoryValue } from "./utils/catalogCosts";
 import {
   countActiveFilters,
   createInitialSearchState,
@@ -5136,7 +5136,7 @@ function InventoryReportPage({
         sellTotal: 0,
         availableQty: i.quantityUnverified ? (selectedWarehouseId ? (i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] ?? 0) : (i.computedQuantity ?? 0)) : i.quantity,
         unitCost: i.avgCost,
-        remainingValue: Math.round(((i.quantityUnverified || i.costUnverified) ? 0 : i.quantity) * i.avgCost * 100) / 100,
+        remainingValue: Math.round(approvedInventoryValue(i) * 100) / 100,
         profit: 0,
         avgCost: i.avgCost,
         sellingPrice: i.sellingPrice,
@@ -5660,7 +5660,10 @@ function InventoryReportPage({
                           ) : row.costUnverified ? <small style={{ display: "block", color: isActiveRow ? "#fff" : "#b45309", fontSize: 9.5 }}>كمية معتمدة — التكلفة غير معتمدة</small> : null}
                         </td>
                         <td>{row.unit}</td>
-                        <td>{row.estimatedRemainingValue!==undefined ? <>
+                        <td>{row.costUnverified && row.remainingValue > 0 ? <>
+                          <bdi>{formatAmount(row.remainingValue)}</bdi><small style={{display:"block"}}>قيمة المشتريات الجديدة فقط</small>
+                          {row.estimatedRemainingValue!==undefined ? <small style={{display:"block"}}>تقدير الإجمالي: {formatAmount(row.estimatedRemainingValue)}</small> : null}
+                        </> : row.estimatedRemainingValue!==undefined ? <>
                           <bdi>{formatAmount(row.estimatedRemainingValue)}</bdi>
                           <small style={{display:"block"}}>تقديرية — غير معتمدة</small>
                         </> : row.costUnverified||row.quantityUnverified ? "غير معتمدة" : formatAmount(row.remainingValue)}</td>
@@ -6301,6 +6304,9 @@ type DraftInvoiceRow = {
   quantity: string;
   price: string;
   discount: string;
+  priceEdited?: boolean;
+  priceLookupKey?: string;
+  priceSuggested?: boolean;
 };
 
 type InvoiceUiDraft = {
@@ -6365,7 +6371,8 @@ function unitPriceForProduct(item: InventoryItemRecord, unitNum: 1 | 2 | 3, kind
   const c3 = item.count3 && item.count3 > 0 ? item.count3 : 1;
   const mult = unitNum === 2 ? c2 : unitNum === 3 ? c2 * c3 : 1;
   if (kind === "purchase") {
-    return item.avgCost > 0 ? Math.round(item.avgCost * mult * 100) / 100 : 0;
+    const reference = item.costUnverified || item.quantityUnverified ? getCatalogReferenceCost(item) ?? 0 : item.avgCost;
+    return reference > 0 ? Math.round(reference * mult * 100) / 100 : 0;
   }
   if (unitNum === 2 && item.sprice2 && item.sprice2 > 0) return item.sprice2;
   if (unitNum === 3 && item.sprice3 && item.sprice3 > 0) return item.sprice3;
@@ -6458,6 +6465,8 @@ function InvoiceModal({
   const [accountId, setAccountId] = useState(
     restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? initialReferenceAccount?.id ?? ""),
   );
+  const priceContext = useRef({ open, kind, warehouseId, currency });
+  priceContext.current = { open, kind, warehouseId, currency };
   const manualCashbox = useRef(Boolean(editingEntry || restoredDraft));
   const chooseCashbox = (id:number|undefined) => { manualCashbox.current=true;setCashboxId(id); };
   const chooseAccount = (id:string) => {
@@ -6769,6 +6778,7 @@ function InvoiceModal({
           ? item.unit3
           : item.unit || "حبة";
     const suggestedPrice = unitPriceForProduct(item, defUnit, kind);
+    const lookupKey = `${Date.now()}-${Math.random()}`;
 
     let targetRowId = "";
     setRows((prev) => {
@@ -6784,8 +6794,9 @@ function InvoiceModal({
             ? {
                 ...r,
                 quantity: nextQty,
-                ...(suggestedPrice > 0 && !parseArabicNumber(r.price)
-                  ? { price: String(suggestedPrice) }
+                priceLookupKey: lookupKey,
+                ...(suggestedPrice > 0 && !parseArabicNumber(r.price) && !r.priceEdited
+                  ? { price: String(suggestedPrice), priceSuggested: true }
                   : {}),
               }
             : r,
@@ -6805,6 +6816,8 @@ function InvoiceModal({
         unitNum: defUnit,
         quantity: emptyIdx >= 0 ? prev[emptyIdx].quantity || "1" : "1",
         price: suggestedPrice > 0 ? String(suggestedPrice) : "",
+        priceLookupKey: lookupKey,
+        priceSuggested: suggestedPrice > 0,
         discount: emptyIdx >= 0 ? prev[emptyIdx].discount || "" : "",
       };
       if (emptyIdx >= 0) {
@@ -6829,6 +6842,13 @@ function InvoiceModal({
     });
     void fetchProductPriceStats(ctx.uid, item.id)
       .then((stats) => {
+        if (!priceContext.current.open || priceContext.current.kind !== kind || priceContext.current.warehouseId !== warehouseId || priceContext.current.currency !== currency) return;
+        if (kind === "purchase" && (stats.lastPurchasePrice ?? 0) > 0) {
+          const factor = defUnit === 1 ? 1 : defUnit === 2 ? item.count2 ?? 0 : (item.count2 ?? 0) * (item.count3 ?? 0);
+          const price = Math.round(stats.lastPurchasePrice! * factor * 100) / 100;
+          if (price > 0) setRows(current => current.map(row => row.priceLookupKey === lookupKey && row.inventoryItemId === item.id &&
+            (row.unitNum ?? 1) === defUnit && !row.priceEdited ? { ...row, price: String(price), priceSuggested: true } : row));
+        }
         if (stats.txCount > 0) {
           setPriceHint({
             name: item.name,
@@ -6874,11 +6894,19 @@ function InvoiceModal({
         : nextUnitNum === 3 && item.unit3
           ? item.unit3
           : item.unit || "حبة";
-    const nextPrice = unitPriceForProduct(item, nextUnitNum, kind);
+    let nextPrice = unitPriceForProduct(item, nextUnitNum, kind);
+    if(kind === "purchase" && nextPrice <= 0 && parseArabicNumber(row.price) > 0){
+      const factor=(unit: number)=>unit===1?1:unit===2?item.count2??0:(item.count2??0)*(item.count3??0);
+      const previousFactor=factor(row.unitNum??1),nextFactor=factor(nextUnitNum);
+      if(previousFactor>0&&nextFactor>0)nextPrice=Math.round(parseArabicNumber(row.price)/previousFactor*nextFactor*100)/100;
+    }
     updateRow(row.rowId, {
       unitNum: nextUnitNum,
       unit: nextUnitName,
-      ...(nextPrice > 0 ? { price: String(nextPrice) } : {}),
+      priceLookupKey: undefined,
+      priceEdited: false,
+      priceSuggested: nextPrice > 0,
+      price: nextPrice > 0 ? String(nextPrice) : "",
     });
   };
 
@@ -6981,7 +7009,7 @@ function InvoiceModal({
     if(hybridLocal && content==="items"){
       const invalidLine = validLines.find((line) => {
         const item = line.inventoryItemId ? inventoryById.get(line.inventoryItemId) : undefined;
-        return !item || (!localDraft && (historicalStockPending(item) || item.costUnverified === true)) ||
+        return !item || (!localDraft && (historicalStockPending(item) || (kind !== "purchase" && item.costUnverified === true))) ||
           (item.warehouseId !== warehouseId && !(kind === "purchase" && !isReturn && newCatalogCard(item)));
       });
       if (invalidLine) {
@@ -7838,7 +7866,7 @@ function InvoiceModal({
                                   onFocus={(e) => e.currentTarget.select()}
                                   onChange={(e) => {
                                     if (formError) setFormError(null);
-                                    updateRow(row.rowId, { price: e.target.value });
+                                    updateRow(row.rowId, { price: e.target.value, priceEdited: true, priceSuggested: false });
                                   }}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
@@ -7852,6 +7880,7 @@ function InvoiceModal({
                                     }
                                   }}
                                 />
+                                {row.priceSuggested ? <small>سعر مقترح قابل للتعديل</small> : null}
                               </div>
 
                               {hasDiscountColumn ? (

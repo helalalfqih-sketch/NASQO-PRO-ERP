@@ -20,6 +20,8 @@ snapshot.workspace!.whatsappPhone = "";
 snapshot.accounts.forEach((account, index) => { account.name = `حساب اصطناعي ${index + 1}`; account.phone = ""; });
 snapshot.ledger = [];
 snapshot.inventory = [
+  ...[3,5].map((quantity,index)=>({id:`synthetic-cost-pending-${index}`,ownerId:snapshot.workspaceId,name:`رصيد قديم اصطناعي ${index+1}`,
+    warehouseId:"wh_main",unit:"حبة",quantity,avgCost:0,sellingPrice:6000,quantityUnverified:false,costUnverified:true,approvedStockValue:0,legacyCatalogCost:0})),
   {id:"synthetic-catalog-only",ownerId:snapshot.workspaceId,name:"بطاقة جديدة اصطناعية",unit:"حبة",warehouseId:"",quantity:0,avgCost:0,catalogOnly:true},
   { id: "synthetic-imported", ownerId: snapshot.workspaceId, name: "صنف مستورد اصطناعي", sku: "TEST-IMPORTED",
     warehouseId: "wh_main", unit: "حبة", quantity: 0, avgCost: 10, sellingPrice: 15, quantityUnverified: true,
@@ -53,7 +55,9 @@ function installHost(state: typeof snapshot) {
     let data: unknown = { ok: true };
     let ok = allowed.has(request.action);
     if (request.action === "getSnapshot") data = state;
-    if (request.action === "getProductPriceStats") data = { minPrice: 10, maxPrice: 10, lastPrice: 10 };
+    if (request.action === "getProductPriceStats") data = String(request.payload.itemId).startsWith("synthetic-cost-pending-")
+      ? {minPrice:5000,maxPrice:5000,lastPrice:5000,lastPurchasePrice:5000,txCount:1}
+      : { minPrice: 10, maxPrice: 10, lastPrice: 10,txCount:0 };
     if (request.action === "openStockReconciliation") data = { changed: false };
     if (request.action === "getInventoryMovementsReport") data = {
       warehouses: state.warehouses, warehouseStocks: [], itemRows: [], movements: [],
@@ -72,7 +76,7 @@ function installHost(state: typeof snapshot) {
       requestId: request.requestId, action: request.action, ok,
       ...(ok ? { data } : { error: { code: "UNAUTHORIZED_ACTION", message: "Synthetic host rejects mutations" } }),
       timestampMs: Date.now(),
-    }), 0);
+    }), request.action === "getProductPriceStats" ? win.__priceDelay ?? 0 : 0);
   } };
 }
 
@@ -149,6 +153,31 @@ try {
       console.log("REPRODUCED: released 1.0.121 requests native reconciliation and leaves invoice line empty; no Android UI was opened by this synthetic host.");
     });
   } else {
+    await run("pending-cost-purchase-uses-recorded-prices-and-submits-two-lines",async()=>{
+      await openInvoice();await selectItem("رصيد قديم اصطناعي 1");await selectItem("رصيد قديم اصطناعي 2");
+      await expect(page.getByLabel("سعر السطر 1",{exact:true})).toHaveValue("5000");
+      await expect(page.getByLabel("سعر السطر 2",{exact:true})).toHaveValue("5000");
+      await page.screenshot({path:path.join(evidence,"pending-cost-purchase-priced.png")});
+      await page.evaluate(()=>{(window as any).__allowOneSyntheticReceipt=true;});
+      await page.getByTestId("invoice-save-btn").click();await expect(page.getByTestId("invoice-modal")).toHaveCount(0);
+      const posted=(await commands()).find(c=>c.action==="createLedgerEntry")!.payload.payload;
+      assert.equal(posted.amount,10000);assert.equal(posted.lines.length,2);assert(posted.lines.every((l:any)=>l.price===5000&&l.quantity===1));
+    },true);
+    await run("pending-cost-purchase-zero-price-explains-price-not-opening-cost",async()=>{
+      await openInvoice();await selectItem("رصيد قديم اصطناعي 1");
+      await expect(page.getByLabel("سعر السطر 1",{exact:true})).toHaveValue("5000");
+      await page.getByLabel("سعر السطر 1",{exact:true}).fill("0");await page.getByTestId("invoice-save-btn").click();
+      await expect(page.getByTestId("invoice-validation-error")).toContainText(/سعر/);
+    });
+    await run("late-purchase-price-never-overwrites-manual-input",async()=>{
+      await openInvoice();await page.evaluate(()=>{(window as any).__priceDelay=1200;});
+      await selectItem("رصيد قديم اصطناعي 1");await page.getByLabel("سعر السطر 1",{exact:true}).fill("3500");
+      await page.waitForTimeout(1400);await expect(page.getByLabel("سعر السطر 1",{exact:true})).toHaveValue("3500");
+    });
+    await run("pending-cost-sale-still-requires-opening-valuation",async()=>{
+      await openInvoice();await page.getByLabel("فاتورة بيع",{exact:true}).check();await selectItem("رصيد قديم اصطناعي 1");
+      await page.getByTestId("invoice-save-btn").click();await expect(page.getByTestId("invoice-validation-error")).toContainText(/التكلفة غير معتمدة/);
+    });
     await run("unverified-imported-item-stays-in-invoice-without-native-navigation", async () => {
       await openInvoice(); await selectItem("صنف مستورد اصطناعي");
       await expect(page.getByLabel("اسم الصنف للسطر 1", { exact: true })).toHaveValue("صنف مستورد اصطناعي");
