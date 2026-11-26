@@ -1,0 +1,68 @@
+format_version: '25'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: flutter
+title: NASQO PRO ERP Android CI
+summary: Verify the offline React/Flutter app and keep a private debug APK.
+
+tools:
+  nodejs: '24.12.0'
+  java: 'temurin-17'
+  flutter: '3.29.3-stable'
+
+app:
+  envs:
+    - BITRISE_FLUTTER_PROJECT_LOCATION: flutter_app
+
+# Start manually while connecting the workspace. No automatic releases or
+# paid builds are enabled by adding this file to the repository.
+trigger_map: []
+
+workflows:
+  primary:
+    title: Android checks and private debug APK
+    description: |
+      Build the offline React assets before generating the Android scaffold.
+      Run synthetic bridge/Flutter tests, then export an emulator-only debug
+      APK. Does not sign with production keys, publish a release or send mail.
+    steps:
+      - activate-ssh-key@4:
+          run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+      - git-clone@8: {}
+      - script@1:
+          title: Prepare SQLite test dependency
+          inputs:
+            - content: |-
+                #!/usr/bin/env bash
+                set -euo pipefail
+                if ! python3 -c 'import ctypes; ctypes.CDLL("libsqlite3.so")'; then
+                  if [ "$(id -u)" = 0 ]; then
+                    apt-get update
+                    apt-get install -y libsqlite3-dev
+                  else
+                    sudo apt-get update
+                    sudo apt-get install -y libsqlite3-dev
+                  fi
+                fi
+      - script@1:
+          title: Build React assets and test the bridge
+          inputs:
+            - content: bash scripts/bitrise-android-ci.sh web
+      - script@1:
+          title: Generate the NASQO Android scaffold
+          inputs:
+            - content: bash scripts/bitrise-android-ci.sh prepare
+      - script@1:
+          title: Analyze and test Flutter with synthetic data
+          inputs:
+            - content: bash scripts/bitrise-android-ci.sh test
+      - script@1:
+          title: Build and verify the debug APK
+          inputs:
+            - content: bash scripts/bitrise-android-ci.sh apk
+      - deploy-to-bitrise-io@2:
+          is_always_run: true
+          inputs:
+            - deploy_path: $BITRISE_DEPLOY_DIR/nasqo-ci
+            - is_enable_public_page: 'false'
+            - notify_user_groups: none
+            - notify_email_list: ''
