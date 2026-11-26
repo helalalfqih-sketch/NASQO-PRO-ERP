@@ -3850,7 +3850,7 @@ export function insertInventoryItemRow(
       throw new SqliteValidationError("المخزن المحدد غير موجود في قاعدة البيانات.");
     }
     resolvedWarehouseId = whRow.id;
-  } else {
+  } else if (clean.quantity !== 0) {
     const defaultWh = db
       .prepare("SELECT id FROM warehouses WHERE workspace_id = ? ORDER BY is_default DESC, code_number ASC LIMIT 1")
       .get(workspaceId) as { id: string } | undefined;

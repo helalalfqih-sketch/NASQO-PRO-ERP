@@ -4,6 +4,7 @@ import 'local_database.dart';
 import 'local_document_commands.dart';
 import 'stock_quantity.dart';
 import 'local_invoice_roles.dart';
+import 'unassigned_catalog.dart';
 
 /// Cash/credit stock invoice engine. Money is integer minor units; stock uses
 /// integer thousandths internally. Linked returns use original prices and costs.
@@ -168,6 +169,7 @@ class StockInvoiceCommands {
         for(var i=0;i<lines.length;i++){
           final l=lines[i],item=l['item_id'] as String,sold=StockQuantity.ticks(l['sold_quantity']);
           final unitNum=l['unit_num'] as int;
+          if(!sale)await UnassignedCatalog.bindFirstPurchase(t,item,warehouse);
           final rows=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,warehouse]);
           if(rows.length!=1) throw StateError('Stock item not in selected warehouse');
           await LocalDatabase.requireVerifiedStock(t,item);

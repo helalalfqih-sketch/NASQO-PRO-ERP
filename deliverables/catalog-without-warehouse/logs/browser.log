@@ -1,0 +1,5 @@
+OBSERVED catalog-create-no-warehouse-empty
+OBSERVED catalog-create-default-warehouse-empty
+OBSERVED catalog-create-validation-empty
+OBSERVED catalog-precise-cost-metadata-edit
+OBSERVED catalog-create-rejection-empty

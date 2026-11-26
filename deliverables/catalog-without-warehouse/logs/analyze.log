@@ -1,0 +1,40 @@
+Analyzing unassigned_catalog.dart, local_stock_catalog.dart, local_backup_restore.dart, stock_invoice_commands.dart, hybrid_read_only_protocol.dart, unassigned_catalog_test.dart...
+
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:114:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:125:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:131:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:134:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:150:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:160:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:181:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:194:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:205:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:215:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:232:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:241:13 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:244:64 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:295:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:382:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:395:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/hybrid/hybrid_read_only_protocol.dart:448:9 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:102:7 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:132:11 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:138:7 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:174:7 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:360:39 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:393:52 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:694:65 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:701:64 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:711:75 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:717:66 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_backup_restore.dart:852:67 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_stock_catalog.dart:82:60 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_stock_catalog.dart:93:7 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_stock_catalog.dart:124:7 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_stock_catalog.dart:141:81 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_stock_catalog.dart:162:11 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/local_stock_catalog.dart:207:13 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/stock_invoice_commands.dart:50:54 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+   info - flutter_app/lib/services/stock_invoice_commands.dart:135:46 - Statements in an if should be enclosed in a block. Try wrapping the statement in a block. - curly_braces_in_flow_control_structures
+
+36 issues found.

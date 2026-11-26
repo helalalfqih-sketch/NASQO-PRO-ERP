@@ -180,3 +180,9 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Resolve a new document's cashbox by account, then account group, then system, always matching its currency and active status. Cashier-specific cashbox is a fallback before system. Explicit manual selection takes priority; changing currency must not silently substitute another box.
 - Save defaults in workspace SQLite settings and round-trip backups, remapping web IDs. Defaults never change a saved document or an open/restored draft, post entries, replay history, or approve stock/cost.
 - Keep missing defaults explicit. Saving or cancelling reference management never submits its originating invoice/voucher. Existing native posting restrictions still apply.
+
+## Catalog creation independent of warehouses (user direction, 2026-11-26)
+
+- Adding a product card must work before any warehouse exists. Do not require a warehouse field, assign a hidden default warehouse, or create a placeholder warehouse.
+- New cards have zero stock and cost, with no journal or stock movement. Keep native backup/restore and metadata editing operational for unassigned cards.
+- In the current per-warehouse stock model, the first explicitly posted purchase assigns a pristine local card to the invoice warehouse atomically. A failed/repeated posting must not leave a binding or duplicate movement; existing or imported stock must never be rebound or approved through this path.

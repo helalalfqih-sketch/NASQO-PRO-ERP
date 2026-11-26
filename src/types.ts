@@ -254,6 +254,8 @@ export type InventoryItemRecord = {
   warehouseId: string;
   /** Live quantity computed from invoice_lines/transfers when static count is unverified */
   computedQuantity?: number;
+  /** Native zero-stock card, not yet assigned by its first posted purchase. */
+  catalogOnly?: boolean;
   /** Unapproved historical invoice net by original warehouse, not an opening stock count. */
   legacyInvoiceQtyByWarehouse?: Record<string, number>;
   /** Pending historical reference, never available stock. */

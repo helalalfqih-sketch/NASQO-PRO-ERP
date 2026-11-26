@@ -4327,7 +4327,6 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
       setFormError(msg);
       return;
     }
-    const targetWh = ctx.warehouses.find((w) => w.isDefault)?.id || ctx.warehouses[0]?.id || "";
     setSaving(true);
     try {
       await createInventoryItem(ctx.uid, {
@@ -4343,7 +4342,6 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         currencyCode,
         isActive,
         ...(expiryDate.trim() ? { expiryDate: expiryDate.trim() } : {}),
-        warehouseId: targetWh,
         quantityUnverified: false,
       });
       removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
@@ -6747,8 +6745,11 @@ function InvoiceModal({
   const historicalStockPending = (item: InventoryItemRecord) =>
     hybridLocal && (item.quantityUnverified === true ||
       (item.warehouseId !== warehouseId && item.legacyHistoricalQtyByWarehouse?.[warehouseId] !== undefined));
+  const newCatalogCard = (item: InventoryItemRecord) => item.catalogOnly === true &&
+    !item.warehouseId && item.quantity === 0 && item.avgCost === 0 &&
+    !item.quantityUnverified && !item.costUnverified;
   const invoiceStockQty = (item: InventoryItemRecord) => hybridLocal
-    ? (historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
+    ? (newCatalogCard(item) ? 0 : historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
     : (item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0));
   const invoiceStockStatus = (item: InventoryItemRecord) =>
     historicalStockPending(item) ? "رصيد المخزن غير معتمد" : "الصنف غير مرتبط بالمخزن المحدد";
@@ -6980,11 +6981,14 @@ function InvoiceModal({
     if(hybridLocal && content==="items"){
       const invalidLine = validLines.find((line) => {
         const item = line.inventoryItemId ? inventoryById.get(line.inventoryItemId) : undefined;
-        return !item || (!localDraft && (historicalStockPending(item) || item.costUnverified === true)) || item.warehouseId !== warehouseId;
+        return !item || (!localDraft && (historicalStockPending(item) || item.costUnverified === true)) ||
+          (item.warehouseId !== warehouseId && !(kind === "purchase" && !isReturn && newCatalogCard(item)));
       });
       if (invalidLine) {
         const item = invalidLine.inventoryItemId ? inventoryById.get(invalidLine.inventoryItemId) : undefined;
         const reason = !item ? "اختر الصنف من ملف الأصناف."
+          : newCatalogCard(item)
+            ? `الصنف «${item.name}» بطاقة جديدة بلا رصيد؛ سجّل فاتورة شراء في المخزن قبل البيع.`
           : !localDraft && historicalStockPending(item)
             ? `رصيد الصنف «${item.name}» غير معتمد للمخزن المحدد؛ لم يُرحّل أي قيد أو حركة مخزون.`
             : !localDraft && item.costUnverified

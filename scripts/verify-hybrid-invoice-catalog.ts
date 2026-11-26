@@ -20,6 +20,7 @@ snapshot.workspace!.whatsappPhone = "";
 snapshot.accounts.forEach((account, index) => { account.name = `حساب اصطناعي ${index + 1}`; account.phone = ""; });
 snapshot.ledger = [];
 snapshot.inventory = [
+  {id:"synthetic-catalog-only",ownerId:snapshot.workspaceId,name:"بطاقة جديدة اصطناعية",unit:"حبة",warehouseId:"",quantity:0,avgCost:0,catalogOnly:true},
   { id: "synthetic-imported", ownerId: snapshot.workspaceId, name: "صنف مستورد اصطناعي", sku: "TEST-IMPORTED",
     warehouseId: "wh_main", unit: "حبة", quantity: 0, avgCost: 10, sellingPrice: 15, quantityUnverified: true,
     legacySourceItemId: "synthetic-legacy-item", legacyHistoricalQtyByWarehouse: { wh_main: 7 } },
@@ -94,7 +95,7 @@ const server = http.createServer((request, response) => {
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const address = server.address(); assert(address && typeof address === "object");
 const url = `http://127.0.0.1:${address.port}`;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE });
 const context = await browser.newContext({ viewport: { width: 412, height: 915 } });
 const page = await context.newPage();
 const browserErrors: string[] = [], externalRequests: string[] = [];
@@ -202,6 +203,16 @@ try {
       await expect(page.getByTestId("inventory-report-screen")).toBeVisible();
       await expect(page.getByTestId("items-catalog-screen")).toHaveCount(0);
     });
+    await run("new-catalog-card-reaches-first-purchase-with-selected-warehouse", async () => {
+      await openInvoice(); await selectItem("بطاقة جديدة اصطناعية");
+      await page.getByLabel("سعر السطر 1",{exact:true}).fill("5");
+      await page.evaluate(() => { (window as any).__allowOneSyntheticReceipt = true; });
+      await page.getByTestId("invoice-save-btn").click();
+      await expect(page.getByTestId("invoice-modal")).toHaveCount(0);
+      const posts=(await commands()).filter(command=>command.action==="createLedgerEntry");
+      assert.equal(posts.length,1);assert.equal(posts[0].payload.payload.warehouseId,"wh_main");
+      assert.equal(posts[0].payload.payload.lines[0].inventoryItemId,"synthetic-catalog-only");
+    },true);
     await run("approved-item-explicit-save-sends-one-synthetic-document", async () => {
       await openInvoice(); await selectItem("صنف معتمد اصطناعي");
       await page.evaluate(() => { (window as any).__allowOneSyntheticReceipt = true; });

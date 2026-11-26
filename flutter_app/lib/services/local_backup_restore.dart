@@ -9,6 +9,7 @@ import 'legacy_stock_projection.dart';
 import 'legacy_sql_dump.dart';
 import 'stock_quantity.dart';
 import 'legacy_source_details.dart';
+import 'unassigned_catalog.dart';
 
 /// Native backups restore operational tables. Recognized SmartPro and unified
 /// web backups support explicit operational activation or isolated review.
@@ -596,8 +597,11 @@ class LocalBackupRestore {
       if(unbalanced.isNotEmpty)throw StateError('Unbalanced native journals');
       final orphan=await txn.rawQuery('SELECT l.id FROM ledger_entries l LEFT JOIN accounts a ON a.id=l.accountId WHERE a.id IS NULL LIMIT 1');
       if(orphan.isNotEmpty)throw StateError('Ledger account missing');
-      final orphanStock=await txn.rawQuery('SELECT i.id FROM inventory_items i LEFT JOIN warehouses w ON w.id=i.warehouseId WHERE w.id IS NULL LIMIT 1');
-      if(orphanStock.isNotEmpty)throw StateError('Warehouse missing');
+      final orphanStock=await txn.rawQuery('SELECT i.id,i.warehouseId FROM inventory_items i LEFT JOIN warehouses w ON w.id=i.warehouseId WHERE w.id IS NULL');
+      for(final card in orphanStock){
+        if(card['warehouseId']!='')throw StateError('Warehouse missing');
+        await UnassignedCatalog.requireClean(txn,card['id'] as String);
+      }
       final sources=await txn.query('legacy_operational_source');
       final chunks=await txn.query('legacy_operational_chunks',orderBy:'ordinal');
       if(sources.isNotEmpty){

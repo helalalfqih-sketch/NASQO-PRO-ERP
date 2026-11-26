@@ -6,6 +6,7 @@ import 'stock_invoice_commands.dart';
 import 'local_document_commands.dart';
 import 'local_master_catalog.dart';
 import 'stock_quantity.dart';
+import 'unassigned_catalog.dart';
 
 class LocalStockCatalog {
   LocalStockCatalog(this.local);
@@ -84,12 +85,14 @@ class LocalStockCatalog {
   Future<void> insertItem(Transaction t,String id,Map<String,dynamic> input)async{
     final name=LocalDocumentCommands.field(input,'name',120).trim(),sku=LocalDocumentCommands.field(input,'sku',64);
     final unit=LocalDocumentCommands.field(input,'unit',32,fallback:'حبة').trim();
-    final wh=StockInvoiceCommands.identity(input['warehouseId']),min=input['minThreshold']??0;
+    final rawWarehouse=input['warehouseId'];
+    final wh=rawWarehouse==null||rawWarehouse==''?'':StockInvoiceCommands.identity(rawWarehouse),min=input['minThreshold']??0;
     final units=unitSettings(input,unit);
     if(name.isEmpty||unit.isEmpty||min is! num||!min.isFinite||min<0||
         (input['quantity']??0)!=0||(input['avgCost']??0)!=0||input['quantityUnverified']==true)
       throw ArgumentError('New item requires zero stock and cost; post purchases or an approved opening');
-    if((await t.query('warehouses',where:'id = ?',whereArgs:[wh])).isEmpty)throw ArgumentError('Warehouse missing');
+    if(wh.isNotEmpty&&(await t.query('warehouses',where:'id = ?',whereArgs:[wh])).isEmpty)throw ArgumentError('Warehouse missing');
+    if(wh.isEmpty)units['catalogOnly']=true;
     await assertUnique(t,id,wh,name,sku);
     await t.insert('inventory_items',{'id':id,'name':name,'sku':sku,'unit':unit,'warehouseId':wh,
       'quantity':0,'avgCost':0,'minThreshold':min.toDouble()});
@@ -122,7 +125,11 @@ class LocalStockCatalog {
     final merged=<String,dynamic>{...old,...oldUnits,...input};
     final name=LocalDocumentCommands.field(merged,'name',120).trim(),sku=LocalDocumentCommands.field(merged,'sku',64);
     final unit=LocalDocumentCommands.field(merged,'unit',32,fallback:'حبة').trim();
-    final wh=StockInvoiceCommands.identity(merged['warehouseId']),min=merged['minThreshold']??0;
+    final wh=merged['warehouseId']==''?'':StockInvoiceCommands.identity(merged['warehouseId']),min=merged['minThreshold']??0;
+    if(old['warehouseId']==''){
+      await UnassignedCatalog.requireClean(t,id);
+      if(wh.isNotEmpty)throw ArgumentError('Catalog warehouse is selected when posting a purchase');
+    }
     if(name.isEmpty||unit.isEmpty||min is! num||!min.isFinite||min<0)throw ArgumentError('Invalid stock catalog');
     // Normalization does not require old legacy unit settings to be repaired
     // merely to edit a name. Changes to conversion/warehouse require no history.
@@ -130,7 +137,8 @@ class LocalStockCatalog {
     final physicalChange=unit!=old['unit']||wh!=old['warehouseId']||changesUnits;
     if(physicalChange&&(q!=0||await hasHistory(t,id)))throw StateError('Use a stock transaction; historical unit conversions cannot change');
     final units=unitSettings(merged,unit);
-    if((await t.query('warehouses',where:'id = ?',whereArgs:[wh])).isEmpty)throw StateError('Warehouse missing');
+    if(wh.isEmpty){units['catalogOnly']=true;}
+    else if((await t.query('warehouses',where:'id = ?',whereArgs:[wh])).isEmpty)throw StateError('Warehouse missing');
     await assertUnique(t,id,wh,name,sku);
     await t.update('inventory_items',{'name':name,'sku':sku,'unit':unit,'warehouseId':wh,'minThreshold':min},
       where:'id = ?',whereArgs:[id]);

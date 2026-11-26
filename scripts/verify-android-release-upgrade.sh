@@ -73,4 +73,5 @@ assert 'FATAL EXCEPTION' not in (p/'update-log.txt').read_text()
 PY
 if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
   python3 scripts/verify-android-navigation.py
+  python3 scripts/verify-android-catalog.py
 fi

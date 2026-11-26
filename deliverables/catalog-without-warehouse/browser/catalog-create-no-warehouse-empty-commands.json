@@ -1,0 +1,69 @@
+[
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_getSnapshot_1795724772303_1_63k5f",
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    },
+    "timestampMs": 1795724772303
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_navigate_1795724772612_2_kp9d4",
+    "action": "navigate",
+    "payload": {
+      "route": "items"
+    },
+    "timestampMs": 1795724772612
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_createInventoryItem_1795724772874_3_qezm8",
+    "action": "createInventoryItem",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "name": "بطاقة مستقلة اصطناعية",
+        "sku": "",
+        "unit": "حبة",
+        "quantity": 0,
+        "avgCost": 0,
+        "defaultUnit": 1,
+        "currencyCode": "ريال",
+        "isActive": true,
+        "quantityUnverified": false
+      }
+    },
+    "timestampMs": 1795724772875,
+    "idempotencyKey": "idem_createInventoryItem_1795724772874_1_gq93me"
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_updateInventoryItem_1795724774093_4_80m66",
+    "action": "updateInventoryItem",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "itemId": "new-catalog-item",
+      "updates": {
+        "name": "بطاقة مستقلة معدلة",
+        "sku": "",
+        "unit": "حبة",
+        "avgCost": 0,
+        "unit2": "",
+        "unit3": "",
+        "defaultUnit": 1,
+        "currencyCode": "ريال",
+        "isActive": true,
+        "expiryDate": ""
+      }
+    },
+    "timestampMs": 1795724774093,
+    "idempotencyKey": "idem_updateInventoryItem_new-catalog-item_1795724774093_2_rzeezc"
+  }
+]

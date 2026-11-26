@@ -14,7 +14,9 @@ class HybridReadOnlyProtocol {
   static String catalogValidationMessage(ArgumentError error) => switch(error.message) {
     'New item requires zero stock and cost; post purchases or an approved opening' => 'الصنف الجديد يبدأ برصيد وتكلفة صفر. سجّل تكلفة المخزون من فاتورة الشراء أو إجراء اعتماد المخزون.',
     'Duplicate item or barcode' => 'يوجد صنف بالاسم أو الباركود نفسه في المخزن. افتح الصنف الموجود للتعديل أو استخدم اسمًا وباركودًا مختلفين.',
-    'Warehouse missing' || 'Invalid identity' => 'تعذر العثور على المخزن المحدد؛ اختر مخزنًا موجودًا قبل حفظ الصنف.',
+    'Warehouse missing' => 'تعذر العثور على المخزن المحدد؛ اختر مخزنًا موجودًا قبل حفظ الصنف.',
+    'Invalid identity' => 'معرّف الصنف أو العملية غير صالح؛ لم تُحفظ البيانات. أعد فتح بطاقة الصنف ثم حاول مجددًا.',
+    'Catalog warehouse is selected when posting a purchase' => 'بطاقة الصنف لا تنشئ رصيدًا مخزنيًا؛ يُحدَّد المخزن عند تسجيل أول فاتورة شراء.',
     'Invalid unit conversion' || 'Only whole base units are supported' => 'معامل التحويل يجب أن يكون عددًا صحيحًا موجبًا، وأسماء الوحدات مختلفة.',
     'Third unit requires second unit' => 'أدخل الوحدة الثانية ومعاملها قبل الوحدة الثالثة.',
     'Default unit missing' => 'الوحدة الافتراضية غير معرّفة؛ اختر وحدة مكتملة البيانات.',

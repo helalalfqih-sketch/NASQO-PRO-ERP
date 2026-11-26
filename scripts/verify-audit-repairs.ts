@@ -23,6 +23,7 @@ function host(state:any){
  if(location.search.includes('cashier-pages')){state.inventory=Array.from({length:65},(_,i)=>({...state.inventory[0],id:'quick-'+i,name:'صنف سريع '+(i+1)}));state.workspace.cashierSettings={warehouseId:'wh_main',accountId:'acc_cli_1',cashboxId:state.cashboxes[0].id,currency:'ريال',quickItemIds:state.inventory.map((i:any)=>i.id)};}
  if(location.search.includes('catalog-precise-cost'))state.inventory[0].avgCost=1.234567;
  if(location.search.includes('catalog-create'))state.capabilities.localStockPosting=true;
+ if(location.search.includes('catalog-create-no-warehouse'))state.warehouses=[];
  if(location.search.includes('reference-long')){const cash=state.accounts.find((a:any)=>a.isCashAccount);state.accounts.push(...Array.from({length:40},(_,i)=>({...cash,id:'reference-cash-'+i,name:'حساب نقدي اصطناعي طويل للاختبار '+(i+1)})));}
  if(location.search.includes('settings-legacy-on'))state.uiPreferences.extendedSettings={passwordLock:true,backupReminderOnExit:true,sellWithoutBalance:true};
  const allowed=new Set(['updateInventoryItem','createInventoryItem','saveWorkspaceSettings','saveAccount','saveCashbox','saveErpRecords','backupWorkspace','getSnapshot','navigate','goBack','showMessage','changeCurrency','saveUiPreferences','getProductPriceStats','getInventoryMovementsReport','getCashboxesReport','getInvoiceDetail','beginDocumentExport','appendDocumentExport','finishDocumentExport','abortDocumentExport','printDocument','exportPdf','shareText','cloudIdentityAction','googleDriveAction','localToolsAction','legacyArchiveAction']);
@@ -35,7 +36,7 @@ function host(state:any){
     if(!w.rejectErp){for(const c of r.payload.changes){const row={...c.record,_revision:c.expectedRevision+1};if(c.collection==='vatConfig')state.erpData.vatConfig=row;else {const list=state.erpData[c.collection];const i=list.findIndex((x:any)=>x.id===row.id);if(i<0)list.push(row);else list[i]=row;}}localStorage.setItem(erpKey,JSON.stringify(state.erpData));data={erpData:state.erpData};}
   }
 if(r.action==='updateInventoryItem'){const i=state.inventory.find((x:any)=>x.id===r.payload.itemId);Object.assign(i,r.payload.updates);data={item:i,snapshot:state};}
-if(r.action==='createInventoryItem'&&!w.rejectCatalog){const item={...r.payload.payload,id:'new-catalog-item'};state.inventory.push(item);data={item,snapshot:state};}
+if(r.action==='createInventoryItem'&&!w.rejectCatalog){const item={...r.payload.payload,id:'new-catalog-item',...(!r.payload.payload.warehouseId?{warehouseId:'',catalogOnly:true}:{})};state.inventory.push(item);data={item,snapshot:state};}
 if(r.action==='saveAccount'){const a={...state.accounts[0],...r.payload.payload,id:r.payload.accountId||'new-account-'+state.accounts.length,openingBalance:0};state.accounts.push(a);data={account:a,snapshot:state};}
   if(r.action==='saveCashbox'){const b={...r.payload.payload,id:99};state.cashboxes.push(b);data={cashbox:b,snapshot:state};}
   if(r.action==='backupWorkspace')data={saved:false};
@@ -59,7 +60,7 @@ const fixture=`(${host.toString()})(${JSON.stringify(s)});`;
 const server=http.createServer((req,res)=>{const p=new URL(req.url!,'http://localhost').pathname;if(p==='/audit.js'){res.setHeader('Content-Type','text/javascript');res.end(fixture);return;}const f=path.resolve(bundle,'.'+(p==='/'?'/index.html':p));if(!f.startsWith(bundle+'/')||!fs.existsSync(f)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.woff2':'font/woff2'} as any)[path.extname(f)]||'application/octet-stream');if(f.endsWith('.html'))res.end(fs.readFileSync(f,'utf8').replace('<head>','<head><script src="/audit.js"></script>'));else fs.createReadStream(f).pipe(res);});
 await new Promise<void>(r=>server.listen(process.env.REPAIR_PREVIEW?4173:0,process.env.REPAIR_PREVIEW?'0.0.0.0':'127.0.0.1',r));const addr=server.address() as any;const url=`http://127.0.0.1:${addr.port}`;
 if(process.env.REPAIR_PREVIEW){console.log('Synthetic preview ready on port 4173');await new Promise(()=>{});}
-const browser=await chromium.launch({headless:true});const ctx=await browser.newContext({viewport:{width:360,height:800}});const page=await ctx.newPage();page.setDefaultTimeout(7000);
+const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});const ctx=await browser.newContext({viewport:{width:360,height:800}});const page=await ctx.newPage();page.setDefaultTimeout(7000);
 const errors:string[]=[],external:string[]=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',route=>{if(route.request().url().startsWith(url)||!/^https?:/.test(route.request().url()))return route.continue();external.push(route.request().url());return route.abort();});
 let currentId='';const only=process.env.REPAIR_ONLY?.split(',');const results:any[]=[];const commands=()=>page.evaluate(()=>(window as any).auditCommands);
 const emit=(route:string,params={})=>page.evaluate(({route,params})=>(window as any).auditEmit('routeChanged',{route,params}),{route,params});
@@ -290,6 +291,18 @@ try{
  await run('balance-confirmation-template',async()=>{await statement();await page.getByRole('button',{name:'تصدير',exact:true}).click();await page.getByRole('button',{name:'طباعة مصادقة الرصيد',exact:true}).click();const {bytes}=await exported();const drawn=await page.evaluate(()=>(window as any).canvasText as string[]);assert(drawn.some(t=>t.includes('مصادقة الرصيد')));assert(drawn.some(t=>t.includes('التوقيع والختم')));return{correct:true,bytes:bytes.length};});
  await run('backup-cancel-honest',async()=>{await emit('settings');await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await page.getByTestId('settings-download-sqlite-btn').click();await expect(page.getByText('أُلغي الحفظ',{exact:true})).toBeVisible();return{correct:true};});
  await run('settings-no-false-lock-or-reset',async()=>{await emit('settings');await page.getByRole('tab',{name:'قاعدة البيانات',exact:true}).click();await expect(page.getByText('التطبيق لا يطلب كلمة مرور عند الفتح.',{exact:false})).toBeVisible();await expect(page.getByRole('switch')).toBeDisabled();await expect(page.getByRole('button',{name:'تفريغ قاعدة البيانات',exact:true})).toHaveCount(0);return{correct:true,actualLockImplemented:false};});
+ for(const caseName of ['catalog-create-no-warehouse-empty','catalog-create-default-warehouse-empty'])await run(caseName,async()=>{
+  await page.getByTestId('open-items-btn').click();await page.getByRole('button',{name:'إضافة أول صنف',exact:true}).click();
+  const form=page.getByTestId('catalog-form-card');await form.getByTestId('catalog-item-name').fill('بطاقة مستقلة اصطناعية');
+  await form.getByTestId('catalog-save-btn').click();await expect(form).toHaveCount(0);
+  const creates=(await commands()).filter((r:any)=>r.action==='createInventoryItem');assert.equal(creates.length,1);
+  assert.equal(creates[0].payload.payload.warehouseId,undefined);assert.equal(creates[0].payload.payload.quantity,0);assert.equal(creates[0].payload.payload.avgCost,0);
+  assert(!(await commands()).some((r:any)=>r.action==='saveWarehouse'));await assertNoPosting();
+  await page.getByTestId('items-catalog-table').getByText('بطاقة مستقلة اصطناعية',{exact:true}).click();
+  await form.getByTestId('catalog-item-name').fill('بطاقة مستقلة معدلة');await form.getByTestId('catalog-update-btn').click();await expect(form).toHaveCount(0);
+  await expect(page.getByTestId('items-catalog-table')).toContainText('بطاقة مستقلة معدلة');
+  return{correct:true,warehouseNotRequired:true,noDefaultWarehouseAssignment:true,noStockPosting:true};
+ });
  await run('catalog-create-validation-empty',async()=>{
   await page.getByTestId('open-items-btn').click();await page.getByRole('button',{name:'إضافة أول صنف',exact:true}).click();
   const form=page.getByTestId('catalog-form-card');await expect(form.getByRole('radio',{name:'الوحدة ٢',exact:true})).toBeDisabled();
