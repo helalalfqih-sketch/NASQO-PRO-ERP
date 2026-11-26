@@ -1,0 +1,17 @@
+{
+  "confirmationDate": "2026-11-26",
+  "timezone": "Asia/Aden",
+  "source": "User-provided Google Play Console App Signing page text after PEPK import",
+  "verificationMethod": "Compared the reported Digital Asset Links certificate fingerprint with the independently verified APK/AAB and encrypted export certificate",
+  "packageName": "com.indexesstore.nasqo_pro_erp",
+  "appId": "4972519575872636779",
+  "certificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "matchesOriginalCertificate": true,
+  "directConsoleInspection": false,
+  "bundleVersionName": "1.0.149",
+  "bundleVersionCode": 1149,
+  "bundleSha256": "8f7d59d4dcde6d5c4fbdeaf869cd50e319877f20ffccd80332249477b5abad26",
+  "bundleUploadConfirmed": false,
+  "internalRolloutConfirmed": false,
+  "playInstalledUpgradeTested": false
+}

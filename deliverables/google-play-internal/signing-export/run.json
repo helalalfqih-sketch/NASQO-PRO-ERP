@@ -6,5 +6,8 @@
   "appBuild": "skipped",
   "publication": "skipped",
   "encryptedExportOnly": true,
-  "playImportConfirmed": false
+  "playImportConfirmed": true,
+  "playImportEvidence": "console-confirmation.json",
+  "playRolloutConfirmed": false,
+  "playUpgradeTested": false
 }
