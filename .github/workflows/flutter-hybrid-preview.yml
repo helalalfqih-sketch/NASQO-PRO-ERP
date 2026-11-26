@@ -145,9 +145,11 @@ jobs:
           printf '%s' "$NASQO_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$NASQO_ANDROID_KEYSTORE_PATH"
           node ../scripts/configure-android-signing.mjs
           CODE=$((1000 + GITHUB_RUN_NUMBER))
+          PREVIEW_UPDATES=true
+          if [[ "$NASQO_BUILD_PLAY_BUNDLE" == true ]]; then PREVIEW_UPDATES=false; fi
           bash ../scripts/build-android-with-retry.sh flutter build apk --release \
             --build-name="1.0.$GITHUB_RUN_NUMBER" --build-number="$CODE" \
-            --dart-define=NASQO_ANDROID_PREVIEW=true \
+            --dart-define=NASQO_ANDROID_PREVIEW="$PREVIEW_UPDATES" \
             --dart-define=NASQO_ANDROID_BUILD_NUMBER="$CODE" \
             --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
             --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"

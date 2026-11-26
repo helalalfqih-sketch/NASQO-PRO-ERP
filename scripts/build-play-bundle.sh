@@ -6,7 +6,7 @@ set -euo pipefail
 CODE=$((1000 + GITHUB_RUN_NUMBER))
 bash ../scripts/build-android-with-retry.sh flutter build appbundle --release \
   --build-name="1.0.$GITHUB_RUN_NUMBER" --build-number="$CODE" \
-  --dart-define=NASQO_ANDROID_PREVIEW=true \
+  --dart-define=NASQO_ANDROID_PREVIEW=false \
   --dart-define=NASQO_ANDROID_BUILD_NUMBER="$CODE" \
   --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
   --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
