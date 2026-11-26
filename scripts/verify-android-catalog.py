@@ -29,7 +29,7 @@ def read():
     raise AssertionError('Android accessibility tree unavailable')
 
 def labels(root):
-    return [n.get('text','')+' '+n.get('content-desc','') for n in root.iter('node')]
+    return [' '.join(n.get(k,'') for k in ('text','content-desc','hint')) for n in root.iter('node')]
 
 def capture(stage, required, absent=''):
     for _ in range(15):
@@ -46,7 +46,7 @@ def tap(label, field=False, scroll=False):
     for _ in range(10 if scroll else 3):
         root = read()
         for n in root.iter('node'):
-            text = n.get('text','')+' '+n.get('content-desc','')
+            text = ' '.join(n.get(k,'') for k in ('text','content-desc','hint'))
             if (field and n.get('class') != 'android.widget.EditText') or label.replace('إ','ا').replace('أ','ا') not in text.replace('إ','ا').replace('أ','ا'):
                 continue
             bounds = [int(x) for x in re.findall(r'\d+',n.get('bounds',''))]

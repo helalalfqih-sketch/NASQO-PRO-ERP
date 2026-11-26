@@ -25,6 +25,10 @@ on:
         description: Also build an API 36 signed AAB for Google Play internal testing (requires signed_candidate)
         type: boolean
         default: false
+      verify_existing_run:
+        description: Test an existing signed APK on Android 16 without rebuilding or publishing (source run ID)
+        type: string
+        default: ''
       inspect_play_signing_tool:
         description: Inspect Google's public PEPK tool only (no signing secrets or app build)
         type: boolean
@@ -119,7 +123,7 @@ jobs:
           if-no-files-found: error
 
   flutter-hybrid:
-    if: inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true && inputs.export_play_signing_key != true
+    if: inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true && inputs.export_play_signing_key != true && inputs.verify_existing_run == ''
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -349,19 +353,30 @@ jobs:
 
 
   verify-arabic-name:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true && inputs.export_play_signing_key != true
+    if: github.event_name == 'workflow_dispatch' && (inputs.publish_verified_candidate == true || inputs.verify_existing_run != '') && inputs.export_play_signing_key != true
+    name: Verify existing signed Android artifact
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      NASQO_ANDROID_NAV_SMOKE: ${{ inputs.verify_existing_run != '' }}
     permissions:
       contents: read
       actions: read
     steps:
       - uses: actions/checkout@v4
+      - name: Require verification-only request
+        if: inputs.verify_existing_run != ''
+        env:
+          OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.inspect_play_signing_tool || inputs.export_play_signing_key }}
+          SOURCE_RUN: ${{ inputs.verify_existing_run }}
+        run: |
+          test "$OTHER_ACTIONS" = false
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-signed-preview
           path: release-output
-          run-id: 45824031255
+          run-id: ${{ inputs.verify_existing_run || '45824031255' }}
           github-token: ${{ github.token }}
       - name: Get prior published APK and verify identity
         env:
@@ -385,7 +400,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ inputs.verify_existing_run != '' && 36 || 35 }}
           target: google_apis
           arch: x86_64
           profile: pixel_5
