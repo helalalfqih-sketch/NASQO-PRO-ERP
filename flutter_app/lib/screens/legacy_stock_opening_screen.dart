@@ -126,7 +126,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
         Text('اعتمادات الكمية: ${quantityApprovals.length} • اعتمادات التكلفة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
         FilledButton.icon(onPressed:busy||products.isEmpty||sourceSha==null?null:()async{
           final result=await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockBatchScreen(
-            products:products,warehouses:warehouses,accounts:accounts,openings:openings,sourceSha:sourceSha!,initialWarehouseId:warehouse)));
+            products:products,warehouses:warehouses,accounts:accounts,openings:openings,quantityApprovals:quantityApprovals,sourceSha:sourceSha!,initialWarehouseId:warehouse)));
           if(result==true&&mounted){changed=true;setState(()=>busy=true);await _load();}
         },icon:const Icon(Icons.playlist_add_check),label:const Text('اعتماد جرد جماعي')),
         OutlinedButton.icon(onPressed:busy?null:()async{

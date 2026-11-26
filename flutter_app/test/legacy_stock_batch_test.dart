@@ -2,6 +2,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nasqo_pro_erp/services/legacy_stock_batch.dart';
 
 void main(){
+  test('cost review uses the approved baseline rather than history or a newer purchase quantity',(){
+    final products=<Map<String,dynamic>>[
+      {'id':'p','name':'Synthetic item','currencyCode':'ريال','avgCost':20,'quantity':7,
+        'legacyInvoiceQtyByWarehouse':{'wh':99},'legacyTransferIncomplete':true},
+      {'id':'missing-cost','currencyCode':'ريال','avgCost':0},
+    ];
+    final approvals=<Map<String,dynamic>>[
+      {'source_item_id':'p','warehouse_id':'wh','quantity':3},
+      {'source_item_id':'p','warehouse_id':'other','quantity':8},
+      {'source_item_id':'missing-cost','warehouse_id':'wh','quantity':2},
+    ];
+    final rows=LegacyStockBatch.reviewRows(products,[],'wh',quantityApprovals:approvals);
+    expect(rows.first['reason'],'suggested');
+    expect(rows.first['quantityApproved'],true);
+    expect(rows.first['quantity'],3);expect(rows.first['totalValue'],60);
+    expect(rows.first['historicalQuantity'],99);
+    expect(rows.last['reason'],'cost');expect(rows.last['approvedQuantity'],2);expect(rows.last['quantity'],2);
+    final old=LegacyStockBatch.reviewRows(products,[],'wh');
+    expect(old.first['reason'],'transfer');
+    expect(products.first['quantity'],7);expect(approvals.first['quantity'],3);
+  });
   test('bulk suggestions accept precise fractions and omit incomplete, negative and approved stock',(){
     final products=<Map<String,dynamic>>[
       {'id':'legacy-prod-1','currencyCode':'ريال','avgCost':2,'legacyInvoiceQtyByWarehouse':{'wh':4},'legacyTransferNetByWarehouse':{'wh':1}},

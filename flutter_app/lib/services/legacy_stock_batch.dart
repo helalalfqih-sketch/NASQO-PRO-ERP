@@ -39,38 +39,44 @@ class LegacyStockBatch {
   /// One row per original product and warehouse. Missing evidence never
   /// becomes an assumed zero. The suggestion remains an editable draft.
   static List<Map<String,dynamic>> reviewRows(Iterable<Map<String,dynamic>> products,
-      Iterable<Map<String,dynamic>> openings,String warehouse){
+      Iterable<Map<String,dynamic>> openings,String warehouse,
+      {Iterable<Map<String,dynamic>> quantityApprovals=const []}){
     final existing={for(final o in openings)
       if(o['warehouse_id']==warehouse)o['source_item_id']:o};
+    final approvedQuantities={for(final q in quantityApprovals)
+      if(q['warehouse_id']==warehouse)q['source_item_id']:q};
     final result=<Map<String,dynamic>>[];
     for(final p in products){
       final invoices=p['legacyInvoiceQtyByWarehouse'],transfers=p['legacyTransferNetByWarehouse'];
       final present=(invoices is Map&&invoices.containsKey(warehouse))||(transfers is Map&&transfers.containsKey(warehouse));
       final historical=present?(invoices is Map?(invoices[warehouse] as num? ??0):0)+(transfers is Map?(transfers[warehouse] as num? ??0):0):null;
       final opened=existing[p['id']];
+      final quantityApproval=approvedQuantities[p['id']];
+      final baseline=quantityApproval==null?historical:quantityApproval['quantity'] as num?;
       String reason='';
       num? quantity,value;
       if(opened!=null){
         reason='approved';quantity=opened['quantity'] as num;value=(opened['value_minor'] as num)/100;
       }else if(p['currencyCode']!='ريال'){reason='currency';}
-      else if(p['legacyTransferIncomplete']==true){reason='transfer';}
-      else if(historical==null){reason='no_history';}
-      else if(!historical.isFinite||historical<0){reason='negative';}
+      else if(quantityApproval==null&&p['legacyTransferIncomplete']==true){reason='transfer';}
+      else if(baseline==null){reason='no_history';}
+      else if(!baseline.isFinite||baseline<0){reason='negative';}
       else{
         try{
-          quantity=StockQuantity.normalized(historical);
+          quantity=StockQuantity.normalized(baseline);
           final cost=p['avgCost'];
-          if(quantity>0&&(cost is! num||!cost.isFinite||cost<=0)){reason='cost';quantity=null;}
+          if(quantity>0&&(cost is! num||!cost.isFinite||cost<=0)){reason='cost';if(quantityApproval==null)quantity=null;}
           else{
             final minor=quantity==0?0:StockInvoiceCommands.money((quantity*(cost as num)*100).round()/100);
-            if(quantity>0&&minor<=0){reason='cost';quantity=null;}
+            if(quantity>0&&minor<=0){reason='cost';if(quantityApproval==null)quantity=null;}
             else{value=minor/100;reason='suggested';}
           }
         }catch(_){reason='precision';quantity=null;value=null;}
       }
       result.add({'sourceItemId':p['id'],'warehouseId':warehouse,'name':p['name'],'sku':p['sku'],
         'unit':p['unit'],'historicalQuantity':historical,'quantity':quantity,'totalValue':value,
-        'reason':reason,'relevant':present||p['warehouseId']==warehouse||opened!=null});
+        'quantityApproved':quantityApproval!=null,'approvedQuantity':quantityApproval?['quantity'],
+        'reason':reason,'relevant':present||p['warehouseId']==warehouse||opened!=null||quantityApproval!=null});
     }
     return result;
   }

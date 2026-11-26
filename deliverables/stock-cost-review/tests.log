@@ -1,0 +1,15 @@
+00:00 +0: loading /workspace/NASQO-play-internal/flutter_app/test/legacy_stock_batch_test.dart
+00:00 +0: /workspace/NASQO-play-internal/flutter_app/test/legacy_stock_batch_test.dart: cost review uses the approved baseline rather than history or a newer purchase quantity
+00:00 +1: /workspace/NASQO-play-internal/flutter_app/test/legacy_stock_batch_test.dart: bulk suggestions accept precise fractions and omit incomplete, negative and approved stock
+00:00 +2: /workspace/NASQO-play-internal/flutter_app/test/legacy_stock_batch_screen_test.dart: cost review locks approved quantities and rejects pasted quantity changes
+00:02 +3: /workspace/NASQO-play-internal/flutter_app/test/pending_cost_purchase_test.dart: priced purchases and linked returns preserve unvalued opening, backup and later valuation
+00:02 +4: /workspace/NASQO-play-internal/flutter_app/test/pending_cost_purchase_test.dart: priced purchases and linked returns preserve unvalued opening, backup and later valuation
+00:03 +5: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:04 +6: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_screen_test.dart: quantity review requires selection, acknowledgement and final confirmation; cancel never writes
+00:05 +7: /workspace/NASQO-play-internal/flutter_app/test/local_backup_restore_test.dart: native restore, legacy SQLite review, exact archive export and rollback preserve live data
+00:05 +8: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_screen_test.dart: stale review keeps error visible and requires a fresh acknowledgement
+00:06 +9: /workspace/nasqo-private-cost-audit-20261126/harness/valuation_visual_test.dart: (setUpAll)
+00:06 +9: /workspace/nasqo-private-cost-audit-20261126/harness/valuation_visual_test.dart: synthetic cost review portrait
+00:07 +10: /workspace/nasqo-private-cost-audit-20261126/harness/valuation_visual_test.dart: synthetic cost review landscape
+00:07 +11: /workspace/nasqo-private-cost-audit-20261126/harness/valuation_visual_test.dart: (tearDownAll)
+00:07 +11: All tests passed!

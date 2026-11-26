@@ -6,8 +6,9 @@ import '../services/local_database.dart';
 /// An editable, named reconciliation list. Calculations are proposals only.
 class LegacyStockBatchScreen extends StatefulWidget {
   const LegacyStockBatchScreen({super.key,required this.products,required this.warehouses,
-    required this.accounts,required this.openings,required this.sourceSha,this.initialWarehouseId});
-  final List<Map<String,dynamic>> products,warehouses,accounts,openings;
+    required this.accounts,required this.openings,required this.sourceSha,this.initialWarehouseId,
+    this.quantityApprovals=const []});
+  final List<Map<String,dynamic>> products,warehouses,accounts,openings,quantityApprovals;
   final String sourceSha;
   final String? initialWarehouseId;
   @override
@@ -42,7 +43,8 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
     rows=[
       for(final w in widget.warehouses)
         if(warehouse==allWarehouses||warehouse==w['id'])
-          ...LegacyStockBatch.reviewRows(widget.products,widget.openings,w['id'] as String)
+          ...LegacyStockBatch.reviewRows(widget.products,widget.openings,w['id'] as String,
+            quantityApprovals:widget.quantityApprovals)
             .where((r)=>warehouse!=allWarehouses||r['relevant']==true)
     ];
   }
@@ -77,21 +79,29 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
       confirmed=false;error=null;
     });
   }
+  Future<T?> _inputDialog<T>(WidgetBuilder builder)async{
+    final route=DialogRoute<T>(context:context,builder:builder);
+    final result=await Navigator.of(context,rootNavigator:true).push(route);
+    // Keep controllers alive until the closing dialog has unmounted.
+    await route.completed;
+    return result;
+  }
   Future<void> _edit(Map<String,dynamic> row)async{
     if(busy||row['reason']=='approved'||row['reason']=='currency')return;
     final current=selected[key(row)]??row;
-    final q=TextEditingController(text:current['quantity']?.toString()??'');
+    final q=TextEditingController(text:(row['quantityApproved']==true?row['approvedQuantity']:current['quantity'])?.toString()??'');
     final v=TextEditingController(text:current['totalValue']?.toString()??'');
     String? validation;
     try{
-      final result=await showDialog<Map<String,dynamic>>(context:context,builder:(ctx)=>StatefulBuilder(
+      final result=await _inputDialog<Map<String,dynamic>>((ctx)=>StatefulBuilder(
         builder:(context,setDialog)=>AlertDialog(title:Text(row['name'].toString()),
           content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
             Text(warehouseName(row['warehouseId'])),
             if(row['historicalQuantity']!=null)Text('صافي الحركة التاريخية (مرجع): ${row['historicalQuantity']}'),
             Text(reasons[row['reason']]??''),
-            TextField(controller:q,keyboardType:const TextInputType.numberWithOptions(decimal:true),
-              decoration:const InputDecoration(labelText:'الكمية الفعلية بالوحدة الأساسية')),
+            if(row['quantityApproved']==true)const Text('تقييم الكمية القديمة المثبتة فقط؛ تُحفظ المشتريات الجديدة بقيمتها المسجلة.'),
+            TextField(controller:q,readOnly:row['quantityApproved']==true,keyboardType:const TextInputType.numberWithOptions(decimal:true),
+              decoration:InputDecoration(labelText:row['quantityApproved']==true?'كمية الرصيد القديم المثبتة':'الكمية الفعلية بالوحدة الأساسية')),
             TextField(controller:v,keyboardType:const TextInputType.numberWithOptions(decimal:true),
               decoration:const InputDecoration(labelText:'إجمالي التكلفة المعتمدة')),
             if(validation!=null)Text(validation!,style:TextStyle(color:Theme.of(context).colorScheme.error)),
@@ -112,7 +122,7 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
     final input=TextEditingController();
     String? validation;
     try{
-      final result=await showDialog<List<Map<String,dynamic>>>(context:context,builder:(ctx)=>StatefulBuilder(
+      final result=await _inputDialog<List<Map<String,dynamic>>>((ctx)=>StatefulBuilder(
         builder:(context,setDialog)=>AlertDialog(title:const Text('لصق جرد فعلي'),
           content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
             const Text('كل سطر: معرف الصنف، الكمية، إجمالي التكلفة. استخدم Tab أو فاصلة.'),
@@ -128,15 +138,18 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
                 for(final r in parsed){
                   final original=available[key(r)];
                   if(original==null||['approved','currency'].contains(original['reason']))throw const FormatException('صنف غير متاح للاعتماد');
+                  if(original['quantityApproved']==true&&r['quantity']!=original['approvedQuantity']){
+                    throw const FormatException('الكمية مثبتة سابقًا؛ عدّل التكلفة فقط دون تغيير الكمية.');
+                  }
                   merged.add({...original,...r});
                 }
                 Navigator.pop(ctx,merged);
               }on FormatException catch(e){setDialog(()=>validation=e.message);}
             },child:const Text('إضافة إلى المسودة'))])));
-      if(result!=null&&mounted)setState((){
+      if(result!=null&&mounted){setState((){
         for(final row in result){selected[key(row)]=row;}
         confirmed=false;
-      });
+      });}
     }finally{input.dispose();}
   }
   num get total=>selected.values.fold<num>(0,(sum,r)=>sum+(r['totalValue'] as num));
@@ -149,7 +162,7 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
     final approved=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
       title:const Text('اعتماد الجرد المحدد'),
       content:Text('عدد الأرصدة: ${payload.length}\nالقيمة: ${total.toStringAsFixed(2)} ريال\n'
-        'تأكد من مطابقة الكميات والتكاليف وأن قيمتها غير مثبتة مسبقًا. تُعتمد الدفعة كاملة أو تُرفض كاملة.'),
+        'تأكد من مطابقة الكميات والتكاليف وأن قيمتها غير مثبتة مسبقًا. الكميات المثبتة والمشتريات الجديدة تبقى كما هي؛ يُضاف تقييم الرصيد القديم فقط. تُعتمد الدفعة كاملة أو تُرفض كاملة.'),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('اعتماد'))]));
     if(approved!=true||!mounted)return;
@@ -179,9 +192,11 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
       appBar:AppBar(title:const Text('مطابقة الجرد الجماعي')),
       body:Column(children:[
         if(busy)const LinearProgressIndicator(),
-        Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:Column(children:[
+        Expanded(child:CustomScrollView(slivers:[
+        SliverToBoxAdapter(child:Padding(padding:const EdgeInsets.fromLTRB(12,8,12,4),child:Column(children:[
           choice('نطاق الجرد',[{'id':allWarehouses,'name':'جميع المخازن'},...widget.warehouses],warehouse,_changeWarehouse),
           Text('مقترحات: $suggestions • تحتاج مراجعة: $exceptions • معتمدة: $saved'),
+          const Text('التكلفة المقترحة بسعر الشراء المحفوظ ببطاقة الصنف. سعر البيع مستقل. الكميات المعتمدة سابقًا مقفلة.'),
           Wrap(spacing:8,children:[
             FilledButton.tonal(onPressed:busy||suggestions==0?null:_selectSuggestions,child:const Text('تحديد جميع المقترحات')),
             TextButton(onPressed:busy||selected.isEmpty?null:()=>setState((){selected.clear();confirmed=false;}),child:const Text('إلغاء التحديد')),
@@ -197,21 +212,22 @@ class _LegacyStockBatchScreenState extends State<LegacyStockBatchScreen>{
               DropdownMenuItem(value:'selected',child:Text('المحدد للاعتماد')),
               DropdownMenuItem(value:'approved',child:Text('المعتمد سابقًا')),
             ],onChanged:busy?null:(v){if(v!=null)setState(()=>filter=v);}),
-        ])),
-        Expanded(child:ListView.builder(itemCount:visible.length,itemBuilder:(ctx,index){
+        ]))),
+        SliverList(delegate:SliverChildBuilderDelegate((ctx,index){
           final row=visible[index],draft=selected[key(row)],value=draft??row;
           final reason=row['reason'];
           final canEdit=reason!='approved'&&reason!='currency';
           return ListTile(dense:true,
             title:Text(row['name'].toString(),maxLines:2,overflow:TextOverflow.ellipsis),
             subtitle:Text("${warehouseName(row['warehouseId'])} • ${reasons[reason]??''}\n"
-              "الكمية: ${value['quantity']??'غير معتمدة'} ${row['unit']??''} • التكلفة: ${value['totalValue']??'—'}"),
+              "${row['quantityApproved']==true?'الكمية المثبتة':'الكمية'}: ${value['quantity']??'غير معتمدة'} ${row['unit']??''} • التكلفة: ${value['totalValue']??'—'}"),
             leading:Checkbox(value:draft!=null||reason=='approved',onChanged:busy||!canEdit?null:(checked){
               if(checked==true){if(reason=='suggested'){setState((){selected[key(row)]=Map<String,dynamic>.from(row);confirmed=false;});}else{_edit(row);}}
               else{setState((){selected.remove(key(row));confirmed=false;});}
             }),
-            trailing:IconButton(icon:const Icon(Icons.edit_outlined),tooltip:'تعديل الكمية والتكلفة',onPressed:busy||!canEdit?null:()=>_edit(row)));
-        })),
+            trailing:IconButton(icon:const Icon(Icons.edit_outlined),tooltip:row['quantityApproved']==true?'تعديل التكلفة فقط':'تعديل الكمية والتكلفة',onPressed:busy||!canEdit?null:()=>_edit(row)));
+        },childCount:visible.length)),
+        ])),
         SafeArea(top:false,child:Padding(padding:const EdgeInsets.all(10),child:Column(children:[
           Text('المحدد: ${selected.length} • القيمة: ${total.toStringAsFixed(2)} ريال'),
           if(error!=null)Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error)),

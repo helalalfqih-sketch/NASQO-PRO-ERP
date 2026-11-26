@@ -193,3 +193,9 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Apply the same rule in invoice UI, posting-account resolution, native posting, linked purchase returns, reports and native backup validation. A later opening-cost approval posts only the old value and preserves subsequent purchase quantities/value.
 - Purchase price suggestions use recorded purchase prices in the correct base unit/currency, with the catalog reference as a fallback. Show that the suggestion is editable; delayed statistics must never overwrite manual prices or a different invoice context.
 - Acceptance must exercise the posted purchase and its persisted stock/journal on an isolated Android emulator, not just saving an empty product card. Keep private user data out of fixtures and artifacts.
+
+## Cost review after quantity approval (user direction, 2026-11-26)
+
+- Use the saved purchase price as the catalog cost suggestion; selling prices remain independent. A suggestion is still a review, not automatic financial approval.
+- Batch cost review must read the warehouse's existing quantity approval. Lock that old baseline in editing and paste flows; never substitute historical projections or the current quantity including later purchases.
+- Preserve subsequent purchases and their recorded value, source history and repeated-operation protection when approving the old cost. Account roles must come from explicit workspace setup or the user's selections, not account-name guesses.
