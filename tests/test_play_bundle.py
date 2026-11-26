@@ -10,7 +10,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/verify-play-bundle.py'
 
 class PlayBundleValidation(unittest.TestCase):
-    def run_check(self, alignment=16384, target=36, package='com.indexesstore.nasqo_pro_erp'):
+    def run_check(self, alignment=16384, target=36, minimum=24, package='com.indexesstore.nasqo_pro_erp'):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             # Minimal ELF64 fixture with one load segment; no app/customer data.
@@ -21,7 +21,7 @@ class PlayBundleValidation(unittest.TestCase):
             struct.pack_into('<IIQQQQQQ', elf, 64, 1, 5, 0, 0, 0, 120, 120, alignment)
             with zipfile.ZipFile(root / 'test.aab', 'w') as archive:
                 archive.writestr('base/lib/arm64-v8a/libsynthetic.so', elf)
-            (root / 'manifest.xml').write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}" android:versionCode="1145" android:versionName="1.0.145"><uses-sdk android:minSdkVersion="23" android:targetSdkVersion="{target}"/><application android:debuggable="false"/></manifest>')
+            (root / 'manifest.xml').write_text(f'<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="{package}" android:versionCode="1145" android:versionName="1.0.145"><uses-sdk android:minSdkVersion="{minimum}" android:targetSdkVersion="{target}"/><application android:debuggable="false"/></manifest>')
             (root / 'config.txt').write_text('PAGE_ALIGNMENT_16K')
             result = subprocess.run([sys.executable, str(SCRIPT), str(root/'test.aab'), str(root/'manifest.xml'), str(root/'config.txt'), str(root/'out.json'), '1145'], capture_output=True, text=True)
             return result
@@ -36,6 +36,11 @@ class PlayBundleValidation(unittest.TestCase):
 
     def test_rejects_old_target_sdk(self):
         self.assertNotEqual(self.run_check(target=35).returncode, 0)
+
+    def test_rejects_minimum_below_play_protection_requirement(self):
+        result = self.run_check(minimum=23)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Play automatic protection requires minimum SDK 24', result.stderr)
 
     def test_rejects_changed_package(self):
         self.assertNotEqual(self.run_check(package='com.example.other').returncode, 0)

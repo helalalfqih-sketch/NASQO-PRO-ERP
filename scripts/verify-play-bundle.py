@@ -14,7 +14,7 @@ assert root.attrib['package'] == 'com.indexesstore.nasqo_pro_erp', 'Package chan
 assert root.attrib[android + 'versionCode'] == expected_code, 'Wrong version code'
 sdk = root.find('uses-sdk')
 assert int(sdk.attrib[android + 'targetSdkVersion']) == 36, 'Play requires target API 36'
-assert int(sdk.attrib[android + 'minSdkVersion']) == 23, 'Minimum SDK changed'
+assert int(sdk.attrib[android + 'minSdkVersion']) == 24, 'Play automatic protection requires minimum SDK 24'
 app = root.find('application')
 assert app.attrib.get(android + 'debuggable', 'false') == 'false', 'Debuggable bundle'
 assert 'PAGE_ALIGNMENT_16K' in Path(config).read_text(), 'Bundle must request 16 KB zip alignment'
@@ -37,7 +37,7 @@ with zipfile.ZipFile(bundle) as archive:
         libraries.append({'name': name, 'loadAlignments': alignments})
 assert libraries and any('/arm64-v8a/' in entry['name'] for entry in libraries), 'Missing ARM64 libraries'
 result = {'package': root.attrib['package'], 'versionCode': int(expected_code),
-          'versionName': root.attrib[android + 'versionName'], 'targetSdk': 36, 'minSdk': 23,
+          'versionName': root.attrib[android + 'versionName'], 'targetSdk': 36, 'minSdk': 24,
           'debuggable': False, 'bundleAlignment': 'PAGE_ALIGNMENT_16K', 'libraries': libraries,
           'scope': 'Static bundle/ELF validation, not execution on a 16 KB device'}
 Path(output).write_text(json.dumps(result, indent=2) + '\n')

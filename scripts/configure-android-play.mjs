@@ -8,6 +8,8 @@ const edits = [
   ['app/build.gradle.kts', [
     [/compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)/, 'compileSdk = 36'],
     [/targetSdk\s*=\s*(?:flutter\.targetSdkVersion|\d+)/, 'targetSdk = 36'],
+    // Required by automatic protection enabled in this Play Console app.
+    [/minSdk\s*=\s*(?:flutter\.minSdkVersion|\d+)/, 'minSdk = 24'],
   ]],
   ['settings.gradle.kts', [
     [/id\("com\.android\.application"\) version "[^"]+"/, 'id("com.android.application") version "8.9.2"'],
@@ -26,4 +28,4 @@ const outputs = edits.map(([name, replacements]) => {
   return [file, source];
 });
 for (const [file, source] of outputs) fs.writeFileSync(file, source);
-console.log('Play scaffold: compile/target API 36, AGP 8.9.2, Gradle 8.11.1; package/signing unchanged.');
+console.log('Play scaffold: minimum API 24, compile/target API 36, AGP 8.9.2, Gradle 8.11.1; package/signing unchanged.');
