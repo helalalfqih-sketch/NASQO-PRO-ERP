@@ -33,6 +33,8 @@
 - `scripts/verify-android-release-upgrade.sh`
 - `flutter_app/lib/hybrid/hybrid_react_preview_screen.dart`
 
+لاحقًا أُضيفت أدوات تجهيز نقل التوقيع: `scripts/PlayKeyExport.java` و`scripts/export-play-signing-key.py` و`tests/test_pepk_export.py`، ومهمة فحص أداة PEPK العامة داخل workflow. لا تغير هذه الإضافات ملف AAB المبني من SHA أعلاه؛ اختُبرت بأربعة اختبارات اصطناعية ولم تُستخدم على مفتاح التطبيق الحقيقي بعد.
+
 تحتوي مجلدات هذا التقرير على دليل التسليم، مسودة نصوص المتجر والأيقونة، ونتائج الاختبارات. لا يُحفظ APK/AAB أو المفتاح الخاص أو نسخ العملاء الاحتياطية في Git.
 
 ## التوقيع
