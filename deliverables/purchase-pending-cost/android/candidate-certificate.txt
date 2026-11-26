@@ -1,0 +1,4 @@
+V2 Signer: certificate DN: CN=NASQO PRO ERP Android Release
+V2 Signer: certificate SHA-256 digest: 649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197
+V2 Signer: certificate SHA-1 digest: e540ac9973907227cad0bda5e790db304a370b9f
+V2 Signer: certificate MD5 digest: 85d99d9f5d8c48ebd287b43394997008

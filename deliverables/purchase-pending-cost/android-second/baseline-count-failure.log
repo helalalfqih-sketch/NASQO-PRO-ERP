@@ -1,0 +1,24 @@
+2026-11-26T23:00:58.6372588Z Purchase stage: before-fixture
+2026-11-26T23:01:02.6179626Z restarting adbd as root
+2026-11-26T23:01:04.6669346Z Purchase stage: seeded-home
+2026-11-26T23:01:21.5658928Z Tap: فاتورة جديدة
+2026-11-26T23:01:23.7284886Z Purchase stage: invoice-open
+2026-11-26T23:01:26.3463728Z Tap: فاتورة شراء
+2026-11-26T23:01:28.5102571Z Tap: نقدي
+2026-11-26T23:01:31.2856147Z Purchase stage: purchase-cash
+2026-11-26T23:01:34.0180817Z Tap: بحث عن صنف أو باركود
+2026-11-26T23:01:47.0169262Z Tap: QA Pending A
+2026-11-26T23:01:50.0218040Z Purchase stage: selected-A
+2026-11-26T23:01:53.5623194Z Tap: بحث عن صنف أو باركود
+2026-11-26T23:01:58.6819142Z Tap: QA Pending B
+2026-11-26T23:02:01.6509151Z Purchase stage: selected-B
+2026-11-26T23:02:05.1687353Z Tap: سعر السطر 2
+2026-11-26T23:02:07.3029516Z Purchase stage: priced
+2026-11-26T23:02:09.7100405Z Tap: عمل فاتورة
+2026-11-26T23:02:12.0050693Z Purchase stage: saved
+2026-11-26T23:02:29.7234153Z Purchase stage: reopened
+2026-11-26T23:02:45.5851718Z Traceback (most recent call last):
+2026-11-26T23:02:45.5852881Z   File "/home/runner/work/NASQO-PRO-ERP/NASQO-PRO-ERP/scripts/verify-android-pending-purchase.py", line 153, in <module>
+2026-11-26T23:02:45.5854022Z     assert len(ledger) == 1, 'Exactly one new invoice; no old entry replay'
+2026-11-26T23:02:45.5854687Z            ^^^^^^^^^^^^^^^^
+2026-11-26T23:02:45.5855335Z AssertionError: Exactly one new invoice; no old entry replay

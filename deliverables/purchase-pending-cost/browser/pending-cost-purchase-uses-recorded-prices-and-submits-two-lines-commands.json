@@ -1,0 +1,90 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "supplier"
+    }
+  },
+  {
+    "action": "openInvoice",
+    "payload": {
+      "intent": "invoice",
+      "accountId": "acc_sup_1",
+      "kindOverride": "purchase"
+    }
+  },
+  {
+    "action": "getProductPriceStats",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "itemId": "synthetic-cost-pending-0"
+    }
+  },
+  {
+    "action": "getProductPriceStats",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "itemId": "synthetic-cost-pending-1"
+    }
+  },
+  {
+    "action": "createLedgerEntry",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "id": "inv_1795732764489_m87cqho",
+        "accountId": "acc_sup_1",
+        "accountName": "حساب اصطناعي 1",
+        "kind": "invoice",
+        "typeLabel": "فاتورة شراء آجلة",
+        "payment": "credit",
+        "direction": "credit",
+        "amount": 10000,
+        "taxAmount": 0,
+        "settledOnReceipt": false,
+        "currency": "ريال",
+        "exchangeRate": 1,
+        "details": "[ رصيد قديم اصطناعي 1 (1 حبة)، رصيد قديم اصطناعي 2 (1 حبة) ]",
+        "documentNumber": "1001",
+        "warehouseId": "wh_main",
+        "warehouseName": "المخزن الرئيسي",
+        "invoiceContent": "items",
+        "entryNumber": 1001,
+        "deleted": false,
+        "entryDate": "2026-11-26",
+        "lines": [
+          {
+            "inventoryItemId": "synthetic-cost-pending-0",
+            "warehouseId": "wh_main",
+            "itemName": "رصيد قديم اصطناعي 1",
+            "unit": "حبة",
+            "unitNum": 1,
+            "quantity": 1,
+            "price": 5000,
+            "discount": 0,
+            "total": 5000
+          },
+          {
+            "inventoryItemId": "synthetic-cost-pending-1",
+            "warehouseId": "wh_main",
+            "itemName": "رصيد قديم اصطناعي 2",
+            "unit": "حبة",
+            "unitNum": 1,
+            "quantity": 1,
+            "price": 5000,
+            "discount": 0,
+            "total": 5000
+          }
+        ]
+      }
+    },
+    "idempotencyKey": "document_inv_1795732764489_m87cqho"
+  }
+]
