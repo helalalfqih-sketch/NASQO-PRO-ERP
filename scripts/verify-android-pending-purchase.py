@@ -85,6 +85,13 @@ def tap(label, field=False, scroll=False):
             time.sleep(1)
     raise AssertionError('Visible control missing: '+label)
 
+def dismiss_ime():
+    # Item selection blurs its input. Back with an already hidden IME would
+    # close the invoice instead, so inspect Android's actual keyboard state.
+    state = adb('shell', 'dumpsys', 'input_method').decode()
+    if re.search(r'\bm(?:InputShown|IsInputViewShown)=true\b', state):
+        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+
 try:
     # catalog acceptance ended on its list; leave it before replacing CI data.
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
@@ -116,7 +123,7 @@ try:
         adb('shell', 'input', 'keyevent', *(['KEYCODE_DEL']*24))
         adb('shell', 'input', 'text', name.replace(' ', '%s'))
         tap(name)
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+        dismiss_ime()
     root = capture('priced', '10,000')
     prices = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and 'سعر السطر' in text(n)]
     assert len(prices) == 2 and all(n.get('text') == '5000' for n in prices), 'Both purchase prices must be populated'
