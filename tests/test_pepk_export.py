@@ -27,7 +27,7 @@ class PepkExport(unittest.TestCase):
             '-storepass:env', 'NASQO_ANDROID_STORE_PASSWORD', '-keypass:env', 'NASQO_ANDROID_KEY_PASSWORD'])
         cls.certificate = cls.run_command(['keytool', '-exportcert', '-keystore', str(cls.root/'test.jks'),
             '-alias', 'synthetic', '-storepass:env', 'NASQO_ANDROID_STORE_PASSWORD'])
-        cls.run_command(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:4096',
+        cls.run_command(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:3072',
                          '-out', str(cls.root/'receiver-private.pem')])
         cls.run_command(['openssl', 'pkey', '-in', str(cls.root/'receiver-private.pem'), '-pubout',
                          '-out', str(cls.root/'receiver-public.pem')])

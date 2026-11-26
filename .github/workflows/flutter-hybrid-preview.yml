@@ -29,6 +29,10 @@ on:
         description: Inspect Google's public PEPK tool only (no signing secrets or app build)
         type: boolean
         default: false
+      export_play_signing_key:
+        description: Encrypt the existing signing key for the pinned Google Play recipient (no build or release)
+        type: boolean
+        default: false
 
 # Only the newest revision of this review branch needs an APK.
 concurrency:
@@ -39,8 +43,54 @@ permissions:
   contents: read
 
 jobs:
+  export-play-signing-key:
+    if: github.event_name == 'workflow_dispatch' && inputs.export_play_signing_key == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require an export-only request
+        env:
+          OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.inspect_play_signing_tool }}
+        run: test "$OTHER_ACTIONS" = false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Download and verify official PEPK without signing credentials
+        run: |
+          set -euo pipefail
+          curl --fail --proto '=https' --max-redirs 0 --retry 2 \
+            https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar \
+            -o "$RUNNER_TEMP/pepk.jar"
+          printf '%s  %s\n' aaccc0774b240aa5304bdad2a49865e92f229ca73209ecb6eaafe75dc858e24e "$RUNNER_TEMP/pepk.jar" | sha256sum -c -
+      - name: Export only Google-encrypted key and matching public certificate
+        env:
+          NASQO_ANDROID_KEYSTORE_BASE64: ${{ secrets.NASQO_ANDROID_KEYSTORE_BASE64 }}
+          NASQO_ANDROID_STORE_PASSWORD: ${{ secrets.NASQO_ANDROID_STORE_PASSWORD }}
+          NASQO_ANDROID_KEY_ALIAS: ${{ secrets.NASQO_ANDROID_KEY_ALIAS }}
+          NASQO_ANDROID_KEY_PASSWORD: ${{ secrets.NASQO_ANDROID_KEY_PASSWORD }}
+          NASQO_ANDROID_CERT_SHA256: ${{ vars.NASQO_ANDROID_CERT_SHA256 }}
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir encrypted-play-key
+          python3 scripts/export-play-signing-key.py \
+            --jar "$RUNNER_TEMP/pepk.jar" \
+            --public-key scripts/play-signing/encryption_public_key.pem \
+            --public-key-sha256 d014d7e738a9dccab59a1ad118825fb8f55797f3bec3e079358b5bcc382c4fb8 \
+            --output encrypted-play-key/NASQO-Play-signing-key.zip \
+            > encrypted-play-key/verification.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-google-play-signing-export
+          path: encrypted-play-key/
+          retention-days: 1
+          if-no-files-found: error
+
   inspect-play-signing-tool:
-    if: github.event_name == 'workflow_dispatch' && inputs.inspect_play_signing_tool == true
+    if: github.event_name == 'workflow_dispatch' && inputs.inspect_play_signing_tool == true && inputs.export_play_signing_key != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -69,7 +119,7 @@ jobs:
           if-no-files-found: error
 
   flutter-hybrid:
-    if: inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true
+    if: inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true && inputs.export_play_signing_key != true
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -299,7 +349,7 @@ jobs:
 
 
   verify-arabic-name:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true && inputs.export_play_signing_key != true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -351,7 +401,7 @@ jobs:
 
   publish-verified-candidate:
     needs: verify-arabic-name
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true && inputs.export_play_signing_key != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
