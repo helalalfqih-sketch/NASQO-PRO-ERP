@@ -91,7 +91,7 @@ jobs:
         if: inputs.build_play_bundle == true
         run: |
           python3 -m unittest discover -s tests -p test_play_bundle.py
-          sdkmanager "platforms;android-36"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
           node scripts/configure-android-play.mjs
 
       - name: Install SQLite test runtime
