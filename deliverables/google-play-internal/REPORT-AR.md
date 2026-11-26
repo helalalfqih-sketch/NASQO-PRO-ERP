@@ -33,7 +33,7 @@
 - `scripts/verify-android-release-upgrade.sh`
 - `flutter_app/lib/hybrid/hybrid_react_preview_screen.dart`
 
-لاحقًا أُضيفت أدوات تجهيز نقل التوقيع: `scripts/PlayKeyExport.java` و`scripts/export-play-signing-key.py` و`tests/test_pepk_export.py`، ومهمة فحص أداة PEPK العامة داخل workflow. لا تغير هذه الإضافات ملف AAB المبني من SHA أعلاه؛ اختُبرت بأربعة اختبارات اصطناعية ولم تُستخدم على مفتاح التطبيق الحقيقي بعد.
+لاحقًا أُضيفت أدوات نقل التوقيع: `scripts/PlayKeyExport.java` و`scripts/export-play-signing-key.py` و`tests/test_pepk_export.py`، ومهمتا فحص أداة PEPK العامة وتصدير المفتاح المشفر داخل workflow، وملف Google العام `scripts/play-signing/encryption_public_key.pem`. لا تغير هذه الإضافات ملف AAB المبني من SHA أعلاه. نجحت أربعة اختبارات اصطناعية مع RSA 3072 بت، ثم نجح التصدير الحقيقي المشفر في تشغيل 151؛ اعتماد الملف داخل Google Play ما زال بانتظار تأكيد النتيجة من المستخدم.
 
 تحتوي مجلدات هذا التقرير على دليل التسليم، مسودة نصوص المتجر والأيقونة، ونتائج الاختبارات. لا يُحفظ APK/AAB أو المفتاح الخاص أو نسخ العملاء الاحتياطية في Git.
 
