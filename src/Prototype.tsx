@@ -6847,7 +6847,8 @@ function InvoiceModal({
           const factor = defUnit === 1 ? 1 : defUnit === 2 ? item.count2 ?? 0 : (item.count2 ?? 0) * (item.count3 ?? 0);
           const price = Math.round(stats.lastPurchasePrice! * factor * 100) / 100;
           if (price > 0) setRows(current => current.map(row => row.priceLookupKey === lookupKey && row.inventoryItemId === item.id &&
-            (row.unitNum ?? 1) === defUnit && !row.priceEdited ? { ...row, price: String(price), priceSuggested: true } : row));
+            (row.unitNum ?? 1) === defUnit && !row.priceEdited && (!parseArabicNumber(row.price) || row.priceSuggested === true)
+              ? { ...row, price: String(price), priceSuggested: true } : row));
         }
         if (stats.txCount > 0) {
           setPriceHint({
