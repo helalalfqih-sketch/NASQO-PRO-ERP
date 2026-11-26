@@ -25,6 +25,10 @@ on:
         description: Also build an API 36 signed AAB for Google Play internal testing (requires signed_candidate)
         type: boolean
         default: false
+      inspect_play_signing_tool:
+        description: Inspect Google's public PEPK tool only (no signing secrets or app build)
+        type: boolean
+        default: false
 
 # Only the newest revision of this review branch needs an APK.
 concurrency:
@@ -35,8 +39,37 @@ permissions:
   contents: read
 
 jobs:
+  inspect-play-signing-tool:
+    if: github.event_name == 'workflow_dispatch' && inputs.inspect_play_signing_tool == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Inspect official public PEPK tool without credentials
+        run: |
+          set -euo pipefail
+          mkdir tool-info
+          curl --fail --proto '=https' --max-redirs 0 --retry 2 \
+            https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar \
+            -o tool-info/pepk.jar
+          (cd tool-info && sha256sum pepk.jar > pepk.jar.sha256)
+          jar tf tool-info/pepk.jar > tool-info/classes.txt
+          grep -q 'ExportEncryptedPrivateKeyTool.class' tool-info/classes.txt
+          java -jar tool-info/pepk.jar --help > tool-info/help.txt 2>&1 || true
+          cat tool-info/pepk.jar.sha256
+          cat tool-info/help.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-public-pepk-tool
+          path: tool-info/
+          retention-days: 1
+          if-no-files-found: error
+
   flutter-hybrid:
-    if: inputs.publish_verified_candidate != true
+    if: inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
