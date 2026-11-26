@@ -61,7 +61,7 @@ def capture(stage, required, absent=''):
         time.sleep(1)
     raise AssertionError('Purchase did not reach '+stage)
 
-def tap(label, field=False, scroll=False):
+def tap(label, field=False, scroll=False, max_y=None, activate=True):
     print('Tap:', label, flush=True)
     for _ in range(10 if scroll else 3):
         root = read()
@@ -72,25 +72,19 @@ def tap(label, field=False, scroll=False):
             if label not in text(n):
                 continue
             bounds = [int(x) for x in re.findall(r'\d+', n.get('bounds', ''))]
-            if len(bounds) == 4 and 0 <= bounds[0] < bounds[2] <= size[0] and 0 <= bounds[1] < bounds[3] <= size[1]:
+            if len(bounds) == 4 and 0 <= bounds[0] < bounds[2] <= size[0] and 0 <= bounds[1] < bounds[3] <= (max_y or size[1]):
                 exact = label in [n.get(k, '') for k in ('text', 'content-desc', 'hint')]
                 candidates.append((not exact, (bounds[2]-bounds[0])*(bounds[3]-bounds[1]), bounds))
         if candidates:
             bounds = sorted(candidates)[0][2]
-            adb('shell', 'input', 'tap', str((bounds[0]+bounds[2])//2), str((bounds[1]+bounds[3])//2))
+            if activate:
+                adb('shell', 'input', 'tap', str((bounds[0]+bounds[2])//2), str((bounds[1]+bounds[3])//2))
             return
         if scroll:
             adb('shell', 'input', 'swipe', str(size[0]//2), str(size[1]*3//4), str(size[0]//2), str(size[1]//3), '400')
         else:
             time.sleep(1)
     raise AssertionError('Visible control missing: '+label)
-
-def dismiss_ime():
-    # Item selection blurs its input. Back with an already hidden IME would
-    # close the invoice instead, so inspect Android's actual keyboard state.
-    state = adb('shell', 'dumpsys', 'input_method').decode()
-    if re.search(r'\bm(?:InputShown|IsInputViewShown)=true\b', state):
-        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 
 try:
     # catalog acceptance ended on its list; leave it before replacing CI data.
@@ -118,12 +112,18 @@ try:
     tap('نقدي')
     capture('purchase-cash', 'QA Supplier')
     for name in ['QA Pending A', 'QA Pending B']:
-        tap('بحث عن صنف أو باركود', field=True, scroll=True)
+        # Accessibility includes nodes occluded by the fixed invoice footer.
+        # Bring search into the upper body so results are actually tappable.
+        tap('بحث عن صنف أو باركود', field=True, scroll=True, max_y=size[1]//2)
         adb('shell', 'input', 'keyevent', 'KEYCODE_MOVE_END')
         adb('shell', 'input', 'keyevent', *(['KEYCODE_DEL']*24))
         adb('shell', 'input', 'text', name.replace(' ', '%s'))
-        tap(name)
-        dismiss_ime()
+        tap(name, max_y=size[1]*3//4)
+        time.sleep(0.3)
+        root = capture('selected-'+name[-1], name)
+        search = [n for n in root.iter('node') if n.get('hint') == 'بحث عن صنف أو باركود']
+        assert len(search) == 1 and not search[0].get('text'), 'Selection must clear the item search'
+    tap('سعر السطر 2', field=True, scroll=True, max_y=size[1]*3//4, activate=False)
     root = capture('priced', '10,000')
     prices = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and 'سعر السطر' in text(n)]
     assert len(prices) == 2 and all(n.get('text') == '5000' for n in prices), 'Both purchase prices must be populated'
