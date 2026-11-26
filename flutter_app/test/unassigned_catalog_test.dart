@@ -71,6 +71,9 @@ void main() {
       expect(await backup.exportNative(), orderedEquals(proof.bytes));
       final warehouse = await catalog.createWarehouse(workspace,'warehouse',{'name':'مخزن اصطناعي'});
       final otherWarehouse = await catalog.createWarehouse(workspace,'other-warehouse',{'name':'مخزن آخر'});
+      final beforeDuplicate = await backup.exportNative();
+      await expectLater(catalog.createItem(workspace,'duplicate-assigned',{'name':'آخر','sku':'SYNTH-CARD','warehouseId':warehouse}),throwsArgumentError);
+      expect(await backup.exportNative(), orderedEquals(beforeDuplicate));
       final accounts = LocalAccountCommands(local);
       Future<String> account(String name,String category) => accounts.save(workspace,name,{'name':name,'category':category,'currency':'ريال'});
       final supplier = await account('Supplier','purchases'), inventory = await account('Inventory','shop');
@@ -98,6 +101,7 @@ void main() {
       expect(await db.query('ledger_entries'), hasLength(1));
       expect(await db.query('stock_movements'), hasLength(1));
       expect(await db.query('journal_entries'), hasLength(1));
+      await expectLater(catalog.createItem(workspace,'duplicate-global',{'name':'بطاقة مكررة','sku':'SYNTH-CARD'}),throwsArgumentError);
       final beforeRebind = await backup.exportNative();
       await expectLater(posting.post(workspace,'other-purchase',{...invoice('other-purchase',2,false),'warehouseId':otherWarehouse}),throwsStateError);
       expect(await backup.exportNative(), orderedEquals(beforeRebind), reason:'existing warehouse stock cannot be reassigned');

@@ -78,8 +78,11 @@ class LocalStockCatalog {
   }
 
   static Future<void> assertUnique(Transaction t,String id,String wh,String name,String sku)async{
-    if((await t.query('inventory_items',where:'warehouseId = ? AND id <> ? AND (name = ? OR (sku <> ? AND sku = ?))',
-        whereArgs:[wh,id,name,'',sku],limit:1)).isNotEmpty)throw ArgumentError('Duplicate item or barcode');
+    // Unassigned catalog identities are global. Assigned legacy balances may
+    // still share an identity across warehouses, but cannot duplicate a card.
+    final scope=wh.isEmpty?'':"(warehouseId = ? OR warehouseId = '') AND ";
+    if((await t.query('inventory_items',where:'${scope}id <> ? AND (name = ? OR (sku <> ? AND sku = ?))',
+        whereArgs:[if(wh.isNotEmpty)wh,id,name,'',sku],limit:1)).isNotEmpty)throw ArgumentError('Duplicate item or barcode');
   }
 
   Future<void> insertItem(Transaction t,String id,Map<String,dynamic> input)async{

@@ -33,6 +33,12 @@ class UnassignedCatalog {
     final rows = await t.query('inventory_items', where: 'id = ? AND warehouseId = ?', whereArgs: [id, '']);
     if (rows.isEmpty) return;
     final units = await requireClean(t, id);
+    final card = rows.single;
+    if ((await t.query('inventory_items', columns: ['id'],
+        where: 'warehouseId = ? AND id <> ? AND (name = ? OR (sku <> ? AND sku = ?))',
+        whereArgs: [warehouse, id, card['name'], '', card['sku']], limit: 1)).isNotEmpty) {
+      throw StateError('Duplicate item or barcode in purchase warehouse');
+    }
     units.remove('catalogOnly');
     await t.update('inventory_items', {'warehouseId': warehouse}, where: 'id = ?', whereArgs: [id]);
     await t.update('inventory_unit_settings', {'settings_json': jsonEncode(units)}, where: 'item_id = ?', whereArgs: [id]);
