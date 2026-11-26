@@ -1,0 +1,85 @@
+# Manual review and release-candidate builds only. No auto-publishing.
+workflows:
+  nasqo-android-review:
+    name: NASQO Android - Debug review
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      flutter: 3.29.3
+      node: 24.12.0
+      java: 17
+    scripts:
+      - name: Build and audit hybrid assets
+        script: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run sync:flutter-hybrid
+          npx tsx --test tests/hybrid.test.ts
+      - name: Generate Android and run Dart checks
+        script: |
+          set -euo pipefail
+          cd flutter_app
+          flutter create --no-pub --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Build debug APK
+        script: |
+          set -euo pipefail
+          cd flutter_app
+          flutter build apk --debug
+    artifacts:
+      - flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+      - flutter_app/assets/web/hybrid-manifest.json
+
+  nasqo-android-release-candidate:
+    name: NASQO Android - Signed native release candidate (no publishing)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: 3.35.7
+      node: 24.12.0
+      java: 17
+      android_signing:
+        - nasqo_upload_key
+    scripts:
+      - name: Build and audit offline assets
+        script: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run sync:flutter-hybrid
+          npx tsx --test tests/hybrid.test.ts
+      - name: Generate Android and configure upload-key signing
+        script: |
+          set -euo pipefail
+          cd flutter_app
+          flutter create --no-pub --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
+          node ../scripts/setup-android-release.mjs
+          flutter pub get
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Build signed candidate AAB
+        script: |
+          set -euo pipefail
+          cd flutter_app
+          flutter build appbundle --release
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          test -s "$AAB"
+          jarsigner -verify "$AAB" | tee /tmp/nasqo-aab-signature.txt
+          grep -Fq 'jar verified.' /tmp/nasqo-aab-signature.txt
+      - name: Prepare existing brand artwork for review
+        script: |
+          set -euo pipefail
+          mkdir -p store-review
+          LOGO=public/assets/aistudio/NASQO_PRO_ERP_800_022d325f.png
+          sips -g pixelWidth -g pixelHeight "$LOGO"
+          sips -s format png -Z 512 "$LOGO" --out store-review/icon-candidate.png
+          sips -g pixelWidth -g pixelHeight store-review/icon-candidate.png
+    artifacts:
+      - flutter_app/build/app/outputs/bundle/release/app-release.aab
+      - flutter_app/assets/web/hybrid-manifest.json
+      - store-review/icon-candidate.png
