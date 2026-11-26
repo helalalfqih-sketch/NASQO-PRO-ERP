@@ -21,9 +21,9 @@ adb shell input swipe 540 1900 540 700 400
 sleep 1
 LABEL_VISIBLE=0
 for attempt in 1 2 3 4 5; do
-  adb shell uiautomator dump /sdcard/nasqo-launcher.xml >/dev/null
-  adb pull /sdcard/nasqo-launcher.xml upgrade-evidence/launcher-ui.xml >/dev/null
-  if grep -Fq 'نسقو برو' upgrade-evidence/launcher-ui.xml; then LABEL_VISIBLE=1; break; fi
+  if timeout 15s adb shell uiautomator dump /sdcard/nasqo-launcher.xml >> upgrade-evidence/launcher-dump-status.txt 2>&1 &&
+     adb pull /sdcard/nasqo-launcher.xml upgrade-evidence/launcher-ui.xml >/dev/null 2>&1 &&
+     grep -Fq 'نسقو برو' upgrade-evidence/launcher-ui.xml; then LABEL_VISIBLE=1; break; fi
   adb shell input swipe 540 1900 540 700 400
   sleep 1
 done
@@ -71,3 +71,6 @@ assert 'Success' in (p/'install-update.txt').read_text()
 assert 'FATAL EXCEPTION' not in (p/'update-log.txt').read_text()
 (p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1138,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
 PY
+if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
+  python3 scripts/verify-android-navigation.py
+fi

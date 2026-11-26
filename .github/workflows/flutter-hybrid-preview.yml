@@ -21,6 +21,10 @@ on:
         description: Build a signed candidate artifact without automatic publication
         type: boolean
         default: false
+      build_play_bundle:
+        description: Also build an API 36 signed AAB for Google Play internal testing (requires signed_candidate)
+        type: boolean
+        default: false
 
 # Only the newest revision of this review branch needs an APK.
 concurrency:
@@ -37,6 +41,12 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate Play bundle request
+        if: inputs.build_play_bundle == true
+        env:
+          SIGNED_CANDIDATE: ${{ inputs.signed_candidate }}
+        run: test "$SIGNED_CANDIDATE" = true
 
       - uses: actions/setup-node@v4
         with:
@@ -77,6 +87,13 @@ jobs:
           node ../scripts/setup-android-hybrid.mjs
           flutter pub get
 
+      - name: Configure Google Play API 36 scaffold
+        if: inputs.build_play_bundle == true
+        run: |
+          python3 -m unittest discover -s tests -p test_play_bundle.py
+          sdkmanager "platforms;android-36"
+          node scripts/configure-android-play.mjs
+
       - name: Install SQLite test runtime
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
 
@@ -115,6 +132,7 @@ jobs:
           NASQO_ANDROID_KEY_ALIAS: ${{ secrets.NASQO_ANDROID_KEY_ALIAS }}
           NASQO_ANDROID_KEY_PASSWORD: ${{ secrets.NASQO_ANDROID_KEY_PASSWORD }}
           NASQO_ANDROID_CERT_SHA256: ${{ vars.NASQO_ANDROID_CERT_SHA256 }}
+          NASQO_BUILD_PLAY_BUNDLE: ${{ inputs.build_play_bundle }}
           NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
           NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
         run: |
@@ -142,6 +160,9 @@ jobs:
           mkdir -p release-output
           cp "$APK" release-output/NASQO-PRO-ERP.apk
           (cd release-output && sha256sum NASQO-PRO-ERP.apk > NASQO-PRO-ERP.apk.sha256)
+          if [[ "$NASQO_BUILD_PLAY_BUNDLE" == true ]]; then
+            bash ../scripts/build-play-bundle.sh
+          fi
 
       - name: Upload signed APK candidate
         if: ((github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true))
@@ -151,6 +172,15 @@ jobs:
           path: flutter_app/release-output/
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload Google Play internal testing bundle
+        if: inputs.build_play_bundle == true && inputs.signed_candidate == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-play-internal-bundle
+          path: flutter_app/play-output/
+          if-no-files-found: error
+          retention-days: 14
 
   publish-preview:
     needs: flutter-hybrid
@@ -186,6 +216,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      NASQO_ANDROID_NAV_SMOKE: ${{ inputs.build_play_bundle }}
     permissions:
       contents: read
       actions: read
@@ -217,7 +249,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: ${{ inputs.build_play_bundle == true && 36 || 35 }}
           target: google_apis
           arch: x86_64
           profile: pixel_5
