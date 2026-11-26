@@ -18,3 +18,19 @@ data/
 .env
 .env.*
 !.env.example
+
+# Local accounting imports and review archives (never commit private records)
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+/*.csv
+*.bak
+*.backup
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+/deliverables/*.zip
