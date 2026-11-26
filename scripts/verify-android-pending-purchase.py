@@ -150,8 +150,12 @@ try:
         approvals = lambda conn: [tuple(r) for r in conn.execute("SELECT stateKey,payloadJson FROM erp_state WHERE stateKey LIKE 'stock_quantity_approval:%' ORDER BY stateKey")]
         assert approvals(db) == approvals(source)
         ledger = records(db, 'ledger_entries')
-        assert len(ledger) == 1, 'Exactly one new invoice; no old entry replay'
-        invoice = ledger[0]
+        old_ledger = {r['id']: r for r in records(source, 'ledger_entries')}
+        current_ledger = {r['id']: r for r in ledger}
+        assert all(current_ledger.get(key) == value for key, value in old_ledger.items()), 'Historical ledger changed'
+        new_ledger = [r for r in ledger if r['id'] not in old_ledger]
+        assert len(new_ledger) == 1 and len(ledger) == len(old_ledger)+1, 'Exactly one new invoice; no old entry replay'
+        invoice = new_ledger[0]
         assert invoice['amount'] == 10000 and invoice['payment'] == 'cash' and invoice['direction'] == 'credit'
         assert invoice['warehouseId'] == 'legacy-wh-1' and invoice['postingStatus'] == 'posted'
         assert len(records(db, 'invoice_lines')) == 2 and len(records(db, 'stock_movements')) == 2
@@ -167,7 +171,8 @@ try:
         result = {'result': 'PASS', 'sdk': 36, 'fixtureSha256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
                   'amount': 10000, 'payment': 'cash', 'prices': [5000, 5000], 'quantitiesBefore': [3, 5], 'quantitiesAfter': [4, 6],
                   'approvedNewPurchaseValue': 10000, 'oldCostStillPending': True, 'oldArchiveUnchanged': True,
-                  'journalBalanced': True, 'stockMovements': 2, 'invoicesAfterRestart': 1,
+                  'journalBalanced': True, 'stockMovements': 2, 'newInvoicesAfterRestart': 1,
+                  'historicalInvoicesPreserved': len(old_ledger),
                   'scope': 'Signed Android 16 release, UI entry and posting, SQLite checked after process restart. Synthetic DB seeded before UI test; not a restore-picker or private-data test.'}
         db.close()
     (out/'purchase-result.json').write_text(json.dumps(result, indent=2)+'\n')
