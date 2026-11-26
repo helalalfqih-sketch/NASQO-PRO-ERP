@@ -14,7 +14,9 @@ workflows:
           set -euo pipefail
           npm install --no-audit --no-fund
           npm run check:runtime
+          node scripts/guard-release-assets.mjs public
           npm run sync:flutter-hybrid
+          node scripts/guard-release-assets.mjs flutter_app/assets/web
           npx tsx --test tests/hybrid.test.ts
       - name: Generate Android and run Dart checks
         script: |
@@ -30,6 +32,7 @@ workflows:
           set -euo pipefail
           cd flutter_app
           flutter build apk --debug
+          node ../scripts/guard-release-assets.mjs build/app/outputs/flutter-apk/app-debug.apk
     artifacts:
       - flutter_app/build/app/outputs/flutter-apk/app-debug.apk
       - flutter_app/assets/web/hybrid-manifest.json
@@ -50,7 +53,9 @@ workflows:
           set -euo pipefail
           npm install --no-audit --no-fund
           npm run check:runtime
+          node scripts/guard-release-assets.mjs public
           npm run sync:flutter-hybrid
+          node scripts/guard-release-assets.mjs flutter_app/assets/web
           npx tsx --test tests/hybrid.test.ts
       - name: Generate Android and configure upload-key signing
         script: |
@@ -69,6 +74,7 @@ workflows:
           flutter build appbundle --release
           AAB=build/app/outputs/bundle/release/app-release.aab
           test -s "$AAB"
+          node ../scripts/guard-release-assets.mjs "$AAB"
           jarsigner -verify "$AAB" | tee /tmp/nasqo-aab-signature.txt
           grep -Fq 'jar verified.' /tmp/nasqo-aab-signature.txt
       - name: Prepare existing brand artwork for review
