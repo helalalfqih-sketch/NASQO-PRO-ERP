@@ -1,4 +1,5 @@
 import 'stock_quantity_approval_state.dart';
+import 'automatic_stock_baseline.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_backup_restore.dart';
@@ -46,7 +47,7 @@ class LocalInventoryReports {
     final sourceProducts=await sourceRows(db,'inventory',sha);
     final source={for(final p in sourceProducts)s(p['id']):p};
     final archivedEntries=await sourceRows(db,'ledger',sha);
-    final valued=sha==null?await db.query('legacy_stock_openings'): <Map<String,Object?>>[];
+    final valued=sha==null?<Map<String,Object?>>[...await db.query('legacy_stock_openings'),...(await AutomaticStockBaseline.read(db)).values]: <Map<String,Object?>>[];
     final quantities=sha==null?await StockQuantityApprovalState.read(db):<String,Map<String,dynamic>>{};
     // A later valuation must not create a second quantity cutover.
     final openings=<Map<String,Object?>>[...valued.where((o)=>!quantities.containsKey(o['item_id'])),...quantities.values];
@@ -269,7 +270,7 @@ class LocalInventoryReports {
       final allQty=netPurchases(purchases,'baseQuantity');
       final referenceFallback=referenceCost>0?referenceCost:globalQty>0?
         netPurchases(periodPurchases,'total')/globalQty:allQty>0?netPurchases(purchases,'total')/allQty:0;
-      final estimateAverage=buys!=0&&buyValue/buys>0?buyValue/buys:referenceFallback;
+      final estimateAverage=buys>0&&buyValue/buys>=0?buyValue/buys:referenceFallback;
       final pricedBuys=historicBuys.where((e)=>n(e['price'])>0).toList();
       final estimateLast=pricedBuys.isEmpty?estimateAverage:
         n(pricedBuys.first['price'])/factor(item,n(pricedBuys.first['unitNum'],1));

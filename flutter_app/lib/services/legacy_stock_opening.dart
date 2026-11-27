@@ -1,4 +1,5 @@
 import 'stock_quantity_approval_state.dart';
+import 'automatic_stock_baseline.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
@@ -36,7 +37,8 @@ class LegacyStockOpening {
         'products':items,'sourceSha':source,'transferEvidence':meta['unifiedSource']!=true||meta['unifiedTransferEvidence']==true,
         'warehouses':await t.query('warehouses',orderBy:'name'),
         'accounts':await t.query('accounts',where:'currency = ? AND isCashAccount = 0',whereArgs:['sar'],orderBy:'name'),
-        'openings':await t.query('legacy_stock_openings'),
+        'openings':[...await t.query('legacy_stock_openings'),...(await AutomaticStockBaseline.read(t)).values],
+        'automaticReady':(await t.query('erp_state',where:'stateKey = ?',whereArgs:['automatic_stock_readiness_v1'])).isNotEmpty,
         'quantityApprovals':(await StockQuantityApprovalState.read(t)).values.toList(),
       };
     });

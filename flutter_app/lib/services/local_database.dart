@@ -1,5 +1,6 @@
 import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
+import 'automatic_stock_baseline.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
@@ -256,8 +257,8 @@ class LocalDatabase {
 
   static Future<void> requireOpeningStockAccount(DatabaseExecutor db,String id,String accountId,String entryDate) async {
     final rows=await db.query('legacy_stock_openings',where:'item_id = ?',whereArgs:[id]);
-    if(rows.isEmpty)return;
-    final row=rows.single;
+    final row=rows.isEmpty?await AutomaticStockBaseline.forItem(db,id):rows.single;
+    if(row==null)return;
     if(row['inventory_account_id']!=accountId)throw StateError('Select the inventory account used at stock opening');
     if(entryDate.compareTo(row['entry_date'] as String)<0)throw StateError('Stock posting predates the approved opening count');
   }

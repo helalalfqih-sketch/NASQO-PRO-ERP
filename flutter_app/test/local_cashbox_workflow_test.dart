@@ -41,7 +41,9 @@ void main(){
         'accountId':'client','currency':'ريال','cashboxId':7,'settledOnReceipt':true,'amount':9,
         'entryDate':'2026-11-24','entryNumber':1,'warehouseId':'wh','invoiceContent':'items',
         'lines':[{'inventoryItemId':'item','quantity':1.5,'price':6,'total':9}]};
-      await expectLater(roles.resolve(invoice),throwsA(isA<InvoicePostingSetupRequired>()));
+      final automatic=await roles.resolve(invoice);
+      expect(automatic['cashSettlementAccountId'],'nasqo-system-sar-cashbox-7');
+      expect(automatic['inventoryAccountId'],'nasqo-system-sar-inventory');
       await roles.save('sar',{'revenue':'revenue','inventory':'asset','cost':'cost','expense':'expense',
         'cashbox:7':'cash','cash':'cash','balanceVoucher':'clearing'});
       final resolved=await roles.resolve(invoice);

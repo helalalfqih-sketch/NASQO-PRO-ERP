@@ -11,7 +11,7 @@ export function findInvoiceCatalogItems(
   for (const item of inventory) {
     // Imported warehouse balances can have distinct operational IDs. Only an
     // explicit source link joins them; matching names/SKUs do not imply identity.
-    const family = hybridLocal ? item.legacySourceItemId || item.id : item.id;
+    const family = hybridLocal ? item.catalogSourceItemId || item.legacySourceItemId || item.id : item.id;
     const variants = families.get(family) ?? [];
     variants.push(item);
     families.set(family, variants);

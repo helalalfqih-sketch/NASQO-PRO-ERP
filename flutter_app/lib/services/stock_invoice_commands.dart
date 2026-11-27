@@ -4,7 +4,7 @@ import 'local_database.dart';
 import 'local_document_commands.dart';
 import 'stock_quantity.dart';
 import 'local_invoice_roles.dart';
-import 'unassigned_catalog.dart';
+import 'inventory_locations.dart';
 import 'stock_quantity_approval_state.dart';
 
 /// Cash/credit stock invoice engine. Money is integer minor units; stock uses
@@ -34,13 +34,13 @@ class StockInvoiceCommands {
     return v;
   }
   static int valuation(Map<String,Object?> row) {
-    final q = StockQuantity.normalized(row['quantity']);
+    final q = StockQuantity.units(StockQuantity.balanceTicks(row['quantity']));
     final cost = row['avgCost'];
     if (cost is! num || !cost.isFinite || cost < 0 ||
-        cost * q * 100 > _max || (q == 0 && cost != 0)) {
+        (cost * q * 100).abs() > _max || (q == 0 && cost != 0)) {
       throw StateError('Invalid inventory valuation');
     }
-    return bounded((cost * q * 100).round());
+    return (cost * q * 100).round();
   }
   static int proportional(int value,int count,int total) =>
       ((BigInt.from(value)*BigInt.from(count)+BigInt.from(total ~/ 2)) ~/ BigInt.from(total)).toInt();
@@ -111,11 +111,12 @@ class StockInvoiceCommands {
     const currency='sar';
     final inventoryAccount=sale?identity(input['inventoryAccountId']):counterpart;
     final costAccount=sale?identity(input['costAccountId']):null;
+    final adjustment=input['inventoryAdjustmentAccountId']==null?null:identity(input['inventoryAdjustmentAccountId']);
     final tax=money(input['taxAmount']??0);
     final taxAccount=tax>0?identity(input['taxAccountId']):null;
     final rate=input['taxRateBps'];
     if(rate!=null&&(rate is! int||rate<0||rate>10000)) throw ArgumentError('Invalid tax rate');
-    final ids=[primary,counterpart,if(sale)inventoryAccount,if(costAccount!=null)costAccount,if(taxAccount!=null)taxAccount,if(settlement!=null)settlement];
+    final ids=[primary,counterpart,if(sale)inventoryAccount,if(costAccount!=null)costAccount,if(taxAccount!=null)taxAccount,if(settlement!=null)settlement,if(adjustment!=null)adjustment];
     if(ids.toSet().length!=ids.length) throw ArgumentError('Accounting roles must use distinct accounts');
     final raw=input['lines'];
     if(raw is! List || raw.isEmpty || raw.length>100) throw ArgumentError('Invalid stock lines');
@@ -149,6 +150,7 @@ class StockInvoiceCommands {
       'typeLabel':LocalDocumentCommands.field(input,'typeLabel',60),
       'documentNumber':LocalDocumentCommands.field(input,'documentNumber',64),
       'details':LocalDocumentCommands.field(input,'details',600),'lines':lines,
+      if(adjustment!=null)'inventoryAdjustmentAccountId':adjustment,
       if(settlement!=null)'cashSettlementAccountId':settlement,if(box!=null)'cashboxId':box};
     await local.commitOperation(workspaceId:w,operationId:key,operationType:'stock.invoice.post',
       payload:request,apply:(t)async{
@@ -166,11 +168,12 @@ class StockInvoiceCommands {
           'expenseCategory':'','entryNumber':entryNumber,'deleted':0,'entryDate':entryDate,
           'invoiceContent':'items','postingStatus':'posted'});
         await t.insert('stock_posting_documents',{'id':id,'document_json':jsonEncode(request)});
-        var costTotal=0;
+        var costTotal=0,varianceTotal=0;
         for(var i=0;i<lines.length;i++){
-          final l=lines[i],item=l['item_id'] as String,sold=StockQuantity.ticks(l['sold_quantity']);
+          final l=lines[i],sold=StockQuantity.ticks(l['sold_quantity']);
+          var item=l['item_id'] as String;
           final unitNum=l['unit_num'] as int;
-          if(!sale)await UnassignedCatalog.bindFirstPurchase(t,item,warehouse);
+          if(!sale)item=await InventoryLocations.purchase(t,item,warehouse);
           final rows=await t.query('inventory_items',where:'id = ? AND warehouseId = ?',whereArgs:[item,warehouse]);
           if(rows.length!=1) throw StateError('Stock item not in selected warehouse');
           final pending=sale?null:await StockQuantityApprovalState.pending(t,item,inventoryAccountId:inventoryAccount,entryDate:entryDate);
@@ -184,18 +187,29 @@ class StockInvoiceCommands {
           final unit=unitNum==1?row['unit']:units['unit$unitNum'];
           if(factor<1||unit is! String||unit.isEmpty) throw ArgumentError('Undefined item unit');
           final q=StockQuantity.boundedTicks(sold*factor);
-          final before=StockQuantity.ticks(row['quantity']),value=pending?.valueMinor??valuation(row);
+          final before=StockQuantity.balanceTicks(row['quantity']),value=pending?.valueMinor??valuation(row);
           if(sale && before<q) throw StateError('Insufficient stock');
           final after=sale?before-q:before+q;
-          StockQuantity.boundedTicks(after);
+          StockQuantity.boundedBalanceTicks(after);
           final cost=sale?proportional(value,q,before):l['net_minor'] as int;
-          final next=bounded(sale?value-cost:value+cost);
+          var next=sale?value-cost:value+cost;
+          var variance=0;
+          if(!sale&&before<0){
+            if(adjustment==null)throw StateError('Inventory adjustment account missing');
+            // Keep a deficit at its previous unit cost; value newly available
+            // stock at this receipt's cost. The difference is an explicit GL leg.
+            final target=after==0?0:after<0?(value*after/before).round():proportional(cost,after,q);
+            variance=target-next;next=target;
+          }
+          if(next.abs()>_max||(after==0&&next!=0)||after*next<0)throw StateError('Invalid stock balance');
+          varianceTotal+=variance;
           costTotal=bounded(costTotal+cost);
           final lineId='$id:$i';
           final actual=StockQuantity.units(q),afterUnits=StockQuantity.units(after);
           await t.update('inventory_items',{'quantity':afterUnits,'avgCost':pending!=null||after==0?0:next/afterUnits/100},where:'id = ?',whereArgs:[item]);
           await t.insert('invoice_lines',{'id':lineId,'ledger_id':id,'item_id':item,'quantity':actual,'unit_price_minor':l['price_minor']});
-          final detail={...l,'quantity':actual,'unit_factor':factor,'itemName':row['name'],'unit':unit,'cost_minor':cost};
+          final detail={...l,'item_id':item,'quantity':actual,'unit_factor':factor,'itemName':row['name'],'unit':unit,'cost_minor':cost,
+            if(variance!=0)'inventory_variance_minor':variance};
           await t.insert('stock_posting_lines',{'id':lineId,'document_id':id,'item_id':item,'quantity':actual,
             'before_quantity':StockQuantity.units(before),'after_quantity':afterUnits,'before_value':value,'after_value':next,'line_json':jsonEncode(detail)});
           await t.insert('stock_movements',{'id':lineId,'item_id':item,'quantity_delta':StockQuantity.units(sale?-q:q),'operation_id':key});
@@ -205,6 +219,7 @@ class StockInvoiceCommands {
           if(sale&&costTotal>0)leg(costAccount!,costTotal,true),
           if(sale&&costTotal>0)leg(inventoryAccount,costTotal,false),
           if(settlement!=null)leg(primary,total,!sale),if(settlement!=null)leg(settlement,total,sale)];
+        if(varianceTotal!=0)legs.addAll([leg(inventoryAccount,varianceTotal.abs(),varianceTotal>0),leg(adjustment!,varianceTotal.abs(),varianceTotal<0)]);
         await journal(t,id,currency,legs);
         await LocalInvoiceRoles.recordCashbox(t,id,box);
         return {'id':id};
@@ -250,7 +265,8 @@ class StockInvoiceCommands {
         }
         final remainingSelection=Map<String,int>.from(selection);
         final changes=<Map<String,dynamic>>[];
-        var net=0,tax=0,cost=0,netPrefix=0;
+        var net=0,tax=0,cost=0,netPrefix=0,varianceTotal=0;
+        final adjustment=details['inventoryAdjustmentAccountId'] as String?;
         final originalNet=details['netMinor'] as int,originalTax=details['taxMinor'] as int;
         for(final line in source){
           final item=line['item_id'] as String;
@@ -277,15 +293,28 @@ class StockInvoiceCommands {
             inventoryAccountId:identity(details['inventoryAccountId']),entryDate:entryDate);
           if(pending==null)await LocalDatabase.requireVerifiedStock(t,item);
           await LocalDatabase.requireOpeningStockAccount(t,item,identity(details['inventoryAccountId']),entryDate);
-          final before=StockQuantity.ticks(stock.single['quantity']),beforeValue=pending?.valueMinor??valuation(stock.single);
+          final before=StockQuantity.balanceTicks(stock.single['quantity']),beforeValue=pending?.valueMinor??valuation(stock.single);
           if(pending!=null&&base>pending.purchasedTicks)throw StateError('Return exceeds valued purchases');
           final after=sale?before+base:before-base;
-          final afterValue=sale?beforeValue+costPart:beforeValue-costPart;
-          if(after<0||afterValue<0||(after==0&&afterValue!=0)) throw StateError('Purchase return needs stock or cost variance reconciliation');
-          StockQuantity.boundedTicks(after);bounded(afterValue);
+          var variance=0;
+          if(!sale&&data['inventory_variance_minor'] is int){
+            final originalVariance=data['inventory_variance_minor'] as int;
+            variance=-originalVariance.sign*portion(originalVariance.abs());
+          }
+          var afterValue=(sale?beforeValue+costPart:beforeValue-costPart)+variance;
+          if(!sale&&adjustment!=null&&pending==null){
+            final originalBefore=StockQuantity.balanceTicks(line['before_quantity']);
+            if(after<0&&originalBefore>=0)throw StateError('Insufficient stock for purchase return');
+            final target=after==0?0:after<0?((line['before_value'] as int)*after/originalBefore).round():afterValue<0?(beforeValue*after/before).round():afterValue;
+            variance+=target-afterValue;afterValue=target;
+          }
+          if((after<0&&adjustment==null)||after*afterValue<0||(after==0&&afterValue!=0)||afterValue.abs()>_max) throw StateError('Purchase return needs stock or cost variance reconciliation');
+          StockQuantity.boundedBalanceTicks(after);
+          varianceTotal+=variance;
           net=bounded(net+netPart);tax=bounded(tax+taxPart);cost=bounded(cost+costPart);
           final lineData=<String,dynamic>{...data,'quantity':StockQuantity.units(base),'sold_quantity':StockQuantity.units(q),'unit_factor':factor,
-            'net_minor':netPart,'tax_minor':taxPart,'cost_minor':costPart,'discount_minor':discountPart};
+            'net_minor':netPart,'tax_minor':taxPart,'cost_minor':costPart,'discount_minor':discountPart,
+            'inventory_variance_minor':variance};
           changes.add({'item':item,'before':before,'after':after,'beforeValue':beforeValue,'afterValue':afterValue,'data':lineData,'costPending':pending!=null});
         }
         if(remainingSelection.isNotEmpty||changes.isEmpty||net+tax<=0) throw ArgumentError('No eligible return lines');
@@ -303,6 +332,11 @@ class StockInvoiceCommands {
           final a=identity(details['costAccountId']),b=identity(details['inventoryAccountId']);
           await account(t,a,entry['currency'] as String);await account(t,b,entry['currency'] as String);
           legs.addAll([leg(a,cost,false),leg(b,cost,true)]);
+        }
+        if(varianceTotal!=0){
+          if(adjustment==null)throw StateError('Inventory adjustment account missing');
+          await account(t,adjustment,entry['currency'] as String);
+          legs.addAll([leg(identity(details['inventoryAccountId']),varianceTotal.abs(),varianceTotal>0),leg(adjustment,varianceTotal.abs(),varianceTotal<0)]);
         }
         final header={...details,'id':id,'originalInvoiceId':original,'entryNumber':entryNumber,'entryDate':entryDate,
           'documentNumber':entryNumber.toString(),

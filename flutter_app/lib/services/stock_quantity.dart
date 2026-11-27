@@ -17,6 +17,15 @@ class StockQuantity {
     if(value<0||value>maxTicks)throw ArgumentError('Stock quantity outside supported range');
     return value;
   }
+  /// Historical balances may be negative; document quantities may not.
+  static int balanceTicks(Object? value){
+    if(value is! num||!value.isFinite)throw ArgumentError('Invalid stock balance');
+    return value<0?-ticks(-value):ticks(value);
+  }
+  static int boundedBalanceTicks(int value){
+    if(value.abs()>maxTicks)throw ArgumentError('Stock balance outside supported range');
+    return value;
+  }
   /// Preserve integer JSON for existing whole-unit idempotency payloads.
   static num units(int value)=>value%scale==0?value~/scale:value/scale;
   static num normalized(Object? value)=>units(ticks(value));

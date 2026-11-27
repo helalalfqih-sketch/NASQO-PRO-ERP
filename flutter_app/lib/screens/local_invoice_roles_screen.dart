@@ -12,7 +12,7 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
   final service=LocalInvoiceRoles(LocalDatabase.instance);
   static const labels={'revenue':'إيراد المبيعات','inventory':'أصل المخزون','cost':'تكلفة البضاعة المباعة',
     'expense':'مصروف المشتريات الحرة','outputTax':'ضريبة المبيعات المستحقة','inputTax':'ضريبة المشتريات القابلة للاسترداد',
-    'cash':'حساب النقدية الافتراضي (عند عدم وجود صندوق محدد)','balanceVoucher':'حساب تسوية سندات الرصيد'};
+    'cash':'حساب النقدية الافتراضي (عند عدم وجود صندوق محدد)','balanceVoucher':'حساب تسوية سندات الرصيد','opening':'أرصدة بداية التشغيل','adjustment':'فروق تكلفة المخزون'};
   List<Map<String,dynamic>> accounts=[],cashboxes=[];
   Map<String,dynamic> all={};
   Map<String,String> selected={};
@@ -60,7 +60,7 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
     return Directionality(textDirection:TextDirection.rtl,child:Scaffold(
       appBar:AppBar(title:const Text('حسابات الترحيل التلقائي')),
       body:ListView(padding:const EdgeInsets.all(16),children:[
-        const Text('اضبط الحسابات والصناديق مرة واحدة من دليل الحسابات الموجود. لا ينشئ النظام حسابات أو يغير تصنيفها. تُستخدم إعدادات الجرد المعتمد لحساب أصل المخزون عند توفرها.'),
+        const Text('حسابات التشغيل جاهزة تلقائيًا. يمكنك تخصيصها اختياريًا بما يناسب دليل حساباتك.'),
         if(busy)const LinearProgressIndicator(),
         const SizedBox(height:12),
         DropdownButtonFormField<String>(value:currency,isExpanded:true,
@@ -77,7 +77,7 @@ class _LocalInvoiceRolesScreenState extends State<LocalInvoiceRolesScreen>{
           const SizedBox(height:12),
         ],
         if(list.isEmpty)const Text('لا توجد حسابات مناسبة لهذه العملة. أضف الحسابات من دليل الحسابات أولًا.'),
-        const Text('اترك ما لا تستخدمه غير محدد. الضريبة اختيارية.'),
+        const Text('عند ترك حساب فارغ يستخدم النظام حسابه الافتراضي. الضريبة اختيارية.'),
         FilledButton(onPressed:busy||list.isEmpty?null:_save,child:const Text('حفظ الإعدادات')),
         if(message!=null)Padding(padding:const EdgeInsets.all(8),child:Text(message!)),
       ]),

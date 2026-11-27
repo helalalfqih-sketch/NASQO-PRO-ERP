@@ -102,12 +102,13 @@ void main() {
       expect(await db.query('stock_movements'), hasLength(1));
       expect(await db.query('journal_entries'), hasLength(1));
       await expectLater(catalog.createItem(workspace,'duplicate-global',{'name':'بطاقة مكررة','sku':'SYNTH-CARD'}),throwsArgumentError);
-      final beforeRebind = await backup.exportNative();
-      await expectLater(posting.post(workspace,'other-purchase',{...invoice('other-purchase',2,false),'warehouseId':otherWarehouse}),throwsStateError);
-      expect(await backup.exportNative(), orderedEquals(beforeRebind), reason:'existing warehouse stock cannot be reassigned');
-      await posting.post(workspace,'sale',invoice('sale',2,true));
-      expect((await item())['quantity'], 4);
-      expect(await db.query('stock_movements'), hasLength(2));
+      final beforeRebind = await item();
+      await posting.post(workspace,'other-purchase',{...invoice('other-purchase',2,false),'warehouseId':otherWarehouse});
+      expect(await item(),beforeRebind,reason:'a new warehouse receipt must not reassign existing stock');
+      expect((await db.query('inventory_items',where:'warehouseId = ?',whereArgs:[otherWarehouse])).single['quantity'],5);
+      await posting.post(workspace,'sale',invoice('sale',3,true));
+      expect((await item())['quantity'],4);
+      expect(await db.query('stock_movements'),hasLength(3));
       for (final journal in await db.rawQuery('SELECT journal_id,SUM(debit_minor) AS d,SUM(credit_minor) AS c FROM journal_lines GROUP BY journal_id')) {
         expect(journal['d'], journal['c']);
       }

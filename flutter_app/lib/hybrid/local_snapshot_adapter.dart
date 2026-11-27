@@ -11,16 +11,21 @@ import '../services/local_workspace_settings.dart';
 import '../services/local_invoice_roles.dart';
 import '../services/local_master_catalog.dart';
 import '../services/local_erp_records.dart';
+import '../services/local_workspace_readiness.dart';
+import '../services/inventory_locations.dart';
 
 /// Adapts the existing on-device SQLite schema to the React Hybrid snapshot.
 /// No network calls, no automatic import, no fabricated customer/invoice rows.
 class HybridLocalSnapshotAdapter {
   static const String workspaceId = 'local-erp-workspace';
 
-  static Future<Map<String, dynamic>> readFromDevice() async {
+  static Future<Map<String, dynamic>> readFromDevice({bool prepareForUse=false}) async {
     final local=LocalDatabase.instance;
     final db=await local.database;
-    return db.transaction((txn)=>readInTransaction(txn,local));
+    return db.transaction((txn)async{
+      if(prepareForUse)await LocalWorkspaceReadiness.prepare(txn,local);
+      return readInTransaction(txn,local);
+    });
   }
 
   static Future<Map<String,dynamic>> readInTransaction(Transaction txn,LocalDatabase local)async{
@@ -98,6 +103,7 @@ class HybridLocalSnapshotAdapter {
         if(item!=null) item.addAll(jsonDecode(row['settings_json'] as String) as Map<String,dynamic>);
       }
       await LocalMasterCatalog.attach(txn,data);
+      await InventoryLocations.attach(txn,data);
       await LocalMasterCatalog.attachAccountMeta(txn,data);
       await LocalWorkspaceSettings.attach(txn,data);
       await LocalInvoiceRoles.attachCashboxes(txn,data);

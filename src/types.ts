@@ -264,6 +264,7 @@ export type InventoryItemRecord = {
   legacyTransferIncomplete?: boolean;
   legacyHistoryIncludesTransfers?: boolean;
   legacySourceItemId?: string;
+  catalogSourceItemId?: string;
   /** Imported catalog reference only; never an approved inventory valuation. */
   legacyCatalogCost?: number;
   /** Purchase-price reference only; never operational stock valuation. */

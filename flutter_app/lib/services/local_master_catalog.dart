@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
 import 'local_document_commands.dart';
 import 'local_invoice_roles.dart';
+import 'automatic_posting_setup.dart';
 
 /// Mutable master records are overlaid on the immutable original archive.
 /// All edits use one local transaction and keep a native-backup-compatible audit.
@@ -59,18 +60,19 @@ class LocalMasterCatalog {
   /// Cashbox metadata + explicit posting-account binding, no parent posting.
   Future<Map<String,dynamic>> saveCashbox(String workspace,String key,Map<String,dynamic> input)async{
     if(input.keys.any((k)=>!['id','name','currencyCode','accountId','isActive'].contains(k)))throw ArgumentError('Invalid cashbox fields');
-    final title=name(input,'name',100),currency=input['currencyCode'],account=input['accountId'],id=input['id'],active=input['isActive']??true;
-    if(!currencyCodes.containsKey(currency)||account is! String||account.isEmpty||active is! bool||(id!=null&&(id is! int||id<=0)))throw ArgumentError('Invalid cashbox');
+    final title=name(input,'name',100),currency=input['currencyCode'],requestedAccount=input['accountId'],id=input['id'],active=input['isActive']??true;
+    if(!currencyCodes.containsKey(currency)||(requestedAccount!=null&&requestedAccount is! String)||active is! bool||(id!=null&&(id is! int||id<=0)))throw ArgumentError('Invalid cashbox');
     return local.commitOperation(workspaceId:workspace,operationId:key,operationType:'cashbox.save',payload:input,apply:(t)async{
       await requireLocal(t,workspace);
       final code=currencyCodes[currency]!;
-      if((await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[account,code])).length!=1)throw StateError('اختر حساب صندوق محلي من نفس العملة');
       final rows=await read(t,'cashboxes');final index=rows.indexWhere((r)=>r['id']==id);
       if(id!=null&&index<0)throw StateError('الصندوق غير موجود');
       if(index>=0&&rows[index]['currencyCode']!=currency)throw StateError('عملة الصندوق محفوظة ولا تتغير');
       if(rows.any((r)=>r['id']!=id&&r['name']==title))throw StateError('اسم الصندوق موجود');
       final actualId=id??nextId(rows),roleKey='cashbox:${id??nextId(rows)}';
       final roles=await LocalInvoiceRoles.read(t);final selected=Map<String,dynamic>.from(roles[code] as Map? ?? {});
+      final account=requestedAccount is String&&requestedAccount.isNotEmpty?requestedAccount:selected[roleKey]??await AutomaticPostingSetup.account(t,code,roleKey,'حساب $title',cash:true);
+      if((await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[account,code])).length!=1)throw StateError('اختر حساب صندوق محلي من نفس العملة');
       if(selected[roleKey]!=null&&selected[roleKey]!=account)throw StateError('ربط حساب الصندوق محفوظ؛ لا يمكن تغيير تاريخ الترحيل');
       if(selected.entries.any((e)=>e.key.startsWith('cashbox:')&&e.key!=roleKey&&e.value==account))throw StateError('الحساب مرتبط بصندوق آخر');
       selected[roleKey]=account;roles[code]=selected;

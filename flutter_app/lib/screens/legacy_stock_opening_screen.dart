@@ -18,7 +18,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
   List<Map<String,dynamic>> products=[],warehouses=[],accounts=[],openings=[],quantityApprovals=[];
   String? product,warehouse,asset,offset;
   String date=DateTime.now().toIso8601String().substring(0,10);
-  bool busy=true,confirmed=false,changed=false;
+  bool busy=true,confirmed=false,changed=false,automaticReady=false;
   String? error;
   int unresolvedTransfers=0;
   String? sourceSha;
@@ -36,7 +36,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
       setState((){
         products=rows(data['products']);warehouses=rows(data['warehouses']);accounts=rows(data['accounts']);openings=rows(data['openings']);quantityApprovals=rows(data['quantityApprovals']);
         unresolvedTransfers=(data['unresolvedTransfers'] as List).length;
-        sourceSha=data['sourceSha'] as String;
+        sourceSha=data['sourceSha'] as String;automaticReady=data['automaticReady']==true;
         if(!_initialSelectionApplied){
           if(product==null&&products.any((p)=>p['id']==widget.initialProductId))product=widget.initialProductId;
           if(warehouse==null&&warehouses.any((w)=>w['id']==widget.initialWarehouseId))warehouse=widget.initialWarehouseId;
@@ -121,20 +121,21 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
     final q=num.tryParse(normalize(quantity.text)),v=num.tryParse(normalize(value.text));
     final avg=q!=null&&q.isFinite&&q>0&&v!=null&&v.isFinite?(v/q).toStringAsFixed(4):null;
     return Directionality(textDirection:TextDirection.rtl,child:PopScope(canPop:!busy,child:Scaffold(
-      appBar:AppBar(title:const Text('اعتماد جرد المخازن'),actions:[IconButton(tooltip:'تم',onPressed:busy?null:()=>Navigator.pop(context,changed),icon:const Icon(Icons.check))]),
+      appBar:AppBar(title:Text(automaticReady?'أرصدة المخزون المستورد':'اعتماد جرد المخازن'),actions:[IconButton(tooltip:'تم',onPressed:busy?null:()=>Navigator.pop(context,changed),icon:const Icon(Icons.check))]),
       body:ListView(padding:const EdgeInsets.all(16),children:[
-        Text('اعتمادات الكمية: ${quantityApprovals.length} • اعتمادات التكلفة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
-        FilledButton.icon(onPressed:busy||products.isEmpty||sourceSha==null?null:()async{
+        if(automaticReady)Text('الأرصدة المجهزة: ${openings.length} • الأصناف: ${products.length}'),
+        if(!automaticReady)Text('اعتمادات الكمية: ${quantityApprovals.length} • اعتمادات التكلفة: ${openings.length} • الأصناف الأصلية: ${products.length}'),
+        if(!automaticReady)FilledButton.icon(onPressed:busy||products.isEmpty||sourceSha==null?null:()async{
           final result=await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyStockBatchScreen(
             products:products,warehouses:warehouses,accounts:accounts,openings:openings,quantityApprovals:quantityApprovals,sourceSha:sourceSha!,initialWarehouseId:warehouse)));
           if(result==true&&mounted){changed=true;setState(()=>busy=true);await _load();}
         },icon:const Icon(Icons.playlist_add_check),label:const Text('اعتماد جرد جماعي')),
-        OutlinedButton.icon(onPressed:busy?null:()async{
+        if(!automaticReady)OutlinedButton.icon(onPressed:busy?null:()async{
           await Navigator.of(context).push(MaterialPageRoute<bool>(builder:(_)=>LegacyQuantityApprovalScreen(warehouses:warehouses,initialWarehouseId:warehouse)));
           if(mounted){changed=true;setState(()=>busy=true);await _load();clearCount();}
         },icon:const Icon(Icons.checklist),label:const Text('اعتماد الكميات الحالية فقط')),
-        const Text('أدخل الكمية الفعلية والتكلفة الإجمالية بعد الجرد. كل صنف ومخزن يُعتمد مستقلًا. التاريخ السابق محفوظ، وليس جردًا مؤكدًا.'),
-        if(unresolvedTransfers>0)Text('تحويلات تحتاج مطابقة مخزن: $unresolvedTransfers. لم تُضم كمياتها الملتبسة إلى التقدير.'),
+        Text(automaticReady?'المخزون جاهز للعمل. تعرض هذه الصفحة رصيد البداية ومصدره للمراجعة الاختيارية.':'أدخل الكمية الفعلية والتكلفة الإجمالية بعد الجرد. كل صنف ومخزن يُعتمد مستقلًا.'),
+        if(unresolvedTransfers>0)ExpansionTile(title:const Text('تفاصيل السجلات القديمة'),children:[Text('سجلات بمراجع مخازن غير موجودة في النسخة: $unresolvedTransfers. بقيت محفوظة في الأرشيف.')]),
         if(busy)const LinearProgressIndicator(),
         const SizedBox(height:12),
         TextField(controller:search,enabled:!busy,onChanged:(_)=>setState((){}),decoration:const InputDecoration(labelText:'بحث باسم الصنف أو الباركود أو الرقم',prefixIcon:Icon(Icons.search),border:OutlineInputBorder())),
@@ -149,7 +150,7 @@ class _LegacyStockOpeningScreenState extends State<LegacyStockOpeningScreen>{
           choice('المخزن',warehouses,warehouse,(id)=>setState((){warehouse=id;clearCount();})),
           const SizedBox(height:12),
           if(o!=null)Card(child:Padding(padding:const EdgeInsets.all(12),child:Text('معتمد بتاريخ ${o['entry_date']}\nكمية الافتتاح: ${o['quantity']}\nقيمة الافتتاح: ${(o['value_minor'] as num)/100} ريال\nلا يمكن تكرار الافتتاح. هذه ليست الكمية الحالية.'))),
-          if(o==null&&warehouse!=null)...[
+          if(!automaticReady&&o==null&&warehouse!=null)...[
             if(approvedQuantity!=null)const Text('أدخل تكلفة الكمية القديمة المعتمدة فقط. المشتريات الجديدة مسجلة بسعر فواتيرها وتُضاف قيمتها تلقائيًا؛ لن تتكرر الكمية أو قيمة الشراء.'),
             if(p['legacyInvoiceQtyByWarehouse'] is Map&&(p['legacyInvoiceQtyByWarehouse'] as Map).containsKey(warehouse))
               Text('صافي الفواتير التاريخية لهذا المخزن: ${(p['legacyInvoiceQtyByWarehouse'] as Map)[warehouse]} (ليس جردًا معتمدًا؛ لا يشمل التحويلات).'),

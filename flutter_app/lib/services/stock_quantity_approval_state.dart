@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'automatic_stock_baseline.dart';
 import 'stock_quantity.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -81,7 +82,7 @@ class StockQuantityApprovalState {
       final items=await db.query('inventory_items',where:'id = ?',whereArgs:[e.key]);
       final archived=await db.query('legacy_operational_rows',where:'collection = ? AND record_id = ?',whereArgs:['inventory',r['source_item_id']]);
       final pending=(await db.query('legacy_unverified_stock',where:'item_id = ?',whereArgs:[e.key])).isNotEmpty;
-      final opening=(await db.query('legacy_stock_openings',where:'item_id = ?',whereArgs:[e.key])).isNotEmpty;
+      final opening=(await db.query('legacy_stock_openings',where:'item_id = ?',whereArgs:[e.key])).isNotEmpty||await AutomaticStockBaseline.forItem(db,e.key)!=null;
       StockQuantity.normalized(r['quantity']);
       if(source.length!=1||source.single['sha']!=r['source_sha']||r['item_id']!=e.key||items.length!=1||archived.length!=1||
           items.single['warehouseId']!=r['warehouse_id']||(!pending&&!opening)||

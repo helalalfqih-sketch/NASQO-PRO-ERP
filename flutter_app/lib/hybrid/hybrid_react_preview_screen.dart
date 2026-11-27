@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import '../services/local_workspace_readiness.dart';
 import '../services/free_invoice_lines.dart';
 import 'dart:io';
 import 'dart:typed_data';
@@ -215,7 +216,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     finally{if(await file.exists()){try{await file.delete();}catch(_){}}}
   }
   Future<Map<String,dynamic>> _readWorkspaceSnapshot()async{
-    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     final capabilities=Map<String,dynamic>.from(snapshot['capabilities'] as Map? ??{});
     capabilities['googleDriveConfigured']=FirebaseSyncAuth.configured;
     return {...snapshot,'capabilities':capabilities};
@@ -266,7 +267,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       String key, Map<String,dynamic> payload, {String? accountId}) async {
     final id = await LocalAccountCommands(LocalDatabase.instance).save(
       HybridLocalSnapshotAdapter.workspaceId,key,payload,accountId:accountId);
-    final snapshot = await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot = await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     final account = (snapshot['accounts'] as List).cast<Map<String,dynamic>>()
       .firstWhere((a) => a['id'] == id);
     return {'account':account,'snapshot':snapshot};
@@ -274,7 +275,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
 
   static Future<Map<String,dynamic>> _saveWorkspaceSettings(Map<String,dynamic> input)async{
     await LocalWorkspaceSettings(LocalDatabase.instance).save(HybridLocalSnapshotAdapter.workspaceId,input);
-    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     return {'workspace':snapshot['workspace'],'snapshot':snapshot};
   }
 
@@ -290,7 +291,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
         ? await StockInvoiceCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved)
         : await LocalDocumentCommands(local).post(HybridLocalSnapshotAdapter.workspaceId,key,resolved);
     }
-    final snapshot = await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot = await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     final entry = (snapshot['ledger'] as List).cast<Map<String,dynamic>>()
         .firstWhere((e) => e['id'] == id);
     return {'entry':entry,'snapshot':snapshot};
@@ -306,7 +307,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     }else{
       await lifecycle.trash(w,key,id,deleted:params['deleted'] as bool?,permanent:action=='permanentlyDeleteLedger');
     }
-    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     return {'snapshot':snapshot,if(action=='updateLedgerEntry')
       'entry':(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id)};
   }
@@ -362,7 +363,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
         break;
       default:throw ArgumentError('Unsupported catalog command');
     }
-    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     result['snapshot']=snapshot;
     if(action=='saveCurrency'||action=='deleteCurrency')result['currencies']=snapshot['currencies'];
     if(warehouseId!=null)result['warehouse']=(snapshot['warehouses'] as List).firstWhere((r)=>r['id']==warehouseId);
@@ -375,7 +376,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     final warehouse=action=='saveWarehouse';
     final id=warehouse?await catalog.createWarehouse(HybridLocalSnapshotAdapter.workspaceId,key,payload)
       :await catalog.createItem(HybridLocalSnapshotAdapter.workspaceId,key,payload);
-    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     final row=(snapshot[warehouse?'warehouses':'inventory'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
     return {(warehouse?'warehouse':'item'):row,'snapshot':snapshot};
   }
@@ -385,13 +386,13 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     if(archived!=null)return archived;
     final draft=await LocalDocumentLifecycle.draft(db,id);
     if(draft!=null){
-      final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+      final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
       final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
       return {'entry':entry,'lines':draft['lines']};
     }
     final imported=await db.transaction((txn)=>LegacyOperationalRestore.invoice(txn,id));
     if(imported!=null)return imported;
-    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice();
+    final snapshot=await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true);
     final entry=(snapshot['ledger'] as List).cast<Map<String,dynamic>>().firstWhere((e)=>e['id']==id);
     if(entry['invoiceContent']=='free') return {'entry':entry,'lines':await FreeInvoiceLines.read(db,id)};
     final stored=await db.query('stock_posting_lines',where:'document_id = ?',whereArgs:[id],orderBy:'rowid');
@@ -420,11 +421,16 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
   void initState(){
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    Future.wait<bool>([_backups.isReview(),LocalDatabase.instance.database.then(LocalDatabase.hasLegacyOperational)]).then((value){
+    _initializeWorkspace().then((value){
       if(mounted)setState((){_review=value[0];_legacyOperational=value[1];_backupStateLoaded=true;});
     }).catchError((Object _){
       if(mounted)setState(()=>_error='تعذر التحقق من حالة قاعدة البيانات المحلية.');
     });
+  }
+  Future<List<bool>> _initializeWorkspace()async{
+    final local=LocalDatabase.instance,db=await LocalDatabase.instance.database;
+    await db.transaction((t)=>LocalWorkspaceReadiness.prepare(t,local));
+    return [await _backups.isReview(),await LocalDatabase.hasLegacyOperational(db)];
   }
   Future<void> _message(String message)async{
     if(!mounted)return;
@@ -470,29 +476,28 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       final stats=candidate.counts.entries.where((e)=>labels.containsKey(e.key))
         .map((e)=>'${labels[e.key]}: ${e.value}').join('\n');
       final accept=await showDialog<String>(context:context,builder:(context)=>AlertDialog(
-        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.operational?'استعادة قاعدة بيانات تاريخية':'استيراد نسخة للمراجعة المحلية'),
+        title:Text(candidate.native?'استعادة قاعدة بيانات NASQO Android':candidate.operational?'استعادة بيانات العمل':'استيراد نسخة للمراجعة المحلية'),
         content:SingleChildScrollView(child:Text('$name\n\n$stats\n\n'+
           (candidate.native?'تُستعاد السجلات والقيود وطابور العمليات محليًا. إذا كانت هناك بيانات حالية، يجب حفظ نسخة متحقق منها وتأكيد الاستبدال أولًا.':
-          candidate.operational?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. المخزون غير المعتمد يحتاج مطابقة. يمكنك اختيار المراجعة فقط.':
+          candidate.operational?'تستعيد الحسابات والحركات وبنود الفواتير وتحفظ الملف الأصلي. عند وجود بيانات محلية تُطلب نسخة أمان وتأكيد قبل الاستبدال. يجهّز النظام رصيد المخزون وحسابات التشغيل تلقائيًا. يمكنك اختيار المراجعة فقط.':
           'ستحفظ النسخة الأصلية داخل SQLite وتعرض سجلاتها في مساحة مراجعة معزولة للقراءة فقط. لن تُعدّل بياناتك الحالية أو تُرحّل الأرصدة التاريخية تلقائيًا.'))),
         actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
           if(candidate.operational&&!candidate.native)OutlinedButton(onPressed:()=>Navigator.pop(context,'review'),child:const Text('مراجعة فقط')),
-          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.operational?'live':'review'),child:Text(candidate.native?'استعادة':candidate.operational?'استعادة الحسابات للعمل':'استيراد وعرض'))]));
+          FilledButton(onPressed:()=>Navigator.pop(context,candidate.native?'native':candidate.operational?'live':'review'),child:Text(candidate.native?'استعادة':candidate.operational?'استعادة وبدء العمل':'استيراد وعرض'))]));
       if(accept==null||!mounted)return null;
       if(accept=='live'||candidate.native){
-        if(accept=='live'&&!await _confirmActivation(candidate))return null;
         final protection=await _protectExistingData();
         if(!protection.proceed)return null;
         if(accept=='live'){
-          await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha);
+          await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha,prepareForUse:true);
         }else{
-          await _backups.restoreNative(candidate,replacementSha:protection.sha);
+          await _backups.restoreNative(candidate,replacementSha:protection.sha,prepareForUse:true);
         }
       }else{await _backups.openReview(candidate);}
       final legacy=await LocalDatabase.hasLegacyOperational(await LocalDatabase.instance.database);
       if(!mounted)return null;
       setState((){_review=accept=='review';_legacyOperational=legacy;_backupStateLoaded=true;if(refreshView)_viewGeneration++;});
-      await _message(accept=='live'?'تمت استعادة الحسابات والحركات في قاعدة العمل المحلية. إعداد حسابات الترحيل مرة واحدة من الإعدادات؛ المخزون المستورد يحتاج اعتمادًا، والعملات المفقودة خارج الأرصدة.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من إعدادات قاعدة البيانات.');
+      await _message(accept=='live'?'تمت استعادة البيانات وتجهيز المخزون والحسابات. يمكنك بدء العمل الآن.':candidate.native?'تمت استعادة النسخة المحلية بنجاح.':'تم حفظ الملف الأصلي وفتح البيانات التاريخية للمراجعة. يمكنك الرجوع إلى بياناتك الحالية من إعدادات قاعدة البيانات.');
       return {'fileName':name,'mimeType':'application/octet-stream','sizeBytes':candidate.bytes.length,
         'base64Content':'','nativeRestored':true,'restoreMode':accept=='review'?'review':'operational','counts':candidate.counts};
     }on FormatException catch(e){
@@ -513,7 +518,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       content:SingleChildScrollView(child:Text('ستُنقل الحسابات والحركات الأصلية وبنود الفواتير دون إعادة ترحيل القيود القديمة. إن وُجدت بيانات عمل حالية فستحتاج إلى نسخة أمان وتأكيد منفصل.\n'
         'عملات غير معرّفة: ${candidate.meta['unknownCurrencies']??0}. تبقى خارج الأرصدة.\n'
         'ستُسجّل السندات الجديدة بقيود مزدوجة. أرصدة الصناديق والتكاليف التاريخية ليست قيودًا مزدوجة مؤكدة.\n'
-        'الأصناف التي تحمل كمية وتكلفة معتمدتين في النسخة الموحدة تُستعاد كما هي. المخزون غير المعتمد يحتاج مطابقة.\n'
+        'الأصناف التي تحمل كمية وتكلفة معتمدتين في النسخة الموحدة تُستعاد كما هي. يجهّز النظام رصيد المخزون وحسابات التشغيل تلقائيًا.\n'
         'وحدات ERP غير المدعومة تبقى في الملف الأصلي المحفوظ، ولا تُرحّل إلى دفتر العمل. لن ترفع البيانات للسحابة.')),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('تفعيل الحسابات'))]))==true;
@@ -535,9 +540,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       if(!await _confirmActivation(candidate))return;
       final protection=await _protectExistingData();
       if(!protection.proceed)return;
-      await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha);
+      await LegacyOperationalRestore(LocalDatabase.instance).activate(candidate,replacementSha:protection.sha,prepareForUse:true);
       if(mounted)setState((){_review=false;_legacyOperational=true;if(refreshView)_viewGeneration++;});
-      await _message('تم تفعيل الحسابات للعمل المحلي؛ المخزون يحتاج مطابقة.');
+      await _message('تمت استعادة البيانات وتجهيزها للعمل.');
     }on StateError catch(e){await _message('لم يتم تغيير قاعدة العمل: ${e.message}');}
     catch(_){await _message('تعذر تفعيل النسخة؛ لم يتم تأكيد أي تغيير للبيانات.');}
     finally{if(temp!=null){try{await temp.delete();}catch(_){}}if(mounted)setState(()=>_backupBusy=false);}
@@ -736,7 +741,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       body: SafeArea(
         child: _error!=null
           ? Center(child:Padding(padding:const EdgeInsets.all(18),child:Text(_error!,textAlign:TextAlign.center)))
-          : !_backupStateLoaded ? Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/branding/nasqo_logo.png',width:180,height:180,fit:BoxFit.contain),const SizedBox(height:24),const CircularProgressIndicator()])) : AndroidView(
+          : !_backupStateLoaded ? Center(child:Column(mainAxisSize:MainAxisSize.min,children:[Image.asset('assets/branding/nasqo_logo.png',width:180,height:180,fit:BoxFit.contain),const SizedBox(height:24),const CircularProgressIndicator(),const SizedBox(height:16),const Text('جاري تجهيز بيانات العمل…')])) : AndroidView(
               key:ValueKey(_viewGeneration),viewType:'nasqo/offline_hybrid',onPlatformViewCreated:_attach),
       ),
       ),

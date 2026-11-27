@@ -1,5 +1,7 @@
 import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
+import 'automatic_stock_baseline.dart';
+import 'local_workspace_readiness.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
@@ -31,7 +33,7 @@ class BackupCandidate {
 class LocalBackupRestore {
   LocalBackupRestore(this.local);
   final LocalDatabase local;
-  static const maxBytes=32*1024*1024;
+  static const maxBytes=128*1024*1024;
   static const nativeFormat='nasqo-android-backup-v1';
   static const tables=[
     'accounts','warehouses','inventory_items','ledger_entries','erp_state',
@@ -152,7 +154,7 @@ class LocalBackupRestore {
         try{
           await for(final chunk in file.openRead().transform(gzip.decoder)){
             size+=chunk.length;
-            if(size>maxBytes)throw const FormatException('Decompressed backup exceeds 32 MB');
+            if(size>maxBytes)throw const FormatException('Decompressed backup exceeds 128 MB');
             sink.add(chunk);
           }
           await sink.flush();
@@ -555,7 +557,7 @@ class LocalBackupRestore {
     },null);
   }
 
-  Future<void> restoreNative(BackupCandidate candidate,{String? replacementSha})async{
+  Future<void> restoreNative(BackupCandidate candidate,{String? replacementSha,bool prepareForUse=false})async{
     if(candidate.nativeTables==null||sha256.convert(candidate.bytes).toString()!=candidate.sha)throw ArgumentError('Not an intact native backup');
     // Reinspect a private copy of the exact verified bytes, including native
     // SQLite backups. Never trust mutable preview rows or reopen the source path.
@@ -615,7 +617,9 @@ class LocalBackupRestore {
       final invalidOpenings=await txn.rawQuery('''SELECT o.item_id FROM legacy_stock_openings o LEFT JOIN inventory_items i ON i.id=o.item_id LEFT JOIN legacy_operational_rows r ON r.collection='inventory' AND r.record_id=o.source_item_id LEFT JOIN legacy_unverified_stock u ON u.item_id=o.item_id WHERE i.warehouseId<>o.warehouse_id OR r.record_id IS NULL OR u.item_id IS NOT NULL OR (o.ledger_id IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.inventory_account_id AND j.debit_minor=o.value_minor AND j.credit_minor=0) OR NOT EXISTS(SELECT 1 FROM journal_lines j WHERE j.journal_id=o.ledger_id AND j.account_id=o.offset_account_id AND j.credit_minor=o.value_minor AND j.debit_minor=0))) LIMIT 1''');
       if(invalidOpenings.isNotEmpty)throw StateError('Invalid stock opening audit');
       await StockQuantityApprovalState.validate(txn);
+      await AutomaticStockBaseline.validate(txn);
       await txn.delete('backup_review_active');
+      if(prepareForUse)await LocalWorkspaceReadiness.prepare(txn,local);
     });
   }
 

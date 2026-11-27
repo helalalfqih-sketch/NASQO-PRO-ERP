@@ -150,7 +150,9 @@ void main(){
       final roles=LocalInvoiceRoles(local);
       final originalForm={...sale}..remove('counterpartAccountId')..remove('inventoryAccountId')..remove('costAccountId');
       final beforeRoles=await db.query('ledger_entries');
-      await expectLater(roles.resolve(originalForm),throwsA(isA<InvoicePostingSetupRequired>()));
+      final automatic=await roles.resolve(originalForm);
+      expect(automatic['counterpartAccountId'],'nasqo-system-sar-revenue');
+      expect(automatic['inventoryAccountId'],a);
       expect(await db.query('ledger_entries'),beforeRoles);
       await roles.save('sar',{'revenue':'legacy-acc-2','inventory':b,'cost':cost,'expense':b});
       final resolved=await roles.resolve(originalForm);
@@ -212,7 +214,7 @@ void main(){
       expect(await db.query('ledger_entries'),hasLength(5));
       expect(await db.query('journal_entries'),isEmpty);
       expect(await db.query('sync_outbox'),isEmpty);
-      expect((await roles.load())['roles'],isEmpty);
+      expect(((await roles.load())['roles'] as Map)['sar']['inventory'],'nasqo-system-sar-inventory');
       // Restore the saved native safety copy, also with an explicit lease.
       final activated=(await backup.replacementBackup())!;
       await backup.restoreNative(restored,replacementSha:sha256.convert(activated).toString());

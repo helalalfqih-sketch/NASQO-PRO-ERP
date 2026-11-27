@@ -7,6 +7,8 @@ import 'local_document_commands.dart';
 import 'local_master_catalog.dart';
 import 'stock_quantity.dart';
 import 'unassigned_catalog.dart';
+import 'automatic_stock_baseline.dart';
+import 'inventory_locations.dart';
 
 class LocalStockCatalog {
   LocalStockCatalog(this.local);
@@ -71,7 +73,7 @@ class LocalStockCatalog {
   }
 
   static Future<bool> hasHistory(Transaction t,String id)async{
-    return (await StockQuantityApprovalState.read(t)).containsKey(id)||
+    return await AutomaticStockBaseline.forItem(t,id)!=null||await InventoryLocations.link(t,id)!=null||(await StockQuantityApprovalState.read(t)).containsKey(id)||
       (await t.query('invoice_lines',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty||
       (await t.query('stock_movements',where:'item_id = ?',whereArgs:[id],limit:1)).isNotEmpty||
       (await t.query('legacy_operational_rows',where:'collection = ? AND record_id = ?',whereArgs:['inventory',id],limit:1)).isNotEmpty||
@@ -119,7 +121,7 @@ class LocalStockCatalog {
     if(rows.length!=1)throw StateError('Stock item missing');
     final old=rows.single,oldUnits=await settings(t,id);
     final q=old['quantity'] as num,cost=old['avgCost'] as num;
-    if(input.containsKey('quantity')&&StockQuantity.ticks(input['quantity'])!=StockQuantity.ticks(q)||
+    if(input.containsKey('quantity')&&StockQuantity.balanceTicks(input['quantity'])!=StockQuantity.balanceTicks(q)||
        input.containsKey('avgCost')&&(input['avgCost'] is! num||(input['avgCost'] as num).isFinite==false||
          ((input['avgCost'] as num)-cost).abs()>0.0000001)||
        input.containsKey('quantityUnverified')&&input['quantityUnverified']!=

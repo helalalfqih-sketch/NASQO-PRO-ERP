@@ -1590,8 +1590,9 @@ export function AuthenticatedWorkspace({
     (defaultCategory?: AccountCategory, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
       if (recoverExistingInvoiceDraft()) return;
-      const matchingAccount =
-        accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
+      const matchingAccount = defaultCategory === "purchases"
+        ? accounts.find(a=>a.note === "nasqo:default:cash-supplier" && a.currency === workspace?.defaultCurrency) ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)
+        : accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       const kindOverride =
         defaultCategory === "sales" ? "sale" : defaultCategory === "purchases" ? "purchase" : undefined;
       setInvoiceSeed((value) => ({
@@ -4533,7 +4534,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                       <small data-testid="catalog-reference-cost">
                         سعر التكلفة المرجعي: {selectedReferenceCost !== undefined && Number.isFinite(selectedReferenceCost)
                           ? formatAmount(selectedReferenceCost)
-                          : "غير متوفر"} — غير معتمد لتقييم المخزون
+                          : "غير متوفر"} — سعر الشراء المرجعي
                       </small>
                     ) : null}
                   </div>
@@ -4777,7 +4778,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                               {referenceCost !== undefined
                                 ? formatAmount(referenceCost)
                                 : "—"}
-                              <small style={{ display: "block", fontSize: 9 }}>مرجعي — غير معتمد</small>
+                              <small style={{ display: "block", fontSize: 9 }}>سعر مرجعي</small>
                             </>
                           ) : formatAmount(item.avgCost)}
                         </td>
@@ -5273,7 +5274,7 @@ function InventoryReportPage({
     <>
       <div className="nasqo-pinned-layout smart-movements-layout" data-testid="inventory-report-screen" dir="rtl">
         {movementReport && "dataScopeNote" in movementReport && typeof movementReport.dataScopeNote === "string" ? (
-          <small style={{padding:"6px 10px",color:"#92400e",background:"#fff7ed"}}>{movementReport.dataScopeNote}</small>
+          <details style={{padding:"6px 10px",fontSize:"12px",color:"#64748b"}}><summary>تفاصيل مصدر الأرصدة</summary><p>{movementReport.dataScopeNote}</p></details>
         ) : null}
         <UnifiedSearchFilterBar
           testId="inventory-search-bar"
@@ -6620,7 +6621,7 @@ function InvoiceModal({
 
   if (!open) return null;
 
-  const invoiceAccounts=(hybridLocal||cashier)&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount):ctx.accounts;
+  const invoiceAccounts=(hybridLocal||cashier)&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount && !a.note?.startsWith("nasqo:system:")):ctx.accounts;
   const invoiceCashboxes=(hybridLocal||cashier)?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
   const effectiveCashboxId=eligibleCashbox(ctx.cashboxes,cashboxId,currency);
   const selectedAccount = invoiceAccounts.find((a) => a.id === accountId);
@@ -6693,7 +6694,7 @@ function InvoiceModal({
     !item.warehouseId && item.quantity === 0 && item.avgCost === 0 &&
     !item.quantityUnverified && !item.costUnverified;
   const invoiceStockQty = (item: InventoryItemRecord) => hybridLocal
-    ? (newCatalogCard(item) ? 0 : historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
+    ? (newCatalogCard(item) || (kind === "purchase" && item.warehouseId !== warehouseId && !historicalStockPending(item)) ? 0 : historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
     : (item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0));
   const invoiceStockStatus = (item: InventoryItemRecord) =>
     historicalStockPending(item) ? "رصيد المخزن غير معتمد" : "الصنف غير مرتبط بالمخزن المحدد";
@@ -6946,7 +6947,7 @@ function InvoiceModal({
       const invalidLine = validLines.find((line) => {
         const item = line.inventoryItemId ? inventoryById.get(line.inventoryItemId) : undefined;
         return !item || (!localDraft && (historicalStockPending(item) || (kind !== "purchase" && item.costUnverified === true))) ||
-          (item.warehouseId !== warehouseId && !(kind === "purchase" && !isReturn && newCatalogCard(item)));
+          (item.warehouseId !== warehouseId && !(kind === "purchase" && !isReturn && !historicalStockPending(item)));
       });
       if (invalidLine) {
         const item = invalidLine.inventoryItemId ? inventoryById.get(invalidLine.inventoryItemId) : undefined;
@@ -9065,6 +9066,7 @@ function PurchasesPage({
   }, [activeCurrencyParam, periodLedger]);
   const categoryAccounts = ctx.accounts.filter(
     (a) =>
+      !a.note?.startsWith("nasqo:system:") &&
       (groupId !== undefined ? a.groupId === groupId : a.category === category) &&
       (!byCurrency ||
         !activeCurrencyParam ||
@@ -11482,7 +11484,7 @@ function TransactionModal({
   const chooseCurrency=(value:CurrencyCode)=>{setCurrency(value);setCashboxId(manualCashbox.current?eligibleCashbox(ctx.cashboxes,cashboxId,value):resolveCashbox(defaultsRef.current,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId)));};
   if (!open) return null;
 
-  const voucherAccounts=hybridLocal?ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount):ctx.accounts;
+  const voucherAccounts=hybridLocal?ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount&&!a.note?.startsWith("nasqo:system:")):ctx.accounts;
   const voucherCashboxes=hybridLocal?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
   const effectiveCashboxId=eligibleCashbox(ctx.cashboxes,cashboxId,currency);
   const selectedAccount = voucherAccounts.find((a) => a.id === accountId);

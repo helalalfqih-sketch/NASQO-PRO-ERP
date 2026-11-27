@@ -83,7 +83,7 @@ class MainActivity : FlutterActivity(), HybridCameraPermissionHost {
     private var exportFile: File? = null
     private val openBackup = 7311
     private val saveBackup = 7312
-    private val maxBackupBytes = 32L * 1024 * 1024
+    private val maxBackupBytes = 128L * 1024 * 1024
     private val documentTypes = mapOf("application/pdf" to ".pdf", "image/png" to ".png", "text/csv" to ".csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" to ".xlsx")
     private fun checkedDocument(call: io.flutter.plugin.common.MethodCall): Triple<File, String, String> {
         val mime = call.argument<String>("mimeType") ?: throw IllegalArgumentException()
@@ -284,7 +284,7 @@ class MainActivity : FlutterActivity(), HybridCameraPermissionHost {
                 temp?.delete()
                 runOnUiThread {
                     backupResult = null; exportFile = null
-                    result.error("BACKUP_IO", "Unable to read or write backup (maximum 32 MB)", null)
+                    result.error("BACKUP_IO", "Unable to read or write backup (maximum 128 MB)", null)
                 }
             }
         }

@@ -1,6 +1,8 @@
 import 'local_workspace_settings.dart';
+import 'local_workspace_readiness.dart';
 import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
+import 'automatic_stock_baseline.dart';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
@@ -23,7 +25,7 @@ class LegacyOperationalRestore {
   static int i(Object? x,[int fallback=0])=>LocalBackupRestore.integer(x,fallback);
   static String? currency(Object? x)=>const {'ريال':'sar','دولار':'usd','يورو':'eur'}[x];
 
-  Future<void> activate(BackupCandidate candidate,{String? replacementSha}) async {
+  Future<void> activate(BackupCandidate candidate,{String? replacementSha,bool prepareForUse=false}) async {
     if(!candidate.operational||candidate.native||
       sha256.convert(candidate.bytes).toString()!=candidate.sha)throw const FormatException('Not an intact supported workspace backup');
     final unified=candidate.unified;
@@ -169,6 +171,7 @@ class LegacyOperationalRestore {
       if((await t.rawQuery('PRAGMA foreign_key_check')).isNotEmpty)throw StateError('Foreign key verification failed');
       if(Sqflite.firstIntValue(await t.rawQuery('SELECT COUNT(*) FROM ledger_entries'))!=ledger.length)throw StateError('Historical record count mismatch');
       await t.delete('backup_review_active');
+      if(prepareForUse)await LocalWorkspaceReadiness.prepare(t,local);
     });
   }
 
@@ -232,7 +235,8 @@ class LegacyOperationalRestore {
     final transferNets=transferReport['netByItem'] as Map;
     final incomplete=(transferReport['affectedItemIds'] as List).toSet();
     final unverified=(await db.query('legacy_unverified_stock',columns:['item_id'])).map((r)=>r['item_id']).toSet();
-    final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o};
+    final openings={for(final o in await db.query('legacy_stock_openings'))o['item_id']:o,
+      ...await AutomaticStockBaseline.read(db)};
     final quantityApprovals=await StockQuantityApprovalState.read(db);
     final purchaseValues=await StockQuantityApprovalState.purchaseValues(db);
     final approvedWarehouses=<String,Set<String>>{};
@@ -247,7 +251,7 @@ class LegacyOperationalRestore {
         final qa=c=='inventory'?quantityApprovals[row['id']]:null;
         final old=byCollection[c]?[opening?['source_item_id']??qa?['source_item_id']??row['id']];
         if(old==null)continue;
-        if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;}
+        if(opening!=null){row['legacySourceItemId']=opening['source_item_id'];row['openingDate']=opening['entry_date'];row['openingInventoryAccountId']=opening['inventory_account_id'];row['quantityUnverified']=false;row['costUnverified']=false;row['legacyCatalogCost']=old['avgCost'];}
         final keys=c=='accounts'?['groupId','sortOrder','accountImage','settlement','documentNumberRequired','messageMethod','sendMode','legacyRef']:
           c=='warehouses'?['codeNumber','legacyRef']:c=='inventory'?['currencyCode','legacyWarehouseCount','legacyId','isActive','expiryDate','legacyRef']:
           ['rawDain','rawMadin','settledOnReceipt','cashboxId','docType','sourceOrigin','lineCount','createdAtMs','currency','discount','bonus','legacyCurrencyId','taxAmount','dueDate','paidAmount','deliveryDays','legacyRef','sourceReference','headerDiscount'];

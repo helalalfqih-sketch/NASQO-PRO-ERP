@@ -28,7 +28,7 @@ def records(db, table):
 assert [(r['name'], r['quantity'], r['avgCost']) for r in records(source, 'inventory_items')] == [
     ('QA Pending A', 3, 0), ('QA Pending B', 5, 0)]
 assert not records(source, 'journal_entries') and not records(source, 'stock_movements')
-assert all(r['name'].startswith('QA ') for r in records(source, 'accounts'))
+assert all(r['name'].startswith('QA ') or str(r['note']).startswith('nasqo:system:') for r in records(source, 'accounts'))
 
 def adb(*args):
     return subprocess.run(['adb', *args], check=True, capture_output=True, timeout=30).stdout
@@ -125,6 +125,7 @@ try:
         assert len(search) == 1 and not search[0].get('text'), 'Selection must clear the item search'
     tap('سعر السطر 2', field=True, scroll=True, max_y=size[1]*3//4, activate=False)
     root = capture('priced', '10,000')
+    assert not any('غير معتمدة' in text(n) or 'حدد حساب أصل المخزون' in text(n) for n in root.iter('node'))
     prices = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and 'سعر السطر' in text(n)]
     assert len(prices) == 2 and all(n.get('text') == '5000' for n in prices), 'Both purchase prices must be populated'
     tap('عمل فاتورة')
@@ -143,8 +144,8 @@ try:
         db = sqlite3.connect(target)
         db.row_factory = sqlite3.Row
         items = records(db, 'inventory_items')
-        assert [(r['quantity'], r['avgCost']) for r in items] == [(4, 0), (6, 0)]
-        assert records(db, 'legacy_unverified_stock') == records(source, 'legacy_unverified_stock')
+        assert [(r['quantity'], r['avgCost']) for r in items] == [(4, 5000), (6, 5000)]
+        assert not records(db, 'legacy_unverified_stock')
         for table in ['legacy_operational_source', 'legacy_operational_chunks', 'legacy_operational_rows', 'legacy_stock_openings']:
             assert records(db, table) == records(source, table), table+' changed'
         approvals = lambda conn: [tuple(r) for r in conn.execute("SELECT stateKey,payloadJson FROM erp_state WHERE stateKey LIKE 'stock_quantity_approval:%' ORDER BY stateKey")]
@@ -154,23 +155,28 @@ try:
         current_ledger = {r['id']: r for r in ledger}
         assert all(current_ledger.get(key) == value for key, value in old_ledger.items()), 'Historical ledger changed'
         new_ledger = [r for r in ledger if r['id'] not in old_ledger]
-        assert len(new_ledger) == 1 and len(ledger) == len(old_ledger)+1, 'Exactly one new invoice; no old entry replay'
-        invoice = new_ledger[0]
+        openings = [r for r in new_ledger if r['kind'] == 'opening']
+        invoices = [r for r in new_ledger if r['kind'] == 'invoice']
+        assert len(openings) == 2 and len(invoices) == 1, 'Opening value once, exactly one new invoice'
+        invoice = invoices[0]
         assert invoice['amount'] == 10000 and invoice['payment'] == 'cash' and invoice['direction'] == 'credit'
         assert invoice['warehouseId'] == 'legacy-wh-1' and invoice['postingStatus'] == 'posted'
         assert len(records(db, 'invoice_lines')) == 2 and len(records(db, 'stock_movements')) == 2
-        assert len(records(db, 'journal_entries')) == 1
+        assert len(records(db, 'journal_entries')) == 3
         lines = records(db, 'journal_lines')
         balance = {r['account_id']: r['net'] for r in db.execute('SELECT account_id,SUM(debit_minor-credit_minor) net FROM journal_lines GROUP BY account_id')}
-        assert balance['account_QA-Inventory'] == 1000000 and balance['account_QA-Cash'] == -1000000
+        assert balance['account_QA-Inventory'] == 5000000 and balance['account_QA-Cash'] == -1000000
         assert balance.get('legacy-acc-1', 0) == 0
         assert sum(r['debit_minor']-r['credit_minor'] for r in lines) == 0
         postings = records(db, 'stock_posting_lines')
-        assert len(postings) == 2 and all(r['before_value'] == 0 and r['after_value'] == 500000 for r in postings)
+        assert len(postings) == 2
+        assert [(r['before_value'], r['after_value']) for r in postings] == [(1500000, 2000000), (2500000, 3000000)]
+        baselines = list(db.execute("SELECT stateKey FROM erp_state WHERE stateKey LIKE 'automatic_stock_baseline:%'"))
+        assert len(baselines) == 2
         assert not list(db.execute('PRAGMA foreign_key_check'))
         result = {'result': 'PASS', 'sdk': 36, 'fixtureSha256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
                   'amount': 10000, 'payment': 'cash', 'prices': [5000, 5000], 'quantitiesBefore': [3, 5], 'quantitiesAfter': [4, 6],
-                  'approvedNewPurchaseValue': 10000, 'oldCostStillPending': True, 'oldArchiveUnchanged': True,
+                  'approvedNewPurchaseValue': 10000, 'oldCostStillPending': False, 'openingCostPreparedAutomatically': True, 'oldArchiveUnchanged': True,
                   'journalBalanced': True, 'stockMovements': 2, 'newInvoicesAfterRestart': 1,
                   'historicalInvoicesPreserved': len(old_ledger),
                   'scope': 'Signed Android 16 release, UI entry and posting, SQLite checked after process restart. Synthetic DB seeded before UI test; not a restore-picker or private-data test.'}

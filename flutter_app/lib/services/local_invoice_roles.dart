@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'automatic_stock_baseline.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/erp_models.dart';
 import 'local_database.dart';
 import 'local_master_catalog.dart';
 import 'stock_quantity_approval_state.dart';
+import 'automatic_posting_setup.dart';
 
 /// A business chooses posting accounts once. Imported customer/supplier
 /// categories are not sufficient evidence of a GL role.
@@ -16,7 +18,7 @@ class LocalInvoiceRoles {
   LocalInvoiceRoles(this.local);
   final LocalDatabase local;
   static const stateKey='invoice_posting_roles_v1';
-  static const keys=['revenue','inventory','cost','expense','outputTax','inputTax','balanceVoucher','cash'];
+  static const keys=['revenue','inventory','cost','expense','outputTax','inputTax','balanceVoucher','cash','opening','adjustment'];
   static bool isCashRole(String key)=>key=='cash'||key.startsWith('cashbox:');
   static bool isKnownRole(String key)=>keys.contains(key)||RegExp(r'^cashbox:[1-9][0-9]{0,15}$').hasMatch(key);
   static const currencyNames={'sar':'ريال','usd':'دولار','eur':'يورو'};
@@ -33,6 +35,9 @@ class LocalInvoiceRoles {
     final db=await local.database;
     return db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
+      for(final code in currencyNames.keys){
+        if((await LocalMasterCatalog.read(t,'currencies')).any((c)=>c['name']==currencyNames[code]))await AutomaticPostingSetup.ensure(t,code);
+      }
       final rows=await t.query('accounts',orderBy:'name');
       return {'accounts':rows,'roles':await read(t),'cashboxes':await cashboxes(t)};
     });
@@ -60,6 +65,7 @@ class LocalInvoiceRoles {
       data[currency]=selected;
       await t.insert('erp_state',{'stateKey':stateKey,'payloadJson':jsonEncode(data),
         'updatedAt':DateTime.now().toUtc().toIso8601String()},conflictAlgorithm:ConflictAlgorithm.replace);
+      await AutomaticPostingSetup.ensure(t,currency);
     });
   }
 
@@ -68,6 +74,7 @@ class LocalInvoiceRoles {
   }
 
   static Future<String> cashAccount(DatabaseExecutor t,String currency,Object? cashboxId)async{
+    await AutomaticPostingSetup.ensure(t,currency);
     final roles=(await read(t))[currency];
     final key=cashboxId==null?'cash':'cashbox:$cashboxId';
     if(cashboxId!=null){
@@ -111,6 +118,7 @@ class LocalInvoiceRoles {
     final db=await local.database;
     return db.transaction((t)async{
       await LocalDatabase.requireLiveWorkspace(t);
+      await AutomaticPostingSetup.ensure(t,code);
       final data=await read(t),raw=data[code];
       final settings=raw is Map?raw:<String,dynamic>{};
       final sale=input['direction']=='debit',stock=input['invoiceContent']=='items';
@@ -146,7 +154,8 @@ class LocalInvoiceRoles {
           on StateError catch(e){throw InvoicePostingSetupRequired(e.message.toString());}
           if(pending?.inventoryAccountId!=null){ids.add(pending!.inventoryAccountId!);continue;}
           final opening=await t.query('legacy_stock_openings',columns:['inventory_account_id'],where:'item_id = ?',whereArgs:[id]);
-          if(opening.isEmpty){unassigned=true;}else{ids.add(opening.single['inventory_account_id'] as String);}
+          final baseline=opening.isEmpty?await AutomaticStockBaseline.forItem(t,id):opening.single;
+          if(baseline==null){unassigned=true;}else{ids.add(baseline['inventory_account_id'] as String);}
         }
         if(unassigned||ids.isEmpty)ids.add(role('inventory','حساب أصل المخزون'));
         if(ids.length!=1)throw const InvoicePostingSetupRequired('تتبع الأصناف حسابات مخزون مختلفة. افصلها في فواتير مستقلة.');
@@ -169,7 +178,8 @@ class LocalInvoiceRoles {
       return {...input,'counterpartAccountId':counter,
         if(settlement!=null)'cashSettlementAccountId':settlement,
         if(stock&&sale)'inventoryAccountId':inventory,if(cost!=null)'costAccountId':cost,
-        if(tax!=null)'taxAccountId':tax};
+        if(tax!=null)'taxAccountId':tax,
+        if(stock&&!sale)'inventoryAdjustmentAccountId':role('adjustment','حساب فروق المخزون')};
     });
   }
 }

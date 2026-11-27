@@ -34,7 +34,7 @@ on:
         type: boolean
         default: false
       test_pending_purchase:
-        description: Post a synthetic purchase with pending opening cost on the isolated Android emulator
+        description: Verify automatic opening setup and post a synthetic purchase on the isolated Android emulator
         type: boolean
         default: false
       inspect_play_signing_tool:

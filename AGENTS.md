@@ -1,5 +1,13 @@
 # Mobile Prototype Agent Guide
 
+## Immediate operation after setup or restore (user direction, 2026-11-27)
+
+- The user explicitly requires a new business and a restored supported backup to work immediately, without manual posting-account setup or a mandatory quantity/cost approval workflow. This supersedes earlier requirements below that made those steps mandatory for routine use.
+- Prepare dedicated system posting accounts and ordinary workspace defaults automatically. Preserve valid explicit mappings; never repurpose a customer/supplier account by guessing its name or silently change its historical balance.
+- Initialize imported stock once from the supported source by product, warehouse and currency. Preserve existing confirmed quantities and subsequent local purchases, original documents and source bytes. Record the valuation basis and a balanced opening separately; do not replay old invoices/transfers or add their quantities twice.
+- Keep migration provenance and exceptional source references available in an optional diagnostic view, not as a large technical warning or repeated “unapproved” badges throughout normal reports and invoices. Real validation failures must remain actionable in the affected document.
+- Test first use, imported use, upgrade of an already quantity-approved workspace, repeated initialization and native backup round trips. Private source validation stays outside the repository. Do not change package/signing identity or publish a release without successful checks.
+
 ## Prototype Instructions
 
 In ChatGPT Work Mode, run `sites-preview start "$PWD"`, open `http://terminal.local:4173/` in the cloud browser, and verify the rendered app and its primary interactions. Keep that preview open and tell the user to inspect it in the cloud browser; do not present the local URL as a user-facing chat link. In Codex Desktop, run the local server yourself, open the preview in the in-app browser, and provide the clickable local URL. Do not deploy to Sites unless the user explicitly asks to share, publish, or deploy. Do not give the user server-start instructions when you can run it.
