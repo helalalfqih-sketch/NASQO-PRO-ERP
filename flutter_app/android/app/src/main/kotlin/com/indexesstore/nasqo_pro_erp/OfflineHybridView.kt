@@ -64,6 +64,9 @@ private class OfflineHybridView(
     id: Int,
     private val cameraHost: HybridCameraPermissionHost
 ) : PlatformView {
+    // Match the hard UTF-16 envelope bound in Dart and messageLimits.ts.
+    // Dart applies the smaller per-action budgets plus command validation.
+    private val maxRequestLength = 16 * 1024 * 1024
     private val origin = "https://appassets.androidplatform.net"
     private val resourcePrefix = "/offline/flutter_assets/assets/web/"
     private val assetLoader = WebViewAssetLoader.Builder()
@@ -181,8 +184,10 @@ private class OfflineHybridView(
                 if (isMainFrame && sourceOrigin.toString() == origin &&
                     message.type == WebMessageCompat.TYPE_STRING) {
                     val data = message.data
-                    if (data != null && data.length <= 32768) {
+                    if (data != null && data.length <= maxRequestLength) {
                         channel.invokeMethod("message", data)
+                    } else if (data != null) {
+                        HybridLifecycleDiagnostics.log("bridge-oversized", instance, "length=${data.length}")
                     }
                 }
             }
