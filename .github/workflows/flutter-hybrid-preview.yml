@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       upload_tested_release:
-        description: Upload the verified 1.0.170 APK and AAB to the prepared GitHub draft (no rebuild)
+        description: Upload the verified 1.0.187 APK and AAB to the prepared GitHub draft (no rebuild)
         type: boolean
         default: false
       publish_verified_candidate:
@@ -79,44 +79,44 @@ jobs:
           test "$GH_REPO" = helalalfqih-sketch/NASQO-PRO-ERP
           test "$OTHER_ACTIONS" = false
           test -z "$VERIFY_RUN"
-          gh api "repos/$GH_REPO/actions/runs/46040028289" > source-run.json
-          gh api "repos/$GH_REPO/actions/runs/46041883021" > verified-run.json
-          gh api "repos/$GH_REPO/releases/460913370" > release.json
+          gh api "repos/$GH_REPO/actions/runs/46068768452" > source-run.json
+          gh api "repos/$GH_REPO/actions/runs/46068768452" > verified-run.json
+          gh api "repos/$GH_REPO/releases/461069668" > release.json
           python3 - <<'PY'
           import json
-          for filename, sha in [('source-run.json', '98e59fd8c5f72c763d7dd40c3aa11478a4664077'), ('verified-run.json', 'd6720844a53f97615c860cedf941a712e68759ae')]:
+          for filename, sha in [('source-run.json', 'e718646a90a3f78cd8db6f8c3337b1c680b83022'), ('verified-run.json', 'e718646a90a3f78cd8db6f8c3337b1c680b83022')]:
               run = json.load(open(filename))
               assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
           release = json.load(open('release.json'))
-          assert release['tag_name'] == 'android-preview-v1170'
-          assert release['target_commitish'] == '98e59fd8c5f72c763d7dd40c3aa11478a4664077'
+          assert release['tag_name'] == 'android-preview-v1187'
+          assert release['target_commitish'] == 'e718646a90a3f78cd8db6f8c3337b1c680b83022'
           assert release['draft'] and release['prerelease'] and not release['assets']
           PY
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-signed-preview
           path: apk
-          run-id: 46040028289
+          run-id: 46068768452
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-play-internal-bundle
           path: bundle
-          run-id: 46040028289
+          run-id: 46068768452
           github-token: ${{ github.token }}
       - name: Upload only the exact verified APK and AAB
         run: |
           set -euo pipefail
           mkdir release-files
-          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.170.apk
-          cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.170.aab
+          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.187.apk
+          cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.187.aab
           cd release-files
           printf '%s  %s\n' \
-            f242cfde445e0a2406cbeba4dde4c66340340cf0031270d25f0faa236d1aea37 NASQO-PRO-ERP-1.0.170.apk \
-            8e2ba1a0560a6fe8c5093d3363a3980268053bb18ea2224d5a799e9d0918a1a6 NASQO-PRO-ERP-1.0.170.aab > SHA256SUMS.txt
+            c9a90a9ad27fd029c868c7112489d2a82d8d974ad7b9c650a9f7254b7b74ac67 NASQO-PRO-ERP-1.0.187.apk \
+            7be20e36af8908bcb347f9b4ce42556b78398a1143b48835300dbbeddb37989d NASQO-PRO-ERP-1.0.187.aab > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
-          gh release upload android-preview-v1170 NASQO-PRO-ERP-1.0.170.apk NASQO-PRO-ERP-1.0.170.aab SHA256SUMS.txt
-          gh api "repos/$GH_REPO/releases/460913370" > ../uploaded-release.json
+          gh release upload android-preview-v1187 NASQO-PRO-ERP-1.0.187.apk NASQO-PRO-ERP-1.0.187.aab SHA256SUMS.txt
+          gh api "repos/$GH_REPO/releases/461069668" > ../uploaded-release.json
           python3 - <<'PY'
           import hashlib, json
           from pathlib import Path
