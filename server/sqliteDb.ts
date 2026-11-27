@@ -1,8 +1,8 @@
 import { assertMasterNotReferenced } from "./masterCrud.ts";
 import { revisionedErpData } from "./erpRecordRevisions.ts";
-import { MAX_IMPORT_ROWS } from "../src/utils/tabularImportLimits";
+import { MAX_IMPORT_ROWS } from "../src/utils/tabularImportLimits.ts";
 import { captureWorkspaceSnapshot, restoreWorkspaceSnapshot } from "./workspaceSnapshot.ts";
-import { validateReferenceDefaultsShape } from "../src/utils/documentReferences";
+import { validateReferenceDefaultsShape } from "../src/utils/documentReferences.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";

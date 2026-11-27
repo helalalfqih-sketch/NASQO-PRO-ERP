@@ -246,7 +246,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check:runtime
           npm run sync:flutter-hybrid
-          npx tsx --test tests/hybrid.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts tests/erp-crud.test.ts tests/erp-input.test.ts
+          npx tsx --test tests/hybrid.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts tests/erp-crud.test.ts tests/erp-input.test.ts tests/sqlite-local-production.test.mjs tests/smartpro-policy.test.ts tests/workspace-isolation.test.ts
 
       - name: Verify rendered CRUD against isolated SQLite
         run: |

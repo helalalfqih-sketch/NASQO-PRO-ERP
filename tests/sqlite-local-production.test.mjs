@@ -384,10 +384,11 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
       headers: jsonHeaders,
       body: JSON.stringify({ confirmation: "RESET:local-erp-workspace" }),
     });
+    const restoreReview = await (await fetch(prefix + "/restore/prepare", {method: "POST", headers: jsonHeaders})).json();
     const restoreRes = await fetch(prefix + "/restore/json", {
       method: "POST",
       headers: jsonHeaders,
-      body: JSON.stringify({ payload: jsonExport }),
+      body: JSON.stringify({ payload: jsonExport, restoreToken: restoreReview.token }),
     });
     assert.equal(restoreRes.status, 200);
     const detailAfter = await (await fetch(`${prefix}/invoices/${liveEntry.id}`)).json();
@@ -395,6 +396,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     assert.equal(detailAfter.lines[0].itemName, "صنف HTTP");
 
     // Import native SQLite with replaceExisting: false -> must reject 400 and keep existing account!
+    const mergeReview = await (await fetch(prefix + "/restore/prepare", {method: "POST", headers: jsonHeaders})).json();
     const nativeMergeRes = await fetch(prefix + "/import/sqlite-legacy", {
       method: "POST",
       headers: jsonHeaders,
@@ -403,6 +405,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
         fileName: "native.sqlite",
         mode: "import",
         replaceExisting: false,
+        restoreToken: mergeReview.token,
       }),
     });
     assert.equal(nativeMergeRes.status, 400);
@@ -442,10 +445,11 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
       });
       assert.equal(chunkRes.status, 200);
     }
+    const chunkReview = await (await fetch(prefix + "/restore/prepare", {method: "POST", headers: jsonHeaders})).json();
     const commitRes = await fetch(`${prefix}/restore/upload/${uploadId}/commit`, {
       method: "POST",
       headers: jsonHeaders,
-      body: JSON.stringify({ kind: "sqlite", fileName: "chunked.sqlite", mode: "restore", replaceExisting: true }),
+      body: JSON.stringify({ kind: "sqlite", fileName: "chunked.sqlite", mode: "restore", replaceExisting: true, restoreToken: chunkReview.token }),
     });
     assert.equal(commitRes.status, 200);
     const afterChunked = await commitRes.json();

@@ -5,7 +5,8 @@ export type ErpCollection = typeof ERP_COLLECTIONS[number];
 export type ErpRow = Record<string, any>;
 export type ErpRecordChange = { collection: ErpCollection; operation?: 'create'|'update'|'delete'; record: ErpRow; expectedRevision: number|string };
 export class ErpValidationError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
+  status: number;
+  constructor(message: string, status = 400) { super(message); this.status = status; }
 }
 export const ERP_FIELDS: Record<ErpCollection, string[]> = {
   employees: ['id','accountId','name','roleTitle','department','basicSalary','allowances','deductions','status','hireDate','leaveBalanceDays','attendanceToday'],
