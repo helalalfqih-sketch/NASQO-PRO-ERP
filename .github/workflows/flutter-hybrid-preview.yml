@@ -80,7 +80,7 @@ jobs:
           test "$OTHER_ACTIONS" = false
           test -z "$VERIFY_RUN"
           gh api "repos/$GH_REPO/actions/runs/46068768452" > source-run.json
-          gh api "repos/$GH_REPO/actions/runs/46070698328" > verified-run.json
+          gh api "repos/$GH_REPO/actions/runs/46072709825" > verified-run.json
           gh api "repos/$GH_REPO/actions/runs/46068768452/jobs?per_page=100" > source-jobs.json
           gh api "repos/$GH_REPO/releases/461069668" > release.json
           python3 - <<'PY'
@@ -92,7 +92,7 @@ jobs:
           build = [j for j in json.load(open('source-jobs.json'))['jobs'] if j['name'] == 'flutter-hybrid']
           assert len(build) == 1 and build[0]['conclusion'] == 'success'
           verified = json.load(open('verified-run.json'))
-          assert verified['head_sha'] == '82b863e6c3bf48365992e495bd4f4f8bc5566110'
+          assert verified['head_sha'] == '7bd42adaa2440d9fbea44a9987f7b4e57311f09f'
           assert verified['status'] == 'completed' and verified['conclusion'] == 'success'
           release = json.load(open('release.json'))
           assert release['tag_name'] == 'android-preview-v1187'
