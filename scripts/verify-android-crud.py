@@ -67,6 +67,9 @@ def tap(value, field=False, scroll=False):
                 previous = b
                 time.sleep(0.25)
                 continue
+            if value == 'حفظ السجل':
+                print('CRUD Save bounds:', b, flush=True)
+                (out/f'crud-save-{int(time.time())}.png').write_bytes(adb('exec-out', 'screencap', '-p'))
             adb('shell', 'input', 'tap', str((b[0]+b[2])//2), str((b[1]+b[3])//2))
             return
         previous = None
@@ -119,14 +122,16 @@ try:
     before = snapshot(); assert not employees(before), 'Requires synthetic empty employees'
     hr(); tap('إضافة سجل'); capture('create', 'اسم الموظف')
     tap('اسم الموظف', field=True); adb('shell','input','text','QA-CRUD-Employee')
-    adb('shell','input','keyevent','KEYCODE_BACK'); tap('حفظ السجل')
+    # Save is visible above the IME. Exercise the same direct Save gesture as
+    # the user; Back is a separate app navigation action, not a field blur.
+    tap('حفظ السجل')
     capture('created', 'QA-CRUD-Employee', 'حفظ السجل')
     created = snapshot(); assert employees(created)[0]['name'] == 'QA-CRUD-Employee'
     hr(); capture('persisted', 'QA-CRUD-Employee'); tap('عرض')
     capture('read', 'QA-CRUD-Employee'); tap('إغلاق')
     tap('تعديل'); tap('اسم الموظف', field=True)
     adb('shell','input','keyevent','KEYCODE_MOVE_END'); adb('shell','input','keyevent',*(['KEYCODE_DEL']*40))
-    adb('shell','input','text','QA-CRUD-Edited'); adb('shell','input','keyevent','KEYCODE_BACK'); tap('حفظ السجل')
+    adb('shell','input','text','QA-CRUD-Edited'); tap('حفظ السجل')
     capture('edited', 'QA-CRUD-Edited', 'حفظ السجل')
     edited = snapshot(); assert employees(edited)[0]['name'] == 'QA-CRUD-Edited'
     assert employees(edited)[0]['_revision'] == employees(created)[0]['_revision']+1
