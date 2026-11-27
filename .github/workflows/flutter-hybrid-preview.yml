@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       upload_tested_release:
-        description: Upload the verified 1.0.170 APK and AAB to the prepared GitHub draft (no rebuild)
+        description: Upload the verified 1.0.199 APK and AAB to the prepared GitHub draft (no rebuild)
         type: boolean
         default: false
       publish_verified_candidate:
@@ -83,54 +83,100 @@ jobs:
           test "$GH_REPO" = helalalfqih-sketch/NASQO-PRO-ERP
           test "$OTHER_ACTIONS" = false
           test -z "$VERIFY_RUN"
-          gh api "repos/$GH_REPO/actions/runs/46040028289" > source-run.json
-          gh api "repos/$GH_REPO/actions/runs/46041883021" > verified-run.json
-          gh api "repos/$GH_REPO/releases/460913370" > release.json
+          gh api "repos/$GH_REPO/actions/runs/46080671917" > source-run.json
+          gh api "repos/$GH_REPO/actions/runs/46080671917" > verified-run.json
+          gh api "repos/$GH_REPO/actions/runs/46080671917/jobs?per_page=100" > source-jobs.json
+          gh api "repos/$GH_REPO/releases/461145604" > release.json
           python3 - <<'PY'
           import json
-          for filename, sha in [('source-run.json', '98e59fd8c5f72c763d7dd40c3aa11478a4664077'), ('verified-run.json', 'd6720844a53f97615c860cedf941a712e68759ae')]:
-              run = json.load(open(filename))
-              assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
+          source = json.load(open('source-run.json'))
+          assert source['head_sha'] == 'e7ad679c504889b4316262c31f9ca448fec8479b' and source['status'] == 'completed'
+          # Require the successful build and real Android acceptance of these exact artifacts.
+          build = [j for j in json.load(open('source-jobs.json'))['jobs'] if j['name'] == 'flutter-hybrid']
+          assert len(build) == 1 and build[0]['conclusion'] == 'success'
+          verified = json.load(open('verified-run.json'))
+          assert verified['head_sha'] == 'e7ad679c504889b4316262c31f9ca448fec8479b'
+          assert verified['status'] == 'completed' and verified['conclusion'] == 'success'
           release = json.load(open('release.json'))
-          assert release['tag_name'] == 'android-preview-v1170'
-          assert release['target_commitish'] == '98e59fd8c5f72c763d7dd40c3aa11478a4664077'
+          assert release['tag_name'] == 'android-preview-v1199'
+          assert release['target_commitish'] == 'e7ad679c504889b4316262c31f9ca448fec8479b'
           assert release['draft'] and release['prerelease'] and not release['assets']
           PY
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-signed-preview
           path: apk
-          run-id: 46040028289
+          run-id: 46080671917
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-play-internal-bundle
           path: bundle
-          run-id: 46040028289
+          run-id: 46080671917
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: acceptance-core
+          run-id: 46080671917
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: acceptance-crud-purchase
+          run-id: 46080671917
+          github-token: ${{ github.token }}
+      - name: Require each real Android acceptance result
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for folder, names in [('acceptance-core', ['result', 'navigation-result', 'catalog-result', 'large-import-result']), ('acceptance-crud-purchase', ['crud-result', 'purchase-result'])]:
+              for name in names:
+                  assert json.loads((Path(folder)/(name+'.json')).read_text())['result'] == 'PASS', name
+              assert "versionCode='1199'" in (Path(folder)/'badging.txt').read_text()
+              assert '649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197' in (Path(folder)/'candidate-certificate.txt').read_text().lower()
+          PY
       - name: Upload only the exact verified APK and AAB
         run: |
           set -euo pipefail
           mkdir release-files
-          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.170.apk
-          cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.170.aab
+          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.199.apk
+          # The installed preview updater requires this exact stable asset name.
+          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP.apk
+          cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.199.aab
           cd release-files
           printf '%s  %s\n' \
-            f242cfde445e0a2406cbeba4dde4c66340340cf0031270d25f0faa236d1aea37 NASQO-PRO-ERP-1.0.170.apk \
-            8e2ba1a0560a6fe8c5093d3363a3980268053bb18ea2224d5a799e9d0918a1a6 NASQO-PRO-ERP-1.0.170.aab > SHA256SUMS.txt
+            848f8ffdee210d1c0ed04793479fa11ee07cda1a1fdedb558a7bc5b530b14d46 NASQO-PRO-ERP-1.0.199.apk \
+            848f8ffdee210d1c0ed04793479fa11ee07cda1a1fdedb558a7bc5b530b14d46 NASQO-PRO-ERP.apk \
+            7047fe054f23be0114d8a29a48391102b32a3de7e772381bffa2fa23fcfe3fcf NASQO-PRO-ERP-1.0.199.aab > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
-          gh release upload android-preview-v1170 NASQO-PRO-ERP-1.0.170.apk NASQO-PRO-ERP-1.0.170.aab SHA256SUMS.txt
-          gh api "repos/$GH_REPO/releases/460913370" > ../uploaded-release.json
+          gh release upload android-preview-v1199 NASQO-PRO-ERP-1.0.199.apk NASQO-PRO-ERP.apk NASQO-PRO-ERP-1.0.199.aab SHA256SUMS.txt
+          gh api "repos/$GH_REPO/releases/461145604" > ../uploaded-release.json
           python3 - <<'PY'
           import hashlib, json
           from pathlib import Path
           release = json.load(open('../uploaded-release.json'))
-          assert release['draft'] and len(release['assets']) == 3
+          assert release['draft'] and len(release['assets']) == 4
           for asset in release['assets']:
               file = Path(asset['name'])
               assert asset['state'] == 'uploaded' and asset['size'] == file.stat().st_size
               assert asset['digest'] == 'sha256:' + hashlib.sha256(file.read_bytes()).hexdigest()
           PY
+
+      - name: Publish verified prerelease and check anonymous download bytes
+        run: |
+          set -euo pipefail
+          gh release edit android-preview-v1199 --draft=false --prerelease --latest=false
+          mkdir public-downloads
+          cd public-downloads
+          for file in NASQO-PRO-ERP-1.0.199.apk NASQO-PRO-ERP.apk NASQO-PRO-ERP-1.0.199.aab SHA256SUMS.txt; do
+            curl --fail --location --retry 4 --retry-delay 5 --max-time 180 \
+              --output "$file" "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-preview-v1199/$file"
+            cmp "$file" "../release-files/$file"
+          done
+          sha256sum -c SHA256SUMS.txt
+          gh api "repos/$GH_REPO/releases/461145604" --jq '{tag_name,draft,prerelease,assets:[.assets[]|{name,size,digest,browser_download_url}]}'
 
   export-play-signing-key:
     if: github.event_name == 'workflow_dispatch' && inputs.export_play_signing_key == true
