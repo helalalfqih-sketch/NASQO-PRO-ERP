@@ -83,11 +83,17 @@ def snapshot():
 
 def home():
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
-    for _ in range(8):
+    # Startup may expose neither Home nor Back until the WebView is ready.
+    for _ in range(30):
         root = read()
-        if any(n.get('text') == 'الإدارة' or n.get('content-desc') == 'الإدارة' for n in root.iter('node')):
+        visible_labels = {n.get(k, '').strip() for n in root.iter('node') for k in ('text', 'content-desc')}
+        if 'الشريط السفلي للشاشة الرئيسية' in visible_labels and 'الإدارة' in visible_labels:
             break
-        tap('رجوع')
+        if 'رجوع' in visible_labels:
+            tap('رجوع')
+        time.sleep(0.5)
+    else:
+        raise AssertionError('Home did not become visible after startup/Back')
     capture('home', 'الإدارة')
 
 def hr():
