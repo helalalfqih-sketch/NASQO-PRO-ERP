@@ -74,7 +74,7 @@ public class DocumentInstrumentation extends Instrumentation {
       chooseImportFile("nasqo-import-items.csv");
       clickText("راجعت الصفوف والتصنيف والعملة وأوافق على إضافة البطاقات الجديدة فقط");
       getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(activity.getFilesDir(),"import-items-review.png")));
-      clickText("استيراد البطاقات");Thread.sleep(1200);
+      clickText("استيراد البطاقات");waitImportFinished();
       android.database.sqlite.SQLiteDatabase importedDb=android.database.sqlite.SQLiteDatabase.openDatabase(activity.getDatabasePath("nasqo_pro_erp.db").getPath(),null,android.database.sqlite.SQLiteDatabase.OPEN_READONLY);
       android.database.Cursor importedItem=importedDb.rawQuery("SELECT i.sku,i.quantity,i.avgCost,i.warehouseId,u.settings_json FROM inventory_items i JOIN inventory_unit_settings u ON u.item_id=i.id WHERE i.name=?",new String[]{"صنف Android مستورد"});
       if(!importedItem.moveToFirst()||!"000123".equals(importedItem.getString(0))||importedItem.getDouble(1)!=0||importedItem.getDouble(2)!=0||!"".equals(importedItem.getString(3)))throw new AssertionError("imported catalog identity/stock mismatch");
@@ -86,7 +86,7 @@ public class DocumentInstrumentation extends Instrumentation {
       chooseImportFile("nasqo-import-accounts.csv");
       clickText("راجعت الصفوف والتصنيف والعملة وأوافق على إضافة البطاقات الجديدة فقط");
       getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(activity.getFilesDir(),"import-accounts-review.png")));
-      clickText("استيراد البطاقات");Thread.sleep(1200);
+      clickText("استيراد البطاقات");waitImportFinished();
       importedDb=android.database.sqlite.SQLiteDatabase.openDatabase(activity.getDatabasePath("nasqo_pro_erp.db").getPath(),null,android.database.sqlite.SQLiteDatabase.OPEN_READONLY);
       android.database.Cursor importedAccount=importedDb.rawQuery("SELECT phone,openingBalance,category FROM accounts WHERE name=?",new String[]{"شركة, فرع Android"});
       if(!importedAccount.moveToFirst()||!"001234".equals(importedAccount.getString(0))||importedAccount.getDouble(1)!=0||!"clients".equals(importedAccount.getString(2)))throw new AssertionError("imported account fields changed");
@@ -124,6 +124,15 @@ public class DocumentInstrumentation extends Instrumentation {
       android.util.Log.i("NASQO_ACCEPTANCE","UI inventory report click -> PDF attachment -> independent receiver PASS");
       status.putString("stream","Android receiver: PDF/XLSX/PNG exact bytes, names, MIME, independent opening; canceled save picker PASS\n");finish(Activity.RESULT_OK,status);
     }catch(Throwable e){try{getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(getTargetContext().getFilesDir(),"failure.png")));StringBuilder tree=new StringBuilder();dumpTree(getUiAutomation().getRootInActiveWindow(),tree,0);try(FileOutputStream dump=new FileOutputStream(new File(getTargetContext().getFilesDir(),"failure-tree.txt"))){dump.write(tree.toString().getBytes("UTF-8"));}}catch(Throwable ignored){}android.util.Log.e("NASQO_ACCEPTANCE","FAIL",e);status.putString("stream",e.toString());finish(Activity.RESULT_CANCELED,status);}
+  }
+  private void waitImportFinished()throws Exception{
+    // SQLite uses an exclusive transaction while the command/snapshot completes.
+    // Await the actual UI acknowledgement before an independent read connection.
+    for(int i=0;i<60;i++){
+      if(findNode(getUiAutomation().getRootInActiveWindow(),"مراجعة الاستيراد",false)==null)return;
+      Thread.sleep(500);
+    }
+    throw new AssertionError("import did not finish or validation remained visible");
   }
   private void createDownload(Activity activity,String name,String content)throws Exception{
     android.content.ContentValues values=new android.content.ContentValues();
