@@ -5,6 +5,7 @@ import '../hybrid/local_snapshot_adapter.dart';
 import 'automatic_posting_setup.dart';
 import 'automatic_stock_baseline.dart';
 import 'local_database.dart';
+import 'local_backup_restore.dart';
 import 'local_inventory_reports.dart';
 import 'local_master_catalog.dart';
 import 'stock_invoice_commands.dart';
@@ -19,10 +20,15 @@ class LocalWorkspaceReadiness {
         (await t.query('erp_state',
                 where: 'stateKey = ?', whereArgs: ['sync_workspace_binding']))
             .isNotEmpty) return;
+    final pristine = (await t.query('accounts', limit: 1)).isEmpty &&
+        await LocalBackupRestore.isEmpty(t);
     await AutomaticPostingSetup.defaults(t);
     final sources =
         await t.query('legacy_operational_source', columns: ['sha'], limit: 1);
-    if (sources.isEmpty) return;
+    if (sources.isEmpty) {
+      if (pristine) await LocalBackupRestore.markPristineSetup(t);
+      return;
+    }
     final sha = sources.single['sha'] as String;
     final done =
         await t.query('erp_state', where: 'stateKey = ?', whereArgs: [marker]);

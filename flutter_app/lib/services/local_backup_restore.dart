@@ -81,6 +81,27 @@ class LocalBackupRestore {
   static Future<Map<String,dynamic>> _readNative(DatabaseExecutor db)async =>
     <String,dynamic>{for(final name in tables)name:await db.query(name,orderBy:'rowid')};
 
+  static const _pristineKey='automatic_pristine_setup_v1';
+  static Future<bool> isEmpty(DatabaseExecutor db)async =>
+    (await _readNative(db)).values.every((v)=>(v as List).isEmpty);
+  static String _setupFingerprint(Map<String,dynamic> data)=>sha256.convert(utf8.encode(jsonEncode({
+    ...data,'erp_state':(data['erp_state'] as List).where((r)=>r['stateKey']!=_pristineKey).toList(),
+  }))).toString();
+  static Future<void> markPristineSetup(DatabaseExecutor db)async{
+    final digest=_setupFingerprint(await _readNative(db));
+    await db.insert('erp_state',{'stateKey':_pristineKey,'payloadJson':jsonEncode(digest),
+      'updatedAt':DateTime.now().toUtc().toIso8601String()});
+  }
+  static bool _onlyUntouchedSetup(Map<String,dynamic> data){
+    if(tables.where((n)=>!['accounts','warehouses','erp_state'].contains(n)).any((n)=>(data[n] as List).isNotEmpty))return false;
+    if((data['warehouses'] as List).length!=1||(data['warehouses'] as List).single['id']!='nasqo-default-warehouse')return false;
+    if((data['accounts'] as List).any((a)=>a['openingBalance']!=0||
+      !(a['id'] as String).startsWith('nasqo-')||
+      !RegExp(r'^nasqo:(system|default):').hasMatch(a['note'] as String)))return false;
+    final markers=(data['erp_state'] as List).where((r)=>r['stateKey']==_pristineKey).toList();
+    return markers.length==1&&jsonDecode(markers.single['payloadJson'] as String)==_setupFingerprint(data);
+  }
+
   Future<Uint8List> exportNative()async{
     final db=await local.database;
     final data=await db.transaction((t)async{
@@ -118,7 +139,7 @@ class LocalBackupRestore {
     return db.transaction((t)async{
       await _requireLocalReplacement(t);
       final data=await _readNative(t);
-      if(data.values.every((rows)=>(rows as List).isEmpty))return null;
+      if(data.values.every((rows)=>(rows as List).isEmpty)||_onlyUntouchedSetup(data))return null;
       return _encodeNative(data);
     });
   }
@@ -129,6 +150,10 @@ class LocalBackupRestore {
   static Future<void> prepareRestoreDestination(Transaction txn,{String? replacementSha})async{
     await _requireLocalReplacement(txn);
     if(replacementSha==null){
+      if(_onlyUntouchedSetup(await _readNative(txn))){
+        for(final name in tables.reversed){await txn.delete(name);}
+        return;
+      }
       for(final name in tables.where((n)=>n!='erp_state')){
         if((await txn.query(name,limit:1)).isNotEmpty)
           throw StateError('قاعدة العمل ليست فارغة؛ يجب تصدير نسخة منها أولًا وتأكيد الاستبدال');

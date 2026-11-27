@@ -60,6 +60,15 @@ void main() {
       expect(snap['ledger'], isEmpty);
       expect(snap['inventory'], isEmpty);
       expect(snap['warehouses'], hasLength(1));
+      expect(await backups.replacementBackup(), isNull,
+          reason:
+              'Untouched automatic setup does not require a safety-copy dialog');
+      final emptyBackup = await File('${dir.path}/setup.back')
+          .writeAsBytes(await backups.exportNative());
+      await backups.restoreNative(
+          await backups.inspect(emptyBackup, 'setup.back'),
+          prepareForUse: true);
+      expect(await backups.replacementBackup(), isNull);
       final wh = (snap['warehouses'] as List).single['id'] as String;
       await db.insert('inventory_items', {
         'id': 'fresh',
@@ -82,6 +91,8 @@ void main() {
           await roles
               .resolve(invoice('fresh-sale', 2, 'fresh', wh, true, 2, 9)));
       expect((await db.query('inventory_items')).single['quantity'], 8);
+      expect(await backups.replacementBackup(), isNotNull,
+          reason: 'Real business data always requires a verified safety copy');
       final box = await LocalMasterCatalog(local).saveCashbox(
           w, 'auto-box', {'name': 'New cashbox', 'currencyCode': 'ريال'});
       expect(box['accountId'], isNotEmpty);
