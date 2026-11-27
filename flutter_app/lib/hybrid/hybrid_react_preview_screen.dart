@@ -178,6 +178,25 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     try{return (bytes:await file.readAsBytes(),name:choice['fileName'] as String);}
     finally{try{await file.delete();}catch(_){}}
   }
+  Future<Map<String,dynamic>?> _pickImportFile(String purpose)async{
+    if(_backupBusy)throw StateError('Database busy');
+    _backupBusy=true;
+    File? file;
+    try{
+      final choice=await _backupChannel.invokeMapMethod<String,dynamic>('pickBackup');
+      if(choice==null)return null;
+      file=File(choice['path'] as String);
+      final name=choice['fileName'] as String;
+      final suffix=name.split('.').last.toLowerCase();
+      if(!(purpose=='import-items'?['xlsx','xls','csv','tsv','txt']:['csv']).contains(suffix))
+        throw const FormatException('اختر Excel أو CSV للأصناف، وCSV للحسابات.');
+      final size=await file.length();
+      if(size<1||size>8*1024*1024)throw const FormatException('اختر ملفًا غير فارغ لا يتجاوز 8 ميجابايت.');
+      final bytes=await file.readAsBytes();
+      return {'fileName':name,'mimeType':suffix=='csv'?'text/csv':'application/octet-stream',
+        'sizeBytes':bytes.length,'base64Content':base64Encode(bytes)};
+    }finally{if(file!=null){try{await file.delete();}catch(_){}}_backupBusy=false;}
+  }
   Future<File> _stageCloudFile(Uint8List bytes)async{
     final cache=await _backupChannel.invokeMethod<String>('cachePath');
     if(cache==null)throw StateError('Cache unavailable');
@@ -237,6 +256,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     printCurrentPage: _printCurrentPage,
     shareText: _shareText,
     pickBackup: _restoreBackup,
+    pickImportFile: _pickImportFile,
     openInvoiceRoles: _openInvoiceRoles,
     openStockReconciliation: _openStockReconciliation,
     exportBackup: _exportBackup,
@@ -330,6 +350,9 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
         break;
       case 'deleteInventoryItem':
         await stock.deleteItem(workspace,key,StockInvoiceCommands.identity(p['itemId']));
+        break;
+      case 'importAccountCards':
+        result.addAll(await LocalAccountCommands(LocalDatabase.instance).importCards(workspace,key,p['accounts'] as List<dynamic>));
         break;
       case 'importInventoryItems':
         result.addAll(await stock.importItems(workspace,key,p['items'] as List<dynamic>,p['mode'] as String));

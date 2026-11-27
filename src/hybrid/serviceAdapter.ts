@@ -1094,6 +1094,14 @@ export async function createInventoryItem(
   });
 }
 
+export async function importAccountCardsBatch(uid: string, accounts: import("../utils/accountCsvImport").AccountCardImport[]) {
+  const result = await hybridBridge.invoke<"importAccountCards", {inserted:number;skipped:number;total:number;snapshot:HybridWorkspaceSnapshot}>(
+    "importAccountCards", {workspaceId:uid||LOCAL_WORKSPACE_UID,accounts},
+    {idempotencyKey:createIdempotencyKey("importAccountCards",String(accounts.length))});
+  if(result.snapshot) applyHybridSnapshot(result.snapshot);
+  return result;
+}
+
 export async function importInventoryItemsBatch(
   uid: string,
   items: readonly (Partial<InventoryItemRecord> & { name: string; warehouseId?: string })[],
@@ -1502,6 +1510,7 @@ export async function importSqliteLegacyIntoServer(
 export async function restoreJsonBackupIntoServer(
   uid: string,
   payload: Record<string, unknown>,
+  _fileName?: string,
 ) {
   return runWithBrandLoader("جاري استعادة النسخة الاحتياطية عبر Flutter...", async () => {
     try {

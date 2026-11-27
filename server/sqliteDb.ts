@@ -1,3 +1,4 @@
+import { captureWorkspaceSnapshot, restoreWorkspaceSnapshot } from "./workspaceSnapshot.ts";
 import { validateReferenceDefaultsShape } from "../src/utils/documentReferences";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -202,6 +203,9 @@ function openAndInit(filePath: string): DatabaseSync {
     } finally {
       db.exec("PRAGMA foreign_keys = ON;");
     }
+  }
+  if (!(db.prepare("PRAGMA table_info(inventory_items)").all() as {name:string}[]).some(c=>c.name==="catalog_reference_cost")) {
+    db.exec("ALTER TABLE inventory_items ADD COLUMN catalog_reference_cost REAL");
   }
   const verRow = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   if (Number(verRow?.user_version ?? 0) < SQLITE_SCHEMA_V3) {
@@ -850,6 +854,7 @@ function mapInventoryRow(r: Record<string, unknown>): InventoryItemRecord {
     unit: String(r.unit ?? "حبة"),
     quantity: Number(r.quantity ?? 0),
     avgCost: Number(r.avg_cost ?? 0),
+    ...(r.catalog_reference_cost !== null && r.catalog_reference_cost !== undefined ? {catalogReferenceCost:Number(r.catalog_reference_cost)} : {}),
     ...(sp !== undefined && Number.isFinite(sp) && sp > 0 ? { sellingPrice: sp } : {}),
     ...(mt !== undefined && Number.isFinite(mt) ? { minThreshold: mt } : {}),
     ...(r.sku ? { sku: String(r.sku) } : {}),
@@ -3889,6 +3894,35 @@ export function insertInventoryItemRow(
   return mapInventoryRow(row);
 }
 
+export function importAccountCardsRows(db: DatabaseSync, workspaceId: string, accounts: (Partial<AccountRecord> & { name: string })[]) {
+  if (!Array.isArray(accounts) || !accounts.length || accounts.length > 2000) throw new SqliteValidationError("اختر من 1 إلى 2000 بطاقة حساب.");
+  return withTransaction(db, () => {
+    let inserted = 0, skipped = 0;
+    const seen = new Set<string>();
+    for (const row of accounts) {
+      if (!row || Object.keys(row).some(k => !["name","phone","category","currency","openingBalance","openingDirection"].includes(k)) ||
+          typeof row.name !== "string" || !row.name.trim() || row.name.length > 100 ||
+          typeof row.phone !== "string" || row.phone.length > 32 || !isValidCategory(row.category) ||
+          (row.openingBalance ?? 0) !== 0 || !["credit","debit"].includes(row.openingDirection ?? "")) {
+        throw new SqliteValidationError("حقول بطاقة الحساب غير صالحة؛ الأرصدة الافتتاحية تحتاج قيدًا منفصلًا. لم تُحفظ الدفعة.");
+      }
+      if (!db.prepare("SELECT 1 FROM currencies WHERE workspace_id = ? AND (code = ? OR name = ?)").get(workspaceId, row.currency ?? "", row.currency ?? "")) {
+        throw new SqliteValidationError("عملة الحساب غير معرّفة في المنشأة؛ لم تُحفظ الدفعة.");
+      }
+      const key = `${row.category}|${row.name.trim()}`;
+      if (seen.has(key)) throw new SqliteValidationError("حساب مكرر داخل الملف؛ لم تُحفظ الدفعة.");
+      seen.add(key);
+      const existing = db.prepare("SELECT currency FROM accounts WHERE workspace_id = ? AND name = ? AND category = ?").all(workspaceId, row.name.trim(), row.category!) as {currency:string}[];
+      if (existing.length) {
+        if (existing.some(a => a.currency !== row.currency)) throw new SqliteValidationError("حساب موجود بالاسم نفسه وعملة مختلفة؛ لم تُحفظ الدفعة.");
+        skipped++; continue;
+      }
+      upsertAccountRow(db, workspaceId, row); inserted++;
+    }
+    return { inserted, skipped, total: accounts.length };
+  });
+}
+
 export function importInventoryCatalogRows(
   db: DatabaseSync,
   workspaceId: string,
@@ -3899,8 +3933,8 @@ export function importInventoryCatalogRows(
   if (!Array.isArray(items) || items.length === 0) {
     throw new SqliteValidationError("لا توجد أصناف صالحة للاستيراد.");
   }
-  if (items.length > 10_000) {
-    throw new SqliteValidationError("الحد الأقصى للاستيراد في الدفعة الواحدة هو 10,000 صنف.");
+  if (items.length > 2000) {
+    throw new SqliteValidationError("الحد الأقصى للاستيراد في الدفعة الواحدة هو 2000 صنف.");
   }
 
   const mode = options.mode === "skip" ? "skip" : "upsert";
@@ -3910,12 +3944,6 @@ export function importInventoryCatalogRows(
       .prepare("SELECT id FROM warehouses WHERE workspace_id = ? AND id = ?")
       .get(workspaceId, options.warehouseId) as { id: string } | undefined;
     defaultWarehouseId = whRow?.id ?? null;
-  }
-  if (!defaultWarehouseId) {
-    const defaultWh = db
-      .prepare("SELECT id FROM warehouses WHERE workspace_id = ? ORDER BY is_default DESC, code_number ASC LIMIT 1")
-      .get(workspaceId) as { id: string } | undefined;
-    defaultWarehouseId = defaultWh?.id ?? null;
   }
 
   const normKey = (v: string) =>
@@ -3962,7 +3990,7 @@ export function importInventoryCatalogRows(
 
     const updateStmt = db.prepare(
       `UPDATE inventory_items
-       SET name = ?, unit = ?, sku = ?, avg_cost = ?, selling_price = ?,
+       SET name = ?, unit = ?, sku = ?, catalog_reference_cost = COALESCE(?, catalog_reference_cost), selling_price = ?,
            unit2 = ?, count2 = ?, sprice2 = ?, unit3 = ?, count3 = ?, sprice3 = ?, default_unit = ?,
            currency_code = ?, bstate = ?, expiry_date = ?, has_expiry = ?, updated_at = ?
        WHERE workspace_id = ? AND id = ?`,
@@ -3978,8 +4006,12 @@ export function importInventoryCatalogRows(
       }
       const cleanSku = String(rawItem.sku ?? "").trim().slice(0, 64);
       const cleanUnit = String(rawItem.unit ?? "").trim().slice(0, 32) || "حبة";
-      const avgCostRaw = Number(rawItem.avgCost ?? 0);
-      const avgCost = Number.isFinite(avgCostRaw) && avgCostRaw >= 0 ? Math.round(avgCostRaw * 100) / 100 : 0;
+      if ((rawItem.quantity ?? 0) !== 0 || (rawItem.avgCost ?? 0) !== 0 || rawItem.quantityUnverified === true) {
+        throw new SqliteValidationError("استيراد بطاقات الأصناف لا ينشئ كمية أو تكلفة مخزون؛ استخدم سعر الشراء المرجعي.");
+      }
+      const reference = rawItem.catalogReferenceCost ?? null;
+      if(reference !== null && (typeof reference !== "number" || !Number.isFinite(reference) || reference < 0)) throw new SqliteValidationError("سعر الشراء المرجعي غير صالح.");
+      const avgCost = 0;
       const sellingRaw =
         rawItem.sellingPrice !== undefined && rawItem.sellingPrice !== null && String(rawItem.sellingPrice) !== ""
           ? Number(rawItem.sellingPrice)
@@ -4002,16 +4034,9 @@ export function importInventoryCatalogRows(
           ? Math.round(Number(rawItem.sprice3) * 100) / 100
           : null;
 
-      if (unit3 && !unit2) {
-        unit2 = unit3;
-        count2 = count3;
-        sprice2 = sprice3;
-        unit3 = "";
-        count3 = null;
-        sprice3 = null;
+      if(unit3&&!unit2 || unit2&&(!Number.isInteger(count2)||!count2) || unit3&&(!Number.isInteger(count3)||!count3)) {
+        throw new SqliteValidationError("معامل كل وحدة إضافية يجب أن يكون عددًا صحيحًا موجبًا؛ لم تُحفظ الدفعة.");
       }
-      if (unit2 && !count2) count2 = 1;
-      if (unit3 && !count3) count3 = 1;
 
       const defaultUnitRaw = Number(rawItem.defaultUnit ?? 1);
       const defaultUnit = defaultUnitRaw === 2 && unit2 ? 2 : defaultUnitRaw === 3 && unit3 ? 3 : 1;
@@ -4038,7 +4063,7 @@ export function importInventoryCatalogRows(
           cleanName,
           cleanUnit,
           safeSku,
-          avgCost,
+          reference,
           sellingPrice,
           unit2,
           unit2 ? count2 : null,
@@ -4102,6 +4127,7 @@ export function importInventoryCatalogRows(
           now,
           now,
         );
+        if(reference !== null) db.prepare("UPDATE inventory_items SET catalog_reference_cost = ? WHERE id = ?").run(reference,id);
         if (skuKey) bySku.set(skuKey, id);
         byName.set(nameKey, id);
         inserted += 1;
@@ -4651,6 +4677,7 @@ export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string)
     priceOffers.length === 0;
 
   return {
+    sqliteSnapshot: captureWorkspaceSnapshot(db, workspaceId),
     format: "nasqo-unified-sqlite-export-v2",
     version: 2,
     exportedAt: nowIso(),
@@ -4946,6 +4973,7 @@ export function restoreUnifiedJsonBundle(
   priceOffers: number;
 } {
   validateUnifiedJsonBundle(payload);
+  if (payload.sqliteSnapshot !== undefined) return restoreWorkspaceSnapshot(db, workspaceId, payload.sqliteSnapshot);
 
   const now = nowIso();
   const wsIn = (isPlainObject(payload.workspace) ? payload.workspace : {}) as Partial<WorkspaceSettings> & { baseCurrency?: string };

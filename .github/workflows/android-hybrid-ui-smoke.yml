@@ -84,6 +84,8 @@ jobs:
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-xlsx.png > qa/android-results/receiver-xlsx.png
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-png.png > qa/android-results/receiver-png.png
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/employee-sqlite.png > qa/android-results/employee-sqlite.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/import-items-review.png > qa/android-results/import-items-review.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/import-accounts-review.png > qa/android-results/import-accounts-review.png
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/failure.png > qa/android-results/failure.png
             adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/failure-tree.txt > qa/android-results/failure-tree.txt
             adb exec-out screencap -p > qa/android-results/final.png

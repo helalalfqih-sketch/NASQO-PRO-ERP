@@ -56,7 +56,7 @@ const nativeDrive=import.meta.env.VITE_NASQO_HYBRID === "1";
 interface GoogleDriveModalProps {
   open: boolean;
   onClose: () => void;
-  buildBackupPayloadJson: (backupName: string) => string;
+  buildBackupPayloadJson: (backupName: string) => Promise<string>;
   onBackupUploaded?: (fileName: string) => void;
   onRestoreBackupBytes: (bytes: Uint8Array, fileName: string) => Promise<void>;
   onNotify: (message: string) => void;
@@ -256,7 +256,7 @@ export function GoogleDriveModal({
           if(!saved.id)throw new Error("لم يتأكد رفع النسخة الاحتياطية.");
           savedName=saved.name??filename;
         }else{
-          const jsonContent=buildBackupPayloadJson(filename);
+          const jsonContent=await buildBackupPayloadJson(filename);
           await uploadFileToDrive(accessToken,{name:filename,content:jsonContent,mimeType:"application/json",parentId:targetParentId,description:"نسخة احتياطية كاملة لبيانات نسقو برو ERP"});
         }
         onBackupUploaded?.(savedName);
@@ -353,6 +353,14 @@ export function GoogleDriveModal({
             ? `جاري نقل «${action.file.name}» إلى سلة المهملات...`
             : `جاري حذف «${action.file.name}» نهائيًا...`;
     try {
+      if (action.kind === "restore" && !nativeDrive) {
+        const { bytes } = await runWithBrandLoader(actionLabel, () => downloadDriveFileBytes(accessToken, action.file));
+        setPendingConfirm(null);
+        // The restore service opens a review dialog. Do not cover that dialog
+        // with a blocking loader while waiting for the user's decision.
+        await onRestoreBackupBytes(bytes, action.file.name);
+        return;
+      }
       await runWithBrandLoader(actionLabel, async () => {
         if (action.kind === "restore") {
           if(nativeDrive){
@@ -375,7 +383,7 @@ export function GoogleDriveModal({
             await loadDriveContents(accessToken,currentFolder.id);
             return;
           }
-          const updatedJson = buildBackupPayloadJson(action.file.name);
+          const updatedJson = await buildBackupPayloadJson(action.file.name);
           await updateDriveFileContent(accessToken, action.file.id, {
             name: action.file.name,
             content: updatedJson,

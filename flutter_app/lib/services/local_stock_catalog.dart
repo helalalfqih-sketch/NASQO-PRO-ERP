@@ -47,6 +47,7 @@ class LocalStockCatalog {
     final defaultUnit=StockInvoiceCommands.qty(input['defaultUnit']??1);
     if(defaultUnit!=1&&!units.containsKey('unit$defaultUnit'))throw ArgumentError('Default unit missing');
     units['defaultUnit']=defaultUnit;
+    if(input['catalogReferenceCost']!=null)units['catalogReferenceCost']=StockInvoiceCommands.money(input['catalogReferenceCost'])/100;
     if(input['sellingPrice']!=null)units['sellingPrice']=StockInvoiceCommands.money(input['sellingPrice'])/100;
     if(input['isActive']!=null&&input['isActive'] is! bool)throw ArgumentError('Invalid active flag');
     units['isActive']=input['isActive']??true;
@@ -178,10 +179,11 @@ class LocalStockCatalog {
         var inserted=0,updated=0,skipped=0;
         final seen=<String>{};
         for(var i=0;i<rows.length;i++){
-          final input=rows[i],wh=StockInvoiceCommands.identity(input['warehouseId']);
+          final input=rows[i],wh=input['warehouseId']==null||input['warehouseId']==''?'':StockInvoiceCommands.identity(input['warehouseId']);
           final name=LocalDocumentCommands.field(input,'name',120).trim(),sku=LocalDocumentCommands.field(input,'sku',64);
-          final matches=await t.query('inventory_items',where:'warehouseId = ? AND (name = ? OR (sku <> ? AND sku = ?))',
-            whereArgs:[wh,name,'',sku]);
+          final matches=await t.query('inventory_items',where:'${wh.isEmpty?'':'warehouseId = ? AND '}(name = ? OR (sku <> ? AND sku = ?))',
+            whereArgs:[if(wh.isNotEmpty)wh,name,'',sku]);
+          if(matches.isNotEmpty&&mode=='insert-only'){skipped++;continue;}
           if(matches.length>1)throw StateError('Ambiguous stock identity');
           final identity=matches.isEmpty?'$wh|$name|$sku':matches.single['id'] as String;
           if(!seen.add(identity))throw StateError('Duplicate import row');

@@ -266,6 +266,8 @@ export type InventoryItemRecord = {
   legacySourceItemId?: string;
   /** Imported catalog reference only; never an approved inventory valuation. */
   legacyCatalogCost?: number;
+  /** Purchase-price reference only; never operational stock valuation. */
+  catalogReferenceCost?: number;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
   /** Quantity can be approved while inventory valuation is still pending. */

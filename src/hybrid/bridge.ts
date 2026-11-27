@@ -203,7 +203,7 @@ export class NasqoHybridBridge {
 
     const isFinancial = isFinancialMutationCommand(action);
     const catalogAction = this.localCatalogEditing && ["saveCashbox","saveAccountGroup","saveCurrency","deleteCurrency","deleteAccount",
-      "updateInventoryItem","deleteInventoryItem","importInventoryItems","batchUpdateInventoryItems","saveWarehouse"].includes(action);
+      "updateInventoryItem","deleteInventoryItem","importAccountCards","importInventoryItems","batchUpdateInventoryItems","saveWarehouse"].includes(action);
     if (isFinancial && this.readOnlyFinancialMode && !catalogAction && !(action === "saveAccount" && this.localAccountCreation) && !((action === "createLedgerEntry" || action === "updateLedgerEntry" || action === "setLedgerDeleted" || action === "permanentlyDeleteLedger") && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
@@ -251,7 +251,7 @@ export class NasqoHybridBridge {
 
     const timeoutMs =
       options.timeoutMs ??
-      (action === "restoreWorkspace" || action === "restoreLocalBackup" || action === "openInvoiceRoles" || action === "openStockReconciliation" || action === "backupWorkspace" || action === "pickFile" || action === "importInventoryItems"
+      (action === "restoreWorkspace" || action === "restoreLocalBackup" || action === "openInvoiceRoles" || action === "openStockReconciliation" || action === "backupWorkspace" || action === "pickFile" || action === "importInventoryItems" || action === "importAccountCards"
         ? HEAVY_OPERATION_TIMEOUT_MS
         : DEFAULT_TIMEOUT_MS);
 

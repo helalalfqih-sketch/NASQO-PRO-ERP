@@ -183,6 +183,7 @@ import {
   fetchUnifiedJsonExport,
   getGoogleAccessToken,
   importInventoryItemsBatch,
+  importAccountCardsBatch,
   importSmartProSqlIntoServer,
   importSqliteBytesIntoServer,
   isLocalWorkspaceSession,
@@ -273,7 +274,11 @@ import {
   generatePrintableInvoicePdfFromDatabase,
 } from "./utils/exportPdf";
 import { readHapticsEnabled, triggerHaptic, writeHapticsEnabled } from "./utils/haptics";
-import { parseItemsSpreadsheetBytes } from "./utils/importItemsFile";
+import type { ImportedInventoryItemInput } from "./utils/importItemsFile";
+import type { AccountCardImport } from "./utils/accountCsvImport";
+import { MAX_IMPORT_BYTES } from "./utils/tabularImport";
+import { DataImportReview, RestoreReviewDialog, type ImportReview } from "./components/DataImportReview";
+import { registerRestoreApproval, type RestoreReview } from "./utils/restoreApproval";
 import { useThemeMode, type ThemeMode } from "./utils/theme";
 import { OutlinedAmountField } from "./components/OutlinedAmountField";
 import { GlobalNasqoBrandLoader, NasqoBrandLoader } from "./components/NasqoBrandLoader";
@@ -1135,6 +1140,18 @@ export function AuthenticatedWorkspace({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [overlay, setOverlay] = useState<OverlayKind>(null);
+  const [importReview, setImportReview] = useState<ImportReview | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const importInFlight = useRef(false);
+  const [restoreReview, setRestoreReview] = useState<RestoreReview | null>(null);
+  const restoreResolver = useRef<((approved: boolean) => void) | null>(null);
+  const finishRestoreReview = useCallback((approved: boolean) => {
+    setRestoreReview(null);
+    restoreResolver.current?.(approved);
+    restoreResolver.current = null;
+  }, []);
+  useBackLayer(Boolean(importReview), () => { if (!importInFlight.current) setImportReview(null); return true; }, 250);
+  useBackLayer(Boolean(restoreReview), () => { finishRestoreReview(false); return true; }, 250);
   const [unavailableDraft, setUnavailableDraft] = useState(false);
   useBackLayer(unavailableDraft, () => { setUnavailableDraft(false); return true; }, 200);
   const [pickerMode, setPickerMode] = useState<"statement" | "edit" | "whatsapp" | "search">("statement");
@@ -1472,6 +1489,18 @@ export function AuthenticatedWorkspace({
     const activeElement = document.activeElement;
     if (activeElement instanceof HTMLElement) activeElement.blur();
   }, [keyboard]);
+
+  const dismissForRestore = useRef(dismissKeyboard);
+  dismissForRestore.current = dismissKeyboard;
+  useEffect(() => {
+    const unregister = registerRestoreApproval((review) => new Promise<boolean>(resolve => {
+      restoreResolver.current?.(false);
+      restoreResolver.current = resolve;
+      dismissForRestore.current();
+      setRestoreReview(review);
+    }));
+    return () => { unregister(); restoreResolver.current?.(false); restoreResolver.current = null; };
+  }, [user.uid]);
 
   const openSheet = useCallback((kind: Exclude<SheetKind, null>) => {
     dismissKeyboard();
@@ -1821,24 +1850,13 @@ export function AuthenticatedWorkspace({
   }, [currencies]);
 
   const buildBackupJsonString = useCallback(
-    (backupName: string, exportedAt: string = new Date().toISOString()) => {
-      const payload = {
-        format: "nasqo-pro-erp-backup",
-        version: 2,
-        name: backupName,
-        exportedAt,
-        workspace,
-        accountGroups,
-        cashboxes,
-        accounts,
-        ledger,
-        warehouses,
-        inventory,
-        erpData,
-      };
-      return JSON.stringify(payload, null, 2);
-    },
-    [accountGroups, accounts, cashboxes, erpData, inventory, ledger, warehouses, workspace],
+    async (backupName: string, exportedAt: string = new Date().toISOString()) => {
+      const payload = await fetchUnifiedJsonExport(user.uid);
+      if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).sqliteSnapshot) {
+        throw new Error("تعذر إنشاء نسخة كاملة من قاعدة العمل؛ لم تُرفع أو تُستبدل أي نسخة.");
+      }
+      return JSON.stringify({ ...payload, name: backupName, exportedAt }, null, 2);
+    }, [user.uid],
   );
 
   const saveLocalNamedBackup = useCallback(
@@ -1851,16 +1869,7 @@ export function AuthenticatedWorkspace({
         const exportedAt = new Date().toISOString();
         const fileName = buildLocalBackupDownloadName(backupName);
         try {
-          const serverExport = await fetchUnifiedJsonExport(user.uid);
-          const merged =
-            serverExport && typeof serverExport === "object"
-              ? { ...(serverExport as Record<string, unknown>), name: backupName, exportedAt }
-              : JSON.parse(buildBackupJsonString(backupName, exportedAt));
-          await downloadFile(
-            fileName,
-            JSON.stringify(merged, null, 2),
-            "application/json;charset=utf-8",
-          );
+          await downloadFile(fileName, await buildBackupJsonString(backupName, exportedAt), "application/json;charset=utf-8");
           const savedIso = recordLastBackupNow(exportedAt);
           setLastBackupIso(savedIso);
           triggerHaptic("success");
@@ -1903,7 +1912,7 @@ export function AuthenticatedWorkspace({
           const folder = await findOrCreateDriveFolder(token, "NASQO Pro Backups");
           await uploadFileToDrive(token, {
             name: fileName,
-            content: buildBackupJsonString(backupName, exportedAtIso),
+            content: await buildBackupJsonString(backupName, exportedAtIso),
             mimeType: "application/json",
             parentId: folder.id,
             description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
@@ -1914,7 +1923,7 @@ export function AuthenticatedWorkspace({
             const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Backups");
             await uploadFileToDrive(authResult.accessToken, {
               name: fileName,
-              content: buildBackupJsonString(backupName, exportedAtIso),
+              content: await buildBackupJsonString(backupName, exportedAtIso),
               mimeType: "application/json",
               parentId: folder.id,
               description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
@@ -1972,61 +1981,48 @@ export function AuthenticatedWorkspace({
     jsonRestoreInputRef.current?.click();
   }, [hybrid, showToast,user.uid]);
 
-  const triggerCsvImport = useCallback(() => {
-    if (hybrid.isHybrid) {
-      void hybrid
-        .pickFile({
-          purpose: "import-accounts-csv",
-          accept: [".csv", ".txt"],
-        })
-        .then((picked) => {
-          if (!picked || !picked.base64Content) return;
-          showToast(`تم اختيار ملف الحسابات: ${picked.fileName}`);
-        })
-        .catch((err) => {
-          showToast(err instanceof Error ? err.message : "تعذر فتح منتقي الملفات.");
-        });
-      return;
-    }
-    csvImportInputRef.current?.click();
-  }, [hybrid, showToast]);
+  const openImportReview = useCallback((kind: ImportReview["kind"], bytes: Uint8Array, fileName: string) => {
+    if (bytes.length > MAX_IMPORT_BYTES) throw new Error("حجم ملف الاستيراد يتجاوز 8 ميغابايت.");
+    dismissKeyboard();
+    setImportReview({ kind, bytes, fileName, defaultCurrency: workspace?.defaultCurrency || "ريال" });
+  }, [dismissKeyboard, workspace?.defaultCurrency]);
 
-  const triggerItemsImport = useCallback(() => {
+  const triggerTableImport = useCallback((kind: ImportReview["kind"]) => {
     if (hybrid.isHybrid) {
-      void hybrid
-        .pickFile({
-          purpose: "import-items",
-          accept: [".xlsx", ".xls", ".csv"],
-        })
-        .then(async (picked) => {
-          if (!picked || !picked.base64Content) return;
+      void hybrid.pickFile({ purpose: kind === "items" ? "import-items" : "import-accounts-csv", accept: kind === "items" ? [".xlsx", ".xls", ".csv", ".tsv", ".txt"] : [".csv", ".txt"] })
+        .then(picked => {
+          if (!picked?.base64Content) return;
+          if (picked.base64Content.length > MAX_IMPORT_BYTES * 4 / 3 + 8) throw new Error("حجم ملف الاستيراد يتجاوز 8 ميغابايت.");
           const binary = atob(picked.base64Content);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-          const parsed = parseItemsSpreadsheetBytes(bytes, picked.fileName || "items.xlsx");
-          if (parsed.items.length === 0) {
-            showToast("لم يتم العثور على أصناف صالحة داخل الملف.");
-            return;
-          }
-          const defaultWh = warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id;
-          const result = await importInventoryItemsBatch(user.uid, parsed.items, {
-            mode: "upsert",
-            warehouseId: defaultWh,
-          });
-          triggerHaptic("success");
-          showToast(`تم استيراد ${result.total} صنف بنجاح (جديد: ${result.inserted} • محدّث: ${result.updated})`, 6000);
+          openImportReview(kind, Uint8Array.from(binary, c => c.charCodeAt(0)), picked.fileName || (kind === "items" ? "items.xlsx" : "accounts.csv"));
         })
-        .catch((err) => {
-          showToast(err instanceof Error ? err.message : "تعذر استيراد ملف الأصناف.");
-        });
+        .catch(err => showToast(err instanceof Error ? err.message : "تعذر فتح ملف الاستيراد."));
       return;
     }
-    itemsImportInputRef.current?.click();
-  }, [hybrid, showToast, user.uid, warehouses]);
+    (kind === "items" ? itemsImportInputRef : csvImportInputRef).current?.click();
+  }, [hybrid, openImportReview, showToast]);
+  const triggerCsvImport = useCallback(() => triggerTableImport("accounts"), [triggerTableImport]);
+  const triggerItemsImport = useCallback(() => triggerTableImport("items"), [triggerTableImport]);
+
+  const confirmTableImport = async (rows: AccountCardImport[] | ImportedInventoryItemInput[]) => {
+    if (!importReview || importInFlight.current) return;
+    importInFlight.current = true;
+    setImportBusy(true);
+    try {
+      const result = await runWithLoader<{inserted: number; skipped: number; total: number}>("جاري حفظ البطاقات الجديدة...", () => importReview.kind === "accounts"
+        ? importAccountCardsBatch(user.uid, rows as AccountCardImport[])
+        : importInventoryItemsBatch(user.uid, rows as ImportedInventoryItemInput[], { mode: "skip" }));
+      setImportReview(null);
+      triggerHaptic("success");
+      showToast(`اكتمل الاستيراد: ${result.inserted} بطاقة جديدة • ${result.skipped} موجودة تم تجاوزها.`, 6000);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "تعذر الاستيراد؛ راجع الملف قبل إعادة المحاولة.", 6500);
+    } finally { importInFlight.current = false; setImportBusy(false); }
+  };
 
   const restoreBackupFromBytes = useCallback(
     async (bytes: Uint8Array, fileName: string) => {
-      await runWithLoader(`جارٍ استعادة ${fileName} وتجهيز النظام...`, async () => {
+
         try {
           let effectiveBytes = bytes;
           if (
@@ -2096,7 +2092,7 @@ export function AuthenticatedWorkspace({
 
           const jsonRes = await restoreJsonBackupIntoServer(
             user.uid,
-            inspection.payload as Record<string, unknown>,
+            inspection.payload as Record<string, unknown>, fileName,
           );
           const r = jsonRes.restored ?? {};
           triggerHaptic("success");
@@ -2116,7 +2112,6 @@ export function AuthenticatedWorkspace({
             );
           }
         }
-      });
     },
     [runWithLoader, showToast, user.uid],
   );
@@ -2130,79 +2125,17 @@ export function AuthenticatedWorkspace({
     await restoreBackupFromBytes(new Uint8Array(buffer), file.name);
   };
 
-  const handleCsvAccountImport = async (event: ChangeEvent<HTMLInputElement>) => {
+  const readTableImportFile = async (event: ChangeEvent<HTMLInputElement>, kind: ImportReview["kind"]) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    await runWithLoader("جاري استيراد الحسابات من الملف...", async () => {
-      try {
-        const text = await file.text();
-        const lines = text
-          .replace(/^\uFEFF/, "")
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
-        let imported = 0;
-        for (let i = 1; i < lines.length; i += 1) {
-          const cols = lines[i].split(",").map((c) => c.replace(/^"|"$/g, "").trim());
-          const name = cols[0];
-          if (!name) continue;
-          const phone = cols[1] ?? "";
-          const openingBalance = parseArabicNumber(cols[2] ?? "0");
-          await createOrUpdateAccount(user.uid, {
-            name,
-            phone,
-            openingBalance,
-            openingDirection: "credit",
-            category: "purchases",
-            codeNumber: accounts.length + imported + 10,
-          });
-          imported += 1;
-        }
-        showToast(`تم استيراد ${imported} حساب من الملف`);
-      } catch {
-        showToast("تعذر استيراد ملف الحسابات");
-      }
-    });
+    try {
+      if (file.size > MAX_IMPORT_BYTES) throw new Error("حجم ملف الاستيراد يتجاوز 8 ميغابايت.");
+      openImportReview(kind, new Uint8Array(await file.arrayBuffer()), file.name);
+    } catch (err) { showToast(err instanceof Error ? err.message : "تعذر قراءة الملف."); }
   };
-
-  const handleItemsFileImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    await runWithLoader(`جاري قراءة واستيراد الأصناف من ${file.name}...`, async () => {
-      try {
-        const buffer = await file.arrayBuffer();
-        const parsed = parseItemsSpreadsheetBytes(
-          new Uint8Array(buffer),
-          workspace?.defaultCurrency ?? "ريال",
-        );
-        if (!parsed.items.length) {
-          triggerHaptic("warning");
-          showToast("لم يتم العثور على أصناف صالحة داخل الملف المحدد.", 5000);
-          return;
-        }
-        const defaultWh = warehouses.find((w) => w.isDefault)?.id || warehouses[0]?.id;
-        const result = await importInventoryItemsBatch(user.uid, parsed.items, {
-          mode: "upsert",
-          warehouseId: defaultWh,
-        });
-        triggerHaptic("success");
-        showToast(
-          `تم استيراد ${result.total} صنف بنجاح (جديد: ${result.inserted} • محدّث: ${result.updated}${result.skipped > 0 ? ` • متجاوز: ${result.skipped}` : ""})`,
-          6000,
-        );
-      } catch (err) {
-        triggerHaptic("warning");
-        showToast(
-          err instanceof Error && err.message
-            ? `تعذر استيراد الأصناف: ${err.message}`
-            : "تعذر قراءة ملف الأصناف — تأكد أن الملف بصيغة Excel (.xls / .xlsx) أو CSV صالحة.",
-          6000,
-        );
-      }
-    });
-  };
+  const handleCsvAccountImport = (event: ChangeEvent<HTMLInputElement>) => readTableImportFile(event, "accounts");
+  const handleItemsFileImport = (event: ChangeEvent<HTMLInputElement>) => readTableImportFile(event, "items");
 
   const handleSignOut = useCallback(async () => {
     setDrawerOpen(false);
@@ -2722,6 +2655,8 @@ export function AuthenticatedWorkspace({
       <UiResumeWorkspaceContext.Provider value={hybrid.isHybrid ? workspace?.id ?? "" : ""}>
       <div ref={referenceAppRoot} className={`nasqo-app${referenceCashbox || referenceAccount ? " has-reference-manager" : ""}`} dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
+        {importReview ? <DataImportReview review={importReview} busy={importBusy} onCancel={() => { if (!importInFlight.current) setImportReview(null); }} onConfirm={confirmTableImport} /> : null}
+        {restoreReview ? <RestoreReviewDialog review={restoreReview} onFinish={finishRestoreReview} /> : null}
         {unavailableDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
           <button className="center-modal-backdrop" aria-label="الاحتفاظ بالمسودة" onClick={() => setUnavailableDraft(false)} />
           <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعذر استعادة المسودة">

@@ -66,6 +66,34 @@ public class DocumentInstrumentation extends Instrumentation {
       if(unexpectedReceiver.await(2,TimeUnit.SECONDS))throw new AssertionError("canceled chooser delivered a file");
       activity.unregisterReceiver(canceledShare);
       android.util.Log.i("NASQO_ACCEPTANCE","share chooser canceled, no receiver delivery PASS");
+      // Real ACTION_OPEN_DOCUMENT -> file bytes -> review -> native SQLite.
+      createDownload(activity,"nasqo-import-items.csv","اسم الصنف,الباركود,سعر الشراء,سعر البيع,الحالة\nصنف Android مستورد,000123,17.5,25,خامل");
+      createDownload(activity,"nasqo-import-accounts.csv","الاسم,الهاتف,التصنيف,العملة\n\"شركة, فرع Android\",001234,العملاء,ريال");
+      Thread.sleep(1500);
+      clickText("ملف الأصناف");clickText("خيارات بطاقات الأصناف");clickText("استيراد أصناف");
+      chooseImportFile("nasqo-import-items.csv");
+      clickText("راجعت الصفوف والتصنيف والعملة وأوافق على إضافة البطاقات الجديدة فقط");
+      getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(activity.getFilesDir(),"import-items-review.png")));
+      clickText("استيراد البطاقات");Thread.sleep(1200);
+      android.database.sqlite.SQLiteDatabase importedDb=android.database.sqlite.SQLiteDatabase.openDatabase(activity.getDatabasePath("nasqo_pro_erp.db").getPath(),null,android.database.sqlite.SQLiteDatabase.OPEN_READONLY);
+      android.database.Cursor importedItem=importedDb.rawQuery("SELECT i.sku,i.quantity,i.avgCost,i.warehouseId,u.settings_json FROM inventory_items i JOIN inventory_unit_settings u ON u.item_id=i.id WHERE i.name=?",new String[]{"صنف Android مستورد"});
+      if(!importedItem.moveToFirst()||!"000123".equals(importedItem.getString(0))||importedItem.getDouble(1)!=0||importedItem.getDouble(2)!=0||!"".equals(importedItem.getString(3)))throw new AssertionError("imported catalog identity/stock mismatch");
+      org.json.JSONObject settings=new org.json.JSONObject(importedItem.getString(4));
+      if(settings.getDouble("catalogReferenceCost")!=17.5||settings.getBoolean("isActive"))throw new AssertionError("reference cost or inactive status changed");
+      importedItem.close();importedDb.close();
+      android.util.Log.i("NASQO_ACCEPTANCE","UI catalog import picker -> preview -> SQLite: zero stock, unassigned, reference price, barcode PASS");
+      clickText("رجوع");clickText("فتح القائمة");clickText("استيراد الحسابات من ملف");
+      chooseImportFile("nasqo-import-accounts.csv");
+      clickText("راجعت الصفوف والتصنيف والعملة وأوافق على إضافة البطاقات الجديدة فقط");
+      getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(activity.getFilesDir(),"import-accounts-review.png")));
+      clickText("استيراد البطاقات");Thread.sleep(1200);
+      importedDb=android.database.sqlite.SQLiteDatabase.openDatabase(activity.getDatabasePath("nasqo_pro_erp.db").getPath(),null,android.database.sqlite.SQLiteDatabase.OPEN_READONLY);
+      android.database.Cursor importedAccount=importedDb.rawQuery("SELECT phone,openingBalance,category FROM accounts WHERE name=?",new String[]{"شركة, فرع Android"});
+      if(!importedAccount.moveToFirst()||!"001234".equals(importedAccount.getString(0))||importedAccount.getDouble(1)!=0||!"clients".equals(importedAccount.getString(2)))throw new AssertionError("imported account fields changed");
+      importedAccount.close();
+      for(String table:new String[]{"ledger_entries","stock_movements"}){android.database.Cursor count=importedDb.rawQuery("SELECT COUNT(*) FROM "+table,null);count.moveToFirst();if(count.getInt(0)!=0)throw new AssertionError("catalog import created financial/stock writes");count.close();}
+      importedDb.close();
+      android.util.Log.i("NASQO_ACCEPTANCE","UI account CSV picker -> preview -> SQLite: quotes, phone, category, no financial postings PASS");
       // Actual UI -> React -> bridge -> SQLite. No injected database or JS writes.
       Thread.sleep(1500);
       clickText("فتح القائمة");
@@ -96,6 +124,22 @@ public class DocumentInstrumentation extends Instrumentation {
       android.util.Log.i("NASQO_ACCEPTANCE","UI inventory report click -> PDF attachment -> independent receiver PASS");
       status.putString("stream","Android receiver: PDF/XLSX/PNG exact bytes, names, MIME, independent opening; canceled save picker PASS\n");finish(Activity.RESULT_OK,status);
     }catch(Throwable e){try{getUiAutomation().takeScreenshot().compress(android.graphics.Bitmap.CompressFormat.PNG,100,new FileOutputStream(new File(getTargetContext().getFilesDir(),"failure.png")));StringBuilder tree=new StringBuilder();dumpTree(getUiAutomation().getRootInActiveWindow(),tree,0);try(FileOutputStream dump=new FileOutputStream(new File(getTargetContext().getFilesDir(),"failure-tree.txt"))){dump.write(tree.toString().getBytes("UTF-8"));}}catch(Throwable ignored){}android.util.Log.e("NASQO_ACCEPTANCE","FAIL",e);status.putString("stream",e.toString());finish(Activity.RESULT_CANCELED,status);}
+  }
+  private void createDownload(Activity activity,String name,String content)throws Exception{
+    android.content.ContentValues values=new android.content.ContentValues();
+    values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME,name);values.put(android.provider.MediaStore.Downloads.MIME_TYPE,"text/csv");
+    values.put(android.provider.MediaStore.Downloads.RELATIVE_PATH,android.os.Environment.DIRECTORY_DOWNLOADS);values.put(android.provider.MediaStore.Downloads.IS_PENDING,1);
+    android.net.Uri uri=activity.getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);
+    if(uri==null)throw new AssertionError("test file creation failed");
+    try(OutputStream out=activity.getContentResolver().openOutputStream(uri)){out.write(content.getBytes("UTF-8"));}
+    values.clear();values.put(android.provider.MediaStore.Downloads.IS_PENDING,0);activity.getContentResolver().update(uri,values,null,null);
+  }
+  private void chooseImportFile(String name)throws Exception{
+    Thread.sleep(2000);
+    if(findNode(getUiAutomation().getRootInActiveWindow(),name,false)==null){
+      clickText("Show roots");clickText("Downloads");
+    }
+    clickText(name);waitNode("مراجعة استيراد "+(name.contains("items")?"بطاقات الأصناف":"بطاقات الحسابات"),false);
   }
   private boolean scrollForward(AccessibilityNodeInfo n){if(n==null)return false;for(int i=0;i<n.getChildCount();i++)if(scrollForward(n.getChild(i)))return true;return n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);}
   private void dumpTree(AccessibilityNodeInfo n,StringBuilder s,int depth){if(n==null||depth>25||s.length()>50000)return;s.append(n.getClassName()).append(" text=").append(n.getText()).append(" desc=").append(n.getContentDescription()).append(" hint=").append(n.getHintText()).append(" clickable=").append(n.isClickable()).append(" scroll=").append(n.isScrollable()).append("\n");for(int i=0;i<n.getChildCount();i++)dumpTree(n.getChild(i),s,depth+1);}

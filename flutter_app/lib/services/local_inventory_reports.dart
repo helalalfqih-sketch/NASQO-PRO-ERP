@@ -233,7 +233,7 @@ class LocalInventoryReports {
       final buyValue=netRole(money,'buy','total')-netRole(money,'purchaseReturn','total');
       final sellValue=netRole(money,'sell','total')-netRole(money,'saleReturn','total');
       final txIn=netRole(relevant,'transferIn','baseQuantity'),txOut=netRole(relevant,'transferOut','baseQuantity');
-      final catalogCost=n(item['avgCost']),referenceCost=rowCurrency==c?n(item['legacyCatalogCost'],catalogCost):0;
+      final catalogCost=n(item['avgCost']),referenceCost=rowCurrency==c?n(item['catalogReferenceCost'],n(item['legacyCatalogCost'],catalogCost)):0;
       final historicBuys=events.where((e)=>e['role']=='buy'&&e['financial']==true&&e['currency']==rowCurrency).toList()
         ..sort((a,b){final d=s(b['date']).compareTo(s(a['date']));return d!=0?d:n(b['entryNumber']).compareTo(n(a['entryNumber']));});
       final purchased=sum(historicBuys,'baseQuantity'),paid=sum(historicBuys,'total');

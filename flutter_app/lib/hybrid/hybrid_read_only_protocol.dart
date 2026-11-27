@@ -47,6 +47,7 @@ class HybridReadOnlyProtocol {
     this.printCurrentPage,
     this.shareText,
     this.pickBackup,
+    this.pickImportFile,
     this.openInvoiceRoles,
     this.openStockReconciliation,
     this.exportBackup,
@@ -72,6 +73,7 @@ class HybridReadOnlyProtocol {
   final Future<bool> Function(String)? printCurrentPage;
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? shareText;
   final Future<Map<String,dynamic>?> Function()? pickBackup;
+  final Future<Map<String,dynamic>?> Function(String)? pickImportFile;
   final Future<void> Function()? openInvoiceRoles;
   final Future<bool> Function(String?,String?)? openStockReconciliation;
   final Future<bool> Function()? exportBackup;
@@ -278,16 +280,21 @@ class HybridReadOnlyProtocol {
           'ok':true,'data':{'saved':ok}});
       }catch(e){return _error(id,actionName,'SERVICE_UNAVAILABLE',e is StateError?e.message.toString():'تعذر تصدير النسخة المحلية؛ تحقق من مساحة التخزين.');}
     }
-    if(actionName=='pickFile'&&pickBackup!=null){
-      final params=request['payload'];
-      if(params is! Map<String,dynamic>||params['purpose']!='restore-backup'){
-        return _error(id,actionName,'UNAUTHORIZED_ACTION','منتقي النسخ الاحتياطية مخصص للاستعادة.');
+    if(actionName=='pickFile'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic>||p.keys.any((k)=>!['purpose','accept'].contains(k))||
+          !['restore-backup','import-items','import-accounts-csv'].contains(p['purpose'])){
+        return _error(id,actionName,'UNAUTHORIZED_ACTION','نوع منتقي الملف غير مدعوم.');
       }
       try{
-        final result=await pickBackup!();
+        final purpose=p['purpose'] as String;
+        if(purpose=='restore-backup'&&pickBackup==null||purpose!='restore-backup'&&pickImportFile==null)
+          return _error(id,actionName,'SERVICE_UNAVAILABLE','منتقي الملفات غير متاح.');
+        final result=purpose=='restore-backup'?await pickBackup!():await pickImportFile!(purpose);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,
           'ok':true,'data':result??{'cancelled':true,'fileName':'','mimeType':'','sizeBytes':0,'base64Content':''}});
-      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر فتح أو استعادة النسخة المحلية.');}
+      }on FormatException catch(e){return _error(id,actionName,'VALIDATION_ERROR',e.message);}
+      catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر اختيار الملف؛ لم تُستورد بيانات.');}
     }
     if(actionName=='saveWorkspaceSettings'&&saveWorkspaceSettings!=null){
       final p=request['payload'];
@@ -373,7 +380,7 @@ class HybridReadOnlyProtocol {
     }
 
     const catalogActions={'saveCashbox','saveAccountGroup','saveCurrency','deleteCurrency','deleteAccount',
-      'updateInventoryItem','deleteInventoryItem','importInventoryItems','batchUpdateInventoryItems','saveWarehouse'};
+      'updateInventoryItem','deleteInventoryItem','importAccountCards','importInventoryItems','batchUpdateInventoryItems','saveWarehouse'};
     final rawCatalog=request['payload'];
     final warehouseEdit=actionName=='saveWarehouse'&&rawCatalog is Map&&rawCatalog['warehouseId']!=null;
     if(manageCatalog!=null&&catalogActions.contains(actionName)&&(actionName!='saveWarehouse'||warehouseEdit)){
@@ -386,6 +393,7 @@ class HybridReadOnlyProtocol {
         'deleteAccount'=>{'workspaceId','accountId'},
         'updateInventoryItem'=>{'workspaceId','itemId','updates'},
         'deleteInventoryItem'=>{'workspaceId','itemId'},
+        'importAccountCards'=>{'workspaceId','accounts'},
         'importInventoryItems'=>{'workspaceId','items','mode'},
         'batchUpdateInventoryItems'=>{'workspaceId','updates'},
         'saveWarehouse'=>{'workspaceId','payload','warehouseId'},

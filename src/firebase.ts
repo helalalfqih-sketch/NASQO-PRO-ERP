@@ -1,3 +1,4 @@
+import { requestRestoreApproval } from "./utils/restoreApproval";
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -1061,6 +1062,12 @@ export async function createInventoryItem(
   });
 }
 
+export async function importAccountCardsBatch(uid: string, accounts: import("./utils/accountCsvImport").AccountCardImport[]) {
+  const res = await dbFetch<{inserted:number;skipped:number;total:number;bundle:WorkspaceBundle}>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts/import`, {method:"POST",body:JSON.stringify({accounts})},60_000);
+  applyBundle(res.bundle,true); return res;
+}
+
 export async function importInventoryItemsBatch(
   uid: string,
   items: readonly (Partial<InventoryItemRecord> & { name: string; warehouseId?: string })[],
@@ -1330,12 +1337,29 @@ async function uploadRestoreBytesChunked<T>(
   );
 }
 
+async function approveWebRestore(uid: string, fileName: string): Promise<string> {
+  const review = await dbFetch<{ token: string; backupFileName: string; counts: Record<string, number> }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/prepare`, { method: "POST" }, 30_000, { mutating: false });
+  const downloadBackup = async () => {
+    const payload = await dbFetch<unknown>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/safety/${encodeURIComponent(review.token)}`);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = review.backupFileName; document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  };
+  if (!await requestRestoreApproval({ fileName, backupFileName: review.backupFileName, counts: review.counts, downloadBackup })) {
+    throw new Error("أُلغيت الاستعادة؛ لم تتغير بيانات العمل.");
+  }
+  return review.token;
+}
+
 export async function importSmartProSqlIntoServer(
   uid: string,
   sqlText: string,
   fileName: string,
   replaceExisting = true,
 ) {
+  const restoreToken = replaceExisting ? await approveWebRestore(uid, fileName) : undefined;
   return runWithBrandLoader(`جاري استيراد ${fileName}...`, async () => {
     const utf8Bytes = new TextEncoder().encode(sqlText);
     const res =
@@ -1343,14 +1367,14 @@ export async function importSmartProSqlIntoServer(
         ? await uploadRestoreBytesChunked<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
             uid,
             utf8Bytes,
-            { kind: "sql", fileName, replaceExisting },
+            { kind: "sql", fileName, replaceExisting, restoreToken },
             true,
           )
         : await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
             `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
             {
               method: "POST",
-              body: JSON.stringify({ sqlText, fileName, replaceExisting }),
+              body: JSON.stringify({ sqlText, fileName, replaceExisting, restoreToken }),
             },
             120_000,
           );
@@ -1373,13 +1397,14 @@ export async function importSqliteBytesIntoServer(
       : mode === "restore"
         ? `جاري استعادة ${fileName}...`
         : `جاري استيراد ودمج ${fileName}...`;
+  const restoreToken = mode !== "inspect" && (replaceExisting ?? mode === "restore") ? await approveWebRestore(uid, fileName) : undefined;
   return runWithBrandLoader(label, async () => {
     if (bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
       const res = await uploadRestoreBytesChunked<Record<string, unknown>>(
         uid,
         bytes,
         {
-          kind: "sqlite",
+          kind: "sqlite", restoreToken,
           fileName,
           mode,
           groupCategories,
@@ -1398,7 +1423,7 @@ export async function importSqliteBytesIntoServer(
     for (let i = 0; i < bytes.length; i += step) {
       binary += String.fromCharCode(...bytes.subarray(i, i + step));
     }
-    return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting);
+    return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting, restoreToken);
   });
 }
 
@@ -1409,6 +1434,7 @@ export async function importSqliteLegacyIntoServer(
   mode: "inspect" | "import" | "restore",
   groupCategories?: Record<string, AccountCategory>,
   replaceExisting?: boolean,
+  approvedToken?: string,
 ) {
   const label =
     mode === "inspect"
@@ -1416,6 +1442,7 @@ export async function importSqliteLegacyIntoServer(
       : mode === "restore"
         ? `جاري استعادة ${fileName}...`
         : `جاري استيراد ${fileName}...`;
+  const restoreToken = approvedToken ?? (mode !== "inspect" && (replaceExisting ?? mode === "restore") ? await approveWebRestore(uid, fileName) : undefined);
   return runWithBrandLoader(label, async () => {
     const res =
       base64.length > Math.ceil((CHUNKED_UPLOAD_THRESHOLD_BYTES * 4) / 3)
@@ -1423,7 +1450,7 @@ export async function importSqliteLegacyIntoServer(
             uid,
             decodeBase64ToBytes(base64),
             {
-              kind: "sqlite",
+              kind: "sqlite", restoreToken,
               fileName,
               mode,
               groupCategories,
@@ -1436,7 +1463,7 @@ export async function importSqliteLegacyIntoServer(
             {
               method: "POST",
               body: JSON.stringify({
-                base64,
+                base64, restoreToken,
                 fileName,
                 mode,
                 groupCategories,
@@ -1456,15 +1483,17 @@ export async function importSqliteLegacyIntoServer(
 export async function restoreJsonBackupIntoServer(
   uid: string,
   payload: Record<string, unknown>,
+  fileName = "نسخة JSON",
 ) {
+  const restoreToken = await approveWebRestore(uid, fileName);
   return runWithBrandLoader("جاري استعادة النسخة الاحتياطية...", async () => {
-    const bodyStr = JSON.stringify({ payload });
+    const bodyStr = JSON.stringify({ payload, restoreToken });
     const res =
       bodyStr.length > CHUNKED_UPLOAD_THRESHOLD_BYTES
         ? await uploadRestoreBytesChunked<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
             uid,
             new TextEncoder().encode(JSON.stringify(payload)),
-            { kind: "json", fileName: "backup.json" },
+            { kind: "json", fileName, restoreToken },
             true,
           )
         : await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(

@@ -67,6 +67,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "createInventoryItem",
   "updateInventoryItem",
   "deleteInventoryItem",
+  "importAccountCards",
   "importInventoryItems",
   "batchUpdateInventoryItems",
   "getInventoryMovementsReport",
@@ -107,6 +108,7 @@ export const FINANCIAL_MUTATION_COMMANDS: ReadonlySet<HybridCommandAction> = new
   "createInventoryItem",
   "updateInventoryItem",
   "deleteInventoryItem",
+  "importAccountCards",
   "importInventoryItems",
   "batchUpdateInventoryItems",
   "restoreWorkspace",
@@ -279,6 +281,7 @@ export interface HybridCommandPayloadMap {
   createInventoryItem: { workspaceId: string; payload: Partial<InventoryItemRecord> & { name: string } };
   updateInventoryItem: { workspaceId: string; itemId: string; updates: Partial<InventoryItemRecord> };
   deleteInventoryItem: { workspaceId: string; itemId: string };
+  importAccountCards: { workspaceId: string; accounts: Array<Partial<AccountRecord> & { name: string }> };
   importInventoryItems: {
     workspaceId: string;
     items: Array<Partial<InventoryItemRecord> & { name: string }>;

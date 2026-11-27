@@ -2,8 +2,9 @@ import type { InventoryItemRecord } from "../types";
 
 /** Display/export reference only. Never use this value to approve or value stock. */
 export function getCatalogReferenceCost(
-  item: Pick<InventoryItemRecord, "legacyCatalogCost" | "quantityUnverified" | "legacyRef" | "avgCost">,
+  item: Pick<InventoryItemRecord, "catalogReferenceCost" | "legacyCatalogCost" | "quantityUnverified" | "legacyRef" | "avgCost">,
 ): number | undefined {
+  if (item.catalogReferenceCost !== undefined && Number.isFinite(item.catalogReferenceCost)) return item.catalogReferenceCost;
   if (item.legacyCatalogCost !== undefined && Number.isFinite(item.legacyCatalogCost)) {
     return item.legacyCatalogCost;
   }

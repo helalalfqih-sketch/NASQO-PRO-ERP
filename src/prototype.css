@@ -16277,3 +16277,22 @@ button.currencies-footer-hint:hover {
 .cashier-quick-grid .ref-btn { overflow-wrap: anywhere; }
 
 .cashier-settings-page > p, .cashier-settings-page fieldset > p[role="status"] { color: var(--nasqo-ink, #172234); line-height: 1.8; }
+/* Import/restore reviews use the same dialog controls as reports and references. */
+.data-import-review { z-index: 1200; background: rgba(15, 23, 42, .55); padding: 12px; display: flex; align-items: center; justify-content: center; }
+.data-import-review > .ref-dialog-card { position: relative; top: auto; right: auto; left: auto; transform: none; display: flex; flex-direction: column; width: 100%; max-width: 920px; height: min(760px, calc(var(--app-height, 100dvh) - 32px)); max-height: calc(var(--app-height, 100dvh) - 32px); padding: 0; overflow: hidden; }
+.data-import-review .import-review-scroll { position: relative; inset: auto; min-height: 0; flex: 1 1 0; height: auto; }
+.data-import-review h2 { font-size: 1.2rem; margin: 0 0 12px; }
+.data-import-review p { line-height: 1.65; overflow-wrap: anywhere; }
+.data-import-review label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.data-import-review select { font: inherit; color: inherit; background: var(--surface, #fff); border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px; min-width: 150px; max-width: 100%; }
+.data-import-review .import-review-table { overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 10px; }
+.data-import-review table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.data-import-review td, .data-import-review th { padding: 10px; border-bottom: 1px solid #dbe3ed; min-width: 100px; text-align: right; white-space: pre-wrap; }
+.data-import-review th { color: #253b64; background: #edf3ff; }
+.data-import-review tr:nth-child(even) { background: #f5f7fc; }
+.data-import-review .import-review-error { color: #9f1239; background: #fff1f2; border: 1px solid #fecdd3; padding: 10px; border-radius: 10px; }
+.data-import-review .ref-action-bar { flex-shrink: 0; padding: 12px; margin: 0; border-top: 1px solid #dbe3ed; }
+.data-import-review button:disabled { opacity: .5; cursor: not-allowed; }
+
+.data-import-review .import-review-scroll > .mobile-scroll { bottom: 0; }
+.data-import-review .mobile-scroll-content { padding: 18px; }
