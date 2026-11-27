@@ -105,7 +105,9 @@ try:
     adb('shell', 'chmod', '600', dbpath)
     adb('shell', 'restorecon', dbpath)
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
-    capture('seeded-home', 'فاتورة جديدة')
+    # The WebView can expose its default home tree while Flutter still shows
+    # workspace loading. Wait for the restored business title, not that tree.
+    capture('seeded-home', 'اختبار شراء اصطناعي')
     tap('فاتورة جديدة')
     capture('invoice-open', 'فاتورة')
     tap('فاتورة شراء')
@@ -132,7 +134,10 @@ try:
     capture('saved', 'فاتورة جديدة', 'فاتورة شراء جديدة')
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
-    capture('reopened', 'فاتورة جديدة')
+    capture('reopened', 'اختبار شراء اصطناعي')
+    tap('حركة المخزون', scroll=True)
+    root = capture('inventory-after-restart', 'QA Pending A')
+    assert not any('غير معتمدة' in text(n) or 'حدد حساب أصل المخزون' in text(n) for n in root.iter('node'))
     adb('shell', 'am', 'force-stop', package)
     # Read durable SQLite after posting and restart; no test posting bridge.
     with tempfile.TemporaryDirectory(prefix='nasqo-ci-posted-') as folder:
@@ -179,7 +184,8 @@ try:
                   'approvedNewPurchaseValue': 10000, 'oldCostStillPending': False, 'openingCostPreparedAutomatically': True, 'oldArchiveUnchanged': True,
                   'journalBalanced': True, 'stockMovements': 2, 'newInvoicesAfterRestart': 1,
                   'historicalInvoicesPreserved': len(old_ledger),
-                  'scope': 'Signed Android 16 release, UI entry and posting, SQLite checked after process restart. Synthetic DB seeded before UI test; not a restore-picker or private-data test.'}
+                  'inventoryReportReadyAfterRestart': True,
+                  'scope': 'Signed Android 16 release, UI entry/posting and inventory report after process restart; durable SQLite checked. Synthetic DB seeded before UI test; not a restore-picker or private-data test.'}
         db.close()
     (out/'purchase-result.json').write_text(json.dumps(result, indent=2)+'\n')
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
