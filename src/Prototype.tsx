@@ -1590,7 +1590,7 @@ export function AuthenticatedWorkspace({
     (defaultCategory?: AccountCategory, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
       if (recoverExistingInvoiceDraft()) return;
-      const matchingAccount = defaultCategory === "purchases"
+      const matchingAccount = defaultCategory !== "sales" && accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)?.note?.startsWith("nasqo:default:")
         ? accounts.find(a=>a.note === "nasqo:default:cash-supplier" && a.currency === workspace?.defaultCurrency) ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)
         : accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       const kindOverride =
@@ -6356,7 +6356,7 @@ function InvoiceModal({
     ? editingEntry.payment === "cash"
       ? "cash"
       : "credit"
-    : cashier ? "cash" : initialAccount?.isCashAccount
+    : cashier ? "cash" : initialAccount?.isCashAccount || initialAccount?.note?.startsWith("nasqo:default:")
       ? "cash"
       : "credit";
   const initialKind: "purchase" | "sale" =
@@ -6408,6 +6408,14 @@ function InvoiceModal({
   const chooseAccount = (id:string) => {
     setAccountId(id);
     if(!manualCashbox.current) setCashboxId(resolveCashbox(defaults,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id),cashierPrefs?.cashboxId));
+  };
+  const chooseKind = (value:"purchase"|"sale") => {
+    setKind(value);
+    const current = ctx.accounts.find(a=>a.id===accountId);
+    if (!editingEntry && current?.note?.startsWith("nasqo:default:")) {
+      const target = ctx.accounts.find(a=>a.currency===currency && a.note===`nasqo:default:cash-${value==="purchase"?"supplier":"customer"}`);
+      if(target) chooseAccount(target.id);
+    }
   };
   const chooseCurrency = (value:CurrencyCode) => {
     setCurrency(value);
@@ -7293,7 +7301,7 @@ function InvoiceModal({
                 type="radio"
                 name="invoice-kind"
                 checked={kind === "purchase"}
-                onChange={() => setKind("purchase")}
+                onChange={() => chooseKind("purchase")}
               />
               <span>{isReturn ? "مردود شراء" : "فاتورة شراء"}</span>
             </label>
@@ -7302,7 +7310,7 @@ function InvoiceModal({
                 type="radio"
                 name="invoice-kind"
                 checked={kind === "sale"}
-                onChange={() => setKind("sale")}
+                onChange={() => chooseKind("sale")}
               />
               <span>{isReturn ? "مردود بيع" : "فاتورة بيع"}</span>
             </label>

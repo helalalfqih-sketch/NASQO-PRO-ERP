@@ -2,6 +2,7 @@ import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'automatic_stock_baseline.dart';
 import 'local_workspace_readiness.dart';
+import 'inventory_locations.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
@@ -643,6 +644,7 @@ class LocalBackupRestore {
       if(invalidOpenings.isNotEmpty)throw StateError('Invalid stock opening audit');
       await StockQuantityApprovalState.validate(txn);
       await AutomaticStockBaseline.validate(txn);
+      await InventoryLocations.validate(txn);
       await txn.delete('backup_review_active');
       if(prepareForUse)await LocalWorkspaceReadiness.prepare(txn,local);
     });

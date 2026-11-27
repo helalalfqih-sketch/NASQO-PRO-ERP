@@ -105,4 +105,15 @@ class InventoryLocations {
       }
     }
   }
+
+  static Future<void> validate(DatabaseExecutor db)async{
+    for(final r in await db.query('erp_state',where:'stateKey GLOB ?',whereArgs:['$prefix*'])){
+      final meta=jsonDecode(r['payloadJson'] as String) as Map;
+      final item=await db.query('inventory_items',where:'id = ?',whereArgs:[meta['item_id']]);
+      final source=await db.query('inventory_items',where:'id = ?',whereArgs:[meta['source_item_id']]);
+      if(r['stateKey']!='$prefix${meta['item_id']}'||item.length!=1||source.length!=1||
+        meta['item_id']==meta['source_item_id']||item.single['warehouseId']!=meta['warehouse_id']||
+        await link(db,meta['source_item_id'] as String)!=null)throw StateError('Invalid warehouse stock link');
+    }
+  }
 }
