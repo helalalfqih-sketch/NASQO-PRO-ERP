@@ -80,7 +80,7 @@ jobs:
           test "$OTHER_ACTIONS" = false
           test -z "$VERIFY_RUN"
           gh api "repos/$GH_REPO/actions/runs/46068768452" > source-run.json
-          gh api "repos/$GH_REPO/actions/runs/46072709825" > verified-run.json
+          gh api "repos/$GH_REPO/actions/runs/46076538365" > verified-run.json
           gh api "repos/$GH_REPO/actions/runs/46068768452/jobs?per_page=100" > source-jobs.json
           gh api "repos/$GH_REPO/releases/461069668" > release.json
           python3 - <<'PY'
@@ -92,7 +92,7 @@ jobs:
           build = [j for j in json.load(open('source-jobs.json'))['jobs'] if j['name'] == 'flutter-hybrid']
           assert len(build) == 1 and build[0]['conclusion'] == 'success'
           verified = json.load(open('verified-run.json'))
-          assert verified['head_sha'] == '7bd42adaa2440d9fbea44a9987f7b4e57311f09f'
+          assert verified['head_sha'] == '01f62a920dee65cfe3ab267df0b03335c30375cb'
           assert verified['status'] == 'completed' and verified['conclusion'] == 'success'
           release = json.load(open('release.json'))
           assert release['tag_name'] == 'android-preview-v1187'
@@ -111,24 +111,50 @@ jobs:
           path: bundle
           run-id: 46068768452
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: acceptance-core
+          run-id: 46072709825
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: acceptance-crud-purchase
+          run-id: 46076538365
+          github-token: ${{ github.token }}
+      - name: Require each real Android acceptance result
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for folder, names in [('acceptance-core', ['result', 'navigation-result', 'catalog-result', 'large-import-result']), ('acceptance-crud-purchase', ['crud-result', 'purchase-result'])]:
+              for name in names:
+                  assert json.loads((Path(folder)/(name+'.json')).read_text())['result'] == 'PASS', name
+              assert "versionCode='1187'" in (Path(folder)/'badging.txt').read_text()
+              assert '649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197' in (Path(folder)/'candidate-certificate.txt').read_text().lower()
+          PY
       - name: Upload only the exact verified APK and AAB
         run: |
           set -euo pipefail
           mkdir release-files
           cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.187.apk
+          # The installed preview updater requires this exact stable asset name.
+          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP.apk
           cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.187.aab
           cd release-files
           printf '%s  %s\n' \
             c9a90a9ad27fd029c868c7112489d2a82d8d974ad7b9c650a9f7254b7b74ac67 NASQO-PRO-ERP-1.0.187.apk \
+            c9a90a9ad27fd029c868c7112489d2a82d8d974ad7b9c650a9f7254b7b74ac67 NASQO-PRO-ERP.apk \
             7be20e36af8908bcb347f9b4ce42556b78398a1143b48835300dbbeddb37989d NASQO-PRO-ERP-1.0.187.aab > SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
-          gh release upload android-preview-v1187 NASQO-PRO-ERP-1.0.187.apk NASQO-PRO-ERP-1.0.187.aab SHA256SUMS.txt
+          gh release upload android-preview-v1187 NASQO-PRO-ERP-1.0.187.apk NASQO-PRO-ERP.apk NASQO-PRO-ERP-1.0.187.aab SHA256SUMS.txt
           gh api "repos/$GH_REPO/releases/461069668" > ../uploaded-release.json
           python3 - <<'PY'
           import hashlib, json
           from pathlib import Path
           release = json.load(open('../uploaded-release.json'))
-          assert release['draft'] and len(release['assets']) == 3
+          assert release['draft'] and len(release['assets']) == 4
           for asset in release['assets']:
               file = Path(asset['name'])
               assert asset['state'] == 'uploaded' and asset['size'] == file.stat().st_size
@@ -141,7 +167,7 @@ jobs:
           gh release edit android-preview-v1187 --draft=false --prerelease --latest=false
           mkdir public-downloads
           cd public-downloads
-          for file in NASQO-PRO-ERP-1.0.187.apk NASQO-PRO-ERP-1.0.187.aab SHA256SUMS.txt; do
+          for file in NASQO-PRO-ERP-1.0.187.apk NASQO-PRO-ERP.apk NASQO-PRO-ERP-1.0.187.aab SHA256SUMS.txt; do
             curl --fail --location --retry 4 --retry-delay 5 --max-time 180 \
               --output "$file" "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-preview-v1187/$file"
             cmp "$file" "../release-files/$file"
