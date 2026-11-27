@@ -84,7 +84,7 @@ jobs:
           test "$OTHER_ACTIONS" = false
           test -z "$VERIFY_RUN"
           gh api "repos/$GH_REPO/actions/runs/46080671917" > source-run.json
-          gh api "repos/$GH_REPO/actions/runs/46080671917" > verified-run.json
+          gh api "repos/$GH_REPO/actions/runs/46083395087" > verified-run.json
           gh api "repos/$GH_REPO/actions/runs/46080671917/jobs?per_page=100" > source-jobs.json
           gh api "repos/$GH_REPO/releases/461145604" > release.json
           python3 - <<'PY'
@@ -95,7 +95,7 @@ jobs:
           build = [j for j in json.load(open('source-jobs.json'))['jobs'] if j['name'] == 'flutter-hybrid']
           assert len(build) == 1 and build[0]['conclusion'] == 'success'
           verified = json.load(open('verified-run.json'))
-          assert verified['head_sha'] == 'e7ad679c504889b4316262c31f9ca448fec8479b'
+          assert verified['head_sha'] == '85455374c2e334fd7e37860a6df66bd05fe5e9c5'
           assert verified['status'] == 'completed' and verified['conclusion'] == 'success'
           release = json.load(open('release.json'))
           assert release['tag_name'] == 'android-preview-v1199'
@@ -124,7 +124,7 @@ jobs:
         with:
           name: nasqo-signed-upgrade-evidence
           path: acceptance-crud-purchase
-          run-id: 46080671917
+          run-id: 46083395087
           github-token: ${{ github.token }}
       - name: Require each real Android acceptance result
         run: |
