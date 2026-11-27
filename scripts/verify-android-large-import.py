@@ -49,11 +49,22 @@ def capture(stage, required, absent=''):
 def tap(value, scroll=False):
     for _ in range(12 if scroll else 4):
         candidates = []
-        for n in read().iter('node'):
+        root = read()
+        # WebView reports clipped checkbox bounds behind the fixed action bar.
+        # Only tap the review content above that bar, otherwise its Cancel
+        # button receives the click. Scroll until the checkbox is truly exposed.
+        content_bottom = size[1]
+        if scroll:
+            for n in root.iter('node'):
+                if n.get('class') == 'android.widget.Button' and n.get('text') == 'استيراد البطاقات':
+                    bounds = [int(x) for x in re.findall(r'\d+', n.get('bounds', ''))]
+                    if len(bounds) == 4 and bounds[1] < bounds[3]:
+                        content_bottom = min(content_bottom, bounds[1]-20)
+        for n in root.iter('node'):
             if value not in label(n):
                 continue
             b = [int(x) for x in re.findall(r'\d+', n.get('bounds', ''))]
-            if len(b) == 4 and 0 <= b[0] < b[2] <= size[0] and 0 <= b[1] < b[3] <= size[1]:
+            if len(b) == 4 and 0 <= b[0] < b[2] <= size[0] and 0 <= b[1] < b[3] <= content_bottom:
                 exact = value in [n.get(k, '') for k in ('text', 'content-desc')]
                 candidates.append((not exact, (b[2]-b[0])*(b[3]-b[1]), b))
         if candidates:
@@ -107,6 +118,8 @@ try:
         tap(filename)
         capture(f'review-{attempt}', 'عدد البطاقات: 3000')
         tap('راجعت الصفوف', scroll=True)
+        confirmed = capture(f'confirmed-{attempt}', 'استيراد البطاقات')
+        assert any(n.get('class') == 'android.widget.Button' and n.get('text') == 'استيراد البطاقات' and n.get('enabled') == 'true' for n in confirmed.iter('node')), 'Import review must be confirmed before submitting'
         tap('استيراد البطاقات')
         capture(f'saved-{attempt}', 'خيارات بطاقات الأصناف', 'مراجعة استيراد')
         snapshots.append(database_snapshot())
