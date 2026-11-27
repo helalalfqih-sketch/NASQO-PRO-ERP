@@ -33,6 +33,7 @@ adb shell am force-stop "$PKG"
 adb shell screenrecord --time-limit 12 /sdcard/nasqo-brand-start.mp4 >/dev/null 2>&1 &
 RECORD_PID=$!
 adb shell am start -W -n "$PKG/.MainActivity" > upgrade-evidence/start-update.txt
+adb shell pidof "$PKG" > upgrade-evidence/launch-pid.txt
 sleep 15
 wait "$RECORD_PID" || true
 adb pull /sdcard/nasqo-brand-start.mp4 upgrade-evidence/startup.mp4
@@ -68,7 +69,16 @@ assert field(old,'userId')==field(new,'userId'),'Android UID changed'
 assert int(field(old,'versionCode'))==1138
 assert int(field(new,'versionCode'))>1138
 assert 'Success' in (p/'install-update.txt').read_text()
-assert 'FATAL EXCEPTION' not in (p/'update-log.txt').read_text()
+log=(p/'update-log.txt').read_text()
+launch_pid=(p/'launch-pid.txt').read_text().strip()
+assert launch_pid and launch_pid==(p/'update-pid.txt').read_text().strip(), 'App process restarted during cold start'
+# Android 16's external uiautomator may crash while dumping a live WebView.
+# Retain its log, but attribute crashes to the app process rather than every
+# AndroidRuntime tag on the device. The app PID and successful UI dump are
+# checked independently; app restarts and app/child-process crashes still fail.
+app_lines=[line for line in log.splitlines() if re.search(r'\s'+re.escape(launch_pid)+r'\s+\d+\s+[A-Z]\s',line)]
+assert not any('FATAL EXCEPTION' in line for line in app_lines), 'App runtime crash'
+assert not re.search(r'Process: com\.indexesstore\.nasqo_pro_erp(?=[:,\s])',log), 'App or child-process crash'
 (p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1138,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
 PY
 if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
