@@ -29,6 +29,10 @@ on:
         description: Test an existing signed APK on Android 16 without rebuilding or publishing (source run ID)
         type: string
         default: ''
+      store_screenshots:
+        description: Capture real 1080x1920 store screenshots from verify_existing_run on a fresh emulator (no build or publishing)
+        type: boolean
+        default: false
       test_pending_purchase:
         description: Post a synthetic purchase with pending opening cost on the isolated Android emulator
         type: boolean
@@ -435,7 +439,14 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
-          script: bash scripts/verify-android-release-upgrade.sh
+          script: |
+            if [[ '${{ inputs.store_screenshots }}' == true ]]; then
+              test -n '${{ inputs.verify_existing_run }}'
+              test '${{ inputs.publish_verified_candidate }}' != true
+              python3 scripts/capture-android-store.py
+            else
+              bash scripts/verify-android-release-upgrade.sh
+            fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
