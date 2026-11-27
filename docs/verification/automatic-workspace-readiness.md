@@ -13,3 +13,11 @@ Validation before Android build:
 - TypeScript check, hybrid build/offline audit, runtime integrity, import/backup and document-reference Node tests.
 
 The original archive is evidence, not a physical stocktake. Missing source warehouse references cannot be fabricated. Existing explicit account mappings and quantities remain preserved. Review-only imports stay read-only. No public deployment or Google Play rollout is performed by this change itself.
+
+## Signed Android candidate
+
+Version `1.0.170` / code `1170` was built from `98e59fd8c5f72c763d7dd40c3aa11478a4664077` in [workflow run 170](https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/actions/runs/46040028289). The run passed. APK and AAB retain `com.indexesstore.nasqo_pro_erp` and the existing release certificate; Android minimum/target levels remain 24/36, and bundle validation confirms 16 KiB alignment. Artifact checksums and signatures were verified again after download.
+
+The signed Android 16 test installed the APK as an update without clearing the emulator's data, exercised navigation and creating a catalog card, then posted a cash purchase through the actual UI against a synthetic previously quantity-approved workspace. It confirmed automatic opening valuation, populated prices, preserved original archive and quantity approvals, balanced journal entries, exactly one new invoice and two stock movements, and durable values after process restart. This is synthetic emulator evidence, not a claim to have tested the user's physical phone or the restore picker with private data.
+
+Visual review confirmed that the invoice presents ordinary warehouse quantities, populated editable prices and the correct total without cost-approval errors, and that saving returns to the home screen. [Follow-up run 171](https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/actions/runs/46041883021) also passed against the same signed artifact. It waited for the restored business to finish loading, opened the inventory report after process restart and verified the absence of cost-approval/setup errors. Its screenshots show the preserved opening quantities plus the new receipt, the correct remaining value and the optional collapsed source details. The application artifact remains version `1.0.170`; the follow-up changed only the test.
