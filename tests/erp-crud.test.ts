@@ -7,7 +7,7 @@ import express from 'express';
 import http from 'node:http';
 import { executeErpAction } from '../server/erpActions.ts';
 import { deleteMasterRecord, saveCashboxRecord } from '../server/masterCrud.ts';
-import { getSqliteDb, closeSqliteDb, ensureEmptyWorkspace, loadErpDataRows, DEFAULT_WORKSPACE_ID as w, upsertAccountRow, upsertWarehouseRow, insertInventoryItemRow, exportWorkspaceJsonBackup, restoreUnifiedJsonBundle, upsertAccountGroupRow, deleteAccountRow, deleteInventoryCatalogRow, getFullWorkspaceBundle } from '../server/sqliteDb.ts';
+import { getSqliteDb, closeSqliteDb, ensureEmptyWorkspace, loadErpDataRows, DEFAULT_WORKSPACE_ID as w, upsertAccountRow, upsertWarehouseRow, insertInventoryItemRow, exportWorkspaceJsonBackup, restoreUnifiedJsonBundle, upsertAccountGroupRow, deleteAccountRow, deleteInventoryCatalogRow, getFullWorkspaceBundle, upsertCurrencyRow, deleteCurrencyRow } from '../server/sqliteDb.ts';
 import { saveErpRecords } from '../server/erpRecords.ts';
 import { erpRows, type ErpCollection, type ErpRow } from '../src/erpRecordRules.ts';
 import { mountSqliteApi } from '../server/sqliteApi.ts';
@@ -97,4 +97,28 @@ test('existing ERP posting actions are atomic, repeat safe and protect completed
  db.prepare('UPDATE inventory_items SET quantity=10,avg_cost=4 WHERE id=?').run('crud-raw');
  action('completeProduction','productionOrders');action('completeProduction','productionOrders');assert.equal(db.prepare('SELECT quantity FROM inventory_items WHERE id=?').get('crud-raw')?.quantity,6);assert.equal(db.prepare('SELECT avg_cost FROM inventory_items WHERE id=?').get('crud-finished')?.avg_cost,8);
  const payroll={action:'postPayroll',currency:'ريال',month:new Date().toISOString().slice(0,7)};executeErpAction(db,w,payroll);executeErpAction(db,w,payroll);assert.equal(db.prepare('SELECT count(*) AS n FROM ledger_entries').get()?.n,3);
+}));
+
+
+test('currency CRUD persists and referenced/default currencies cannot be deleted',async()=>fixture(db=>{
+ const currency=upsertCurrencyRow(db,w,{name:'عملة اختبار',symbol:'TST',ratePrimary:2,rateSecondary:3});
+ assert.equal(getFullWorkspaceBundle(db,w).currencies.find(c=>c.id===currency.id)?.symbol,'TST');
+ const edited=upsertCurrencyRow(db,w,{id:currency.id,name:currency.name,symbol:'TEST',ratePrimary:4,rateSecondary:5});
+ assert.equal(edited.ratePrimary,4);
+ const unchanged=exportWorkspaceJsonBackup(db,w).sqliteSnapshot;
+ for(const bad of [{name:currency.name},{id:currency.id,name:'اسم آخر'},{name:'خطأ',ratePrimary:0},{id:-1,name:'خطأ'}])assert.throws(()=>upsertCurrencyRow(db,w,bad));
+ assert.deepEqual(exportWorkspaceJsonBackup(db,w).sqliteSnapshot,unchanged);
+ db.prepare('UPDATE workspaces SET default_currency=? WHERE id=?').run(currency.name,w);
+ let before=exportWorkspaceJsonBackup(db,w).sqliteSnapshot;
+ assert.throws(()=>deleteCurrencyRow(db,w,currency.id),/الافتراضية/);
+ assert.deepEqual(exportWorkspaceJsonBackup(db,w).sqliteSnapshot,before);
+ db.prepare('UPDATE workspaces SET default_currency=? WHERE id=?').run('ريال',w);
+ const account=upsertAccountRow(db,w,{name:'حساب بعملة الاختبار',category:'clients',currency:currency.name});
+ before=exportWorkspaceJsonBackup(db,w).sqliteSnapshot;
+ assert.throws(()=>deleteCurrencyRow(db,w,currency.id),/مرتبطة/);
+ assert.deepEqual(exportWorkspaceJsonBackup(db,w).sqliteSnapshot,before);
+ deleteAccountRow(db,w,account.id);deleteCurrencyRow(db,w,currency.id);
+ assert(!getFullWorkspaceBundle(db,w).currencies.some(c=>c.id===currency.id));
+ assert.throws(()=>deleteCurrencyRow(db,w,currency.id),/غير موجودة/);
+ assert.equal(db.prepare('SELECT count(*) AS n FROM ledger_entries').get()?.n,0);
 }));

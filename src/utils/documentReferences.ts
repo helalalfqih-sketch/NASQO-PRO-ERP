@@ -1,4 +1,4 @@
-import type { AccountRecord, CashboxRecord, ReferenceDefaults } from '../types';
+import type { AccountRecord, CashboxRecord, ReferenceDefaults } from '../types.ts';
 
 export const emptyReferenceDefaults = (): ReferenceDefaults => ({ warehouseId: '', accountId: '', systemCashboxes: {}, accountCashboxes: {}, groupCashboxes: {} });
 export function eligibleCashbox(boxes: readonly CashboxRecord[], id: number | null | undefined, currency: string) {

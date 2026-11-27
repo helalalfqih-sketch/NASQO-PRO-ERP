@@ -33,6 +33,7 @@ jobs:
           npx tsx --test tests/workspace-isolation.test.ts tests/local-database.test.ts
           node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs tests/sqlite-local-production.test.mjs
           npx tsx --test tests/unified-sqlite.test.ts
+          npx tsx --test tests/erp-crud.test.ts tests/erp-input.test.ts tests/hybrid-message-limits.test.ts tests/tabular-import.test.ts tests/import-restore-safety.test.ts
           npm run build
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
           # Source runtime integrity checks are unchanged.
@@ -42,6 +43,7 @@ jobs:
       - name: Verify Android Back navigation in Chromium
         run: |
           npx playwright install --with-deps chromium
+          PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)" CRUD_UI_OUTPUT="$RUNNER_TEMP/crud-ui" npx tsx scripts/verify-crud-ui.ts
           npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts tests/smartpro-admin-ui.spec.ts tests/unified-sqlite-e2e.spec.ts --reporter=line
           npx playwright test tests/legacy-real-data.spec.ts --reporter=line
           npx playwright test tests/public-deployment-mobile.spec.ts --reporter=line
@@ -50,6 +52,7 @@ jobs:
           mkdir -p release/dist
           cp package.json package-lock.json server.ts Dockerfile.deploy release/
           cp -a server release/server
+          cp -a src release/src
           mkdir -p release/scripts
           cp scripts/backup-sqlite.mjs release/scripts/
           cp -a dist/client release/dist/client

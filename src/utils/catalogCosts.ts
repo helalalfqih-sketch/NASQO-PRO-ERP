@@ -1,4 +1,4 @@
-import type { InventoryItemRecord } from "../types";
+import type { InventoryItemRecord } from "../types.ts";
 
 /** Display/export reference only. Never use this value to approve or value stock. */
 export function getCatalogReferenceCost(

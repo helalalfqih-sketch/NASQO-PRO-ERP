@@ -22,8 +22,23 @@ sleep 1
 LABEL_VISIBLE=0
 for attempt in 1 2 3 4 5; do
   if timeout 15s adb shell uiautomator dump /sdcard/nasqo-launcher.xml >> upgrade-evidence/launcher-dump-status.txt 2>&1 &&
-     adb pull /sdcard/nasqo-launcher.xml upgrade-evidence/launcher-ui.xml >/dev/null 2>&1 &&
-     grep -Fq 'نسقو برو' upgrade-evidence/launcher-ui.xml; then LABEL_VISIBLE=1; break; fi
+     adb pull /sdcard/nasqo-launcher.xml upgrade-evidence/launcher-ui.xml >/dev/null 2>&1; then
+    if grep -Fq 'نسقو برو' upgrade-evidence/launcher-ui.xml; then LABEL_VISIBLE=1; break; fi
+    # The fresh Pixel launcher can show search onboarding over the app drawer.
+    # Dismiss only its observed native button, then reopen the drawer.
+    python3 - <<'PY'
+import re, subprocess, xml.etree.ElementTree as ET
+root=ET.parse('upgrade-evidence/launcher-ui.xml')
+for n in root.iter('node'):
+    if n.get('package')=='com.google.android.apps.nexuslauncher' and n.get('text')=='Got it':
+        b=list(map(int,re.findall(r'\d+',n.get('bounds',''))))
+        if len(b)==4:
+            subprocess.run(['adb','shell','input','tap',str((b[0]+b[2])//2),str((b[1]+b[3])//2)],check=True)
+            subprocess.run(['adb','shell','input','keyevent','KEYCODE_HOME'],check=True)
+            subprocess.run(['adb','shell','input','swipe','540','2100','540','350','500'],check=True)
+        break
+PY
+  fi
   adb shell input swipe 540 1900 540 700 400
   sleep 1
 done

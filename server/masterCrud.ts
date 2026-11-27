@@ -13,6 +13,7 @@ export function assertMasterNotReferenced(db:DatabaseSync,workspace:string,id:st
  const ws=db.prepare('SELECT reference_defaults_json,cashier_settings_json FROM workspaces WHERE id=?').get(workspace) as Record<string,unknown>|undefined;
  for(const value of Object.values(ws??{})) if(value){const cfg=JSON.parse(String(value));
   if(containsReference(cfg,id,keys))throw new ErpValidationError('السجل مستخدم في الإعدادات الافتراضية.');
+  if(keys.includes('currency')&&String(id) in (cfg.systemCashboxes??{}))throw new ErpValidationError('العملة مستخدمة في الإعدادات الافتراضية.');
   if(keys.includes('cashboxId')&&['systemCashboxes','accountCashboxes','groupCashboxes'].some(k=>Object.values(cfg[k]??{}).includes(id)))throw new ErpValidationError('الصندوق مستخدم في الإعدادات الافتراضية.');
   if((keys.includes('groupId')&&String(id) in (cfg.groupCashboxes??{}))||(keys.includes('accountId')&&String(id) in (cfg.accountCashboxes??{})))throw new ErpValidationError('السجل مستخدم في الإعدادات الافتراضية.');
  }

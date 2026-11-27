@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -60,6 +61,12 @@ void main(){
       expect(await db.query('accounts'),isEmpty);
       expect(await db.query('inventory_items'),hasLength(2));
       await LocalWorkspaceSettings(local).save(w,{'defaultCurrency':'ريال'});
+      // Configuration references must block deletion even without ledger activity.
+      await db.insert('erp_state',{'stateKey':'erp-record:deals:currency-guard','payloadJson':jsonEncode({'id':'currency-guard','currency':'دولار'}),'updatedAt':'2026-11-27T00:00:00Z'});
+      final guarded=await LocalBackupRestore(local).exportNative();
+      await expectLater(master.deleteCurrency(w,'delete-referenced-usd',2),throwsStateError);
+      expect(await LocalBackupRestore(local).exportNative(),orderedEquals(guarded));
+      await db.delete('erp_state',where:'stateKey = ?',whereArgs:['erp-record:deals:currency-guard']);
       await master.deleteCurrency(w,'delete-usd',2);
       expect((await HybridLocalSnapshotAdapter.readFromDevice())['currencies'],hasLength(1));
     }finally{await db.close();await dir.delete(recursive:true);}

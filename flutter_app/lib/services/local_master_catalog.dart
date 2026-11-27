@@ -158,6 +158,7 @@ class LocalMasterCatalog {
         if(index<0)throw StateError('Currency missing');
         final title=currencies[index]['name'];
         if(currencies.length<=1||title=='ريال')throw StateError('Cannot delete the base currency');
+        await LocalReferenceGuards.check(t,title,{'currency','currencyCode','defaultCurrency'});
         final code=currencyCodes[title];
         if(code==null)throw StateError('Imported currency must remain in the historical register');
         if((await t.query('accounts',where:'currency = ?',whereArgs:[code],limit:1)).isNotEmpty||

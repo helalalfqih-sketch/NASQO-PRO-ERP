@@ -23,6 +23,7 @@ class LocalReferenceGuards {
       if(value is Map){
         final defaults=value['referenceDefaults'];
         if(defaults is Map){
+          if(keys.contains('currency')&&(defaults['systemCashboxes'] as Map? ??{}).containsKey(id))throw StateError('العملة مستخدمة في الصندوق الافتراضي');
           if(keys.contains('groupId')&&(defaults['groupCashboxes'] as Map? ??{}).containsKey(id.toString()))throw StateError('المجموعة مستخدمة في الصندوق الافتراضي');
           if(keys.contains('accountId')&&(defaults['accountCashboxes'] as Map? ??{}).containsKey(id.toString()))throw StateError('الحساب مستخدم في الصندوق الافتراضي');
           if(keys.contains('cashboxId')&&['systemCashboxes','groupCashboxes','accountCashboxes'].any((k)=>(defaults[k] as Map? ??{}).values.contains(id)))throw StateError('الصندوق مستخدم في الإعدادات الافتراضية');

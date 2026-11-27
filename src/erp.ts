@@ -1239,15 +1239,15 @@ export function loadErpWorkspaceData(uid: string): ErpWorkspaceData {
 }
 
 export async function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): Promise<void> {
-  const { buildErpRecordChanges } = await import('./hybrid/erpRecordChanges');
+  const { buildErpRecordChanges } = await import('./hybrid/erpRecordChanges.ts');
   await saveErpRecordCommands(uid,buildErpRecordChanges(loadErpWorkspaceData(uid),data));
 }
 
-export async function saveErpRecordCommands(uid: string, changes: import('./erpRecordRules').ErpRecordChange[]): Promise<void> {
+export async function saveErpRecordCommands(uid: string, changes: import('./erpRecordRules.ts').ErpRecordChange[]): Promise<void> {
   if (!changes.length) return;
   const key = uid || 'local-erp-workspace';
   if (typeof window === 'undefined') throw new Error('خدمة حفظ السجلات غير متاحة');
-  const win = window as unknown as {__nasqoHybridReady?:boolean; __nasqoHybridSaveErpRecords?:(uid:string,changes:import('./erpRecordRules').ErpRecordChange[])=>Promise<ErpWorkspaceData>};
+  const win = window as unknown as {__nasqoHybridReady?:boolean; __nasqoHybridSaveErpRecords?:(uid:string,changes:import('./erpRecordRules.ts').ErpRecordChange[])=>Promise<ErpWorkspaceData>};
   if (win.__nasqoHybridReady || (import.meta as {env?:{VITE_NASQO_HYBRID?:string}}).env?.VITE_NASQO_HYBRID === '1') {
     if (!win.__nasqoHybridSaveErpRecords) throw new Error('خدمة الحفظ الأصلية غير متاحة؛ لم يُحفظ السجل');
     hydrateErpWorkspaceCache(key, await win.__nasqoHybridSaveErpRecords(key,changes));

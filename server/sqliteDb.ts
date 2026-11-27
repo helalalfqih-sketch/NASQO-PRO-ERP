@@ -1110,12 +1110,15 @@ export function upsertCurrencyRow(
   },
 ): CurrencyRecord {
   ensureEmptyWorkspace(db, workspaceId);
-  const name = String(input.name ?? "").trim().slice(0, 32);
-  if (!name) {
+  if (Object.keys(input).some(key => !["id", "name", "symbol", "ratePrimary", "rateSecondary", "nameSecondary"].includes(key)) ||
+      (input.id !== undefined && (!Number.isSafeInteger(input.id) || input.id <= 0))) throw new SqliteValidationError("حقول العملة غير صالحة.");
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (!name || name.length > 32) {
     throw new SqliteValidationError("اسم العملة مطلوب.");
   }
-  const symbol = String(input.symbol ?? "_").trim().slice(0, 16) || "_";
-  const nameSecondary = String(input.nameSecondary ?? "").trim().slice(0, 32);
+  const symbol = String(input.symbol ?? "_").trim() || "_";
+  const nameSecondary = String(input.nameSecondary ?? "").trim();
+  if (symbol.length > 16 || nameSecondary.length > 32) throw new SqliteValidationError("اختصار العملة أو تجزئتها أطول من المسموح.");
   const ratePrimary = Number(input.ratePrimary ?? 1);
   const rateSecondary = Number(input.rateSecondary ?? 1);
   if (!Number.isFinite(ratePrimary) || ratePrimary <= 0 || !Number.isFinite(rateSecondary) || rateSecondary <= 0) {
@@ -1144,7 +1147,6 @@ export function upsertCurrencyRow(
     ).run(name, name, symbol, ratePrimary, rateSecondary, nameSecondary, workspaceId, targetId);
     writeAudit(db, workspaceId, workspaceId, "currencies", String(targetId), "update", { name, ratePrimary, rateSecondary });
   } else {
-    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?")
       .get(workspaceId, name) as { id: number } | undefined;
@@ -1177,20 +1179,35 @@ export function upsertCurrencyRow(
 }
 
 export function deleteCurrencyRow(db: DatabaseSync, workspaceId: string, currencyId: number): void {
-  const existing = db
-    .prepare("SELECT id, name FROM currencies WHERE workspace_id = ? AND id = ?")
-    .get(workspaceId, currencyId) as { id: number; name: string } | undefined;
-  if (!existing) {
-    throw new SqliteValidationError("العملة غير موجودة في قاعدة البيانات.");
-  }
-  const totalCount = Number(
-    (db.prepare("SELECT COUNT(*) AS c FROM currencies WHERE workspace_id = ?").get(workspaceId) as { c: number }).c,
-  );
-  if (totalCount <= 1) {
-    throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية الوحيدة في النظام.");
-  }
-  db.prepare("DELETE FROM currencies WHERE workspace_id = ? AND id = ?").run(workspaceId, currencyId);
-  writeAudit(db, workspaceId, workspaceId, "currencies", String(currencyId), "delete", { name: existing.name });
+  return withTransaction(db, () => {
+    const existing = db
+      .prepare("SELECT id, name, code FROM currencies WHERE workspace_id = ? AND id = ?")
+      .get(workspaceId, currencyId) as { id: number; name: string; code: string } | undefined;
+    if (!existing) {
+      throw new SqliteValidationError("العملة غير موجودة في قاعدة البيانات.");
+    }
+    const totalCount = Number(
+      (db.prepare("SELECT COUNT(*) AS c FROM currencies WHERE workspace_id = ?").get(workspaceId) as { c: number }).c,
+    );
+    if (totalCount <= 1) {
+      throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية الوحيدة في النظام.");
+    }
+    const workspace = db.prepare("SELECT default_currency FROM workspaces WHERE id = ?").get(workspaceId);
+    for (const currency of new Set([existing.name, existing.code])) {
+      if (workspace?.default_currency === currency) throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية.");
+      assertMasterNotReferenced(db, workspaceId, currency, ["currency", "currencyCode", "defaultCurrency"]);
+      const references = [
+        ["accounts", "currency"], ["account_groups", "currency_code"], ["cashboxes", "currency_code"],
+        ["inventory_items", "currency_code"], ["ledger_entries", "currency"], ["journal_entries", "currency"],
+        ["price_offers", "currency"], ["archived_documents", "currency_name"],
+      ];
+      if (references.some(([table, column]) => db.prepare(`SELECT 1 FROM ${table} WHERE workspace_id = ? AND ${column} = ? LIMIT 1`).get(workspaceId, currency))) {
+        throw new SqliteValidationError("العملة مرتبطة بسجلات أو مستندات محفوظة ولا يمكن حذفها.");
+      }
+    }
+    db.prepare("DELETE FROM currencies WHERE workspace_id = ? AND id = ?").run(workspaceId, currencyId);
+    writeAudit(db, workspaceId, workspaceId, "currencies", String(currencyId), "delete", { name: existing.name });
+  });
 }
 
 export function saveWorkspaceSettingsRow(
@@ -3917,7 +3934,7 @@ export function importAccountCardsRows(db: DatabaseSync, workspaceId: string, ac
     for (const row of accounts) {
       if (!row || Object.keys(row).some(k => !["name","phone","category","currency","openingBalance","openingDirection"].includes(k)) ||
           typeof row.name !== "string" || !row.name.trim() || row.name.length > 100 ||
-          typeof row.phone !== "string" || row.phone.length > 32 || !isValidCategory(row.category) ||
+          typeof row.phone !== "string" || row.phone.length > 32 || typeof row.category !== "string" || !isValidCategory(row.category) ||
           (row.openingBalance ?? 0) !== 0 || !["credit","debit"].includes(row.openingDirection ?? "")) {
         throw new SqliteValidationError("حقول بطاقة الحساب غير صالحة؛ الأرصدة الافتتاحية تحتاج قيدًا منفصلًا. لم تُحفظ الدفعة.");
       }

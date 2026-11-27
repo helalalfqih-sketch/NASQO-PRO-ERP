@@ -13305,6 +13305,7 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
   const [symbol, setSymbol] = useState("");
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<CurrencyRecord | null>(null);
 
   const currenciesList = useMemo<CurrencyRecord[]>(
     () =>
@@ -13379,8 +13380,12 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
       ctx.showToast("يرجى إدخال اسم العملة أولًا");
       return;
     }
-    const parsedSell = Math.max(0.0001, parseArabicNumber(sellRate) || 1);
-    const parsedBuy = Math.max(0.0001, parseArabicNumber(buyRate) || 1);
+    const parsedSell = parseArabicNumber(sellRate);
+    const parsedBuy = parseArabicNumber(buyRate);
+    if (!Number.isFinite(parsedSell) || parsedSell <= 0 || !Number.isFinite(parsedBuy) || parsedBuy <= 0) {
+      ctx.showToast("أدخل سعر شراء وبيع أكبر من صفر.");
+      return;
+    }
     setSaving(true);
     try {
       const targetId = isEditButton ? (editingCurrency?.id ?? selectedId ?? undefined) : editingCurrency?.id;
@@ -13413,24 +13418,12 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
       ctx.showToast("حدد عملة من الجدول أولًا");
       return;
     }
-    setSaving(true);
-    try {
-      const updated = await deleteCurrencyRecord(ctx.uid, target.id);
-      setSelectedId(updated[0]?.id ?? null);
-      resetForm();
-      triggerHaptic("success");
-      ctx.showToast(`تم حذف العملة: ${target.name}`);
-    } catch (err) {
-      triggerHaptic("warning");
-      ctx.showToast(err instanceof Error ? err.message : "لا يمكن حذف العملة الوحيدة المتبقية");
-    } finally {
-      setSaving(false);
-    }
-  }, [ctx, currenciesList, editingCurrency?.id, keyboard, resetForm, selectedId]);
+    setDeleting(target);
+  }, [ctx, currenciesList, editingCurrency?.id, keyboard, selectedId]);
 
   if (!open) return null;
 
-  return (
+  return (<>
     <div
       className="center-modal-layer"
       data-testid="currencies-modal"
@@ -13635,7 +13628,11 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
         </footer>
       </section>
     </div>
-  );
+    {deleting && <DeleteRecordDialog name={deleting.name}
+      onDelete={async () => { await deleteCurrencyRecord(ctx.uid, deleting.id); }}
+      onClose={() => setDeleting(null)}
+      onDeleted={() => { setDeleting(null); setSelectedId(null); resetForm(); ctx.showToast("تم حذف العملة"); }} />}
+  </>);
 }
 
 function QuotesListModal({ open, onClose, onLegacyDraft, onLegacyAccount }: {
