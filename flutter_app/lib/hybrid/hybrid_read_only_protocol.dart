@@ -82,9 +82,17 @@ class HybridReadOnlyProtocol {
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? legacyArchiveAction;
   static const String version = '1.0.0';
   static const int maxRequestLength = 32768;
+  // Match src/hybrid/messageLimits.ts. The small control-message limit must
+  // not silently discard valid 10,000-card imports or multi-line CRUD requests.
+  static const int maxBulkRequestLength = 16 * 1024 * 1024;
+  static int requestLengthLimit(String? action) {
+    if (action == 'importInventoryItems' || action == 'importAccountCards') return maxBulkRequestLength;
+    if (const {'saveErpRecords','batchUpdateInventoryItems','createLedgerEntry','updateLedgerEntry'}.contains(action)) return 2 * 1024 * 1024;
+    return maxRequestLength;
+  }
 
   Future<String> handle(String rawMessage) async {
-    if (rawMessage.length > maxRequestLength) {
+    if (rawMessage.length > maxBulkRequestLength) {
       return _error('', null, 'VALIDATION_ERROR', 'حجم الرسالة غير مسموح به.');
     }
 
@@ -108,6 +116,10 @@ class HybridReadOnlyProtocol {
         request['protocolVersion'] != version ||
         request['kind'] != 'request') {
       return _error(id, actionName, 'VALIDATION_ERROR', 'إصدار البروتوكول أو معرف الطلب غير صالح.');
+    }
+    if (rawMessage.length > requestLengthLimit(actionName)) {
+      // Preserve correlation so a bounded rejection reaches its caller at once.
+      return _error(id, actionName, 'VALIDATION_ERROR', 'حجم بيانات العملية يتجاوز الحد المسموح. قلّل عدد السجلات أو طول النصوص.');
     }
     if(actionName=='saveErpRecords' && saveErpRecords!=null){
       final p=request['payload'],key=request['idempotencyKey'];

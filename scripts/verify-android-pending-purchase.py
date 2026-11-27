@@ -87,8 +87,9 @@ def tap(label, field=False, scroll=False, max_y=None, activate=True):
     raise AssertionError('Visible control missing: '+label)
 
 try:
-    # catalog acceptance ended on its list; leave it before replacing CI data.
-    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    # Independent UI acceptance, including when another synthetic stage failed.
+    adb('shell', 'am', 'force-stop', package)
+    adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
     capture('before-fixture', 'فاتورة جديدة')
     adb('shell', 'am', 'force-stop', package)
     print(adb('root').decode().strip(), flush=True)

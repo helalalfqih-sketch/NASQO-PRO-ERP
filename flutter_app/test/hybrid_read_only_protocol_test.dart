@@ -24,6 +24,25 @@ Map<String, dynamic> emptySnapshot() => {
 };
 
 void main() {
+  test('large valid batches reach handlers; oversized controls retain request correlation',()async{
+    var calls=0;
+    final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),
+      manageCatalog:(action,key,p)async{calls++;return {'count':(p['items'] as List).length};},
+      saveErpRecords:(w,key,rows)async{calls++;return {'count':rows.length};});
+    Future<Map<String,dynamic>> invoke(String action,Map<String,dynamic> payload)async=>jsonDecode(await endpoint.handle(jsonEncode({
+      ...request(action,payload:payload),'idempotencyKey':'large-test-operation',
+    }))) as Map<String,dynamic>;
+    final rows=List.generate(10000,(i)=>{'name':'Synthetic card $i','unit':'حبة','sku':'000$i','sellingPrice':25});
+    final imported=await invoke('importInventoryItems',{'workspaceId':'local-erp-workspace','items':rows,'mode':'insert-only'});
+    expect(imported['ok'],true);expect(imported['data']['count'],10000);
+    final erp=await invoke('saveErpRecords',{'workspaceId':'local-erp-workspace','changes':[{'note':'x'*40000}]});
+    expect(erp['ok'],true);
+    final oversized=await invoke('getSnapshot',{'note':'x'*40000});
+    expect(oversized['ok'],false);expect(oversized['requestId'],'test-1');expect(oversized['action'],'getSnapshot');
+    expect(calls,2);
+    final hardLimit=jsonDecode(await endpoint.handle('x'*(HybridReadOnlyProtocol.maxBulkRequestLength+1)));
+    expect(hardLimit['ok'],false);expect(calls,2);
+  });
   test('native cloud bridge restricts identity, Drive actions and local tools',()async{
     final called=<String>[];
     final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),

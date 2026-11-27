@@ -81,12 +81,19 @@ assert not any('FATAL EXCEPTION' in line for line in app_lines), 'App runtime cr
 assert not re.search(r'Process: com\.indexesstore\.nasqo_pro_erp(?=[:,\s])',log), 'App or child-process crash'
 (p/'result.json').write_text(json.dumps({'result':'PASS','package':'com.indexesstore.nasqo_pro_erp','oldCode':1138,'newCode':int(field(new,'versionCode')),'uidRetained':True,'method':'adb install -r; no uninstall or clear','scope':'Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow.'},indent=2))
 PY
+CHECKS_FAILED=0
 if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
-  python3 scripts/verify-android-navigation.py
-  python3 scripts/verify-android-catalog.py
-  python3 scripts/verify-android-large-import.py
-  python3 scripts/verify-android-crud.py
+  python3 scripts/verify-android-navigation.py || CHECKS_FAILED=1
+  adb shell am force-stop "$PKG"
+  adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
+  python3 scripts/verify-android-catalog.py || CHECKS_FAILED=1
+  # These checks establish their own starting state on this synthetic device.
+  # Collect every result, but fail the job if any stage fails.
+  python3 scripts/verify-android-large-import.py || CHECKS_FAILED=1
+  python3 scripts/verify-android-crud.py || CHECKS_FAILED=1
 fi
 if [[ "${NASQO_ANDROID_PENDING_PURCHASE:-false}" == true ]]; then
-  python3 scripts/verify-android-pending-purchase.py
+  python3 scripts/verify-android-pending-purchase.py || CHECKS_FAILED=1
 fi
+adb logcat -d -t 1000 -s NASQO_LIFECYCLE:I AndroidRuntime:E flutter:E > upgrade-evidence/final-log.txt
+exit "$CHECKS_FAILED"

@@ -37,6 +37,21 @@ void main() {
     final local = LocalDatabase.instance, db = await local.database;
     final stock = LocalStockCatalog(local), accounts = LocalAccountCommands(local), backup = LocalBackupRestore(local);
     const w = 'local-erp-workspace';
+    final protocol = HybridReadOnlyProtocol(readSnapshot: () async => {}, manageCatalog: (action,key,payload) async {
+      final result = action == 'importInventoryItems'
+        ? await stock.importItems(w,key,payload['items'] as List<dynamic>,payload['mode'] as String)
+        : await accounts.importCards(w,key,payload['accounts'] as List<dynamic>);
+      return {...result,'snapshot':await HybridLocalSnapshotAdapter.readFromDevice()};
+    });
+    Future<Map<String,dynamic>> throughBridge(String action,String key,List<dynamic> rows) async {
+      final raw = jsonEncode({'protocolVersion':'1.0.0','kind':'request','requestId':'request-$key','action':action,'idempotencyKey':key,
+        'payload':{'workspaceId':w,if(action=='importInventoryItems') ...{'items':rows,'mode':'insert-only'} else 'accounts':rows}});
+      expect(raw.length,greaterThan(HybridReadOnlyProtocol.maxRequestLength));
+      final response=jsonDecode(await protocol.handle(raw)) as Map<String,dynamic>;
+      expect(response['requestId'],'request-$key');
+      expect(response['ok'],true,reason:jsonEncode(response['error']));
+      return response['data'] as Map<String,dynamic>;
+    }
     final item = <String,dynamic>{'name':'صنف اصطناعي','unit':'حبة','sku':'000123','catalogReferenceCost':17.5,'sellingPrice':25,'currencyCode':'ريال','isActive':false,'unit2':'علبة','count2':10,'defaultUnit':1,'expiryDate':'2027-01-20'};
     final account = <String,dynamic>{'name':'شركة، فرع\nالمدينة','phone':'001234','category':'clients','currency':'ريال','openingBalance':0,'openingDirection':'credit'};
     try {
@@ -80,7 +95,7 @@ void main() {
       // The app's own inventory report can contain more than 2000 locations.
       // A large import is still one transaction and never changes live stock.
       final large=List.generate(3000,(i)=><String,dynamic>{...item,'name':'Large card $i','sku':'000large$i'});
-      expect((await stock.importItems(w,'large-cards',large,'insert-only'))['inserted'],3000);
+      expect((await throughBridge('importInventoryItems','large-cards',large))['inserted'],3000);
       Map<String,dynamic> dataTables(List<int> bytes) {
         final root=jsonDecode(utf8.decode(bytes));
         final tables=jsonDecode(root['payload'] as String)['tables'] as Map<String,dynamic>;
@@ -89,7 +104,7 @@ void main() {
         return tables;
       }
       final beforeRepeat=dataTables(await backup.exportNative());
-      expect((await stock.importItems(w,'large-cards-repeat',large,'insert-only'))['skipped'],3000);
+      expect((await throughBridge('importInventoryItems','large-cards-repeat',large))['skipped'],3000);
       expect(dataTables(await backup.exportNative()),beforeRepeat);
       final beforeInvalid=await backup.exportNative();
       expect((await db.query('inventory_items',where:'id = ?',whereArgs:[live['id']])).single,preserved.single);
@@ -97,9 +112,9 @@ void main() {
       await expectLater(stock.importItems(w,'large-final-invalid',invalidLarge,'insert-only'),throwsArgumentError);
       expect(await backup.exportNative(),orderedEquals(beforeInvalid));
       final largeAccounts=List.generate(2501,(i)=><String,dynamic>{...account,'name':'Large account $i','phone':'000$i'});
-      expect((await accounts.importCards(w,'large-accounts',largeAccounts))['inserted'],2501);
+      expect((await throughBridge('importAccountCards','large-accounts',largeAccounts))['inserted'],2501);
       final accountSnapshot=dataTables(await backup.exportNative());
-      expect((await accounts.importCards(w,'large-accounts-repeat',largeAccounts))['skipped'],2501);
+      expect((await throughBridge('importAccountCards','large-accounts-repeat',largeAccounts))['skipped'],2501);
       expect(dataTables(await backup.exportNative()),accountSnapshot);
       expect(await db.query('stock_movements'),isEmpty);expect(await db.query('ledger_entries'),isEmpty);
     } finally { await db.close(); await dir.delete(recursive:true); }

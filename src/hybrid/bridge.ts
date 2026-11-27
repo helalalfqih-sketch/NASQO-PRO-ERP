@@ -14,6 +14,7 @@ import {
   type HybridRequestEnvelope,
   type HybridResponseEnvelope,
 } from "./contracts";
+import { hybridRequestLengthLimit } from "./messageLimits";
 
 export class HybridBridgeError extends Error {
   readonly code: HybridErrorPayload["code"];
@@ -241,6 +242,10 @@ export class NasqoHybridBridge {
     if (!validation.valid) {
       throw new HybridBridgeError("VALIDATION_ERROR", validation.reason, false);
     }
+    const serialized = JSON.stringify(envelope);
+    if (serialized.length > hybridRequestLengthLimit(action)) {
+      throw new HybridBridgeError("VALIDATION_ERROR", "حجم بيانات العملية يتجاوز الحد المسموح. قلّل عدد السجلات أو طول النصوص ثم أعد المحاولة.");
+    }
 
     const transport = this.resolveTransport();
     if (!transport) {
@@ -286,7 +291,7 @@ export class NasqoHybridBridge {
       });
 
       try {
-        transport.postMessage(JSON.stringify(envelope));
+        transport.postMessage(serialized);
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(requestId);

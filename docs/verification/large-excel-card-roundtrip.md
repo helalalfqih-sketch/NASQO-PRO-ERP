@@ -17,3 +17,9 @@ Validation used synthetic data; the screenshot's actual workbook was not attache
 Signed Android verification and delivery are recorded after the CI candidate completes.
 
 The first signed candidate (run 173) exposed a real-device timeout at 3000 rows and was withheld. The native insert-only paths were then changed to one validated transaction batch with preloaded identity indexes, preserving per-row validation, all-or-nothing rollback and duplicate skipping. The 10000-row native SQLite test passed in about 15 seconds locally; the next signed candidate must pass the real Android picker/import/reimport check before publication.
+
+## Android transport acceptance
+
+The signed Android check exposed an independent 32 KiB native bridge envelope limit: valid card batches were rejected before their request ID was read, so the UI timed out without a correlated response. The corrected transport uses matching, bounded action budgets in JavaScript and Dart (16 Mi UTF-16 code units for card batches, 2 Mi for structured CRUD/documents, 32 Ki for controls). Row/field validation and atomic SQLite transactions still apply. The client rejects oversized requests before sending; bounded native rejections retain their request ID.
+
+Regression checks send 3,000 cards and 2,501 accounts through the real Dart protocol into SQLite, including repeated import and refreshed snapshots. Transport tests cover 10,000-card envelopes and immediate oversized-request rejection. Android candidates 1.0.173 and 1.0.175 were withheld after the live checks failed; neither is approved for publication.
