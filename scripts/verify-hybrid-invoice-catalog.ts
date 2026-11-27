@@ -15,11 +15,16 @@ const baseline = process.env.NASQO_EXPECT_BASELINE === "1";
 const evidence = path.resolve(process.env.NASQO_ACCEPTANCE_OUT || path.join(root, "deliverables/invoice-catalog-fix", baseline ? "baseline" : "browser"));
 fs.mkdirSync(evidence, { recursive: true });
 const snapshot = createHybridHomeFixtureSnapshot();
+snapshot.warehouses.push({id:"wh_empty",ownerId:snapshot.workspaceId,name:"مخزن بلا رصيد",details:"",isDefault:false});
 snapshot.workspace!.companyName = "اختبار اصطناعي — ملف الأصناف والفاتورة";
 snapshot.workspace!.whatsappPhone = "";
 snapshot.accounts.forEach((account, index) => { account.name = `حساب اصطناعي ${index + 1}`; account.phone = ""; });
 snapshot.ledger = [];
 snapshot.inventory = [
+  {id:"warehouse-family",ownerId:snapshot.workspaceId,name:"صنف متعدد المخازن للاختبار",sku:"SYNTH-WAREHOUSE",warehouseId:"wh_branch",unit:"حبة",unit2:"كرتون",count2:6,quantity:4,avgCost:10,sellingPrice:15},
+  {id:"warehouse-family-main",ownerId:snapshot.workspaceId,name:"صنف متعدد المخازن للاختبار",sku:"SYNTH-WAREHOUSE",warehouseId:"wh_main",unit:"حبة",unit2:"كرتون",count2:6,quantity:9,avgCost:11,sellingPrice:15,legacySourceItemId:"warehouse-family"},
+  {id:"unit-family",ownerId:snapshot.workspaceId,name:"صنف بوحدات مختلفة للاختبار",sku:"SYNTH-UNIT",warehouseId:"wh_branch",unit:"حبة",unit2:"كرتون",count2:6,quantity:40,avgCost:10,sellingPrice:15},
+  {id:"unit-family-main",ownerId:snapshot.workspaceId,name:"صنف بوحدات مختلفة للاختبار",sku:"SYNTH-UNIT",warehouseId:"wh_main",unit:"حبة",unit2:"كرتون",count2:12,quantity:90,avgCost:11,sellingPrice:15,catalogSourceItemId:"unit-family"},
   ...[3,5].map((quantity,index)=>({id:`synthetic-cost-pending-${index}`,ownerId:snapshot.workspaceId,name:`رصيد قديم اصطناعي ${index+1}`,
     warehouseId:"wh_main",unit:"حبة",quantity,avgCost:0,sellingPrice:6000,quantityUnverified:false,costUnverified:true,approvedStockValue:0,legacyCatalogCost:0})),
   {id:"synthetic-catalog-only",ownerId:snapshot.workspaceId,name:"بطاقة جديدة اصطناعية",unit:"حبة",warehouseId:"",quantity:0,avgCost:0,catalogOnly:true},
@@ -134,6 +139,7 @@ const noSideEffects = async (allowReceipt = false) => {
   assert.deepEqual(await page.evaluate(() => (window as any).__catalogState.inventory), snapshot.inventory, "No fixture stock quantities or approval flags may change");
 };
 const run = async (name: string, action: () => Promise<void>, allowReceipt = false) => {
+  if (process.env.NASQO_INVOICE_WAREHOUSE_ONLY === "1" && !name.startsWith("warehouse-")) return;
   try {
     await fresh(); await action(); if (!baseline) await noSideEffects(allowReceipt);
     fs.writeFileSync(path.join(evidence, `${name}-commands.json`), JSON.stringify(await commands(), null, 2));
@@ -153,6 +159,54 @@ try {
       console.log("REPRODUCED: released 1.0.121 requests native reconciliation and leaves invoice line empty; no Android UI was opened by this synthetic host.");
     });
   } else {
+    await run("warehouse-sale-mismatch-shows-existing-stock-and-can-be-corrected",async()=>{
+      await openInvoice();await page.getByLabel("فاتورة بيع",{exact:true}).check();
+      await page.getByTestId("invoice-item-search").fill("TEST-OTHER");
+      const option=page.getByRole("listbox",{name:"نتائج الأصناف"}).getByRole("option");
+      await expect(option).toContainText("لا يوجد رصيد للصنف في «المخزن الرئيسي»");
+      await expect(option).toContainText("مخزن المعرض (3 حبة)");
+      await page.screenshot({path:path.join(evidence,"warehouse-stock-guidance.png")});
+      await option.click();
+      await page.getByTestId("invoice-save-btn").click();
+      await expect(page.getByTestId("invoice-validation-error")).toContainText("مخزن المعرض");
+      await noSideEffects();
+      await page.getByLabel("مخزن الفاتورة",{exact:true}).selectOption("wh_branch");
+      await expect(page.getByTestId("invoice-validation-error")).toHaveCount(0);
+      await expect(page.locator(".invoice-erp-stock-meta")).toContainText("كمية المخزن: 3");
+      await page.evaluate(()=>{(window as any).__allowOneSyntheticReceipt=true;});
+      await page.getByTestId("invoice-save-btn").click();await expect(page.getByTestId("invoice-modal")).toHaveCount(0);
+      const posted=(await commands()).find(c=>c.action==="createLedgerEntry")!.payload.payload;
+      assert.equal(posted.warehouseId,"wh_branch");assert.equal(posted.lines[0].inventoryItemId,"synthetic-other-warehouse");
+    },true);
+    await run("warehouse-change-rebinds-existing-family-and-keeps-entered-sale-values",async()=>{
+      await openInvoice();await page.getByLabel("فاتورة بيع",{exact:true}).check();await selectItem("صنف متعدد المخازن للاختبار");
+      await page.getByLabel("كمية السطر 1",{exact:true}).fill("2");
+      await page.getByLabel("سعر السطر 1",{exact:true}).fill("17");
+      await expect(page.locator(".invoice-erp-stock-meta")).toContainText("كمية المخزن: 9");
+      await page.getByLabel("مخزن الفاتورة",{exact:true}).selectOption("wh_branch");
+      await expect(page.locator(".invoice-erp-stock-meta")).toContainText("كمية المخزن: 4");
+      await page.getByLabel("مخزن الفاتورة",{exact:true}).selectOption("wh_empty");
+      await page.getByTestId("invoice-save-btn").click();await expect(page.getByTestId("invoice-validation-error")).toContainText("مخزن بلا رصيد");
+      await noSideEffects();
+      await page.getByLabel("مخزن الفاتورة",{exact:true}).selectOption("wh_branch");
+      await expect(page.locator(".invoice-erp-stock-meta")).toContainText("كمية المخزن: 4");
+      await expect(page.getByLabel("كمية السطر 1",{exact:true})).toHaveValue("2");
+      await expect(page.getByLabel("سعر السطر 1",{exact:true})).toHaveValue("17");
+      await page.screenshot({path:path.join(evidence,"warehouse-correct-sale-balance.png")});
+      await page.evaluate(()=>{(window as any).__allowOneSyntheticReceipt=true;});
+      await page.getByTestId("invoice-save-btn").click();await expect(page.getByTestId("invoice-modal")).toHaveCount(0);
+      const posted=(await commands()).find(c=>c.action==="createLedgerEntry")!.payload.payload;
+      assert.equal(posted.warehouseId,"wh_branch");assert.equal(posted.lines[0].inventoryItemId,"warehouse-family");
+      assert.equal(posted.lines[0].quantity,2);assert.equal(posted.lines[0].price,17);assert.equal(posted.amount,34);
+    },true);
+    await run("warehouse-change-does-not-reinterpret-a-carton-with-a-different-factor",async()=>{
+      await openInvoice();await page.getByLabel("فاتورة بيع",{exact:true}).check();await selectItem("صنف بوحدات مختلفة للاختبار");
+      await page.getByLabel("وحدة السطر 1",{exact:true}).selectOption("2");
+      await page.getByLabel("مخزن الفاتورة",{exact:true}).selectOption("wh_branch");
+      await page.getByTestId("invoice-save-btn").click();
+      await expect(page.getByTestId("invoice-validation-error")).toContainText("احذف هذا السطر");
+      await expect(page.getByLabel("وحدة السطر 1",{exact:true})).toHaveValue("2");
+    });
     await run("pending-cost-purchase-uses-recorded-prices-and-submits-two-lines",async()=>{
       await openInvoice();await selectItem("رصيد قديم اصطناعي 1");await selectItem("رصيد قديم اصطناعي 2");
       await expect(page.getByLabel("سعر السطر 1",{exact:true})).toHaveValue("5000");
@@ -204,7 +258,7 @@ try {
       await page.screenshot({ path: path.join(evidence, "imported-item-draft-restored.png") });
     });
     await run("other-warehouse-item-is-selectable-but-save-validates-inside-invoice", async () => {
-      await openInvoice(); await selectItem("صنف مخزن آخر اصطناعي");
+      await openInvoice(); await page.getByLabel("فاتورة بيع",{exact:true}).check(); await selectItem("صنف مخزن آخر اصطناعي");
       await expect(page.getByLabel("اسم الصنف للسطر 1", { exact: true })).toHaveValue("صنف مخزن آخر اصطناعي");
       await page.getByTestId("invoice-save-btn").click();
       await expect(page.getByTestId("invoice-validation-error")).toContainText(/مخزن|المخزن/);

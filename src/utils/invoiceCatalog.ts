@@ -1,6 +1,32 @@
 import { matchesArabicSearch, normalizeArabicSearch } from "../accounting";
 import type { InventoryItemRecord } from "../types";
 
+function familyId(item: InventoryItemRecord): string {
+  return item.catalogSourceItemId || item.legacySourceItemId || item.id;
+}
+
+/** Resolve an existing balance only; never create a location or move stock. */
+export function invoiceItemAtWarehouse(
+  inventory: readonly InventoryItemRecord[], item: InventoryItemRecord, warehouseId: string, hybridLocal: boolean,
+): InventoryItemRecord {
+  if (!hybridLocal || !warehouseId) return item;
+  const matches = inventory.filter(candidate => candidate.warehouseId === warehouseId && familyId(candidate) === familyId(item));
+  return matches.find(candidate => !candidate.quantityUnverified) ?? matches[0] ?? item;
+}
+
+export function invoiceItemStockLocations(inventory: readonly InventoryItemRecord[], item: InventoryItemRecord): InventoryItemRecord[] {
+  return inventory.filter(candidate => familyId(candidate) === familyId(item) && candidate.warehouseId &&
+    candidate.quantity > 0 && !candidate.quantityUnverified && !candidate.costUnverified && candidate.isActive !== false);
+}
+
+/** A warehouse change must not silently change the selected unit's meaning. */
+export function invoiceUnitMatches(a: InventoryItemRecord, b: InventoryItemRecord, unitNum: 1 | 2 | 3): boolean {
+  if ((a.unit || "حبة") !== (b.unit || "حبة")) return false;
+  if (unitNum === 1) return true;
+  if (!a.unit2 || a.unit2 !== b.unit2 || !a.count2 || a.count2 <= 0 || a.count2 !== b.count2) return false;
+  return unitNum === 2 || Boolean(a.unit3 && a.unit3 === b.unit3 && a.count3 && a.count3 > 0 && a.count3 === b.count3);
+}
+
 /** Catalog lookup only: returns existing records and never approves or changes stock. */
 export function findInvoiceCatalogItems(
   inventory: readonly InventoryItemRecord[], query: string, warehouseId: string, hybridLocal: boolean,
@@ -11,7 +37,7 @@ export function findInvoiceCatalogItems(
   for (const item of inventory) {
     // Imported warehouse balances can have distinct operational IDs. Only an
     // explicit source link joins them; matching names/SKUs do not imply identity.
-    const family = hybridLocal ? item.catalogSourceItemId || item.legacySourceItemId || item.id : item.id;
+    const family = hybridLocal ? familyId(item) : item.id;
     const variants = families.get(family) ?? [];
     variants.push(item);
     families.set(family, variants);

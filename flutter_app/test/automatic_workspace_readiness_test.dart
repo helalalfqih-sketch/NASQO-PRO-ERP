@@ -110,8 +110,19 @@ void main() {
       snap =
           await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse: true);
       expect((snap['inventory'] as List).last['catalogSourceItemId'], 'fresh');
+      final beforeMismatch = await backups.exportNative();
+      await expectLater(() async => commands.post(w, 'wrong-location-sale',
+          await roles.resolve(invoice('wrong-location-sale', 4, 'fresh', 'second', true, 1, 9))), throwsA(isA<StateError>()));
+      expect(await backups.exportNative(), orderedEquals(beforeMismatch),
+          reason: 'Wrong warehouse must not sell another warehouse stock or leave partial entries');
+      final locationId = locations[1]['id'] as String;
+      final sale = await roles.resolve(invoice('location-sale', 4, locationId, 'second', true, 1, 9));
+      await commands.post(w, 'location-sale', sale);
+      await commands.post(w, 'location-sale', sale);
+      expect((await db.query('inventory_items', where: 'id = ?', whereArgs: [locationId])).single['quantity'], 1);
+      expect((await db.query('inventory_items', where: 'id = ?', whereArgs: ['fresh'])).single['quantity'], 8);
       await db.insert('inventory_items',{'id':'large','name':'Large balance','unit':'piece','quantity':9000000,'avgCost':900,'warehouseId':wh,'minThreshold':0,'sku':''});
-      await commands.post(w,'large-sale',await roles.resolve(invoice('large-sale',4,'large',wh,true,1,1000)));
+      await commands.post(w,'large-sale',await roles.resolve(invoice('large-sale',5,'large',wh,true,1,1000)));
       expect((await db.query('inventory_items',where:'id = ?',whereArgs:['large'])).single['quantity'],8999999);
       final first = await backups.exportNative();
       await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse: true);

@@ -117,7 +117,7 @@ import {
   computeInvoiceLineNet,
   stepInvoiceQuantity,
 } from "./utils/invoiceGridUtils";
-import { findInvoiceCatalogItems } from "./utils/invoiceCatalog";
+import { findInvoiceCatalogItems, invoiceItemAtWarehouse, invoiceItemStockLocations, invoiceUnitMatches } from "./utils/invoiceCatalog";
 import { getCatalogReferenceCost, approvedInventoryValue } from "./utils/catalogCosts";
 import {
   countActiveFilters,
@@ -6609,6 +6609,24 @@ function InvoiceModal({
     return findInvoiceCatalogItems(ctx.inventory, itemSearch, warehouseId, hybridLocal);
   }, [ctx.inventory, itemSearch, open, warehouseId, hybridLocal]);
 
+  const chooseWarehouse = (nextWarehouseId: string) => {
+    setWarehouseId(nextWarehouseId);
+    setFormError(null);
+    setPriceHint(null);
+    if (!hybridLocal || (editingEntry && !localDraft) || isReturn) return;
+    setRows(current => current.map(row => {
+      const item = row.inventoryItemId ? inventoryById.get(row.inventoryItemId) : undefined;
+      if (!item) return row;
+      const next = invoiceItemAtWarehouse(ctx.inventory, item, nextWarehouseId, true);
+      // Keep entered quantities, prices and discounts. Only an explicit family
+      // link and an unchanged unit definition allow a different stock record.
+      return next.id !== item.id && invoiceUnitMatches(item, next, row.unitNum ?? 1)
+        ? { ...row, inventoryItemId: next.id, itemCode: next.legacyId ? String(next.legacyId) : next.id,
+            sku: next.sku ?? "", priceLookupKey: undefined }
+        : { ...row, priceLookupKey: undefined };
+    }));
+  };
+
   const parsedLegacyRows = useMemo<DraftInvoiceRow[]>(() => {
     if (!open) return [];
     const sourceText = editingEntry?.details || note || "";
@@ -6719,9 +6737,21 @@ function InvoiceModal({
   const invoiceStockQty = (item: InventoryItemRecord) => hybridLocal
     ? (newCatalogCard(item) || (kind === "purchase" && item.warehouseId !== warehouseId && !historicalStockPending(item)) ? 0 : historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
     : (item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0));
-  const invoiceStockStatus = (item: InventoryItemRecord) =>
-    historicalStockPending(item) ? "رصيد المخزن غير معتمد" : "الصنف غير مرتبط بالمخزن المحدد";
-  const pickProductIntoInvoice = (item: InventoryItemRecord) => {
+  const invoiceStockStatus = (item: InventoryItemRecord) => {
+    if (!warehouseId) return "اختر مخزن الفاتورة لعرض الرصيد";
+    if (historicalStockPending(item)) return "رصيد المخزن غير معتمد";
+    const available = invoiceItemStockLocations(ctx.inventory, item).map(location => {
+      const warehouse = ctx.warehouses.find(w => w.id === location.warehouseId);
+      return warehouse ? `${warehouse.name.trim()} (${formatQuantity(location.quantity)} ${location.unit || "حبة"})` : "";
+    }).filter(Boolean);
+    const name = ctx.warehouses.find(w => w.id === warehouseId)?.name.trim();
+    const selected = invoiceItemAtWarehouse(ctx.inventory, item, warehouseId, hybridLocal);
+    if (selected.warehouseId === warehouseId && selected.id !== item.id)
+      return `احذف هذا السطر وأضف الصنف مجددًا بوحدته في مخزن «${name ?? "الفاتورة"}»`;
+    return `لا يوجد رصيد للصنف في «${name ?? "مخزن الفاتورة"}»${available.length ? ` · متوفر في: ${available.join("، ")}` : ""}`;
+  };
+  const pickProductIntoInvoice = (selectedItem: InventoryItemRecord) => {
+    const item = invoiceItemAtWarehouse(ctx.inventory, selectedItem, warehouseId, hybridLocal);
     keyboard.hide();
     setFormError(null);
     const defUnit: 1 | 2 | 3 =
@@ -6981,7 +7011,7 @@ function InvoiceModal({
             ? `رصيد الصنف «${item.name}» غير معتمد للمخزن المحدد؛ لم يُرحّل أي قيد أو حركة مخزون.`
             : !localDraft && item.costUnverified
               ? `كمية الصنف «${item.name}» معتمدة؛ التكلفة غير معتمدة بعد، ولم يُرحّل أي قيد أو حركة مخزون.`
-            : `الصنف «${item.name}» غير مرتبط بالمخزن المحدد. اختر مخزنه الصحيح أو أعد اختيار الصنف لهذا المخزن قبل الحفظ.`;
+            : `الصنف «${item.name}»: ${invoiceStockStatus(item)}. اختر المخزن الذي ستبيع منه أعلى الفاتورة.`;
         setFormError({ field: "submit", message: `${reason} بقيت الفاتورة مفتوحة ويمكنك حفظ مسودة دون ترحيل.` });
         keyboard.hide();
         requestAnimationFrame(() => invoiceErrorRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
@@ -7437,7 +7467,7 @@ function InvoiceModal({
               <select
                 aria-label="مخزن الفاتورة"
                 value={warehouseId}
-                onChange={(e) => setWarehouseId(e.target.value)}
+                onChange={(e) => chooseWarehouse(e.target.value)}
               >
                 <option value="">غير محدد</option>
                 {ctx.warehouses.map((w) => (
