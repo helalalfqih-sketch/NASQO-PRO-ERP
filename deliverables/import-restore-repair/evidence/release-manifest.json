@@ -1,0 +1,37 @@
+{
+  "version": "1.0.163",
+  "versionCode": 1163,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "appName": "نسقو برو",
+  "sourceCommit": "207dde6a2739df53855c15890884416a3246a9ea",
+  "branch": "agent/google-play-internal",
+  "minSdk": 24,
+  "targetSdk": 36,
+  "signingSha256": "64:9B:56:06:1F:95:08:67:AD:56:24:02:36:77:87:E1:8A:76:FA:5A:59:61:AD:45:28:5F:38:4E:BC:C7:91:97",
+  "signedBuildRun": 46010364174,
+  "signedAndroid36Result": "PASS",
+  "googlePlayUpload": "NOT_UPLOADED_BROWSER_CONNECTION_UNAVAILABLE",
+  "debugAndroid35Run": 46011652165,
+  "debugAndroid35Result": "PASS",
+  "artifacts": {
+    "apk": {
+      "file": "NASQO-PRO-ERP-1.0.163.apk",
+      "sizeBytes": 59688545,
+      "sha256": "b71e7cd141e438a2156cd82412d197659b195829215ba57b19292be61b16b937"
+    },
+    "aab": {
+      "file": "NASQO-PRO-ERP-1.0.163.aab",
+      "sizeBytes": 30129720,
+      "sha256": "663a42dc817397b9974ea01c213d4476317a365479ec20c93f808df0cc2cec29"
+    }
+  },
+  "debugAndroid35TestCommit": "39b24466cc7e17d8a399341f66b884e9ce519bf9",
+  "debugAndroid35AppChangesSinceSignedSource": [],
+  "localChecks": {
+    "nodeTests": 32,
+    "flutterSelectedTests": 101,
+    "uiScenarios": 7,
+    "protectedRuntimeFiles": 28,
+    "webRestoreUiApi": "PASS"
+  }
+}
