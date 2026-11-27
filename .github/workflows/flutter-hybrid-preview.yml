@@ -398,6 +398,14 @@ jobs:
         run: |
           test "$OTHER_ACTIONS" = false
           [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+      - name: Require capture-only source artifact
+        if: inputs.store_screenshots == true
+        env:
+          SOURCE_RUN: ${{ inputs.verify_existing_run }}
+          PUBLISH: ${{ inputs.publish_verified_candidate }}
+        run: |
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          test "$PUBLISH" = false
       - uses: actions/download-artifact@v4
         with:
           name: nasqo-signed-preview
@@ -439,14 +447,7 @@ jobs:
           profile: pixel_5
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
-          script: |
-            if [[ '${{ inputs.store_screenshots }}' == true ]]; then
-              test -n '${{ inputs.verify_existing_run }}'
-              test '${{ inputs.publish_verified_candidate }}' != true
-              python3 scripts/capture-android-store.py
-            else
-              bash scripts/verify-android-release-upgrade.sh
-            fi
+          script: ${{ inputs.store_screenshots == true && 'python3 scripts/capture-android-store.py' || 'bash scripts/verify-android-release-upgrade.sh' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
