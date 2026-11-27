@@ -49,17 +49,22 @@ def read():
 def text(n):
     return ' '.join(n.get(k, '') for k in ('text', 'content-desc', 'hint'))
 
-def capture(stage, required, absent=''):
+def capture(stage, required, absent='', ready=None):
     print('Purchase stage:', stage, flush=True)
     for _ in range(12):
         root = read()
         labels = [text(n) for n in root.iter('node')]
-        if any(required in x for x in labels) and not (absent and any(absent in x for x in labels)):
+        if any(required in x for x in labels) and not (absent and any(absent in x for x in labels)) and (ready is None or ready(root)):
             (out/f'purchase-{stage}.xml').write_bytes(ET.tostring(root, encoding='utf-8'))
             (out/f'purchase-{stage}.png').write_bytes(adb('exec-out', 'screencap', '-p'))
             return root
         time.sleep(1)
     raise AssertionError('Purchase did not reach '+stage)
+
+def selected_line_ready(root, name):
+    search = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and n.get('hint') == 'بحث عن صنف أو باركود']
+    line = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and n.get('text') == name and n.get('hint', '').startswith('اسم الصنف للسطر')]
+    return len(search) == 1 and not search[0].get('text') and len(line) == 1
 
 def tap(label, field=False, scroll=False, max_y=None, activate=True):
     print('Tap:', label, flush=True)
@@ -133,8 +138,7 @@ try:
         adb('shell', 'input', 'keyevent', *(['KEYCODE_DEL']*24))
         adb('shell', 'input', 'text', name.replace(' ', '%s'))
         tap(name, max_y=size[1]*3//4)
-        time.sleep(0.3)
-        root = capture('selected-'+name[-1], name)
+        root = capture('selected-'+name[-1], name, ready=lambda root: selected_line_ready(root, name))
         search = [n for n in root.iter('node') if n.get('hint') == 'بحث عن صنف أو باركود']
         assert len(search) == 1 and not search[0].get('text'), 'Selection must clear the item search'
     tap('سعر السطر 2', field=True, scroll=True, max_y=size[1]*3//4, activate=False)
