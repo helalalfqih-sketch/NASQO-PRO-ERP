@@ -43,6 +43,17 @@ class LocalMasterCatalog {
     return id+1;
   }
 
+  // Deleted identities must never be assigned to a different future record.
+  static Future<int> allocateId(Transaction t,String collection,List<Map<String,dynamic>> rows)async{
+    final key='master-sequence:$collection';
+    final saved=await t.query('erp_state',where:'stateKey = ?',whereArgs:[key]);
+    final last=saved.isEmpty?0:(jsonDecode(saved.single['payloadJson'] as String)['lastId'] as int);
+    final fromRows=nextId(rows),id=last>=fromRows?last+1:fromRows;
+    if(id>=2147483647)throw StateError('Catalog identity limit');
+    await t.insert('erp_state',{'stateKey':key,'payloadJson':jsonEncode({'lastId':id}),'updatedAt':DateTime.now().toUtc().toIso8601String()},conflictAlgorithm:ConflictAlgorithm.replace);
+    return id;
+  }
+
   static String name(Map<String,dynamic> input,String field,int max){
     final value=LocalDocumentCommands.field(input,field,max).trim();
     if(value.isEmpty)throw ArgumentError('Name is required');
@@ -70,7 +81,7 @@ class LocalMasterCatalog {
       if(id!=null&&index<0)throw StateError('الصندوق غير موجود');
       if(index>=0&&rows[index]['currencyCode']!=currency)throw StateError('عملة الصندوق محفوظة ولا تتغير');
       if(rows.any((r)=>r['id']!=id&&r['name']==title))throw StateError('اسم الصندوق موجود');
-      final actualId=id??nextId(rows),roleKey='cashbox:${id??nextId(rows)}';
+      final actualId=id??await allocateId(t,'cashboxes',rows),roleKey='cashbox:$actualId';
       final roles=await LocalInvoiceRoles.read(t);final selected=Map<String,dynamic>.from(roles[code] as Map? ?? {});
       final account=requestedAccount is String&&requestedAccount.isNotEmpty?requestedAccount:selected[roleKey]??await AutomaticPostingSetup.account(t,code,roleKey,'حساب $title',cash:true);
       if((await t.query('accounts',where:'id = ? AND currency = ? AND isCashAccount = 1',whereArgs:[account,code])).length!=1)throw StateError('اختر حساب صندوق محلي من نفس العملة');
@@ -101,7 +112,7 @@ class LocalMasterCatalog {
         if(index>=0&&(groups[index]['category']!=category||groups[index]['currencyCode']!=currency))
           throw StateError('Group classification and currency cannot be changed after creation');
         final row=<String,dynamic>{if(index>=0)...groups[index],
-          'id':id??nextId(groups),'name':title,'category':category,'currencyCode':currency,
+          'id':id??await allocateId(t,'accountGroups',groups),'name':title,'category':category,'currencyCode':currency,
           'sortOrder':sort??(index>=0?groups[index]['sortOrder']??index+1:nextId(groups)),
           'hasBill':index>=0?groups[index]['hasBill']??false:false,
           'isEmployee':category=='employees'};
@@ -130,7 +141,7 @@ class LocalMasterCatalog {
         if(index>=0&&currencies[index]['name']!=title)throw StateError('Currency name is a financial identity');
         if(currencies.any((c)=>c['id']!=id&&c['name']==title))throw ArgumentError('Duplicate currency');
         final row=<String,dynamic>{if(index>=0)...currencies[index],
-          'id':id??nextId(currencies),'name':title,'code':index>=0?currencies[index]['code']??title:title,
+          'id':id??await allocateId(t,'currencies',currencies),'name':title,'code':index>=0?currencies[index]['code']??title:title,
           'symbol':symbol,'nameSecondary':secondary,'ratePrimary':rate1,'rateSecondary':rate2};
         if(index<0){currencies.add(row);}else{currencies[index]=row;}
         await write(t,'currencies',currencies);
@@ -167,6 +178,7 @@ class LocalMasterCatalog {
           final row=jsonDecode(r['row_json'] as String) as Map;
           if(row['currencyCode']==title||row['currency']==title)throw StateError('Currency is used in historical data');
         }
+        await allocateId(t,'currencies',currencies);
         currencies.removeAt(index);
         await write(t,'currencies',currencies);
         return {'id':id};
@@ -236,6 +248,7 @@ class LocalMasterCatalog {
         for(final currency in roles.values){if(currency is Map)currency.remove('cashbox:$id');}
         await t.update('erp_state',{'payloadJson':jsonEncode(roles),'updatedAt':DateTime.now().toUtc().toIso8601String()},where:'stateKey = ?',whereArgs:[LocalInvoiceRoles.stateKey]);
       }
+      await allocateId(t,collection,rows);
       rows.removeAt(index);await write(t,collection,rows);return {'deleted':true};
     });
   }
