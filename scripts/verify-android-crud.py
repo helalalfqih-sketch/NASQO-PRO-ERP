@@ -38,7 +38,10 @@ def capture(stage, required, absent=''):
     for _ in range(15):
         root = read()
         labels = [label(n) for n in root.iter('node')]
-        if any(required in v for v in labels) and not (absent and any(absent in v for v in labels)):
+        # The explanatory note contains 'حفظ السجلات'; only the exact
+        # disappearing dialog/control label identifies an unfinished save.
+        absent_present = absent and any(n.get(k, '').strip() == absent for n in root.iter('node') for k in ('text', 'content-desc', 'hint'))
+        if any(required in v for v in labels) and not absent_present:
             (out/f'crud-{stage}.xml').write_bytes(ET.tostring(root, encoding='utf-8'))
             (out/f'crud-{stage}.png').write_bytes(adb('exec-out', 'screencap', '-p'))
             return root
