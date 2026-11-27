@@ -6210,9 +6210,13 @@ function DailyJournalPage({ flow }: { flow: FlowControls }) {
                       title="نقل إلى سلة المحذوفات"
                       style={{ color: "#c91b08" }}
                       onClick={async () => {
-                        await setLedgerDeleted(ctx.uid, item.id, true);
-                        triggerHaptic("warning");
-                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        try {
+                          await setLedgerDeleted(ctx.uid, item.id, true);
+                          triggerHaptic("warning");
+                          ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        } catch (error) {
+                          ctx.showToast(error instanceof Error ? error.message : "تعذر نقل العملية إلى السلة");
+                        }
                       }}
                     >
                       <TrashIcon />
@@ -9829,9 +9833,13 @@ function SupplierPage({
                       title="نقل إلى سلة المحذوفات"
                       style={{ color: "#c91b08" }}
                       onClick={async () => {
-                        await setLedgerDeleted(ctx.uid, item.id, true);
-                        triggerHaptic("warning");
-                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        try {
+                          await setLedgerDeleted(ctx.uid, item.id, true);
+                          triggerHaptic("warning");
+                          ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        } catch (error) {
+                          ctx.showToast(error instanceof Error ? error.message : "تعذر نقل العملية إلى السلة");
+                        }
                       }}
                     >
                       <TrashIcon />
@@ -10189,9 +10197,13 @@ function CashSupplierPage({
                     title="نقل إلى سلة المحذوفات"
                     style={{ color: "#c91b08" }}
                     onClick={async () => {
-                      await setLedgerDeleted(ctx.uid, item.id, true);
-                      triggerHaptic("warning");
-                      ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                      try {
+                        await setLedgerDeleted(ctx.uid, item.id, true);
+                        triggerHaptic("warning");
+                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                      } catch (error) {
+                        ctx.showToast(error instanceof Error ? error.message : "تعذر نقل العملية إلى السلة");
+                      }
                     }}
                   >
                     <TrashIcon />
