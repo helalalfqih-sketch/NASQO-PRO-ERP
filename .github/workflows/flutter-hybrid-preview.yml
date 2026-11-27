@@ -80,13 +80,20 @@ jobs:
           test "$OTHER_ACTIONS" = false
           test -z "$VERIFY_RUN"
           gh api "repos/$GH_REPO/actions/runs/46068768452" > source-run.json
-          gh api "repos/$GH_REPO/actions/runs/46068768452" > verified-run.json
+          gh api "repos/$GH_REPO/actions/runs/46070698328" > verified-run.json
+          gh api "repos/$GH_REPO/actions/runs/46068768452/jobs?per_page=100" > source-jobs.json
           gh api "repos/$GH_REPO/releases/461069668" > release.json
           python3 - <<'PY'
           import json
-          for filename, sha in [('source-run.json', 'e718646a90a3f78cd8db6f8c3337b1c680b83022'), ('verified-run.json', 'e718646a90a3f78cd8db6f8c3337b1c680b83022')]:
-              run = json.load(open(filename))
-              assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
+          source = json.load(open('source-run.json'))
+          assert source['head_sha'] == 'e718646a90a3f78cd8db6f8c3337b1c680b83022' and source['status'] == 'completed'
+          # The original acceptance stopped in its startup harness. Require the
+          # successful build plus a successful retest of these exact artifacts.
+          build = [j for j in json.load(open('source-jobs.json'))['jobs'] if j['name'] == 'flutter-hybrid']
+          assert len(build) == 1 and build[0]['conclusion'] == 'success'
+          verified = json.load(open('verified-run.json'))
+          assert verified['head_sha'] == '82b863e6c3bf48365992e495bd4f4f8bc5566110'
+          assert verified['status'] == 'completed' and verified['conclusion'] == 'success'
           release = json.load(open('release.json'))
           assert release['tag_name'] == 'android-preview-v1187'
           assert release['target_commitish'] == 'e718646a90a3f78cd8db6f8c3337b1c680b83022'
