@@ -49,7 +49,8 @@ def capture(stage, required, absent=''):
     raise AssertionError('CRUD did not reach '+stage)
 
 def tap(value, field=False, scroll=False):
-    for _ in range(10 if scroll else 4):
+    previous = None
+    for _ in range(12 if scroll else 8):
         candidates = []
         for n in read().iter('node'):
             if (n.get('class') == 'android.widget.EditText') != field or value not in label(n):
@@ -60,8 +61,15 @@ def tap(value, field=False, scroll=False):
                 candidates.append((not exact, (b[2]-b[0])*(b[3]-b[1]), b))
         if candidates:
             b = sorted(candidates)[0][2]
+            # IME dismissal resizes the WebView asynchronously. Require two
+            # fresh matching bounds so an old Save location cannot hit salary.
+            if b != previous:
+                previous = b
+                time.sleep(0.25)
+                continue
             adb('shell', 'input', 'tap', str((b[0]+b[2])//2), str((b[1]+b[3])//2))
             return
+        previous = None
         if scroll:
             adb('shell', 'input', 'swipe', str(size[0]//2), str(size[1]*3//4), str(size[0]//2), str(size[1]//3), '400')
         else:

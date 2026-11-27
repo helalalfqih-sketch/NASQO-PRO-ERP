@@ -41,6 +41,10 @@ on:
         description: Verify automatic opening setup and post a synthetic purchase on the isolated Android emulator
         type: boolean
         default: false
+      focused_crud_purchase:
+        description: Retest CRUD and purchase only on an existing signed artifact; retains install/upgrade checks
+        type: boolean
+        default: false
       inspect_play_signing_tool:
         description: Inspect Google's public PEPK tool only (no signing secrets or app build)
         type: boolean
@@ -470,6 +474,7 @@ jobs:
     env:
       NASQO_ANDROID_NAV_SMOKE: ${{ inputs.verify_existing_run != '' }}
       NASQO_ANDROID_PENDING_PURCHASE: ${{ inputs.test_pending_purchase }}
+      NASQO_ANDROID_FOCUSED_CRUD_PURCHASE: ${{ inputs.focused_crud_purchase }}
     permissions:
       contents: read
       actions: read
@@ -480,9 +485,12 @@ jobs:
         env:
           OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.inspect_play_signing_tool || inputs.export_play_signing_key }}
           SOURCE_RUN: ${{ inputs.verify_existing_run }}
+          FOCUSED: ${{ inputs.focused_crud_purchase }}
+          PURCHASE: ${{ inputs.test_pending_purchase }}
         run: |
           test "$OTHER_ACTIONS" = false
           [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          if [[ "$FOCUSED" == true ]]; then test "$PURCHASE" = true; fi
       - name: Require capture-only source artifact
         if: inputs.store_screenshots == true
         env:
