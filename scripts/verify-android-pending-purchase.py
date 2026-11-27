@@ -90,6 +90,10 @@ try:
     # Independent UI acceptance, including when another synthetic stage failed.
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
+    for _ in range(8):
+        if any(n.get('text') == 'الإدارة' or n.get('content-desc') == 'الإدارة' for n in read().iter('node')):
+            break
+        tap('رجوع')
     capture('before-fixture', 'فاتورة جديدة')
     adb('shell', 'am', 'force-stop', package)
     print(adb('root').decode().strip(), flush=True)

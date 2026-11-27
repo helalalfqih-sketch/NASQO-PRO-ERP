@@ -6,6 +6,11 @@
 - Validate on the service boundary, enforce workspace access, reject stale edits, and protect references and posted financial history. Confirm deletion in the UI and retain entered data on a failed save.
 - Verify each operation on isolated synthetic databases and the rendered UI. Never delete or modify production records to test CRUD. Preserve original imported archives and use the existing reversal/archive mechanisms for posted documents.
 
+## Active screen accessibility (CRUD integration, 2026-11-27)
+
+- Keep parked and exiting FlowStack screens inert and hidden from accessibility while retaining their state for Back. Only the active screen may expose controls; verify focus, Back, and nested navigation before updating its runtime lock hash.
+- Android acceptance must return through visible Back after process restart because navigation state is restored; hidden dashboard nodes cannot prove that Home is active.
+
 ## Excel export/import compatibility (reported defect, 2026-11-27)
 
 - The app's own inventory exports must be readable in card import above 2000 rows. Keep the shared 10000-row bound across the reader, server and native atomic commands; retain file-size and populated-column guards.

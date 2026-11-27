@@ -15,9 +15,10 @@ test("local SQLite ERP starts empty, reaches dashboard and opens options without
   const status = await (await page.request.get("/api/db/status")).json();
   expect(status.accountsCount).toBe(0);
   expect(status.inventoryCount).toBe(0);
-  await page.getByTestId("header-options-btn").click();
-  await expect(page.getByTestId("options-restore-backup-btn")).toBeVisible();
-  await expect(page.getByTestId("options-backup-btn")).toBeVisible();
+  await page.getByTestId("home-nav-profile").click();
+  await page.getByTestId("settings-tab-database").click();
+  await expect(page.getByTestId("settings-restore-backup-btn")).toBeVisible();
+  await expect(page.getByTestId("settings-backup-modal-btn")).toBeVisible();
 });
 
 test("an old IndexedDB v1 browser tab cannot block the new server SQLite database", async ({ browser }) => {

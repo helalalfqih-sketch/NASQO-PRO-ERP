@@ -34,10 +34,11 @@ test("SQLite importer stores real historical invoice lines and makes them search
   test.setTimeout(70000);
   const headers = { "X-NASQO-CSRF": "1" };
   expect((await page.request.post(`/api/db/workspace/${uid}/reset`,{headers,data:{confirmation:"RESET:local-erp-workspace"}})).status()).toBe(200);
+  const review = await (await page.request.post(`/api/db/workspace/${uid}/restore/prepare`, {headers,data:{}})).json();
   const result = await page.request.post(`/api/db/workspace/${uid}/import/sqlite-legacy`,{
     headers,
     data: { base64: (await sampleSqlite()).toString("base64"),
-      fileName:"legacy-ui-test.sqlite", mode:"import", replaceExisting:true },
+      fileName:"legacy-ui-test.sqlite", mode:"import", replaceExisting:true, restoreToken:review.token },
   });
   expect(result.status()).toBe(200);
   const payload=await result.json();
@@ -71,8 +72,9 @@ test("SQLite records persist when legacy localStorage data quota is exhausted", 
   });
   await page.goto("/?autostart=1");
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({timeout:20000});
+  const review = await (await page.request.post(`/api/db/workspace/${uid}/restore/prepare`, {headers,data:{}})).json();
   const result=await page.request.post(`/api/db/workspace/${uid}/import/sqlite-legacy`,{
-    headers,data:{base64:(await sampleSqlite()).toString("base64"),fileName:"quota-test.sqlite",mode:"import",replaceExisting:true},
+    headers,data:{base64:(await sampleSqlite()).toString("base64"),fileName:"quota-test.sqlite",mode:"import",replaceExisting:true,restoreToken:review.token},
   });
   expect(result.status()).toBe(200);
   await page.reload();

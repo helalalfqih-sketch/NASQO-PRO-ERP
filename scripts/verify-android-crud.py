@@ -83,7 +83,12 @@ def snapshot():
 
 def home():
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
-    capture('home', 'فاتورة جديدة')
+    for _ in range(8):
+        root = read()
+        if any(n.get('text') == 'الإدارة' or n.get('content-desc') == 'الإدارة' for n in root.iter('node')):
+            break
+        tap('رجوع')
+    capture('home', 'الإدارة')
 
 def hr():
     home(); tap('الإدارة'); tap('الموارد البشرية والرواتب', scroll=True)
@@ -116,7 +121,7 @@ try:
         assert before[table] == after[table], table+' changed'
     (out/'crud-result.json').write_text(json.dumps({'result':'PASS','sdk':36,'checks':['UI create','SQLite read after process restart','UI detail','UI update with persisted revision','cancel delete','confirm delete','stock/financial history unchanged'],'scope':'Synthetic employee on real signed Android release; all seven collections also have SQLite FFI and HTTP UI CRUD tests.'},indent=2)+'\n')
     # Preserve the starting screen expected by the following purchase acceptance.
-    home(); tap('ملف الأصناف')
+    home()
 except Exception:
     (out/'crud-failure.xml').write_bytes(ET.tostring(read(),encoding='utf-8'))
     (out/'crud-failure.png').write_bytes(adb('exec-out','screencap','-p'))

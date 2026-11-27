@@ -59,7 +59,12 @@ def tap(label, field=False, scroll=False):
             time.sleep(1)
     raise AssertionError('Visible control missing: '+label)
 
-tap('ملف الأصناف')
+# Navigation is restored across process restarts; return through visible Back.
+for _ in range(8):
+    if any(n.get('text') == 'الإدارة' or n.get('content-desc') == 'الإدارة' for n in read().iter('node')):
+        break
+    tap('رجوع')
+tap('ملف الأصناف', scroll=True)
 capture('empty','لا توجد أصناف')
 tap('إضافة أول صنف')
 capture('form','إضافة صنف جديد')
@@ -74,7 +79,7 @@ capture('home','فاتورة جديدة')
 adb('shell','am','force-stop',package)
 adb('shell','am','start','-W','-n',package+'/.MainActivity')
 capture('reopened','فاتورة جديدة')
-tap('ملف الأصناف')
+tap('ملف الأصناف', scroll=True)
 capture('persisted',name,'إضافة صنف جديد')
 (out/'catalog-result.json').write_text(json.dumps({
  'result':'PASS','sdk':adb('shell','getprop','ro.build.version.sdk').decode().strip(),

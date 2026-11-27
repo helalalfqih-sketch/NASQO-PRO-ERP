@@ -1019,6 +1019,7 @@ function NasqoProductionShell() {
                 </p>
               ) : null}
                             <div className="auth-gsi-wrap" style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%", marginTop: "12px" }}>
+                {primaryMode === "off" && (
                 <button
                   className="auth-google-btn"
                   onClick={() => void enterLocalWorkspace()}
@@ -1028,6 +1029,7 @@ function NasqoProductionShell() {
                   <RocketIcon />
                   <span>الدخول السريع — بدء العمل</span>
                 </button>
+                )}
                 <GoogleSignInButton
                   onClick={() => void handleSignIn()}
                   disabled={authBusy}

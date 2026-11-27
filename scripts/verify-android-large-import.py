@@ -77,6 +77,14 @@ def tap(value, scroll=False):
             time.sleep(1)
     raise AssertionError('Visible import control missing: '+value)
 
+def home(stage):
+    adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
+    for _ in range(8):
+        if any(n.get('text') == 'الإدارة' or n.get('content-desc') == 'الإدارة' for n in read().iter('node')):
+            break
+        tap('رجوع')
+    capture(stage, 'الإدارة')
+
 def database_snapshot():
     adb('shell', 'am', 'force-stop', package)
     with tempfile.TemporaryDirectory() as d:
@@ -107,8 +115,7 @@ try:
     adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/'+filename)
     snapshots = []
     for attempt in range(2):
-        adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
-        capture(f'home-{attempt}', 'فاتورة جديدة')
+        home(f'home-{attempt}')
         tap('ملف الأصناف')
         capture(f'catalog-{attempt}', 'خيارات بطاقات الأصناف')
         tap('خيارات بطاقات الأصناف'); tap('استيراد أصناف')
@@ -135,8 +142,7 @@ try:
     assert snapshots[1] == after, 'Repeated import changed data'
     (out/'large-import-result.json').write_text(json.dumps({'result':'PASS', 'sdk':36, 'rows':3000, 'inserted':3000, 'repeatInserted':0,
         'realAndroidPicker':True, 'balancesAndHistoryUnchanged':True, 'scope':'Synthetic CSV, real review and SQLite persistence on isolated signed-release emulator.'}, indent=2)+'\n')
-    adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
-    capture('final-home', 'فاتورة جديدة'); tap('ملف الأصناف')
+    home('final-home')
 except Exception:
     (out/'import-failure.xml').write_bytes(ET.tostring(read(), encoding='utf-8'))
     (out/'import-failure.png').write_bytes(adb('exec-out', 'screencap', '-p'))
