@@ -110,6 +110,9 @@ void main() {
       snap =
           await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse: true);
       expect((snap['inventory'] as List).last['catalogSourceItemId'], 'fresh');
+      await db.insert('inventory_items',{'id':'large','name':'Large balance','unit':'piece','quantity':9000000,'avgCost':900,'warehouseId':wh,'minThreshold':0,'sku':''});
+      await commands.post(w,'large-sale',await roles.resolve(invoice('large-sale',4,'large',wh,true,1,1000)));
+      expect((await db.query('inventory_items',where:'id = ?',whereArgs:['large'])).single['quantity'],8999999);
       final first = await backups.exportNative();
       await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse: true);
       expect(await backups.exportNative(), orderedEquals(first));

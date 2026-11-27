@@ -135,7 +135,7 @@ class LocalWorkspaceReadiness {
             : reference > 0
                 ? reference
                 : 0;
-        final value = (StockQuantity.units(ticks) * cost * 100).round();
+        final value = (StockQuantity.units(ticks).toDouble() * cost * 100).round();
         if (value.abs() > 1000000000000)
           throw StateError('Stock opening outside supported range');
         final current = StockQuantity.balanceTicks(quantity) +

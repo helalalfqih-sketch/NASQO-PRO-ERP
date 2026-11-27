@@ -55,7 +55,7 @@ class AutomaticStockBaseline {
           v is! int ||
           v.abs() > 1000000000000 ||
           (q == 0 && v != 0) ||
-          (q * v < 0) ||
+          ((q > 0 && v < 0) || (q < 0 && v > 0)) ||
           r['entry_date'] is! String ||
           !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(r['entry_date'] as String) ||
           (await db.query('legacy_unverified_stock',

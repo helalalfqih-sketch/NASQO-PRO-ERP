@@ -201,7 +201,7 @@ class StockInvoiceCommands {
             final target=after==0?0:after<0?(value*after/before).round():proportional(cost,after,q);
             variance=target-next;next=target;
           }
-          if(next.abs()>_max||(after==0&&next!=0)||after*next<0)throw StateError('Invalid stock balance');
+          if(next.abs()>_max||(after==0&&next!=0)||(after>0&&next<0)||(after<0&&next>0))throw StateError('Invalid stock balance');
           varianceTotal+=variance;
           costTotal=bounded(costTotal+cost);
           final lineId='$id:$i';
@@ -308,7 +308,7 @@ class StockInvoiceCommands {
             final target=after==0?0:after<0?((line['before_value'] as int)*after/originalBefore).round():afterValue<0?(beforeValue*after/before).round():afterValue;
             variance+=target-afterValue;afterValue=target;
           }
-          if((after<0&&adjustment==null)||after*afterValue<0||(after==0&&afterValue!=0)||afterValue.abs()>_max) throw StateError('Purchase return needs stock or cost variance reconciliation');
+          if((after<0&&adjustment==null)||(after>0&&afterValue<0)||(after<0&&afterValue>0)||(after==0&&afterValue!=0)||afterValue.abs()>_max) throw StateError('Purchase return needs stock or cost variance reconciliation');
           StockQuantity.boundedBalanceTicks(after);
           varianceTotal+=variance;
           net=bounded(net+netPart);tax=bounded(tax+taxPart);cost=bounded(cost+costPart);
