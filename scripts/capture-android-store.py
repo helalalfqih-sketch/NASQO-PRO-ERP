@@ -33,18 +33,19 @@ def labels(root):
     return [" ".join(n.get(k, "") for k in ("text", "content-desc")) for n in root.iter("node")]
 
 
-def capture(name, required):
+def capture(name, required, save=True):
     for _ in range(20):
         try:
             root, xml = read_ui()
             if any(required in label for label in labels(root)):
                 # Wait for the opening transition before recording original pixels.
                 time.sleep(1)
-                png = adb("exec-out", "screencap", "-p")
-                assert png[:8] == b"\x89PNG\r\n\x1a\n"
-                assert struct.unpack(">II", png[16:24]) == (WIDTH, HEIGHT)
-                (OUT / f"{name}.png").write_bytes(png)
-                (OUT / f"{name}.xml").write_bytes(xml)
+                if save:
+                    png = adb("exec-out", "screencap", "-p")
+                    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+                    assert struct.unpack(">II", png[16:24]) == (WIDTH, HEIGHT)
+                    (OUT / f"{name}.png").write_bytes(png)
+                    (OUT / f"{name}.xml").write_bytes(xml)
                 return root
         except (subprocess.SubprocessError, ET.ParseError):
             pass
@@ -82,13 +83,9 @@ adb("shell", "wm", "dismiss-keyguard")
 adb("shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity")
 capture("01-home", "فاتورة جديدة")
 tap("الإعدادات")
-capture("03-settings", "مراجع المستندات الافتراضية")
-adb("shell", "input", "keyevent", "KEYCODE_BACK")
-capture("home-navigation-check", "فاتورة جديدة")
-tap("ملف الأصناف", scroll=True)
-capture("catalog-empty-check", "لا توجد أصناف")
-tap("إضافة أول صنف")
-capture("02-item-form", "إضافة صنف جديد")
+capture("settings-ready", "مراجع المستندات الافتراضية", save=False)
+tap("إعدادات الكاشير")
+capture("02-cashier-settings", "أصناف الكاشير")
 package_info = adb("shell", "dumpsys", "package", PACKAGE).decode()
 version = re.search(r"\bversionName=(\S+)", package_info).group(1)
 version_code = int(re.search(r"\bversionCode=(\d+)", package_info).group(1))
@@ -99,7 +96,7 @@ manifest = {
     "resolution": [WIDTH, HEIGHT], "density": 420,
     "method": "Original adb exec-out screencap -p; no image editing or compositing",
     "data": "Fresh empty workspace; no private data, restores or saved records",
-    "screenshots": ["01-home.png", "02-item-form.png", "03-settings.png"],
+    "screenshots": ["01-home.png", "02-cashier-settings.png"],
 }
 (OUT / "capture-manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
 print(json.dumps(manifest, ensure_ascii=False))
