@@ -1,3 +1,5 @@
+import { outputNativeDocument, usesNativeDocumentOutput } from "../hybrid/documentOutput";
+
 export function downloadBlobUrl(filename: string, url: string) {
   const link = document.createElement("a");
   link.href = url;
@@ -7,7 +9,7 @@ export function downloadBlobUrl(filename: string, url: string) {
   document.body.removeChild(link);
 }
 
-export function exportSummaryAsPngImage(options: {
+export async function exportSummaryAsPngImage(options: {
   filename: string;
   companyName: string;
   title: string;
@@ -15,7 +17,7 @@ export function exportSummaryAsPngImage(options: {
   accentColor?: string;
   rows: readonly [string, string][];
   footerNote?: string;
-}): boolean {
+}): Promise<boolean> {
   if (typeof document === "undefined") return false;
   const width = 760;
   const rowHeight = 46;
@@ -82,7 +84,13 @@ export function exportSummaryAsPngImage(options: {
     ctx.fillText(options.footerNote, width / 2, height - 26);
   }
 
+  const filename=options.filename.endsWith(".png")?options.filename:`${options.filename}.png`;
+  if(usesNativeDocumentOutput()){
+    const blob=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/png"));
+    if(!blob)throw new Error("تعذر إنشاء صورة التقرير");
+    return outputNativeDocument(new Uint8Array(await blob.arrayBuffer()),filename,"image/png");
+  }
   const dataUrl = canvas.toDataURL("image/png");
-  downloadBlobUrl(options.filename.endsWith(".png") ? options.filename : `${options.filename}.png`, dataUrl);
+  downloadBlobUrl(filename, dataUrl);
   return true;
 }

@@ -1,10 +1,10 @@
 import { createRequire } from "node:module";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import initSqlJs from "sql.js";
 
 const require = createRequire(import.meta.url);
 
-test.use({ channel: "chrome" });
+test.use({ channel: "chrome", actionTimeout: 10_000 });
 
 async function sampleSqlite() {
   const SQL = await initSqlJs({ locateFile: () => require.resolve("sql.js/dist/sql-wasm.wasm") });
@@ -29,6 +29,26 @@ async function sampleSqlite() {
   const bytes = Buffer.from(db.export());
   db.close();
   return bytes;
+}
+
+async function settings(page: Page) {
+  await page.getByTestId("home-nav-profile").click();
+  await page.getByRole("tab", {name:"قاعدة البيانات", exact:true}).click();
+}
+
+async function invoiceAccount(page: Page, name: string) {
+  await page.getByTestId("invoice-account-trigger").click();
+  await page.getByTestId("invoice-account-search").fill(name);
+  await page.getByTestId("invoice-account-list").getByRole("option").filter({hasText:name}).first().click();
+}
+
+async function restoreFile(page: Page, name: string, buffer: Buffer) {
+  await settings(page);
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByTestId("settings-restore-backup-btn").click(),
+  ]);
+  await chooser.setFiles({name, mimeType:"application/octet-stream", buffer});
 }
 
 test("unified single SQLite backend persists data, imports SQLite, opens invoice lines, exports .sqlite, and uses zero IndexedDB/Firestore", async ({
@@ -56,13 +76,6 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(page.getByTestId("empty-workspace-banner")).toHaveCount(0);
   await expect(page.getByTestId("account-groups-table")).toHaveCount(0);
 
-  // Open Options ("خيارات") dropdown menu and verify alternating backup / restore actions
-  await page.getByTestId("header-options-btn").click();
-  await expect(page.getByTestId("options-menu")).toBeVisible();
-  await expect(page.getByTestId("options-backup-btn")).toHaveText("نسخ إحتياطي");
-  await expect(page.getByTestId("options-restore-backup-btn")).toHaveText("إستعادة نسخة");
-  await page.getByLabel("إغلاق الخيارات").click();
-
   const dbs = await page.evaluate(async () => {
     if (!("databases" in indexedDB)) return [];
     const list = await indexedDB.databases();
@@ -72,24 +85,30 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   expect(dbs).not.toContain("nasqo_legacy_center");
   expect(dbs).not.toContain("nasqo_legacy_archive");
 
-  // Upload SQLite backup via Options -> Restore Backup directly and confirm dashboard hydrates dynamically
-  const [fileChooser] = await Promise.all([
-    page.waitForEvent("filechooser"),
-    (async () => {
-      await page.getByTestId("header-options-btn").click();
-      await page.getByTestId("options-restore-backup-btn").click();
-    })(),
+  // The current restore UI creates a durable safety copy before consent.
+  const bytes = await sampleSqlite();
+  await restoreFile(page, "erp-backup-test.back", bytes);
+  const review = page.getByRole("dialog", {name:"تأكيد استبدال بيانات العمل"});
+  await expect(review).toBeVisible();
+  await expect(review.getByRole("button", {name:"تأكيد الاستبدال"})).toBeDisabled();
+  await review.getByRole("button", {name:"إلغاء", exact:true}).click();
+  expect((await (await page.request.get("/api/db/status")).json()).accountsCount).toBe(0);
+  await page.getByLabel("رجوع", {exact:true}).click();
+  await restoreFile(page, "erp-backup-test.back", bytes);
+  await expect(review).toBeVisible();
+  const [safetyDownload] = await Promise.all([
+    page.waitForEvent("download"), review.getByRole("button", {name:"تنزيل نسخة الأمان"}).click(),
   ]);
-  await fileChooser.setFiles({
-    name: "erp-backup-test.back",
-    mimeType: "application/octet-stream",
-    buffer: await sampleSqlite(),
-  });
+  expect(safetyDownload.suggestedFilename()).toMatch(/^nasqo-before-restore-.*\.json$/);
+  await review.getByRole("checkbox").check();
+  await review.getByRole("button", {name:"تأكيد الاستبدال"}).click();
+  await expect(review).toHaveCount(0);
+  await page.getByLabel("رجوع", {exact:true}).click();
   await expect(page.getByTestId("account-groups-table")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("account-groups-table").getByText("العملاء")).toBeVisible({ timeout: 10_000 });
 
   // Also check Settings -> SQLite table browser works over the restored DB
-  await page.getByLabel("الإعدادات", { exact: true }).click();
+  await settings(page);
   await expect(page.getByTestId("settings-full-sqlite-import-btn")).toBeVisible({ timeout: 10_000 });
   await page.getByTestId("settings-full-sqlite-import-btn").click();
   const dialog = page.getByRole("dialog");
@@ -118,6 +137,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.getByRole("button", { name: "فاتورة جديدة", exact: true }).click();
   const invModal = page.getByTestId("invoice-modal");
   await expect(invModal).toBeVisible();
+  await invoiceAccount(page, "عميل اختبار نسق");
   await invModal.getByTestId("invoice-item-search").fill("BAR-9988");
   await invModal.getByRole("listbox", { name: "نتائج الأصناف" }).getByRole("option").first().click();
   await invModal.getByTestId("invoice-save-btn").click();
@@ -137,46 +157,32 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(editInvModal).toBeVisible();
   await expect(editInvModal.locator("#invoice-title")).toContainText("تعديل");
   await expect(editInvModal.getByLabel("اسم الصنف").first()).toHaveValue("فلتر محرك مميز");
-  await editInvModal.getByLabel("كمية الصنف").first().fill("3");
+  await editInvModal.getByLabel("كمية السطر 1", {exact:true}).fill("3");
   await editInvModal.getByTestId("invoice-save-btn").click();
+  await expect(editInvModal.getByTestId("invoice-validation-error")).toContainText("لا يمكن تعديل قيد مرحّل");
+  await editInvModal.getByRole("button", {name:"إلغاء", exact:true}).click();
+  await page.getByRole("button", {name:"تجاهل التعديلات", exact:true}).click();
   await expect(editInvModal).toHaveCount(0);
   await expect(page.locator(".transaction-card")).toHaveCount(preEditCount);
 
-  // Verify statement "التصفية والترتيب" sheet exposes real criteria and filters/resets the statement live
-  await page.getByRole("button", { name: "تصفية", exact: true }).click();
-  const filterSheet = page.getByTestId("statement-filters-sheet");
-  await expect(filterSheet).toBeVisible();
-  await expect(filterSheet.getByLabel("تصفية نوع العملية")).toBeVisible();
-  await expect(filterSheet.getByLabel("تصفية الفترة")).toBeVisible();
-  await expect(filterSheet.getByLabel("ترتيب الحركات")).toBeVisible();
-  await expect(filterSheet.getByText("إظهار الرصيد السابق")).toBeVisible();
-  await filterSheet.getByLabel("تصفية نوع العملية").selectOption("voucher");
-  await filterSheet.getByRole("button", { name: "تطبيق التصفية", exact: true }).click();
-  await expect(filterSheet).toHaveCount(0);
+  // Current inline filters apply immediately and preserve the original rows.
+  await page.getByRole("button", {name:"الفلاتر والتاريخ", exact:true}).click();
+  await page.getByLabel("نوع المستند", {exact:true}).selectOption("voucher");
   await expect(page.locator(".transaction-card")).toHaveCount(0);
-  await page.getByRole("button", { name: "تصفية", exact: true }).click();
-  await expect(filterSheet).toBeVisible();
-  await filterSheet.getByRole("button", { name: "إعادة ضبط", exact: true }).click();
-  await filterSheet.getByRole("button", { name: "تطبيق التصفية", exact: true }).click();
+  await page.getByLabel("نوع المستند", {exact:true}).selectOption("all");
   await expect(page.locator(".transaction-card")).toHaveCount(preEditCount);
+  await page.getByRole("button", {name:"الفلاتر والتاريخ", exact:true}).click();
 
-  // Move latest invoice to Trash via visible Trash action on statement, verify removal + restore
+  // A posted financial entry is protected. The UI must show the API rejection
+  // and retain the row instead of silently discarding an unhandled promise.
   await page.locator(".transaction-actions button[aria-label^='نقل #']").first().click();
-  await expect(page.locator(".transaction-card")).toHaveCount(preEditCount - 1);
-  await page.getByLabel("رجوع", { exact: true }).click();
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: "سلة المحذوفات", exact: true }).first().click();
-  const trashModal = page.getByTestId("trash-modal");
-  await expect(trashModal).toBeVisible({ timeout: 5_000 });
-  await expect(trashModal.getByRole("button", { name: "استعادة" })).toHaveCount(1);
-  await trashModal.getByRole("button", { name: "استعادة" }).first().click();
-  await expect(trashModal.getByRole("button", { name: "استعادة" })).toHaveCount(0);
-  await trashModal.getByRole("button", { name: "إغلاق", exact: true }).click();
-  await expect(trashModal).toHaveCount(0);
+  await expect(page.locator(".app-toast")).toContainText("لا يمكن حذف أو أرشفة قيد مرحّل");
+  await expect(page.locator(".transaction-card")).toHaveCount(preEditCount);
+  await page.getByLabel("رجوع", {exact:true}).click();
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible();
 
   // Verify Order modal labels read "طلبية جديدة" and "حفظ الطلبية" (never "طلبية جديدة جديدة" or "عمل فاتورة")
-  await page.getByLabel("إضافة", { exact: true }).click();
-  await page.getByTestId("dashboard-add-menu").getByRole("menuitem", { name: "إضافة طلبية" }).click();
+  await page.getByTestId("home-tile-new-order").click();
   const orderModal = page.getByTestId("invoice-modal");
   await expect(orderModal).toBeVisible();
   await expect(orderModal.locator("#invoice-title")).toHaveText("طلبية جديدة");
@@ -188,18 +194,14 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.reload();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20_000 });
 
-  await page.getByTestId("open-erp-hub-btn").click();
-  await expect(page.getByTestId("erp-hub-screen")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("local-db-section")).toContainText("سجلات النظام الموحدة");
-
+  await settings(page);
   const [sqliteDownload] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByTestId("local-db-sqlite-download-btn").click(),
+    page.getByTestId("settings-download-sqlite-btn").click(),
   ]);
   expect(sqliteDownload.suggestedFilename()).toMatch(/^nasqo-unified-.*\.sqlite$/);
-
   await page.getByLabel("رجوع", { exact: true }).click();
-  await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("dashboard-screen")).toBeVisible();
 
   // 1) Open dedicated Items Catalog screen («الأصناف») separately from Stock Movement
   await page.getByTestId("open-items-btn").click();
@@ -208,6 +210,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(itemsScreen.getByTestId("items-catalog-table")).toContainText("فلتر محرك مميز");
 
   // Create a multi-unit item from the Items Catalog screen
+  await page.getByRole("button", {name:"+ صنف جديد", exact:true}).click();
   await itemsScreen.getByTestId("catalog-item-name").fill("صنف صفر اختبار");
   await itemsScreen.getByTestId("catalog-item-sku").fill("BAR-ZERO-1");
   await itemsScreen.getByTestId("catalog-item-cost").fill("0");
@@ -231,20 +234,14 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(page.getByTestId("inventory-report-screen")).toBeVisible({ timeout: 10_000 });
   await page.getByLabel("البحث في الأصناف").fill("BAR-9988");
   await expect(page.getByText("فلتر محرك مميز")).toBeVisible();
-  await expect(page.getByText("بحاجة إلى تسوية").first()).toBeVisible();
   await page.getByRole("button", { name: "حركة صنف فلتر محرك مميز" }).click();
   const moveModal = page.getByTestId("item-movements-modal");
   await expect(moveModal).toBeVisible();
   await expect(moveModal.getByText("عميل اختبار نسق").first()).toBeVisible();
-  await moveModal.locator("section[role='dialog']").getByRole("button", { name: "إغلاق", exact: true }).last().click();
-  await page.getByLabel("تحديد فلتر محرك مميز").check();
-  await page.getByLabel("نوع تعديل الكمية").selectOption("set");
-  await page.getByLabel("قيمة تعديل الكمية").fill("7");
-  await page.getByLabel("سعر البيع المعتمد").fill("200");
-  await page.getByLabel("تأكيد جرد المخزون الفعلي").check();
-  await page.getByLabel("تأكيد اعتماد سعر البيع").check();
-  await page.getByTestId("bulk-apply-btn").click();
-  await expect(page.getByText("بحاجة إلى تسوية")).toHaveCount(0);
+  await moveModal.getByRole("button", { name: "إغلاق", exact: true }).last().click();
+  // Quantities now follow posted documents/opening initialization. The removed
+  // manual approval form must not be required to use restored inventory.
+  await expect(page.getByText("التكلفة غير معتمدة", {exact:true})).toHaveCount(0);
 
   await page.getByLabel("البحث في الأصناف").fill("صنف صفر اختبار");
   await expect(
@@ -284,8 +281,9 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.getByRole("button", { name: "فاتورة جديدة", exact: true }).click();
   const longTextInvModal = page.getByTestId("invoice-modal");
   await expect(longTextInvModal).toBeVisible();
-  await longTextInvModal.getByLabel("حساب الفاتورة", { exact: true }).selectOption({ label: "عميل اختبار نسق" });
+  await invoiceAccount(page, "عميل اختبار نسق");
   await longTextInvModal.getByLabel("حرة", { exact: true }).check();
+  await longTextInvModal.getByRole("button", {name:"مبلغ فقط", exact:true}).click();
   await longTextInvModal.getByLabel("إجمالي مبلغ الفاتورة").fill("50");
   await longTextInvModal.getByRole("textbox", { name: "بيان الفاتورة", exact: true }).fill(unbrokenText);
   await longTextInvModal.getByTestId("invoice-save-btn").click();
@@ -299,7 +297,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await page.locator(".transaction-card", { hasText: unbrokenText }).getByRole("button", { name: /ملف PDF للعملية/ }).click();
   const previewDoc = page.getByTestId("cash-invoice-document");
   await expect(previewDoc).toBeVisible({ timeout: 10_000 });
-  await expect(previewDoc.getByText(unbrokenText)).toBeVisible();
+  await expect(previewDoc.getByRole("cell", {name:unbrokenText, exact:true})).toBeVisible();
   await page.getByTestId("cash-invoice-actual-size").click();
   const wrapMetrics = await previewDoc.evaluate(() => {
     const firstTd = document.querySelector(".cash-invoice-table tbody td:first-child") as HTMLElement | null;
@@ -331,7 +329,7 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(cbModal).toHaveCount(0);
 
   // Verify ERP Finance scope controls, Balance Sheet cash/inventory reconciliation, and explicit VAT regime/persistence
-  await page.getByTestId("open-erp-hub-btn").click();
+  await page.getByTestId("home-nav-services").click();
   await expect(page.getByTestId("erp-hub-screen")).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("erp-mod-btn-erp-finance").click();
   const financeScreen = page.getByTestId("erp-finance-screen");
@@ -350,15 +348,17 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   await expect(financeScreen.getByTestId("erp-vat-jurisdiction-select")).toHaveValue("none");
   await expect(financeScreen.getByTestId("erp-vat-warning")).toBeVisible();
   await financeScreen.getByTestId("erp-vat-jurisdiction-select").selectOption("sa_15");
+  await financeScreen.getByTestId("erp-vat-basis-select").selectOption("estimated_gross");
   await financeScreen.getByTestId("erp-vat-save-btn").click();
+  await expect(page.locator(".app-toast")).toContainText("تم حفظ إعدادات الضريبة بنجاح");
 
   await page.reload();
   await expect(page.getByTestId("dashboard-screen")).toBeVisible({ timeout: 20_000 });
-  await page.getByTestId("open-erp-hub-btn").click();
+  await page.getByTestId("home-nav-services").click();
   await expect(page.getByTestId("erp-hub-screen")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("erp-hub-screen")).toContainText("15% تقديري");
   await page.getByTestId("erp-mod-btn-erp-finance").click();
-  await page.getByTestId("erp-finance-screen").getByRole("tab", { name: "الضرائب VAT" }).click();
+  await page.getByTestId("erp-finance-screen").getByRole("tab", { name: "الضرائب", exact:true }).click();
   await expect(page.getByTestId("erp-vat-jurisdiction-select")).toHaveValue("sa_15");
 
   // Verify again zero IndexedDB stores & zero Firestore requests throughout entire session
@@ -457,19 +457,9 @@ test("UI handles invalid {} JSON safely, inline invoice validation focuses field
     await expect(page2.getByTestId("account-groups-table")).toContainText("العملاء", { timeout: 10_000 });
 
     // 2) Reject {} upload in UI without wiping existing records
-    const [invalidChooser] = await Promise.all([
-      page1.waitForEvent("filechooser", { timeout: 10_000 }),
-      (async () => {
-        await page1.getByTestId("header-options-btn").click({ timeout: 10_000 });
-        await page1.getByTestId("options-restore-backup-btn").click({ timeout: 10_000 });
-      })(),
-    ]);
-    await invalidChooser.setFiles({
-      name: "empty-invalid.json",
-      mimeType: "application/json",
-      buffer: Buffer.from("{}"),
-    });
+    await restoreFile(page1, "empty-invalid.json", Buffer.from("{}"));
     await expect(page1.locator(".app-toast")).toContainText(/تم رفض|فارغ/i, { timeout: 10_000 });
+    await page1.getByLabel("رجوع", {exact:true}).click();
     await expect(page1.getByTestId("account-groups-table")).toContainText("العملاء");
 
     // 3) Inline validation & field focus in InvoiceModal when amount is cleared on existing invoice #9178
@@ -489,6 +479,7 @@ test("UI handles invalid {} JSON safely, inline invoice validation focuses field
     const isAmountFocused = await amountInput.evaluate((el) => document.activeElement === el);
     expect(isAmountFocused).toBe(true);
     await invModal.getByRole("button", { name: "إلغاء", exact: true }).click({ timeout: 10_000 });
+    await page1.getByRole("button", {name:"تجاهل التعديلات", exact:true}).click();
     await expect(invModal).toHaveCount(0);
 
     await expect(page1.locator(".transaction-card", { hasText: "750" }).first()).toBeVisible({ timeout: 10_000 });
@@ -505,18 +496,21 @@ test("UI handles invalid {} JSON safely, inline invoice validation focuses field
     await expect(page1.getByTestId("dashboard-screen")).toBeVisible({ timeout: 10_000 });
     await page1.getByRole("button", { name: "فاتورة جديدة", exact: true }).click({ timeout: 10_000 });
     const droppedModal = page1.getByTestId("invoice-modal");
+    await invoiceAccount(page1, "حساب التحقق التفاعلي");
     await droppedModal.getByLabel("حرة", { exact: true }).check({ timeout: 10_000 });
+    await droppedModal.getByRole("button", {name:"مبلغ فقط", exact:true}).click();
     await droppedModal.getByTestId("invoice-free-amount").fill("225");
     await droppedModal.getByTestId("invoice-save-btn").click({ timeout: 10_000 });
     await expect(droppedModal.getByTestId("invoice-validation-error")).toContainText("النتيجة غير مؤكدة", { timeout: 10_000 });
     await page1.unroute(`**/api/db/workspace/${uid}/ledger`);
     await droppedModal.getByRole("button", { name: "إلغاء", exact: true }).click({ timeout: 10_000 });
+    await page1.getByRole("button", {name:"تجاهل التعديلات", exact:true}).click();
 
     // 5) Hung JSON export in FullSqliteImportModal times out cleanly instead of hanging forever
     await page1.route(`**/api/db/workspace/${uid}/export/json`, async () => {
       // Intentionally hold request open beyond 12s AbortController timeout
     });
-    await page1.getByLabel("الإعدادات", { exact: true }).click({ timeout: 10_000 });
+    await settings(page1);
     await page1.getByTestId("settings-full-sqlite-import-btn").click({ timeout: 10_000 });
     const dbCenter = page1.getByRole("dialog");
     await dbCenter.getByTestId("legacy-export-json-btn").click({ timeout: 10_000 });
@@ -559,6 +553,7 @@ test("UI handles invalid {} JSON safely, inline invoice validation focuses field
     // Delete the custom currency and verify default "ريال" remains
     await currModal.getByTestId("currency-row-ريال سعودي").click({ timeout: 10_000 });
     await currModal.getByTestId("currency-delete-btn").click({ timeout: 10_000 });
+    await page1.getByRole("button", {name:"تأكيد الحذف", exact:true}).click();
     await expect(currModal.getByTestId("currency-row-ريال سعودي")).toHaveCount(0);
     await currModal.getByRole("button", { name: "إغلاق العملات", exact: true }).click({ timeout: 10_000 });
   } finally {

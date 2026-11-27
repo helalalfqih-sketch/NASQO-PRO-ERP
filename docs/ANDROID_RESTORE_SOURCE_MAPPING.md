@@ -1,0 +1,7 @@
+# Restore source mapping
+
+Original web path: SystemSettingsPage -> Prototype -> backupFormat -> firebase.ts -> sqliteApi.ts -> legacySqliteImporter.ts / smartproSqlImporter.ts / restoreUnifiedJsonBundle. The Android build instead invokes restoreLocalBackup, uses MainActivity.kt to choose a file, and reads it in LocalBackupRestore. Legacy SQLite/SQL activation writes to the private nasqo_pro_erp.db with LegacyOperationalRestore and refreshes React. Native Android backups restore operational tables. Normalized web JSON and web SQLite backups still use isolated review: they must not be passed into the SmartPro legacy importer under a different format label.
+
+Legacy invoice presentation now mirrors the source web importer when an original movement has no description: use a preview of up to eight known item lines, at most 600 characters. Actual invoice detail rows remain separate, with the original warehouse, SKU and item names. Free lines use their own descriptions, not an inventory name. UTC day plus original movement ID provides deterministic order for same-day documents. The exact original source bytes are retained; no journal or stock quantity is generated from the preview.
+
+The private acceptance test uses OpenDatabaseOptions to open its copied source read-only, verifies the original archive hash, and checks proposed stock rows without printing private values. It is skipped on CI unless a private file is explicitly supplied locally. No data was uploaded to the repository.

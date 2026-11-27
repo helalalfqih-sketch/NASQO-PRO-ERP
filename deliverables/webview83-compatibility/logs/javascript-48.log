@@ -1,0 +1,70 @@
+✔ 165 USD and 21 SAR remain separate, selected currency/date/search and empty result affect exact rows (31.643063ms)
+✔ XLSX has numeric amount/balance and currency column, genuine OOXML container (30.686052ms)
+✔ ERP diff sends only changed records, preserves revision, rejects whole-store deletion/financial markers (0.963497ms)
+✔ conversion without an approved rate source is refused, not silently 1:1 (0.175054ms)
+✔ formatNasqoBackupFilename matches backup_YYYY.MM.DD_HH.MM.SS.back convention (1.899633ms)
+✔ buildLocalBackupDownloadName preserves .back or .json and appends .back when missing (0.375498ms)
+✔ inspectBackupBytes detects valid JSON .back files, SQLite .back files, and ZIP .back files, and rejects invalid/empty JSON objects (1.64026ms)
+✔ account then group then cashier then system, never arbitrary or incompatible box (2.8806ms)
+✔ workspace SQLite settings reject foreign references atomically; backup remaps all IDs without ledger or stock writes (88.318248ms)
+✔ a recreated store retains a pending ID without storing financial payload (14.541517ms)
+✔ lost acknowledgement, recreated bridge and explicit Save recover by reads only (26.282371ms)
+✔ an absent receipt after timeout blocks resending but not an unrelated document (3.844562ms)
+✔ storage quota denial prevents sending a financial request (1.742696ms)
+✔ a different workspace cannot confirm a saved document with the same ID (2.386347ms)
+✔ a malformed success acknowledgement preserves the pending marker (3.204073ms)
+✔ acknowledged validation rejection permits correcting the same draft (5.49451ms)
+✔ fresh reads recover search, filters, scroll and draft identity without a memory cache (1.580764ms)
+✔ a missing/deleted record truncates restoration before its dependent routes (1.053511ms)
+✔ corrupt/version-mismatched or cross-workspace envelopes fall back safely (0.461503ms)
+✔ schema checks reject malformed UI fields and storage failure never claims success (1.957977ms)
+✔ discard removes only the selected UI draft, without touching records or other workspaces (0.46969ms)
+▶ Hybrid Bridge Contracts & Security Validation
+  ✔ accepts all 12 core commands plus domain commands in strict allowlist (1.437651ms)
+  ✔ rejects unauthorized actions and raw SQL/shell injection keys (0.963622ms)
+  ✔ enforces mandatory idempotencyKey on financial mutations (0.757534ms)
+  ✔ validates inbound responses and rejects malformed or unknown host events (0.643573ms)
+✔ Hybrid Bridge Contracts & Security Validation (5.800435ms)
+▶ NasqoHybridBridge Runtime & Duplicate Prevention
+  ✔ blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST (5.45586ms)
+  ✔ propagates Flutter service errors and timeouts without faking success (35.72632ms)
+  ✔ rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached (0.607653ms)
+✔ NasqoHybridBridge Runtime & Duplicate Prevention (42.357034ms)
+▶ Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ✔ hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge (3.731084ms)
+✔ Hybrid Service Adapter Simulated Flutter Host Round-Trip (4.07558ms)
+▶ Hybrid Routes Canonical Mapping
+  ✔ normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches (0.349927ms)
+✔ Hybrid Routes Canonical Mapping (0.461505ms)
+▶ Offline Hybrid Build Output Integrity (dist/hybrid)
+  ✔ produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code (19.240009ms)
+  ✔ prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge (0.96617ms)
+✔ Offline Hybrid Build Output Integrity (dist/hybrid) (20.348283ms)
+▶ Stage 2 Home Screen Batch 1 Requirements
+  ✔ validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads (1.108134ms)
+  ✔ computes signed multi-currency group balances accurately without mixing currencies (1.850799ms)
+  ✔ blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences (0.970321ms)
+  ✔ supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout (0.953362ms)
+✔ Stage 2 Home Screen Batch 1 Requirements (5.12483ms)
+✔ uses explicit journal legs for stock cost, tax and account reports (2.450863ms)
+▶ Legacy register restoration parity
+  ✔ preserves both original sides in account, statement and group reports, without fictitious counterpart (0.682506ms)
+✔ Legacy register restoration parity (0.770735ms)
+✔ cashbox metadata needs catalog capability and an idempotency key in read-only financial mode (0.603266ms)
+✔ invoice reference and fallback survive Android WebViews without Array.at (1.587692ms)
+✔ reference-style invoice summary computes 53 pieces and 348,100 in original line totals (1.542557ms)
+✔ source-derived invoice fields resolve customer, store, group, original time and amount without inventing payment (2.038039ms)
+✔ unknown original quantities/totals stay unknown rather than becoming zero (0.217467ms)
+✔ owner-scoped v2 records never overwrite other workspaces, even with same source IDs (31.46005ms)
+✔ version-one IndexedDB snapshot remains readable and is copied only for its owner (6.926911ms)
+✔ empty v1 mirror cannot mask surviving localStorage after older cross-workspace overwrite (2.122338ms)
+✔ read-only startup does not create an empty DB or force a version upgrade (6.180357ms)
+✔ read-only startup reads v1 while a prior tab keeps its v1 connection open (1.743828ms)
+ℹ tests 48
+ℹ suites 7
+ℹ pass 48
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1429.013426

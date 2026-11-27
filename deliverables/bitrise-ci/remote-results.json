@@ -1,0 +1,92 @@
+{
+  "buildNumber": 3,
+  "buildId": "a45cd095-fe7e-4b82-a073-ea3fd71ecc57",
+  "appId": "1c88183f-9b1e-4ca9-8c46-d866877bfe0d",
+  "buildUrl": "https://app.bitrise.io/app/1c88183f-9b1e-4ca9-8c46-d866877bfe0d/build/a45cd095-fe7e-4b82-a073-ea3fd71ecc57",
+  "sourceSha": "346c823eb57c4b50853c8e6493c6c96cf912cd43",
+  "branch": "agent/bitrise-android-ci",
+  "status": "success",
+  "finishedAtAden": "2026-11-26T18:17:31+03:00",
+  "workflow": "primary",
+  "stack": "ubuntu-noble-24.04-bitrise-2025-android",
+  "requestedMachine": "g2.linux.medium",
+  "reportedResourceClass": "elite",
+  "creditCostReported": null,
+  "checks": {
+    "protectedFiles": true,
+    "javascriptTests": true,
+    "flutterTests": true,
+    "hybridFilesVerified": true,
+    "apkVerified": true,
+    "successfulBuild": true
+  },
+  "passed": {
+    "flutterTests": 94,
+    "javascriptTests": 44,
+    "protectedFiles": 28,
+    "hybridFilesVerified": 63
+  },
+  "apk": {
+    "name": "NASQO-PRO-ERP-debug-346c823eb57c.apk",
+    "bytes": 198120782,
+    "versionName": "1.0.0",
+    "versionCode": "1",
+    "package": "com.indexesstore.nasqo_pro_erp",
+    "label": "نسقو برو",
+    "signer": "C=US, O=Android, CN=Android Debug",
+    "publicInstallPage": false,
+    "productionUpgrade": false,
+    "downloadUrl": "https://app.bitrise.io/artifact/f9fcb06f4123738e/download"
+  },
+  "artifacts": [
+    {
+      "name": "apk-identity.json",
+      "bytes": 312,
+      "slug": "b28290a276cc287b"
+    },
+    {
+      "name": "test.log",
+      "bytes": 41494,
+      "slug": "19f4162361545a78"
+    },
+    {
+      "name": "apk.log",
+      "bytes": 1862,
+      "slug": "8e4bc71c7e7ae735"
+    },
+    {
+      "name": "prepare.log",
+      "bytes": 6492,
+      "slug": "72c87f5bfe73f739"
+    },
+    {
+      "name": "web.log",
+      "bytes": 14263,
+      "slug": "6aef67cbf0cb7f3e"
+    },
+    {
+      "name": "source-sha.txt",
+      "bytes": 41,
+      "slug": "cf01c3159a206275"
+    },
+    {
+      "name": "NASQO-PRO-ERP-debug-346c823eb57c.apk.sha256",
+      "bytes": 103,
+      "slug": "bb969b05b0182e34"
+    },
+    {
+      "name": "NASQO-PRO-ERP-debug-346c823eb57c.apk",
+      "bytes": 198120782,
+      "slug": "f9fcb06f4123738e"
+    }
+  ],
+  "limits": [
+    "No Android UI or physical-phone test in this workflow.",
+    "APK and SHA256 artifact downloads blocked locally: storage.googleapis.com is outside the restricted network. Remote build verifies identity and generates SHA256.",
+    "Existing run_tests workflow and its triggers preserved.",
+    "No JUnit report uploaded; test results are in web.log/test.log.",
+    "Report follow-up remains local; github.com network grant was not approved."
+  ],
+  "appliedWorkflowConfigSha256": "d9bfb48a6d88d97a0fd7fc554701e6e0b3fa7bdbee52a4dd55160bfd3600b740",
+  "completeLogSha256": "c89d0082ab0af8e988267961f0a495f526fe9ff7b7aff8d97f3d156eb015ce0a"
+}

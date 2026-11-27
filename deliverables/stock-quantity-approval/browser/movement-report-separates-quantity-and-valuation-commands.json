@@ -1,0 +1,24 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "inventory-report"
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "profitBasis": "avg"
+      }
+    }
+  }
+]

@@ -1,0 +1,12 @@
+00:00 +0: loading /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart
+00:00 +0: one correlated consumed reply cannot authorize exit
+00:00 +1: IME consumption completes without requiring a React reply
+00:00 +2: home exit requires a current correlated reply and exact root
+00:00 +3: rapid double back shares no request and applies no second result
+00:00 +4: missing, unavailable and throwing bridge never exit
+00:00 +5: late reply from expired request cannot satisfy subsequent request
+00:00 +6: uncorrelated legacy message is acknowledged without exiting
+00:00 +7: unrelated/malformed messages remain in normal protocol path
+00:00 +8: dispose interrupts back and stale callbacks cannot exit a new view
+00:00 +9: opening an external picker or pausing cancels pending exit permission
+00:00 +10: All tests passed!

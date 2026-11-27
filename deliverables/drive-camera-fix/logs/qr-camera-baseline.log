@@ -1,0 +1,44 @@
+[WebServer] (node:15945) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:15958) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:15985) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/qr-camera.spec.ts:16:1 › a granted camera attaches to the mounted video and plays after an explicit click (5.9s)
+
+
+  1) tests/qr-camera.spec.ts:16:1 › a granted camera attaches to the mounted video and plays after an explicit click
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      17 |   expect((await stats(page)).calls).toEqual([]);
+      18 |   await start(page);
+    > 19 |   await expect.poll(async () => (await stats(page)).plays).toBe(1);
+         |                                                            ^
+      20 |   expect(await page.locator("video").evaluate((video: HTMLVideoElement) => video.srcObject !== null)).toBe(true);
+      21 |   expect((await stats(page)).calls).toEqual([{ video: { facingMode: { ideal: "environment" } }, audio: false }]);
+      22 |   expect((await stats(page)).writes).toBe(0);
+        at /workspace/NASQO-drive-fix/tests/qr-camera.spec.ts:19:60
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    deliverables/drive-camera-fix/browser-artifacts/qr-camera-a-granted-camera-b9de8-ays-after-an-explicit-click/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: deliverables/drive-camera-fix/browser-artifacts/qr-camera-a-granted-camera-b9de8-ays-after-an-explicit-click/error-context.md
+
+  1 failed
+    tests/qr-camera.spec.ts:16:1 › a granted camera attaches to the mounted video and plays after an explicit click
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

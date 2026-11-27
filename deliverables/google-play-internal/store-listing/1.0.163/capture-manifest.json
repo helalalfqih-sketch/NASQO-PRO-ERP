@@ -1,0 +1,18 @@
+{
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "version": "1.0.163",
+  "versionCode": 1163,
+  "apkSha256": "b71e7cd141e438a2156cd82412d197659b195829215ba57b19292be61b16b937",
+  "sdk": "36",
+  "resolution": [
+    1080,
+    1920
+  ],
+  "density": 420,
+  "method": "Original adb exec-out screencap -p; no image editing or compositing",
+  "data": "Fresh empty workspace; no private data, restores or saved records",
+  "screenshots": [
+    "01-home.png",
+    "02-cashier-settings.png"
+  ]
+}

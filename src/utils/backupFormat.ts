@@ -39,6 +39,9 @@ export function validateJsonBackupCandidate(parsed: unknown): string | null {
   if (Object.keys(obj).length === 0) {
     return "ملف JSON فارغ {} لا يطابق بنية نسخة نسقو برو الاحتياطية — لم يتم تعديل البيانات.";
   }
+  if (obj.format === "nasqo-android-backup-v1") {
+    return "هذه نسخة تشغيلية من تطبيق Android. استعدها من إعدادات النسخ الاحتياطي في التطبيق؛ استعادتها في نسخة الويب غير مدعومة بعد. لم تتغير البيانات.";
+  }
   if (obj.format !== undefined) {
     if (typeof obj.format !== "string" || !KNOWN_BACKUP_FORMATS.has(obj.format)) {
       return `صيغة النسخة (${String(obj.format)}) غير مدعومة في نسقو برو.`;

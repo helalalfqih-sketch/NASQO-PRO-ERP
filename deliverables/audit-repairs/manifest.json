@@ -1,0 +1,15 @@
+{
+  "repository": "helalalfqih-sketch/NASQO-PRO-ERP",
+  "branch": "agent/cloud-session-hardening-v1118",
+  "productSha": "6f615b6d9aed413bf4ba2ca9588740cd125dc467",
+  "reportBaseSha": "6f980410790346a385d27c12753db65d692d952e",
+  "testHarnessSha": "6f980410790346a385d27c12753db65d692d952e",
+  "publishedBranchUntouched": "dev/offline-first-android-phase2",
+  "publishedSha": "0a0b2414207166f783ea2bee2e64d4df4a4fa394",
+  "preservedPriorLocalCommits": [
+    "61f9736",
+    "e5e3b491435803e3e35438c1e28c9edee629b930"
+  ],
+  "data": "synthetic only",
+  "deferred": "ERP-001-RET-LATE"
+}

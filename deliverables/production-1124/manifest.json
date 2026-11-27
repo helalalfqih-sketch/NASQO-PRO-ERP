@@ -1,0 +1,19 @@
+{
+  "repository": "helalalfqih-sketch/NASQO-PRO-ERP",
+  "sourceSha": "b607fa74925c8fc2c4662c6cb1e82f8164b1b25e",
+  "versionName": "1.0.124",
+  "versionCode": 1124,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "expectedCertificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "buildRun": 45682512587,
+  "testRun": 45682490219,
+  "previousVersionTag": "android-preview-v1123",
+  "stableTag": "android-v1124",
+  "legacyCompatibilityTag": "android-preview-v1124",
+  "dataUsed": "synthetic empty workspace only",
+  "publishedBranchUnchanged": "0a0b2414207166f783ea2bee2e64d4df4a4fa394",
+  "publishAndUpgradeRun": 45684547905,
+  "publishWorkflowSha": "eb38115a8d4bb1c2bafd16cdefce386b50116beb",
+  "apkSha256": "ccb8732eb4bd6f833229e4aa27380944a16a692670d7ef3ec1a193806ca03be3",
+  "published": true
+}

@@ -1,0 +1,586 @@
+name: Flutter hybrid offline preview (no deployment)
+
+on:
+  push:
+    branches: [dev/offline-first-android-phase2]
+  pull_request:
+    branches: [main]
+    paths:
+      - "flutter_app/**"
+      - "src/hybrid/**"
+      - "scripts/build-hybrid.mjs"
+      - "scripts/sync-hybrid-to-flutter.mjs"
+      - ".github/workflows/flutter-hybrid-preview.yml"
+  workflow_dispatch:
+    inputs:
+      upload_tested_release:
+        description: Upload the verified 1.0.170 APK and AAB to the prepared GitHub draft (no rebuild)
+        type: boolean
+        default: false
+      publish_verified_candidate:
+        description: Publish the already verified 1.0.138 artifact (no rebuild)
+        type: boolean
+        default: false
+      signed_candidate:
+        description: Build a signed candidate artifact without automatic publication
+        type: boolean
+        default: false
+      build_play_bundle:
+        description: Also build an API 36 signed AAB for Google Play internal testing (requires signed_candidate)
+        type: boolean
+        default: false
+      verify_existing_run:
+        description: Test an existing signed APK on Android 16 without rebuilding or publishing (source run ID)
+        type: string
+        default: ''
+      store_screenshots:
+        description: Capture real 1080x1920 store screenshots from verify_existing_run on a fresh emulator (no build or publishing)
+        type: boolean
+        default: false
+      test_pending_purchase:
+        description: Verify automatic opening setup and post a synthetic purchase on the isolated Android emulator
+        type: boolean
+        default: false
+      inspect_play_signing_tool:
+        description: Inspect Google's public PEPK tool only (no signing secrets or app build)
+        type: boolean
+        default: false
+      export_play_signing_key:
+        description: Encrypt the existing signing key for the pinned Google Play recipient (no build or release)
+        type: boolean
+        default: false
+
+# Only the newest revision of this review branch needs an APK.
+concurrency:
+  group: nasqo-flutter-hybrid-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  upload-tested-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_tested_release == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require the tested source and prepared empty draft
+        env:
+          OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.store_screenshots || inputs.test_pending_purchase || inputs.inspect_play_signing_tool || inputs.export_play_signing_key }}
+          VERIFY_RUN: ${{ inputs.verify_existing_run }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = helalalfqih-sketch/NASQO-PRO-ERP
+          test "$OTHER_ACTIONS" = false
+          test -z "$VERIFY_RUN"
+          gh api "repos/$GH_REPO/actions/runs/46040028289" > source-run.json
+          gh api "repos/$GH_REPO/actions/runs/46041883021" > verified-run.json
+          gh api "repos/$GH_REPO/releases/460913370" > release.json
+          python3 - <<'PY'
+          import json
+          for filename, sha in [('source-run.json', '98e59fd8c5f72c763d7dd40c3aa11478a4664077'), ('verified-run.json', 'd6720844a53f97615c860cedf941a712e68759ae')]:
+              run = json.load(open(filename))
+              assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
+          release = json.load(open('release.json'))
+          assert release['tag_name'] == 'android-preview-v1170'
+          assert release['target_commitish'] == '98e59fd8c5f72c763d7dd40c3aa11478a4664077'
+          assert release['draft'] and release['prerelease'] and not release['assets']
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: apk
+          run-id: 46040028289
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-play-internal-bundle
+          path: bundle
+          run-id: 46040028289
+          github-token: ${{ github.token }}
+      - name: Upload only the exact verified APK and AAB
+        run: |
+          set -euo pipefail
+          mkdir release-files
+          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.170.apk
+          cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.170.aab
+          cd release-files
+          printf '%s  %s\n' \
+            f242cfde445e0a2406cbeba4dde4c66340340cf0031270d25f0faa236d1aea37 NASQO-PRO-ERP-1.0.170.apk \
+            8e2ba1a0560a6fe8c5093d3363a3980268053bb18ea2224d5a799e9d0918a1a6 NASQO-PRO-ERP-1.0.170.aab > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          gh release upload android-preview-v1170 NASQO-PRO-ERP-1.0.170.apk NASQO-PRO-ERP-1.0.170.aab SHA256SUMS.txt
+          gh api "repos/$GH_REPO/releases/460913370" > ../uploaded-release.json
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          release = json.load(open('../uploaded-release.json'))
+          assert release['draft'] and len(release['assets']) == 3
+          for asset in release['assets']:
+              file = Path(asset['name'])
+              assert asset['state'] == 'uploaded' and asset['size'] == file.stat().st_size
+              assert asset['digest'] == 'sha256:' + hashlib.sha256(file.read_bytes()).hexdigest()
+          PY
+
+  export-play-signing-key:
+    if: github.event_name == 'workflow_dispatch' && inputs.export_play_signing_key == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require an export-only request
+        env:
+          OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.inspect_play_signing_tool }}
+        run: test "$OTHER_ACTIONS" = false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Download and verify official PEPK without signing credentials
+        run: |
+          set -euo pipefail
+          curl --fail --proto '=https' --max-redirs 0 --retry 2 \
+            https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar \
+            -o "$RUNNER_TEMP/pepk.jar"
+          printf '%s  %s\n' aaccc0774b240aa5304bdad2a49865e92f229ca73209ecb6eaafe75dc858e24e "$RUNNER_TEMP/pepk.jar" | sha256sum -c -
+      - name: Export only Google-encrypted key and matching public certificate
+        env:
+          NASQO_ANDROID_KEYSTORE_BASE64: ${{ secrets.NASQO_ANDROID_KEYSTORE_BASE64 }}
+          NASQO_ANDROID_STORE_PASSWORD: ${{ secrets.NASQO_ANDROID_STORE_PASSWORD }}
+          NASQO_ANDROID_KEY_ALIAS: ${{ secrets.NASQO_ANDROID_KEY_ALIAS }}
+          NASQO_ANDROID_KEY_PASSWORD: ${{ secrets.NASQO_ANDROID_KEY_PASSWORD }}
+          NASQO_ANDROID_CERT_SHA256: ${{ vars.NASQO_ANDROID_CERT_SHA256 }}
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir encrypted-play-key
+          python3 scripts/export-play-signing-key.py \
+            --jar "$RUNNER_TEMP/pepk.jar" \
+            --public-key scripts/play-signing/encryption_public_key.pem \
+            --public-key-sha256 d014d7e738a9dccab59a1ad118825fb8f55797f3bec3e079358b5bcc382c4fb8 \
+            --output encrypted-play-key/NASQO-Play-signing-key.zip \
+            > encrypted-play-key/verification.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-google-play-signing-export
+          path: encrypted-play-key/
+          retention-days: 1
+          if-no-files-found: error
+
+  inspect-play-signing-tool:
+    if: github.event_name == 'workflow_dispatch' && inputs.inspect_play_signing_tool == true && inputs.export_play_signing_key != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Inspect official public PEPK tool without credentials
+        run: |
+          set -euo pipefail
+          mkdir tool-info
+          curl --fail --proto '=https' --max-redirs 0 --retry 2 \
+            https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar \
+            -o tool-info/pepk.jar
+          (cd tool-info && sha256sum pepk.jar > pepk.jar.sha256)
+          jar tf tool-info/pepk.jar > tool-info/classes.txt
+          grep -q 'ExportEncryptedPrivateKeyTool.class' tool-info/classes.txt
+          java -jar tool-info/pepk.jar --help > tool-info/help.txt 2>&1 || true
+          cat tool-info/pepk.jar.sha256
+          cat tool-info/help.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-public-pepk-tool
+          path: tool-info/
+          retention-days: 1
+          if-no-files-found: error
+
+  flutter-hybrid:
+    if: inputs.upload_tested_release != true && inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true && inputs.export_play_signing_key != true && inputs.verify_existing_run == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Play bundle request
+        if: inputs.build_play_bundle == true
+        env:
+          SIGNED_CANDIDATE: ${{ inputs.signed_candidate }}
+        run: test "$SIGNED_CANDIDATE" = true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.12.0"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Reuse resolved Gradle distributions and dependencies on the review branch.
+      # Never cache the temporary signing keystore or enable configuration-cache secrets.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/dev/offline-first-android-phase2' || github.event_name == 'pull_request' }}
+
+      # ubuntu-latest already provides ANDROID_HOME and SDK tooling.
+      # setup-android@v3 currently fails while requesting the retired
+      # sdkmanager "tools" package; use the preinstalled SDK instead.
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.3"
+          channel: stable
+          cache: true
+
+      - name: Build and audit local React assets
+        run: |
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run sync:flutter-hybrid
+          npx tsx --test tests/hybrid.test.ts tests/hybrid-message-limits.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts tests/erp-crud.test.ts tests/erp-input.test.ts tests/sqlite-local-production.test.mjs tests/smartpro-policy.test.ts tests/workspace-isolation.test.ts
+
+      - name: Verify rendered CRUD against isolated SQLite
+        run: |
+          npm run build
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)"
+          export CRUD_UI_OUTPUT="$RUNNER_TEMP/nasqo-crud-ui"
+          npx tsx scripts/verify-crud-ui.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-crud-browser-evidence
+          path: ${{ runner.temp }}/nasqo-crud-ui/
+
+      - name: Generate Android scaffold (not committed)
+        working-directory: flutter_app
+        run: |
+          flutter create --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
+          flutter pub get
+
+      - name: Configure Google Play API 36 scaffold
+        if: inputs.build_play_bundle == true
+        run: |
+          python3 -m unittest discover -s tests -p test_play_bundle.py
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
+          node scripts/configure-android-play.mjs
+
+      - name: Install SQLite test runtime
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Analyze and test Flutter/Dart
+        working-directory: flutter_app
+        env:
+          NASQO_PENDING_DB: ${{ runner.temp }}/nasqo-pending-qa.db
+        run: |
+          flutter analyze --no-fatal-infos
+          bash ../scripts/test-flutter-audit.sh
+
+      - name: Upload synthetic purchase fixture
+        if: inputs.test_pending_purchase == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-purchase-test-fixture
+          path: ${{ runner.temp }}/nasqo-pending-qa.db
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build debug APK for review only
+        if: inputs.signed_candidate != true
+        working-directory: flutter_app
+        env:
+          NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
+          NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
+        run: |
+          bash ../scripts/build-android-with-retry.sh flutter build apk --debug \
+            --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
+            --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
+
+      - name: Upload isolated preview artifact
+        if: inputs.signed_candidate != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-hybrid-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Build signed versioned APK
+        if: ((github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true))
+        working-directory: flutter_app
+        env:
+          NASQO_ANDROID_KEYSTORE_BASE64: ${{ secrets.NASQO_ANDROID_KEYSTORE_BASE64 }}
+          NASQO_ANDROID_STORE_PASSWORD: ${{ secrets.NASQO_ANDROID_STORE_PASSWORD }}
+          NASQO_ANDROID_KEY_ALIAS: ${{ secrets.NASQO_ANDROID_KEY_ALIAS }}
+          NASQO_ANDROID_KEY_PASSWORD: ${{ secrets.NASQO_ANDROID_KEY_PASSWORD }}
+          NASQO_ANDROID_CERT_SHA256: ${{ vars.NASQO_ANDROID_CERT_SHA256 }}
+          NASQO_BUILD_PLAY_BUNDLE: ${{ inputs.build_play_bundle }}
+          NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
+          NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${NASQO_ANDROID_KEYSTORE_BASE64:?Configure a permanent signing keystore}"
+          : "${NASQO_ANDROID_CERT_SHA256:?Configure the expected signing certificate SHA256}"
+          export NASQO_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/nasqo-release.jks"
+          trap 'rm -f "$NASQO_ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$NASQO_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$NASQO_ANDROID_KEYSTORE_PATH"
+          node ../scripts/configure-android-signing.mjs
+          CODE=$((1000 + GITHUB_RUN_NUMBER))
+          PREVIEW_UPDATES=true
+          if [[ "$NASQO_BUILD_PLAY_BUNDLE" == true ]]; then PREVIEW_UPDATES=false; fi
+          bash ../scripts/build-android-with-retry.sh flutter build apk --release \
+            --build-name="1.0.$GITHUB_RUN_NUMBER" --build-number="$CODE" \
+            --dart-define=NASQO_ANDROID_PREVIEW="$PREVIEW_UPDATES" \
+            --dart-define=NASQO_ANDROID_BUILD_NUMBER="$CODE" \
+            --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
+            --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          test -n "$SIGNER"
+          ACTUAL=$("$SIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          EXPECTED=$(printf '%s' "$NASQO_ANDROID_CERT_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test -n "$ACTUAL" && test "$ACTUAL" = "$EXPECTED"
+          mkdir -p release-output
+          cp "$APK" release-output/NASQO-PRO-ERP.apk
+          (cd release-output && sha256sum NASQO-PRO-ERP.apk > NASQO-PRO-ERP.apk.sha256)
+          if [[ "$NASQO_BUILD_PLAY_BUNDLE" == true ]]; then
+            bash ../scripts/build-play-bundle.sh
+          fi
+
+      - name: Upload signed APK candidate
+        if: ((github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true))
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: flutter_app/release-output/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Google Play internal testing bundle
+        if: inputs.build_play_bundle == true && inputs.signed_candidate == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-play-internal-bundle
+          path: flutter_app/play-output/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-preview:
+    needs: flutter-hybrid
+    if: github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true' && inputs.signed_candidate != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+      - name: Publish immutable versioned prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          CODE=$((1000 + GITHUB_RUN_NUMBER))
+          TAG="android-preview-v$CODE"
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Version already published; refusing overwrite"
+            exit 1
+          fi
+          gh release create "$TAG" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "NASQO Android preview 1.0.$GITHUB_RUN_NUMBER" \
+            --notes "Signed development preview. Financial workflows and cloud sync are not production-certified. Android verifies the signing identity on upgrade."
+
+  signed-upgrade:
+    needs: flutter-hybrid
+    if: github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NASQO_ANDROID_NAV_SMOKE: ${{ inputs.build_play_bundle }}
+      NASQO_ANDROID_PENDING_PURCHASE: ${{ inputs.test_pending_purchase }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+      - uses: actions/download-artifact@v4
+        if: inputs.test_pending_purchase == true
+        with:
+          name: nasqo-purchase-test-fixture
+          path: synthetic-fixture
+      - name: Get prior published APK and verify identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous-release upgrade-evidence
+          gh release download android-v1138 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
+          "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
+          diff <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/previous-certificate.txt) <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/candidate-certificate.txt)
+          test -s upgrade-evidence/candidate-certificate.txt
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging release-output/NASQO-PRO-ERP.apk > upgrade-evidence/badging.txt
+          grep -F "application-label:'نسقو برو'" upgrade-evidence/badging.txt
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+      - name: Emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.build_play_bundle == true && 36 || 35 }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: bash scripts/verify-android-release-upgrade.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence/
+
+
+  verify-arabic-name:
+    if: github.event_name == 'workflow_dispatch' && (inputs.publish_verified_candidate == true || inputs.verify_existing_run != '') && inputs.export_play_signing_key != true
+    name: Verify existing signed Android artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NASQO_ANDROID_NAV_SMOKE: ${{ inputs.verify_existing_run != '' }}
+      NASQO_ANDROID_PENDING_PURCHASE: ${{ inputs.test_pending_purchase }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require verification-only request
+        if: inputs.verify_existing_run != ''
+        env:
+          OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.inspect_play_signing_tool || inputs.export_play_signing_key }}
+          SOURCE_RUN: ${{ inputs.verify_existing_run }}
+        run: |
+          test "$OTHER_ACTIONS" = false
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+      - name: Require capture-only source artifact
+        if: inputs.store_screenshots == true
+        env:
+          SOURCE_RUN: ${{ inputs.verify_existing_run }}
+          PUBLISH: ${{ inputs.publish_verified_candidate }}
+        run: |
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]]
+          test "$PUBLISH" = false
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+          run-id: ${{ inputs.verify_existing_run || '45824031255' }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: inputs.test_pending_purchase == true
+        with:
+          name: nasqo-purchase-test-fixture
+          path: synthetic-fixture
+          run-id: ${{ inputs.verify_existing_run }}
+          github-token: ${{ github.token }}
+      - name: Get prior published APK and verify identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous-release upgrade-evidence
+          gh release download android-v1138 --pattern NASQO-PRO-ERP.apk --dir previous-release
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$SIGNER" verify --print-certs previous-release/NASQO-PRO-ERP.apk > upgrade-evidence/previous-certificate.txt
+          "$SIGNER" verify --print-certs release-output/NASQO-PRO-ERP.apk > upgrade-evidence/candidate-certificate.txt
+          diff <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/previous-certificate.txt) <(sed -n '/^Signer #1 certificate SHA-256 digest:/p' upgrade-evidence/candidate-certificate.txt)
+          test -s upgrade-evidence/candidate-certificate.txt
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging release-output/NASQO-PRO-ERP.apk > upgrade-evidence/badging.txt
+          grep -F "application-label:'نسقو برو'" upgrade-evidence/badging.txt
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+      - name: Emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.verify_existing_run != '' && 36 || 35 }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: ${{ inputs.store_screenshots == true && 'python3 scripts/capture-android-store.py' || 'bash scripts/verify-android-release-upgrade.sh' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence/
+
+
+  publish-verified-candidate:
+    needs: verify-arabic-name
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified_candidate == true && inputs.export_play_signing_key != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful signed build and upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs/45824031255 > /tmp/release-run.json
+          test "$(jq -r .conclusion /tmp/release-run.json)" = success
+          test "$(jq -r .head_sha /tmp/release-run.json)" = b597afed1cd9d3a07e7d2483d214c5519830eadc
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: release-output
+          run-id: 45824031255
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-upgrade-evidence
+          path: upgrade-evidence
+      - name: Publish the verified APK and compatibility alias
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          (cd release-output && sha256sum -c NASQO-PRO-ERP.apk.sha256)
+          test "$(sha256sum release-output/NASQO-PRO-ERP.apk | cut -d ' ' -f 1)" = 79450f26a2e08424fbf109f6a4087756c1f4ec7419eafa701b4fcb8ebe33a361
+          for tag in android-v1141 android-preview-v1141; do
+            gh release view "$tag" --json isDraft,targetCommitish > /tmp/release-draft.json
+            test "$(jq -r .isDraft /tmp/release-draft.json)" = true
+            test "$(jq -r .targetCommitish /tmp/release-draft.json)" = b597afed1cd9d3a07e7d2483d214c5519830eadc
+            gh release upload "$tag" release-output/NASQO-PRO-ERP.apk release-output/NASQO-PRO-ERP.apk.sha256 upgrade-evidence/launcher.png deliverables/document-references/reference-defaults-settings.png --clobber
+            gh release edit "$tag" --notes-file deliverables/document-references/RELEASE-NOTES-AR.md
+          done
+          gh release edit android-v1141 --draft=false --prerelease=false --latest
+          gh release edit android-preview-v1141 --draft=false --prerelease --latest=false

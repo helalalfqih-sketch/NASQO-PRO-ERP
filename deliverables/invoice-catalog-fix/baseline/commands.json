@@ -1,0 +1,31 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "supplier"
+    }
+  },
+  {
+    "action": "openInvoice",
+    "payload": {
+      "intent": "invoice",
+      "accountId": "acc_sup_1",
+      "kindOverride": "purchase"
+    }
+  },
+  {
+    "action": "openStockReconciliation",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "warehouseId": "wh_main",
+      "productId": "synthetic-legacy-item"
+    }
+  }
+]

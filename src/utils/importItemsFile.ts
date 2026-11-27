@@ -1,6 +1,6 @@
-import * as XLSX from "xlsx";
-import { parseArabicNumber } from "../accounting";
+import { readImportWorkbook, workbookRows, importNumber, importText, importIdentifier, MAX_IMPORT_ROWS } from "./tabularImport";
 import type { CurrencyCode, InventoryItemRecord } from "../types";
+import type { WorkBook } from "xlsx";
 
 export type ImportedInventoryItemInput = Partial<InventoryItemRecord> & {
   name: string;
@@ -11,6 +11,7 @@ export type ParsedItemsImportResult = {
   items: ImportedInventoryItemInput[];
   skippedRows: number;
   sheetName: string;
+  notices: string[];
 };
 
 function normalizeHeaderCell(raw: unknown): string {
@@ -32,23 +33,6 @@ function cleanTextCell(raw: unknown): string {
     return Number.isInteger(raw) ? String(raw) : String(raw);
   }
   return String(raw).trim();
-}
-
-function parseOptionalNumber(raw: unknown): number | undefined {
-  if (raw === null || raw === undefined) return undefined;
-  if (typeof raw === "number") {
-    return Number.isFinite(raw) ? raw : undefined;
-  }
-  const s = String(raw).trim();
-  if (!s) return undefined;
-  const n = parseArabicNumber(s);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function defaultUnitConversion(unitName: string): number {
-  const norm = normalizeHeaderCell(unitName);
-  if (norm.includes("درزن") || norm.includes("دسته")) return 12;
-  return 1;
 }
 
 type ColumnMap = {
@@ -239,7 +223,7 @@ function detectColumnMap(headerRow: unknown[]): ColumnMap {
 
     if (
       map.quantity === undefined &&
-      (h === "الكميه" || h === "كميه" || h === "الرصيد" || h === "رصيد" || h === "المتوفر" || h === "qty" || h === "quantity")
+      (h === "الكميه" || h === "كميه" || h === "الرصيد" || h === "رصيد" || h === "المتوفر" || h === "الكميه المتوفره" || h === "كميه المتبقي" || h === "الكميه الحاليه" || h === "available qty" || h === "remaining quantity" || h === "qty" || h === "quantity")
     ) {
       map.quantity = idx;
       return;
@@ -277,155 +261,92 @@ function findHeaderRowIndex(rows: unknown[][]): { headerIndex: number; map: Colu
   return { headerIndex: -1, map: {} };
 }
 
-function isBinarySpreadsheet(bytes: Uint8Array): boolean {
-  if (bytes.length < 4) return false;
-  // ZIP (.xlsx / .xlsm / .ods): PK\x03\x04
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) {
-    return true;
-  }
-  // OLE2 Compound Document (.xls BIFF8): D0 CF 11 E0
-  if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) {
-    return true;
-  }
-  // Legacy BIFF2-5 BOF record: 09 00 / 09 02 / 09 04 / 09 08
-  if (bytes[0] === 0x09 && (bytes[1] === 0x00 || bytes[1] === 0x02 || bytes[1] === 0x04 || bytes[1] === 0x08)) {
-    return true;
-  }
-  return false;
-}
-
 export function parseItemsSpreadsheetBytes(
   bytes: Uint8Array,
   defaultCurrency: CurrencyCode = "ريال",
+  options: { sheetName?: string } = {},
 ): ParsedItemsImportResult {
-  let workbook: XLSX.WorkBook;
-  if (!isBinarySpreadsheet(bytes)) {
-    try {
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      workbook = XLSX.read(text, { type: "string", raw: false });
-    } catch {
-      workbook = XLSX.read(bytes, { type: "array", raw: false });
-    }
-  } else {
-    workbook = XLSX.read(bytes, { type: "array", raw: false });
-  }
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) {
-    throw new Error("الملف لا يحتوي على أي ورقة بيانات صالحة.");
-  }
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-    header: 1,
-    defval: "",
-    blankrows: false,
-  });
+  return parseItemsWorkbook(readImportWorkbook(bytes), defaultCurrency, options);
+}
 
-  if (!rows.length) {
-    throw new Error("الملف فارغ ولا يحتوي على صفوف أصناف.");
-  }
+export function preferredItemsSheet(book: WorkBook): string {
+  return book.SheetNames.includes("بطاقات الأصناف") ? "بطاقات الأصناف" : book.SheetNames[0];
+}
 
-  let { headerIndex, map } = findHeaderRowIndex(rows);
-  if (headerIndex === -1) {
-    // Fallback for headerless simple CSV/Excel: [name, sku, unit, avgCost, sellingPrice]
-    headerIndex = -1;
-    map = { name: 0, sku: 1, unit: 2, avgCost: 3, sellingPrice: 4 };
-  }
-
+export function parseItemsWorkbook(book: WorkBook, defaultCurrency: CurrencyCode = "ريال", options: {sheetName?: string} = {}): ParsedItemsImportResult {
+  const {rows, sheet, sheetName} = workbookRows(book, options.sheetName || preferredItemsSheet(book));
+  const {headerIndex, map} = findHeaderRowIndex(rows);
+  if(headerIndex < 0) throw new Error("أضف صف عناوين يتضمن «اسم الصنف»؛ لم يُفترض ترتيب الأعمدة.");
+  const scope = book.Sheets["نطاق التقرير"];
+  const headers = rows[headerIndex].map(normalizeHeaderCell);
+  const reportCardsOnly = sheetName === "التقرير" && scope?.A1?.v === "التقرير" && scope?.B1?.v === "حركة المخزون" &&
+    ["الرقم", "الصنف", "الوحدة", "المتوفر", "الشراء", "البيع", "الربح", "العملة"].every(h => headers.includes(normalizeHeaderCell(h)));
+  const notices = reportCardsOnly ? ["هذا تقرير حركة مخزون: ستُقرأ أسماء الأصناف ووحداتها وعملاتها فقط. الإجماليات والكميات ليست أسعار بطاقات، ولن تُستورد كأرصدة أو حركات."] : [];
+  if (reportCardsOnly) { delete map.quantity; delete map.avgCost; delete map.sellingPrice; }
   const items: ImportedInventoryItemInput[] = [];
+  const seen = new Set<string>();
+  const reportIdentities = new Set<string>();
   let skippedRows = 0;
-
-  for (let r = headerIndex + 1; r < rows.length; r += 1) {
-    const row = rows[r];
-    if (!Array.isArray(row)) {
-      skippedRows += 1;
-      continue;
+  const labels: Record<keyof ColumnMap, string> = { legacyId:"رقم الصنف", sku:"الباركود", name:"اسم الصنف", unit:"الوحدة", avgCost:"سعر الشراء المرجعي", sellingPrice:"سعر البيع", unit2:"الوحدة الثانية", count2:"معامل الوحدة الثانية", sprice2:"سعر الوحدة الثانية", unit3:"الوحدة الثالثة", count3:"معامل الوحدة الثالثة", sprice3:"سعر الوحدة الثالثة", currencyCode:"العملة", isActive:"الحالة", defaultUnit:"الوحدة الافتراضية", quantity:"الكمية", minThreshold:"حد الطلب", expiryDate:"تاريخ الانتهاء" };
+  for(let r=headerIndex+1;r<rows.length;r++) {
+    const row=rows[r];
+    if(row.every(c=>String(c??"").trim()==="")){skippedRows++;continue;}
+    const text=(key:keyof ColumnMap,max:number)=>importText(map[key]===undefined?"":row[map[key]!],labels[key],r+1,max);
+    const num=(key:keyof ColumnMap)=>{
+      const n=importNumber(map[key]===undefined?undefined:row[map[key]!],labels[key],r+1);
+      if(n!==undefined&&n<0)throw new Error(`الصف ${r+1}: ${labels[key]} لا يقبل قيمة سالبة.`);
+      return n;
+    };
+    const name=text("name",120);
+    if(!name)throw new Error(`الصف ${r+1}: اسم الصنف مطلوب.`);
+    const sku=map.sku===undefined?"":importText(importIdentifier(sheet,r,map.sku,row[map.sku]),"الباركود",r+1,64);
+    if (reportCardsOnly) {
+      const reportIdentity = JSON.stringify([text("legacyId",150), name, text("unit",32), text("currencyCode",32)]);
+      if (reportIdentities.has(reportIdentity)) { skippedRows++; continue; }
+      reportIdentities.add(reportIdentity);
     }
-    const name = cleanTextCell(map.name !== undefined ? row[map.name] : "");
-    if (!name || normalizeHeaderCell(name) === "اسم الصنف" || normalizeHeaderCell(name) === "الاسم") {
-      skippedRows += 1;
-      continue;
+    const identity=sku?`sku:${sku}`:`name:${normalizeHeaderCell(name)}`;
+    if(seen.has(identity))throw new Error(`الصف ${r+1}: صنف مكرر داخل الملف.`);
+    seen.add(identity);
+    const unit=text("unit",32)||"حبة",unit2=text("unit2",32),unit3=text("unit3",32);
+    const count2=num("count2"),count3=num("count3");
+    if(unit3&&!unit2)throw new Error(`الصف ${r+1}: الوحدة الثالثة تتطلب الوحدة الثانية.`);
+    if((unit2&&(!Number.isInteger(count2)||!count2))||(unit3&&(!Number.isInteger(count3)||!count3)))throw new Error(`الصف ${r+1}: أدخل معاملًا صحيحًا موجبًا لكل وحدة إضافية؛ لا يوجد معامل افتراضي.`);
+    if((unit2&&unit2===unit)||(unit3&&(unit3===unit||unit3===unit2)))throw new Error(`الصف ${r+1}: أسماء الوحدات يجب أن تكون مختلفة.`);
+    const quantity=num("quantity");
+    if(quantity)throw new Error(`الصف ${r+1}: الملف يحتوي كمية مخزون؛ هذا الإجراء لبطاقات الأصناف والأسعار فقط. استعد الرصيد من نسخة أو إجراء افتتاح مستقل.`);
+    const status=normalizeHeaderCell(text("isActive",32));
+    const inactive=["خامل","موقف","غير نشط","معطل","0","false","inactive"];
+    const active=["","نشط","فعال","1","true","active"];
+    if(!inactive.includes(status)&&!active.includes(status))throw new Error(`الصف ${r+1}: حالة الصنف غير معروفة.`);
+    const def=text("defaultUnit",32);
+    let defaultUnit=1;
+    if(def&&def!=="1"&&def!==unit){
+      if(def==="2"||def===unit2)defaultUnit=2;
+      else if(def==="3"||def===unit3)defaultUnit=3;
+      else throw new Error(`الصف ${r+1}: الوحدة الافتراضية غير معروفة.`);
     }
-
-    const sku = map.sku !== undefined ? cleanTextCell(row[map.sku]) : "";
-    const unit = (map.unit !== undefined ? cleanTextCell(row[map.unit]) : "") || "حبة";
-    const avgCostRaw = map.avgCost !== undefined ? parseOptionalNumber(row[map.avgCost]) : undefined;
-    const avgCost = avgCostRaw !== undefined && avgCostRaw >= 0 ? avgCostRaw : 0;
-
-    const sellingPriceRaw = map.sellingPrice !== undefined ? parseOptionalNumber(row[map.sellingPrice]) : undefined;
-    const sellingPrice = sellingPriceRaw !== undefined && sellingPriceRaw >= 0 ? sellingPriceRaw : undefined;
-
-    let unit2 = map.unit2 !== undefined ? cleanTextCell(row[map.unit2]) : "";
-    let count2 = map.count2 !== undefined ? parseOptionalNumber(row[map.count2]) : undefined;
-    let sprice2 = map.sprice2 !== undefined ? parseOptionalNumber(row[map.sprice2]) : undefined;
-
-    let unit3 = map.unit3 !== undefined ? cleanTextCell(row[map.unit3]) : "";
-    let count3 = map.count3 !== undefined ? parseOptionalNumber(row[map.count3]) : undefined;
-    let sprice3 = map.sprice3 !== undefined ? parseOptionalNumber(row[map.sprice3]) : undefined;
-
-    if (unit3 && !unit2) {
-      unit2 = unit3;
-      count2 = count3;
-      sprice2 = sprice3;
-      unit3 = "";
-      count3 = undefined;
-      sprice3 = undefined;
+    if(defaultUnit===2&&!unit2||defaultUnit===3&&!unit3)throw new Error(`الصف ${r+1}: الوحدة الافتراضية غير مكتملة.`);
+    let expiryDate="";
+    const rawExpiry=map.expiryDate===undefined?"":row[map.expiryDate];
+    if(rawExpiry instanceof Date) expiryDate=rawExpiry.toISOString().slice(0,10);
+    else if(String(rawExpiry??"").trim()) {
+      expiryDate=String(rawExpiry).trim();
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)||!Number.isFinite(Date.parse(expiryDate))||new Date(expiryDate).toISOString().slice(0,10)!==expiryDate)throw new Error(`الصف ${r+1}: تاريخ الانتهاء يجب أن يكون YYYY-MM-DD أو خلية تاريخ Excel.`);
     }
-    if (unit2 && !(count2 && count2 > 0)) {
-      count2 = defaultUnitConversion(unit2);
-    }
-    if (unit3 && !(count3 && count3 > 0)) {
-      count3 = defaultUnitConversion(unit3);
-    }
-
-    const currencyRaw = map.currencyCode !== undefined ? cleanTextCell(row[map.currencyCode]) : "";
-    const currencyCode = (currencyRaw || defaultCurrency || "ريال") as CurrencyCode;
-
-    const statusRaw = map.isActive !== undefined ? normalizeHeaderCell(row[map.isActive]) : "";
-    const isActive =
-      statusRaw === "موقف" ||
-      statusRaw === "غير نشط" ||
-      statusRaw === "معطل" ||
-      statusRaw === "0" ||
-      statusRaw === "false" ||
-      statusRaw === "inactive"
-        ? false
-        : true;
-
-    let defaultUnit: 1 | 2 | 3 = 1;
-    if (map.defaultUnit !== undefined) {
-      const defRaw = cleanTextCell(row[map.defaultUnit]);
-      const defNorm = normalizeHeaderCell(defRaw);
-      if (defRaw === "2" || (unit2 && defNorm === normalizeHeaderCell(unit2))) {
-        defaultUnit = 2;
-      } else if (defRaw === "3" || (unit3 && defNorm === normalizeHeaderCell(unit3))) {
-        defaultUnit = 3;
-      }
-    }
-
-    const legacyIdRaw = map.legacyId !== undefined ? parseOptionalNumber(row[map.legacyId]) : undefined;
-    const legacyId = legacyIdRaw !== undefined && Number.isInteger(legacyIdRaw) && legacyIdRaw > 0 ? legacyIdRaw : undefined;
-
-    const minThresholdRaw = map.minThreshold !== undefined ? parseOptionalNumber(row[map.minThreshold]) : undefined;
-    const expiryDate = map.expiryDate !== undefined ? cleanTextCell(row[map.expiryDate]) : "";
-
-    items.push({
-      name: name.slice(0, 120),
-      sku: sku.slice(0, 64),
-      unit: unit.slice(0, 32),
-      quantity: 0,
-      avgCost,
-      ...(sellingPrice !== undefined ? { sellingPrice } : {}),
-      ...(unit2 ? { unit2: unit2.slice(0, 32), count2, ...(sprice2 !== undefined && sprice2 >= 0 ? { sprice2 } : {}) } : {}),
-      ...(unit3 ? { unit3: unit3.slice(0, 32), count3, ...(sprice3 !== undefined && sprice3 >= 0 ? { sprice3 } : {}) } : {}),
-      defaultUnit,
-      currencyCode,
-      isActive,
-      ...(legacyId !== undefined ? { legacyId } : {}),
-      ...(minThresholdRaw !== undefined && minThresholdRaw >= 0 ? { minThreshold: minThresholdRaw } : {}),
-      ...(expiryDate ? { expiryDate: expiryDate.slice(0, 32) } : {}),
-      quantityUnverified: false,
+    const reference=num("avgCost"),selling=num("sellingPrice"),sprice2=num("sprice2"),sprice3=num("sprice3"),min=num("minThreshold");
+    if ((!unit2 && (count2 || sprice2)) || (!unit3 && (count3 || sprice3))) throw new Error(`الصف ${r+1}: معامل أو سعر وحدة إضافية دون اسم الوحدة.`);
+    for(const value of [reference,selling,sprice2,sprice3])if(value!==undefined&&Math.abs(value*100-Math.round(value*100))>0.00001)throw new Error(`الصف ${r+1}: السعر يجب أن يكون بمنزلتين عشريتين كحد أقصى.`);
+    items.push({name,sku,unit,
+      ...(reference!==undefined?{catalogReferenceCost:reference}:{}),
+      ...(selling!==undefined?{sellingPrice:selling}:{}),
+      ...(unit2?{unit2,count2,...(sprice2!==undefined?{sprice2}:{})}:{}),
+      ...(unit3?{unit3,count3,...(sprice3!==undefined?{sprice3}:{})}:{}),
+      defaultUnit,currencyCode:text("currencyCode",32)||defaultCurrency,isActive:active.includes(status),
+      ...(min!==undefined?{minThreshold:min}:{}),...(expiryDate?{expiryDate}:{}),
     });
+    if(items.length>MAX_IMPORT_ROWS)throw new Error(`الحد الأقصى ${MAX_IMPORT_ROWS} صنف في الدفعة الواحدة.`);
   }
-
-  return { items, skippedRows, sheetName };
+  if(!items.length)throw new Error("الورقة لا تحتوي على أصناف.");
+  return {items,skippedRows,sheetName,notices};
 }

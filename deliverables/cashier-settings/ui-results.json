@@ -1,0 +1,45 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "cashier-missing-defaults-explicit",
+      "execution": "observed",
+      "correct": true,
+      "noArbitraryReference": true
+    },
+    {
+      "id": "cashier-covered-settings-back",
+      "execution": "observed",
+      "correct": true,
+      "onlyTopScreenHandlesBack": true,
+      "coveredDraftRetained": true,
+      "discardWorks": true
+    },
+    {
+      "id": "cashier-pages-back-dark",
+      "execution": "observed",
+      "correct": true,
+      "allPages": true,
+      "headerBack": true,
+      "darkNarrow": true
+    },
+    {
+      "id": "cashier-settings-persist-and-invoice",
+      "execution": "observed",
+      "correct": true,
+      "defaults": true,
+      "reload": true,
+      "quickItems": true,
+      "noPosting": true
+    },
+    {
+      "id": "cashier-clear-cancel-currency-and-failure",
+      "execution": "observed",
+      "correct": true,
+      "noDelete": true,
+      "errorRetainsForm": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}

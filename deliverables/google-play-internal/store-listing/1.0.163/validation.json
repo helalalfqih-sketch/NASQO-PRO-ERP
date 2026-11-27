@@ -1,0 +1,46 @@
+{
+  "result": "PASS",
+  "captureRun": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/actions/runs/46020955951",
+  "apkSourceRun": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/actions/runs/46010364174",
+  "apkSourceCommit": "207dde6a2739df53855c15890884416a3246a9ea",
+  "appCodeChangedForAssets": false,
+  "screenshotsVisuallyReviewed": true,
+  "files": [
+    {
+      "file": "icon-512.png",
+      "dimensions": [
+        512,
+        512
+      ],
+      "bytes": 220132,
+      "sha256": "e2d5eecb089bf4183212de44c3e7f6a42127df4626a390731329b44244971fe8"
+    },
+    {
+      "file": "feature-1024x500.png",
+      "dimensions": [
+        1024,
+        500
+      ],
+      "bytes": 385729,
+      "sha256": "d33f8d80c8413c49e4e4a1a0b05279c23dd1b2b81f4a36e68f19bc9ee704ee4b"
+    },
+    {
+      "file": "phone-screenshots/01-home.png",
+      "dimensions": [
+        1080,
+        1920
+      ],
+      "bytes": 252066,
+      "sha256": "8a076e575b6596adef596b2053cde81ae39d79bf7f7b3b814edd309db7c1c73e"
+    },
+    {
+      "file": "phone-screenshots/02-cashier-settings.png",
+      "dimensions": [
+        1080,
+        1920
+      ],
+      "bytes": 155308,
+      "sha256": "8863b7ee31d1c66af052823e144bb71080cbfa38d5b7ef65d2530f0b8bb3ac38"
+    }
+  ]
+}

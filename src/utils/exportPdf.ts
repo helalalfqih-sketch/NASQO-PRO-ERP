@@ -1,4 +1,6 @@
+import { formatQuantity } from "./quantityFormat";
 import { jsPDF } from "jspdf";
+import { outputNativeDocument, usesNativeDocumentOutput } from "../hybrid/documentOutput";
 import { formatAmount, type DashboardSummary } from "../accounting";
 import type { CurrencyCode, LedgerEntryRecord } from "../types";
 
@@ -15,6 +17,7 @@ export interface InvoicePdfSummaryLine {
   quantity: string;
   unitPrice: string;
   lineTotal: string;
+  metadata?: string[];
 }
 
 export interface InvoicePdfSummaryData {
@@ -34,6 +37,9 @@ export interface InvoicePdfSummaryData {
   currency: string;
   exchangeRate: number;
   amount: number;
+  notes?: string;
+  sourceReference?: string;
+  headerDiscount?: number;
   formattedAmount: string;
   vatLine?: string;
   lines: InvoicePdfSummaryLine[];
@@ -94,6 +100,22 @@ export function buildInvoicePdfSummaryData(
     }
   }
 
+  if (entry.lines?.length) {
+    itemLines.splice(0,itemLines.length,...entry.lines.map(line=>({
+      description:line.itemName || line.details || "بند",
+      unit:line.unit || "حبة",
+      quantity:formatQuantity(line.quantity),
+      unitPrice:formatAmount(line.price),
+      lineTotal:formatAmount(line.total),
+      metadata:[
+        line.details && line.details !== line.itemName ? `البيان: ${line.details}` : "",
+        line.discount ? `خصم البند المسجل: ${formatAmount(line.discount)}` : "",
+        line.bonus ? `الكمية المجانية: ${formatAmount(line.bonus)}` : "",
+        line.expiryDate ? `تاريخ الصلاحية: ${line.expiryDate}` : "",
+      ].filter(Boolean),
+    })));
+  }
+  if (typeof entry.taxAmount==="number"&&entry.taxAmount>0) vatLine="الضريبة: "+formatAmount(entry.taxAmount)+" "+entry.currency;
   if (itemLines.length === 0) {
     itemLines.push({
       description: entry.typeLabel,
@@ -112,15 +134,18 @@ export function buildInvoicePdfSummaryData(
     title: entry.typeLabel,
     accountName: entry.accountName,
     counterpartName: entry.counterpartAccountName || "—",
-    warehouseName: entry.warehouseName || "المخزن الرئيسي",
+    warehouseName: entry.warehouseName || (entry.invoiceContent === "free" ? "—" : "المخزن الرئيسي"),
     entryDate: entry.entryDate,
     dueDate: entry.dueDate,
     paymentLabel: PAYMENT_LABELS[entry.payment] ?? entry.payment,
     directionLabel: entry.direction === "debit" ? "مدين (عليه)" : "دائن (له)",
-    statusLabel: entry.deleted ? "ملغى" : "معتمد",
+    statusLabel: entry.deleted ? "ملغى" : entry.postingStatus==="draft" ? "مسودة" : entry.postingStatus==="historical_unposted" ? "تاريخي غير مرحّل" : entry.postingStatus==="reversed" ? "معكوس" : "معتمد",
     currency: entry.currency,
     exchangeRate: entry.exchangeRate || 1,
     amount: entry.amount,
+    notes: entry.details,
+    sourceReference: entry.sourceReference,
+    headerDiscount: entry.headerDiscount,
     formattedAmount: formatAmount(entry.amount),
     vatLine,
     lines: itemLines,
@@ -307,10 +332,9 @@ function drawSummaryCanvas(payload: DashboardPdfPayload): HTMLCanvasElement {
   return canvas;
 }
 
-function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasElement {
+function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData, pageNumber=1, totalPages=1): HTMLCanvasElement {
   const width = 1240;
-  const rowsHeight = Math.max(summary.lines.length, 1) * 60;
-  const height = Math.max(1754, 960 + rowsHeight);
+  const height = 1754;
 
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -450,6 +474,8 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
     cursorY += rowH;
   });
 
+  // Only the last detail page states the original invoice total.
+  if(pageNumber===totalPages){
   // Totals Card
   cursorY += 34;
   const totalBoxH = summary.vatLine ? 196 : 152;
@@ -501,6 +527,7 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
     ctx.fillText(summary.footerNote.slice(0, 90), width / 2, cursorY + 36);
   }
 
+  }
   // Page Footer
   const stamp = summary.generatedAtIso.slice(0, 16).replace("T", " ");
   ctx.fillStyle = "#64748b";
@@ -508,20 +535,113 @@ function drawInvoiceSummaryCanvas(summary: InvoicePdfSummaryData): HTMLCanvasEle
   ctx.textAlign = "right";
   ctx.fillText(`صادر عن قاعدة بيانات ${summary.companyName}`, width - 64, height - 48);
   ctx.textAlign = "left";
-  ctx.fillText(`Generated: ${stamp} · Page 1`, 64, height - 48);
+  ctx.fillText(`Generated: ${stamp} · Page ${pageNumber}/${totalPages}`, 64, height - 48);
 
   return canvas;
 }
 
+/** Complete source details accompany the compact first-page summary. Stored
+ * totals are displayed verbatim; metadata discounts are never subtracted. */
+export function invoiceSourceDetailBlocks(summary: InvoicePdfSummaryData): string[] {
+  return [
+    `الشركة: ${summary.companyName}`,
+    `المستند: ${summary.title} · ${summary.entryNumber}`,
+    `رقم المستند: ${summary.documentNumber}`,
+    `الحساب: ${summary.accountName}`,
+    `الحساب المقابل: ${summary.counterpartName}`,
+    `المخزن: ${summary.warehouseName}`,
+    `التاريخ: ${summary.entryDate}`,
+    ...(summary.sourceReference ? [`المرجع: ${summary.sourceReference}`] : []),
+    ...(summary.headerDiscount != null && summary.headerDiscount !== 0
+      ? [`خصم الفاتورة المسجل: ${formatAmount(summary.headerDiscount)} ${summary.currency}`] : []),
+    `إجمالي المستند الأصلي: ${summary.formattedAmount} ${summary.currency}`,
+    ...(summary.notes ? [`البيان الكامل:\n${summary.notes}`] : []),
+    ...summary.lines.flatMap((line, index) => [
+      `البند ${index + 1}: ${line.description}`,
+      `الوحدة: ${line.unit} · الكمية: ${line.quantity} · السعر: ${line.unitPrice} · الإجمالي: ${line.lineTotal}`,
+      ...(line.metadata ?? []),
+    ]),
+    ...(summary.footerNote ? [summary.footerNote] : []),
+  ];
+}
+
+/** Fixed-height pages; neither source text nor unusually long words are cut. */
+export function paginateInvoiceSourceDetails(
+  summary: InvoicePdfSummaryData,
+  measure: (text: string) => number,
+  width = 1112,
+  linesPerPage = 48,
+): string[][] {
+  const lines: string[] = [];
+  for (const block of invoiceSourceDetailBlocks(summary)) {
+    for (const paragraph of block.split(/\r\n|\r|\n/)) {
+      let line = "";
+      for (const character of Array.from(paragraph)) {
+        if (line && measure(line + character) > width) {
+          lines.push(line);
+          line = "";
+        }
+        line += character;
+      }
+      lines.push(line);
+    }
+    lines.push("");
+  }
+  const pages: string[][] = [];
+  const size = Math.max(1, Math.floor(linesPerPage));
+  for (let i = 0; i < lines.length; i += size) pages.push(lines.slice(i, i + size));
+  return pages;
+}
+
+function appendInvoiceSourcePages(pdf: jsPDF, summary: InvoicePdfSummaryData): void {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1240;
+  canvas.height = 1754;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("تعذر تجهيز تفاصيل الفاتورة كاملة.");
+  ctx.font = '22px "Segoe UI", Tahoma, Arial, sans-serif';
+  const pages = paginateInvoiceSourceDetails(summary, (text) => ctx.measureText(text).width);
+  pages.forEach((lines, index) => {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.direction = "rtl";
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#07365d";
+    ctx.font = 'bold 30px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(`تفاصيل المستند ${summary.entryNumber}`, 1176, 80);
+    ctx.font = '20px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText("الأرقام والخصومات كما حُفظت، دون إعادة احتساب الإجمالي", 1176, 120);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = '22px "Segoe UI", Tahoma, Arial, sans-serif';
+    lines.forEach((line, row) => ctx.fillText(line, 1176, 185 + row * 28));
+    ctx.fillStyle = "#64748b";
+    ctx.font = '18px "Segoe UI", Tahoma, Arial, sans-serif';
+    ctx.fillText(`تفاصيل محفوظة · صفحة ${index + 1} من ${pages.length}`, 1176, 1700);
+    pdf.addPage();
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0,
+      pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(), undefined, "FAST");
+  });
+}
+
+/** Fixed-size Arabic detail pages: repeated company/table headers, no row split. */
+export function paginateInvoiceTableLines<T>(lines:readonly T[]):T[][] {
+  if(!lines.length)return [[]];
+  const pages:T[][]=[];
+  for(let offset=0;offset<lines.length;offset+=12)pages.push(lines.slice(offset,offset+12));
+  return pages;
+}
+
 function createInvoiceSummaryPdfDoc(summary: InvoicePdfSummaryData): { pdf: jsPDF; filename: string } {
-  const canvas = drawInvoiceSummaryCanvas(summary);
-  const imgData = canvas.toDataURL("image/png");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const renderedHeight = (canvas.height * pageWidth) / canvas.width;
-  const fitHeight = Math.min(renderedHeight, pageHeight);
-  pdf.addImage(imgData, "PNG", 0, 0, pageWidth, fitHeight, undefined, "FAST");
+  const chunks=paginateInvoiceTableLines(summary.lines);
+  chunks.forEach((lines,index)=>{
+    if(index>0)pdf.addPage();
+    const canvas=drawInvoiceSummaryCanvas({...summary,lines},index+1,chunks.length);
+    pdf.addImage(canvas.toDataURL("image/png"),"PNG",0,0,pageWidth,pageHeight,undefined,"FAST");
+  });
+  appendInvoiceSourcePages(pdf, summary);
 
   const safeDate = (summary.entryDate || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, "");
   const filename = `nasqo-invoice-${summary.entryNumber}-${safeDate}.pdf`;
@@ -543,8 +663,12 @@ export async function buildInvoiceSummaryPdfBytes(
 export async function generateInvoiceSummaryPdf(
   summary: InvoicePdfSummaryData,
   mode: "download" | "share" = "download",
-): Promise<{ result: "downloaded" | "shared"; filename: string }> {
+): Promise<{ result: "downloaded" | "shared" | "cancelled"; filename: string }> {
   const { pdf, filename } = createInvoiceSummaryPdfDoc(summary);
+  if(usesNativeDocumentOutput()){
+    const ok=await outputNativeDocument(new Uint8Array(pdf.output("arraybuffer")),filename,"application/pdf",mode==="share"?"share":"save");
+    return {result:ok?(mode==="share"?"shared":"downloaded"):"cancelled",filename};
+  }
 
   if (mode === "share" && typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
@@ -579,15 +703,20 @@ export async function generatePrintableInvoicePdfFromDatabase(
 ): Promise<{
   entry: LedgerEntryRecord;
   summary: InvoicePdfSummaryData;
-  result: "downloaded" | "shared";
+  result: "downloaded" | "shared" | "cancelled";
   filename: string;
 }> {
-  const { fetchInvoiceFromDatabase } = await import("../firebase");
-  const dbEntry = await fetchInvoiceFromDatabase(uid, entryId);
+  const { fetchInvoiceDetailWithLines } = await import("../firebase");
+  const detail = await fetchInvoiceDetailWithLines(uid, entryId).catch(()=>null);
+  const dbEntry = detail ? {...detail.entry,lines:detail.lines.map(l=>({...l,inventoryItemId:l.inventoryItemId??undefined}))} : null;
   const resolvedEntry = dbEntry ?? options?.fallbackEntry ?? null;
   if (!resolvedEntry) {
     throw new Error("Invoice not found in database");
   }
+  if(usesNativeDocumentOutput()&&
+      ((resolvedEntry.invoiceContent==="items"&&!resolvedEntry.lines?.length)||
+       (resolvedEntry.lineCount??0)>(resolvedEntry.lines?.length??0)))
+    throw new Error("تفاصيل الأصناف غير متاحة؛ لم يُنشأ مستند ناقص.");
   const summary = buildInvoicePdfSummaryData(resolvedEntry, {
     companyName: options?.companyName,
     footerNote: options?.footerNote,
@@ -604,7 +733,7 @@ export async function generatePrintableInvoicePdfFromDatabase(
 export async function exportDashboardSummaryPdf(
   payload: DashboardPdfPayload,
   mode: "download" | "share" = "download",
-): Promise<"downloaded" | "shared"> {
+): Promise<"downloaded" | "shared" | "cancelled"> {
   const canvas = drawSummaryCanvas(payload);
   const imgData = canvas.toDataURL("image/png");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -615,6 +744,10 @@ export async function exportDashboardSummaryPdf(
   pdf.addImage(imgData, "PNG", 0, 0, pageWidth, fitHeight, undefined, "FAST");
 
   const filename = `nasqo-summary-${new Date().toISOString().slice(0, 10)}.pdf`;
+  if(usesNativeDocumentOutput()){
+    const ok=await outputNativeDocument(new Uint8Array(pdf.output("arraybuffer")),filename,"application/pdf",mode==="share"?"share":"save");
+    return ok?(mode==="share"?"shared":"downloaded"):"cancelled";
+  }
 
   if (mode === "share" && typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {

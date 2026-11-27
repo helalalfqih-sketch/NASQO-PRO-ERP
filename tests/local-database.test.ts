@@ -13,7 +13,7 @@ import {
   readSnapshotFromIndexedDb,
   saveErpDataToIndexedDb,
 } from "../src/utils/localDatabase";
-import { createDefaultErpData, saveErpWorkspaceData } from "../src/erp";
+import { createDefaultErpData, createEmptyErpData, saveErpWorkspaceData } from "../src/erp";
 
 test("localDatabase metadata and non-browser guards behave safely in Node", async () => {
   assert.equal(LOCAL_DB_NAME, "nasqo_pro_erp_db");
@@ -38,9 +38,12 @@ test("localDatabase metadata and non-browser guards behave safely in Node", asyn
   await saveErpDataToIndexedDb("local-erp-workspace", { test: true });
   await clearLocalDatabase();
 
-  assert.doesNotThrow(() => {
-    saveErpWorkspaceData("local-erp-workspace", createDefaultErpData());
-  });
+  await saveErpWorkspaceData("local-erp-workspace", createEmptyErpData());
+  // A real write without a browser/native service must reject, never report a
+  // successful memory-only save. Await the rejection to catch async failures.
+  await assert.rejects(saveErpWorkspaceData("local-erp-workspace", {
+    ...createEmptyErpData(), employees: createDefaultErpData().employees.slice(0, 1),
+  }), /خدمة حفظ السجلات غير متاحة/);
 });
 
 test("Flutter SQLite database service and pubspec contain required tables and sqflite", () => {

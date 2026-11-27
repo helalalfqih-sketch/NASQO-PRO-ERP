@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeftIcon,
   BellIcon,
@@ -19,6 +19,7 @@ interface NotificationCenterProps {
   onMarkAllRead: () => void;
   onDismiss: (id: string) => void;
   onSelectNotification: (notification: WorkspaceNotification) => void;
+  importedRecords?: ReactNode;
 }
 
 const FILTER_TABS: readonly { id: "all" | NotificationCategory; label: string }[] = [
@@ -37,6 +38,7 @@ export function NotificationCenter({
   onMarkAllRead,
   onDismiss,
   onSelectNotification,
+  importedRecords,
 }: NotificationCenterProps) {
   const [activeCategory, setActiveCategory] = useState<"all" | NotificationCategory>("all");
   const [visibleLimit, setVisibleLimit] = useState(50);
@@ -83,8 +85,8 @@ export function NotificationCenter({
               <h2 id="notif-center-title">مركز الإشعارات والتنبيهات</h2>
               <p>
                 {unreadCount > 0
-                  ? `${unreadCount} تنبيه غير مقروء من إجمالي ${notifications.length}`
-                  : `جميع التنبيهات مقروءة (${notifications.length})`}
+                  ? `${unreadCount} تنبيه محلي غير مقروء من إجمالي ${notifications.length}`
+                  : `جميع التنبيهات المحلية مقروءة (${notifications.length})`}
               </p>
             </div>
           </div>
@@ -184,6 +186,7 @@ export function NotificationCenter({
               ) : null}
             </ul>
           )}
+          {importedRecords}
         </div>
       </section>
     </div>

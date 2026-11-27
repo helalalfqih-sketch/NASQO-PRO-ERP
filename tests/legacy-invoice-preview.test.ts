@@ -2,6 +2,32 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { composeInvoice, documentContext, type InvoiceLine } from "../src/legacy/analysis";
 import { historicalInvoiceDisplayTotals } from "../src/legacy/invoiceView";
+import { unifiedDetailToLegacyInvoice } from "../src/legacy/unifiedView";
+import type { UnifiedInvoiceDetail } from "../src/firebase";
+
+test("invoice reference and fallback survive Android WebViews without Array.at", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, "at")!;
+  try {
+    delete (Array.prototype as any).at;
+    for (const [legacyRef, expected] of [["source:invoice:516", 516], [undefined, 42], ["source:invalid", 42]] as const) {
+      const detail = {
+        entry: {
+          legacyRef, entryNumber: 42, accountId: "synthetic_7", accountName: "Synthetic",
+          kind: "invoice", direction: "debit", invoiceContent: "free", amount: 8,
+          currency: "YER", entryDate: "2026-01-01", documentNumber: "TEST-42",
+          details: "Synthetic only", deleted: false,
+        },
+        lines: [],
+      } as UnifiedInvoiceDetail;
+      const invoice = unifiedDetailToLegacyInvoice(detail);
+      assert.equal(invoice.id, expected);
+      assert.equal(invoice.originalTotal, 8);
+      assert.equal(invoice.documentNumber, "TEST-42");
+    }
+  } finally {
+    Object.defineProperty(Array.prototype, "at", descriptor);
+  }
+});
 
 // The values here come from the screenshot reference, NOT from the actual backup.
 test("reference-style invoice summary computes 53 pieces and 348,100 in original line totals", () => {

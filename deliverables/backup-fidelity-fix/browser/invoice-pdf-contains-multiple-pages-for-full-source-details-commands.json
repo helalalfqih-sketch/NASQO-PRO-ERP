@@ -1,0 +1,252 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "supplier"
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "cash-invoice-preview"
+    }
+  },
+  {
+    "action": "getInvoiceDetail",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "entryId": "synthetic-invoice-1001"
+    }
+  },
+  {
+    "action": "getInvoiceDetail",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "entryId": "synthetic-invoice-1001"
+    }
+  },
+  {
+    "action": "beginDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "fileName": "nasqo-invoice-1001-2026-11-25.pdf",
+      "mimeType": "application/pdf",
+      "sizeBytes": 395900,
+      "mode": "save"
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 0,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 20480,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 40960,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 61440,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 81920,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 102400,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 122880,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 143360,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 163840,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 184320,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 204800,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 225280,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 245760,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 266240,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 286720,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 307200,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 327680,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 348160,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 368640,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 27308
+    }
+  },
+  {
+    "action": "appendDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export",
+      "offset": 389120,
+      "base64": "[synthetic PDF bytes omitted]",
+      "base64Length": 9040
+    }
+  },
+  {
+    "action": "finishDocumentExport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "exportId": "synthetic-export"
+    }
+  }
+]

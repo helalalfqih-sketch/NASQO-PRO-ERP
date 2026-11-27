@@ -1,0 +1,23 @@
+{
+  "sourceSha": "1c5b0614b60827aabbfe7914f2c726898a0d5bd5",
+  "buildRun": 45689924157,
+  "buildAttempt": 2,
+  "firstAttemptFailure": "Maven Central 429; no application compilation error",
+  "versionName": "1.0.128",
+  "versionCode": 1128,
+  "previousCode": 1126,
+  "displayName": "نسقو برو",
+  "apkSha256": "e515848fbcc441026f9a8a08cdc55ab83221b73a904aefb169d6e4040970cfd4",
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "signer": [
+    "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197"
+  ],
+  "permissionsUnchanged": true,
+  "verificationScope": "Synthetic emulator upgrade; no user phone or production data",
+  "publishRun": 45692493179,
+  "evidenceSourceSha": "baa3869d9a973bb0d756e4689267ded8e5e79869",
+  "nativeEvidenceArtifact": 15057614835,
+  "launcherArabicNameVisuallyVerified": true,
+  "androidApi": 35,
+  "physicalPhoneTested": false
+}

@@ -1,0 +1,27 @@
+{
+  "result": "PASS",
+  "sdk": 36,
+  "fixtureSha256": "ef47f7dfb349616a5f04f05b7da4e1b9e83a6113f4824ad07c773d2bb4e4c1ce",
+  "amount": 10000,
+  "payment": "cash",
+  "prices": [
+    5000,
+    5000
+  ],
+  "quantitiesBefore": [
+    3,
+    5
+  ],
+  "quantitiesAfter": [
+    4,
+    6
+  ],
+  "approvedNewPurchaseValue": 10000,
+  "oldCostStillPending": true,
+  "oldArchiveUnchanged": true,
+  "journalBalanced": true,
+  "stockMovements": 2,
+  "newInvoicesAfterRestart": 1,
+  "historicalInvoicesPreserved": 2,
+  "scope": "Signed Android 16 release, UI entry and posting, SQLite checked after process restart. Synthetic DB seeded before UI test; not a restore-picker or private-data test."
+}

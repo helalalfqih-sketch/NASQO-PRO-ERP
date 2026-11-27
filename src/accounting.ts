@@ -19,6 +19,7 @@ import {
 } from "./types.ts";
 import { buildDateSearchTokens, isWithinDateRange } from "./utils/dateUtils.ts";
 import { addMoney, mulMoney, roundMoney, subMoney } from "./utils/moneyMath.ts";
+import { approvedInventoryValue } from "./utils/catalogCosts.ts";
 
 const ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩";
 const PERSIAN_INDIC = "۰۱۲۳۴۵۶۷۸۹";
@@ -220,7 +221,7 @@ export function affectsAccountBalance(
   entry: Pick<LedgerEntryRecord, "deleted" | "kind" | "postingStatus">,
 ): boolean {
   if (entry.deleted) return false;
-  if (entry.postingStatus === "draft") return false;
+  if (entry.postingStatus === "draft" || entry.postingStatus === "historical_unposted") return false;
   return entry.kind !== "quote" && entry.kind !== "order";
 }
 
@@ -270,6 +271,27 @@ type AccountEntriesIndex = {
 
 const ledgerByAccountCache = new WeakMap<readonly LedgerEntryRecord[], AccountEntriesIndex>();
 
+function journalAmounts(entry:LedgerEntryRecord,accountId:string,convert=false): {debit:number;credit:number}|null {
+  if(!entry.journalLines?.length) return null;
+  const rate=convert?(entry.exchangeRate||1):1;
+  let debit=0,credit=0;
+  for(const leg of entry.journalLines){
+    if(leg.accountId!==accountId)continue;
+    debit=addMoney(debit,mulMoney(leg.debitMinor/100,rate,2));
+    credit=addMoney(credit,mulMoney(leg.creditMinor/100,rate,2));
+  }
+  return {debit,credit};
+}
+
+// Historical register sides are not double-entry legs. Use the raw source
+// for the primary account and never synthesize a historical counterpart.
+function legacyRegisterAmounts(entry: LedgerEntryRecord, accountId: string, convert = false): {debit:number;credit:number}|null {
+  if (entry.sourceOrigin !== "legacy_sqlite" && entry.sourceOrigin !== "smartpro_sql") return null;
+  if (entry.accountId !== accountId || entry.journalLines?.length || (entry.rawDain === undefined && entry.rawMadin === undefined)) return null;
+  const rate = convert ? (entry.exchangeRate || 1) : 1;
+  return { debit: mulMoney(entry.rawDain ?? 0, rate, 2), credit: mulMoney(entry.rawMadin ?? 0, rate, 2) };
+}
+
 function getEntriesForAccount(
   entries: readonly LedgerEntryRecord[],
   accountId: string,
@@ -279,6 +301,13 @@ function getEntriesForAccount(
     const byAccount = new Map<string, LedgerEntryRecord[]>();
     for (let i = 0; i < entries.length; i += 1) {
       const entry = entries[i];
+      if(entry.journalLines?.length){
+        for(const id of new Set(entry.journalLines.map(l=>l.accountId))){
+          const list=byAccount.get(id)??[];
+          list.push(entry);byAccount.set(id,list);
+        }
+        continue;
+      }
       const primaryId = entry.accountId;
       if (primaryId) {
         let list = byAccount.get(primaryId);
@@ -328,7 +357,7 @@ export function computeAccountSummary(
     if (entry.deleted || entry.postingStatus === "draft") continue;
     const isPrimary = entry.accountId === account.id;
     const isCounterpart = entry.counterpartAccountId === account.id && entry.counterpartAccountId !== "";
-    if (!isPrimary && !isCounterpart) continue;
+    if (!isPrimary && !isCounterpart && !entry.journalLines?.length) continue;
 
     if (
       currencyFilter &&
@@ -342,6 +371,8 @@ export function computeAccountSummary(
 
     entryCount += 1;
     if (!affectsAccountBalance(entry)) continue;
+    const explicit=journalAmounts(entry,account.id,currencyFilter==="مصارفة الكل بعملة ريال") ?? legacyRegisterAmounts(entry,account.id,currencyFilter==="مصارفة الكل بعملة ريال");
+    if(explicit){debitTotal=addMoney(debitTotal,explicit.debit);creditTotal=addMoney(creditTotal,explicit.credit);continue;}
 
     const effectiveAmount =
       currencyFilter === "مصارفة الكل بعملة ريال"
@@ -436,7 +467,25 @@ export function computeCategoryTotals(
       ? mulMoney(entry.amount, entry.exchangeRate || 1, 2)
       : roundMoney(entry.amount, 2);
 
+    if(entry.journalLines?.length){
+      for(const id of new Set(entry.journalLines.map(l=>l.accountId))){
+        const account=accMap.get(id);if(!account)continue;
+        const bucket=result[account.category],amounts=journalAmounts(entry,id,convertAllToRiyal)!;
+        bucket.debitTotal=addMoney(bucket.debitTotal,amounts.debit);
+        bucket.creditTotal=addMoney(bucket.creditTotal,amounts.credit);
+      }
+      continue;
+    }
     const primary = accMap.get(entry.accountId);
+    const historical = legacyRegisterAmounts(entry,entry.accountId,convertAllToRiyal);
+    if (historical) {
+      if (primary) {
+        const bucket = result[primary.category];
+        bucket.debitTotal = addMoney(bucket.debitTotal,historical.debit);
+        bucket.creditTotal = addMoney(bucket.creditTotal,historical.credit);
+      }
+      continue;
+    }
     if (primary) {
       const bucket = result[primary.category];
       const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
@@ -487,6 +536,7 @@ export function computeStatementRows(
     sortOrder?: "asc" | "desc";
   } = {},
 ): {
+  currencyTotals?: Array<{currency:string;debit:number;credit:number;balance:number;previous:number}>;
   rows: StatementRowWithBalance[];
   debitTotal: number;
   creditTotal: number;
@@ -495,7 +545,16 @@ export function computeStatementRows(
   previousBalance: number;
   previousDirection: "credit" | "debit" | "neutral";
 } {
-  const currency = options.currency ?? "الكل";
+  // No approved conversion-rate source exists in this report. Keep currencies separate.
+  const currency = options.currency === "مصارفة الكل بعملة ريال" ? "جميع العملات بدون مصارفة" : options.currency ?? "الكل";
+  if (["الكل","جميع العملات بدون مصارفة"].includes(currency)) {
+    const currencies=Array.from(new Set([account.currency,...getEntriesForAccount(entries,account.id).filter(e=>!e.deleted).map(e=>e.currency)]));
+    if(currencies.length>1){
+      const parts=currencies.map(c=>({currency:c,result:computeStatementRows({...account,openingBalance:c===account.currency?account.openingBalance:0},entries,{...options,currency:c})}));
+      const rows=parts.flatMap(p=>p.result.rows).sort((a,b)=>(options.sortOrder==='asc'?1:-1)*(a.createdAtMs-b.createdAtMs||a.entryNumber-b.entryNumber));
+      return {rows,debitTotal:0,creditTotal:0,netBalance:0,netDirection:'neutral',previousBalance:0,previousDirection:'neutral',currencyTotals:parts.map(p=>({currency:p.currency,debit:p.result.debitTotal,credit:p.result.creditTotal,balance:p.result.netBalance,previous:p.result.previousBalance}))};
+    }
+  }
   const query = normalizeArabicSearch(options.searchQuery ?? "");
   const searchMode = options.searchMode ?? "الكل";
   const fromDate = options.fromDate?.trim() || "";
@@ -506,7 +565,9 @@ export function computeStatementRows(
   const belongsAndCurrency = accountEntries
     .filter((entry) => {
       if (entry.deleted || entry.postingStatus === "draft") return false;
-      const belongs = entry.accountId === account.id || entry.counterpartAccountId === account.id;
+      const belongs = entry.journalLines?.length
+        ? entry.journalLines.some(l=>l.accountId===account.id)
+        : entry.accountId === account.id || entry.counterpartAccountId === account.id;
       if (!belongs) return false;
       if (
         currency !== "الكل" &&
@@ -521,6 +582,9 @@ export function computeStatementRows(
     .sort((a, b) => a.createdAtMs - b.createdAtMs || a.entryNumber - b.entryNumber);
 
   const signedEffect = (entry: LedgerEntryRecord): { debit: number; credit: number; netDelta: number } => {
+    if (!affectsAccountBalance(entry)) return { debit: 0, credit: 0, netDelta: 0 };
+    const explicit=journalAmounts(entry,account.id,currency==="مصارفة الكل بعملة ريال") ?? legacyRegisterAmounts(entry,account.id,currency==="مصارفة الكل بعملة ريال");
+    if(explicit) return {...explicit,netDelta:subMoney(explicit.credit,explicit.debit)};
     const isPrimary = entry.accountId === account.id;
     const amount =
       currency === "مصارفة الكل بعملة ريال"
@@ -565,7 +629,7 @@ export function computeStatementRows(
   }
 
   const openingSigned =
-    account.openingDirection === "credit"
+    (currency!=="الكل"&&currency!=="جميع العملات بدون مصارفة"&&currency!=="مصارفة الكل بعملة ريال"&&currency!==account.currency) ? 0 : account.openingDirection === "credit"
       ? roundMoney(account.openingBalance, 2)
       : -roundMoney(account.openingBalance, 2);
   const previousBalanceSigned = addMoney(openingSigned, prePeriodSigned);
@@ -582,7 +646,9 @@ export function computeStatementRows(
 
     return {
       ...entry,
-      runningBalance: account.isCashAccount ? 0 : Math.abs(running),
+      ...(entry.journalLines?.length?{amount:Math.max(eff.debit,eff.credit),
+        direction:eff.credit>eff.debit?"credit" as const:"debit" as const}:{}),
+      runningBalance: account.isCashAccount && !entry.journalLines?.length ? 0 : Math.abs(running),
     };
   });
 
@@ -758,7 +824,7 @@ export function computeInventorySummary(items: readonly InventoryItemRecord[], w
     }
     verifiedCount += 1;
     totalQuantity += item.quantity;
-    totalValue += item.quantity * item.avgCost;
+    totalValue += approvedInventoryValue(item);
   }
   return {
     items: filtered,
@@ -921,7 +987,7 @@ export function computeDashboardSummary(
           item.quantity <= Math.max(5, Math.floor(effectiveThreshold * 0.5))
             ? ("critical" as const)
             : ("warning" as const),
-        stockValue: item.quantity * item.avgCost,
+        stockValue: approvedInventoryValue(item),
         isBelow,
       };
     })
@@ -1606,11 +1672,27 @@ export function computeAccountGroupsSummary(
 
   for (const entry of entries) {
     if (entry.deleted || !affectsAccountBalance(entry)) continue;
+    if(entry.journalLines?.length){
+      for(const id of new Set(entry.journalLines.map(l=>l.accountId))){
+        const groupId=accToGroup.get(id);if(!groupId)continue;
+        const target=byGroupId.get(groupId);if(!target||(target.currency!=="الكل"&&entry.currency!==target.currency))continue;
+        const amounts=journalAmounts(entry,id)!;
+        target.debitTotal=addMoney(target.debitTotal,amounts.debit);
+        target.creditTotal=addMoney(target.creditTotal,amounts.credit);
+      }
+      continue;
+    }
     const gId = accToGroup.get(entry.accountId);
     if (!gId) continue;
     const bucket = byGroupId.get(gId);
     if (!bucket) continue;
     if (bucket.currency !== "الكل" && entry.currency !== bucket.currency) continue;
+    const historical = legacyRegisterAmounts(entry,entry.accountId);
+    if (historical) {
+      bucket.debitTotal = addMoney(bucket.debitTotal,historical.debit);
+      bucket.creditTotal = addMoney(bucket.creditTotal,historical.credit);
+      continue;
+    }
     const hasExplicitSides = entry.rawDain !== undefined || entry.rawMadin !== undefined;
     if (hasExplicitSides && entry.settledOnReceipt) {
       bucket.debitTotal = addMoney(bucket.debitTotal, entry.amount);
@@ -1686,6 +1768,10 @@ export function computeTrialBalanceReport(
   let cashOut = 0;
   let salesTotal = 0;
   let purchasesTotal = 0;
+  let stockGrossProfit=0;
+  let hasStock=false;
+  let hasLegacyInvoices=false;
+  const cashIds=new Set(accounts.filter(a=>a.isCashAccount).map(a=>a.id));
 
   for (const e of entries) {
     if (e.deleted || !affectsAccountBalance(e)) continue;
@@ -1693,6 +1779,28 @@ export function computeTrialBalanceReport(
     if (toDate && e.entryDate > toDate) continue;
 
     const isBeforePeriod = Boolean(fromDate && e.entryDate < fromDate);
+    if(e.journalLines?.length){
+      for(const id of new Set(e.journalLines.map(l=>l.accountId))){
+        const a=journalAmounts(e,id)!;
+        accNets.set(id,addMoney(accNets.get(id)??0,subMoney(a.debit,a.credit)));
+        if(cashIds.has(id)){cashIn=addMoney(cashIn,a.debit);cashOut=addMoney(cashOut,a.credit);}
+      }
+      if(!isBeforePeriod&&e.stockPosting){
+        hasStock=true;
+        const sign=e.kind==="return"?-1:1,net=e.netBeforeTax??e.amount;
+        if(e.stockSale){
+          salesTotal=addMoney(salesTotal,sign*net);
+          stockGrossProfit=addMoney(stockGrossProfit,sign*subMoney(net,(e.stockCostMinor??0)/100));
+        }else purchasesTotal=addMoney(purchasesTotal,sign*net);
+      }else if(!isBeforePeriod&&(e.kind==="invoice"||e.kind==="return")){
+        hasLegacyInvoices=true;
+        const sale=(e.kind==="invoice"&&e.direction==="debit")||(e.kind==="return"&&e.direction==="credit");
+        const sign=e.kind==="return"?-1:1;
+        if(sale)salesTotal=addMoney(salesTotal,sign*e.amount);
+        else purchasesTotal=addMoney(purchasesTotal,sign*e.amount);
+      }
+      continue;
+    }
 
     const hasExplicitSides = e.rawDain !== undefined || e.rawMadin !== undefined;
     const dVal = hasExplicitSides
@@ -1715,7 +1823,8 @@ export function computeTrialBalanceReport(
           : 0;
 
     // Account balances & cumulative cash include prior periods up to toDate
-    accNets.set(e.accountId, addMoney(accNets.get(e.accountId) ?? 0, subMoney(dVal, cVal)));
+    const historical = legacyRegisterAmounts(e,e.accountId);
+    accNets.set(e.accountId, addMoney(accNets.get(e.accountId) ?? 0, historical ? subMoney(historical.debit,historical.credit) : subMoney(dVal, cVal)));
 
     // Cashbox inflows/outflows: only genuine cash vouchers, cash-settled invoices/returns, or entries linked to a cashbox
     const affectsCashbox =
@@ -1737,6 +1846,7 @@ export function computeTrialBalanceReport(
 
     // Period P&L activity (sales & purchases strictly within [fromDate, toDate])
     if (isBeforePeriod) continue;
+    if(e.kind==="invoice"||e.kind==="return")hasLegacyInvoices=true;
     if (e.kind === "invoice") {
       const dt = e.docType !== undefined && e.docType !== null ? Number(e.docType) : null;
       const lbl = e.typeLabel || "";
@@ -1769,6 +1879,7 @@ export function computeTrialBalanceReport(
   for (const item of inventory) {
     const itemCurr = (item.currencyCode || "ريال").trim();
     if (currency !== "الكل" && itemCurr !== currency) continue;
+    if (item.costUnverified) { inventoryValue = addMoney(inventoryValue, approvedInventoryValue(item)); continue; }
     const qty = item.quantityUnverified ? (item.computedQuantity ?? 0) : item.quantity;
     if (qty > 0 && item.avgCost > 0) {
       inventoryValue = addMoney(inventoryValue, mulMoney(qty, item.avgCost, 2));
@@ -1781,7 +1892,7 @@ export function computeTrialBalanceReport(
   const netBalance = subMoney(totalDebitAccounts, totalCreditAccounts);
   const liquidityRatioPercent =
     totalCreditAccounts > 0 ? Math.round((Math.max(0, cashTotal) / totalCreditAccounts) * 1000) / 10 : 0;
-  const netProfit = subMoney(addMoney(salesTotal, inventoryValue), purchasesTotal);
+  const netProfit = hasStock && !hasLegacyInvoices ? stockGrossProfit : subMoney(addMoney(salesTotal, inventoryValue), purchasesTotal);
 
   return {
     currency,

@@ -18,6 +18,9 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "motion/react";
 import { hybridBridge } from "./bridge";
 import { normalizeFlowScreenIdToHybridRoute } from "./routes";
+import { consumeBackLayer } from "./backCoordinator";
+import { UiResumeScreenContext, UiResumeWorkspaceContext } from "./resumeContext";
+import { readUiState, writeUiState } from "./resumeState";
 
 export type MobileDeviceId = "iphone" | "pixel10";
 
@@ -266,6 +269,25 @@ export function MobileScroll({
   children,
 }: PropsWithChildren<{ className?: string }>) {
   const { isKeyboardVisible, keyboardHeight } = useKeyboardInsets();
+  const workspaceId = useContext(UiResumeWorkspaceContext);
+  const screenId = useContext(UiResumeScreenContext);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !workspaceId || !screenId) return;
+    const slot = `scroll:${screenId}:${className ?? "main"}`;
+    const saved = readUiState(workspaceId, slot, 0,
+      (value) => typeof value === "number" && value >= 0 && value <= 10_000_000);
+    const frame = requestAnimationFrame(() => { element.scrollTop = saved; });
+    const checkpoint = () => { writeUiState(workspaceId, slot, element.scrollTop); };
+    element.addEventListener("scroll", checkpoint, { passive: true });
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    return () => {
+      cancelAnimationFrame(frame);
+      element.removeEventListener("scroll", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+    };
+  }, [workspaceId, screenId, className]);
   const style = {
     "--keyboard-height": `${keyboardHeight}px`,
   } as CSSProperties;
@@ -277,7 +299,7 @@ export function MobileScroll({
       data-keyboard-visible={isKeyboardVisible ? "true" : "false"}
       style={style}
     >
-      <div className="mobile-scroll hybrid-native-scroll" data-testid="mobile-scroll">
+      <div ref={scrollRef} className="mobile-scroll hybrid-native-scroll" data-testid="mobile-scroll">
         <div className="mobile-scroll-content" data-testid="mobile-scroll-content">
           {children}
         </div>
@@ -450,6 +472,8 @@ export function FlowStack({
   stackRef.current = stack;
   const lastNavDispatchRef = useRef<{ route: string; ts: number }>({ route: "", ts: 0 });
   const lastBackDispatchRef = useRef<number>(0);
+  const completedBackIds = useRef(new Set<string>());
+  const backBusyUntil = useRef(0);
 
   const emitNavigateOnce = useCallback((screenId: string) => {
     const route = normalizeFlowScreenIdToHybridRoute(screenId);
@@ -480,7 +504,7 @@ export function FlowStack({
     return { ...screen, key: `${screen.id}-${next}` };
   }, []);
 
-  const pop = useCallback(() => {
+  const rawPop = useCallback(() => {
     keyboard.hide();
     const currentStack = stackRef.current;
     if (currentStack.length <= 1) {
@@ -495,19 +519,40 @@ export function FlowStack({
     emitNavigateOnce(top.id);
   }, [emitGoBackOnce, emitNavigateOnce, keyboard]);
 
-  // Listen to Android hardware back button forwarded by Flutter via the bridge
+  const pop = useCallback(() => {
+    if (keyboard.visible) { keyboard.hide(); return; }
+    if (consumeBackLayer() || systemBackRef.current?.()) return;
+    rawPop();
+  }, [keyboard, rawPop]);
+
+  // Native owns dialogs/IME. Never infer permission to exit from an absent reply.
   useEffect(() => {
-    return hybridBridge.onHostEvent("backPressed", () => {
-      if (systemBackRef.current?.()) {
-        return;
+    return hybridBridge.onHostEvent("backPressed", (payload) => {
+      const requestId = payload && typeof payload === "object" && "requestId" in payload
+        && typeof payload.requestId === "string" ? payload.requestId : "";
+      // Uncorrelated/duplicate deliveries cannot navigate or authorize an exit.
+      if (!requestId || completedBackIds.current.has(requestId)) return;
+      completedBackIds.current.add(requestId);
+      if (completedBackIds.current.size > 128) completedBackIds.current.delete(completedBackIds.current.values().next().value!);
+      let outcome: "handled" | "home" | "blocked" = "blocked";
+      if (Date.now() >= backBusyUntil.current) {
+        backBusyUntil.current = Date.now() + 180;
+        if (keyboard.visible) { keyboard.hide(); outcome = "handled"; }
+        else if (consumeBackLayer() || systemBackRef.current?.()) { outcome = "handled"; }
+        else if (stackRef.current.length > 1) { rawPop(); outcome = "handled"; }
+        else if (stackRef.current[0]?.id === "dashboard") { outcome = "home"; }
       }
-      if (stackRef.current.length > 1) {
-        pop();
-      } else {
-        emitGoBackOnce(stackRef.current[0]?.id ?? "home", 1);
-      }
+      hybridBridge.notify("goBack", {
+        requestId, outcome,
+        currentRoute: outcome === "home" ? "home" : normalizeFlowScreenIdToHybridRoute(stackRef.current[stackRef.current.length - 1]?.id ?? ""),
+        stackDepth: stackRef.current.length,
+      });
     });
-  }, [emitGoBackOnce, pop]);
+  }, [keyboard, rawPop]);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("nasqo:flow-change", { detail: stack.map((entry) => entry.id) }));
+  }, [stack]);
 
   const controls = useMemo<FlowControls>(() => {
     const current = stack[stack.length - 1];
@@ -598,7 +643,9 @@ export function FlowStack({
                     zIndex: isTop ? 2 : 1,
                   }}
                 >
-                  {entry.render(controls)}
+                  <UiResumeScreenContext.Provider value={entry.id}>
+                    {entry.render(controls)}
+                  </UiResumeScreenContext.Provider>
                 </motion.div>
               );
             })}

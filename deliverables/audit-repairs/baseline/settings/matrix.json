@@ -1,0 +1,5004 @@
+[
+  {
+    "key": "usageMode",
+    "default": "sync",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 31,
+        "text": "usageMode: \"sync\" | \"local\";"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 343,
+        "text": "usageMode: \"sync\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "وضع الاستخدام",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "syncMode",
+    "default": "auto",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 32,
+        "text": "syncMode: \"auto\" | \"manual\";"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 344,
+        "text": "syncMode: \"auto\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "وضع المزامنة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hideAds",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 33,
+        "text": "hideAds: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 345,
+        "text": "hideAds: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء الإعلانات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "logoDataUrl",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 3138,
+        "text": "<GlobalNasqoBrandLoader logoUrl={extendedSettings.logoDataUrl || undefined} />"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 8716,
+        "text": "{ctx.extendedSettings.logoDataUrl ? ("
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 8718,
+        "text": "src={ctx.extendedSettings.logoDataUrl}"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 11018,
+        "text": "{ctx.extendedSettings.logoDataUrl ? ("
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 11020,
+        "text": "src={ctx.extendedSettings.logoDataUrl}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 181,
+        "text": "updateField(\"logoDataUrl\", reader.result);"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 325,
+        "text": "{draft.logoDataUrl ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 326,
+        "text": "<img src={draft.logoDataUrl} alt=\"شعار المنشأة\" draggable={false} />"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 336,
+        "text": "{draft.logoDataUrl ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 341,
+        "text": "onClick={() => updateField(\"logoDataUrl\", \"\")}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 655,
+        "text": "src={draft.logoDataUrl || APP_ICON_URL}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 657,
+        "text": "className={draft.logoDataUrl ? \"\" : \"app-brand-icon-img\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 681,
+        "text": "src={draft.logoDataUrl || APP_ICON_URL}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 683,
+        "text": "className={draft.logoDataUrl ? \"\" : \"app-brand-icon-img\"}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 34,
+        "text": "logoDataUrl: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 346,
+        "text": "logoDataUrl: \"\","
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 3138,
+        "text": "<GlobalNasqoBrandLoader logoUrl={extendedSettings.logoDataUrl || undefined} />"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 8716,
+        "text": "{ctx.extendedSettings.logoDataUrl ? ("
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 8718,
+        "text": "src={ctx.extendedSettings.logoDataUrl}"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 11018,
+        "text": "{ctx.extendedSettings.logoDataUrl ? ("
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 11020,
+        "text": "src={ctx.extendedSettings.logoDataUrl}"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "شعار المنشأة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "companyNameEn",
+    "default": "Nasqo Pro Business",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 368,
+        "text": "value={draft.companyNameEn}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 369,
+        "text": "onChange={(e) => updateField(\"companyNameEn\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 35,
+        "text": "companyNameEn: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 347,
+        "text": "companyNameEn: \"Nasqo Pro Business\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "اسم المنشأة بالإنجليزية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "addressAr",
+    "default": "شارع بينون، صنعاء، اليمن",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 376,
+        "text": "value={draft.addressAr}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 377,
+        "text": "onChange={(e) => updateField(\"addressAr\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 36,
+        "text": "addressAr: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 348,
+        "text": "addressAr: \"شارع بينون، صنعاء، اليمن\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "العنوان بالعربية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "addressEn",
+    "default": "YEMEN SANAA",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 384,
+        "text": "value={draft.addressEn}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 385,
+        "text": "onChange={(e) => updateField(\"addressEn\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 37,
+        "text": "addressEn: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 349,
+        "text": "addressEn: \"YEMEN SANAA\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "العنوان بالإنجليزية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "mobileEn",
+    "default": "771370740",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 402,
+        "text": "value={draft.mobileEn}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 403,
+        "text": "onChange={(e) => updateField(\"mobileEn\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 38,
+        "text": "mobileEn: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 350,
+        "text": "mobileEn: \"771370740\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "الهاتف بالإنجليزية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "taxNumber",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 414,
+        "text": "value={draft.taxNumber}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 415,
+        "text": "onChange={(e) => updateField(\"taxNumber\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 39,
+        "text": "taxNumber: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 351,
+        "text": "taxNumber: \"\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "الرقم الضريبي",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "drawSignature",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1520,
+        "text": "[\"drawSignature\", \"رسم التوقيع أسفل الفواتير والسندات\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 40,
+        "text": "drawSignature: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 352,
+        "text": "drawSignature: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "رسم التوقيع",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "autoWhatsapp",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 205,
+        "text": "whatsappInstantEnabled: draft.autoWhatsapp,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1563,
+        "text": "checked={draft.autoWhatsapp}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1564,
+        "text": "onChange={(e) => updateField(\"autoWhatsapp\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 41,
+        "text": "autoWhatsapp: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 353,
+        "text": "autoWhatsapp: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "واتساب التلقائي",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "reportColor",
+    "default": "#4338ca",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2697,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2708,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2723,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 3066,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1482,
+        "text": "value={draft.reportColor}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1483,
+        "text": "onChange={(e) => updateField(\"reportColor\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 42,
+        "text": "reportColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 354,
+        "text": "reportColor: \"#4338ca\","
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2697,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2708,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2723,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 3066,
+        "text": "accentColor: extendedSettings.reportColor || brandColor,"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون التقرير",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "fontSize",
+    "default": 4,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 4920,
+        "text": "<small style={{ display: \"block\", fontSize: 9 }}>مرجعي — غير معتمد</small>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 5721,
+        "text": "<small style={{ display: \"block\", color: \"#b45309\", fontSize: 9.5 }}>بحاجة إلى تسوية</small>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 5863,
+        "text": "<table className=\"account-groups-table\" style={{ width: \"100%\", fontSize: 11 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12746,
+        "text": "style={{ fontSize: 11, padding: \"4px 10px\", whiteSpace: \"nowrap\" }}"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12836,
+        "text": "<table className=\"account-groups-table\" style={{ fontSize: 11.5 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12898,
+        "text": "fontSize: 10,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12926,
+        "text": "<span style={{ fontSize: 11 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13065,
+        "text": "<table className=\"account-groups-table\" style={{ fontSize: 12, marginBottom: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13589,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13613,
+        "text": "fontSize: 11,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13630,
+        "text": "fontSize: 11,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13696,
+        "text": "<p style={{ margin: \"0 0 10px\", fontSize: 13, lineHeight: 1.6, color: \"var(--nasqo-muted)\" }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14003,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14035,
+        "text": "<label style={{ display: \"grid\", gap: 4, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14056,
+        "text": "<label style={{ display: \"grid\", gap: 4, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14079,
+        "text": "<label style={{ display: \"grid\", gap: 4, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14096,
+        "text": "<label style={{ display: \"flex\", alignItems: \"center\", gap: 8, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14548,
+        "text": "<div data-testid={`cash-invoice-line-metadata-${line.id}`} style={{ fontSize: \"0.75em\", whiteSpace: \"pre-wrap\", overflowWrap: \"anywhere\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 109,
+        "text": "<h2 id=\"customer-list-title\" style={{ fontSize: \"15px\" }}>إدارة العملاء</h2>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 116,
+        "text": "style={{ background: \"transparent\", color: \"var(--nasqo-blue)\", fontWeight: \"bold\", fontSize: \"14px\" }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 138,
+        "text": "style={{ display: \"flex\", alignItems: \"center\", gap: \"3px\", padding: \"6px 10px\", fontSize: \"11px\", minHeight: \"34px\" }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 147,
+        "text": "<strong style={{ fontSize: \"12px\" }}>إضافة عميل جديد</strong>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 164,
+        "text": "style={{ minHeight: \"34px\", fontSize: \"11px\" }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 202,
+        "text": "<strong style={{ fontSize: \"12px\", display: \"block\", overflow: \"hidden\", textOverflow: \"ellipsis\", whiteSpace: \"nowrap\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 205,
+        "text": "<small style={{ fontSize: \"10px\", color: \"#666\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 219,
+        "text": "style={{ padding: \"4px 8px\", fontSize: \"10px\", minHeight: \"28px\", flexShrink: 0 }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 228,
+        "text": "<p style={{ textAlign: \"center\", color: \"#888\", fontSize: \"11px\", padding: \"10px\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 242,
+        "text": "style={{ minHeight: \"34px\", fontSize: \"11px\" }}"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 67,
+        "text": "fontSize: 11.5,"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 76,
+        "text": "<div style={{ color: \"var(--nasqo-muted)\", marginTop: 2, fontSize: 11 }}>"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 89,
+        "text": "fontSize: 11,"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 122,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 11, textAlign: \"right\", color: \"var(--nasqo-ink)\" }}>"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 158,
+        "text": "fontSize: 10.5,"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 267,
+        "text": "<h2 id=\"invoice-form-title\" style={{ fontSize: \"15px\" }}>إصدار فاتورة مبيعات جديدة</h2>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 274,
+        "text": "style={{ background: \"transparent\", color: \"var(--nasqo-blue)\", fontWeight: \"bold\", fontSize: \"14px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 289,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"28px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 297,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"28px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 309,
+        "text": "style={{ fontSize: \"11px\", padding: \"4px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 321,
+        "text": "<span style={{ fontSize: \"10px\", color: \"var(--nasqo-muted)\" }}>اختر العميل</span>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 329,
+        "text": "style={{ padding: \"3px 7px\", background: \"var(--nasqo-blue)\", color: \"#fff\", borderRadius: \"5px\", fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 365,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 373,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 378,
+        "text": "<label className=\"erp-checkbox\" style={{ fontSize: \"11px\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 391,
+        "text": "<h3 style={{ fontSize: \"12px\" }}>بنود الأصناف</h3>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 396,
+        "text": "style={{ display: \"flex\", alignItems: \"center\", gap: \"3px\", padding: \"3px 7px\", background: \"var(--nasqo-blue)\", color: \"#fff\", borderRadius: \"5px\", fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 404,
+        "text": "<p role=\"status\" style={{ color: \"#92400e\", fontSize: 11, margin: \"4px 0\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 408,
+        "text": "<label style={{ display: \"grid\", gap: 4, margin: \"4px 0 8px\", fontSize: 11, color: \"var(--nasqo-muted)\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 438,
+        "text": "style={{ width: \"100%\", fontSize: \"11px\", padding: \"3px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 483,
+        "text": "<div className=\"erp-stmt-list\" style={{ background: \"#edf5fc\", padding: \"8px\", borderRadius: \"6px\", margin: \"2px 0\", fontSize: \"11px\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 507,
+        "text": "style={{ minHeight: \"36px\", fontSize: \"12px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 519,
+        "text": "style={{ minHeight: \"36px\", fontSize: \"12px\" }}"
+      },
+      {
+        "file": "src/components/ErrorBoundary.tsx",
+        "line": 55,
+        "text": "<h1 style={{ fontSize: \"20px\", color: \"#4338ca\", marginBottom: \"10px\" }}>"
+      },
+      {
+        "file": "src/components/ErrorBoundary.tsx",
+        "line": 58,
+        "text": "<p style={{ fontSize: \"13px\", color: \"#566a7b\", marginBottom: \"18px\" }}>"
+      },
+      {
+        "file": "src/components/ErrorBoundary.tsx",
+        "line": 70,
+        "text": "fontSize: \"14px\","
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 105,
+        "text": "fontSize: 13,"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 121,
+        "text": "fontSize: 13,"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 132,
+        "text": "style={{ padding: \"6px 12px\", borderRadius: 8, border: \"1px solid #cbd5e1\", background: \"#f8fafc\", cursor: \"pointer\", fontSize: 12 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 155,
+        "text": "style={{ flex: \"1 1 220px\", padding: \"7px 12px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 13 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 161,
+        "text": "style={{ padding: \"7px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 13 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 174,
+        "text": "style={{ padding: \"7px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 13 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 188,
+        "text": "<p role=\"status\" style={{ margin: 0, fontSize: 12, color: \"#854d0e\" }}>"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 195,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 12, textAlign: \"right\" }}>"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 244,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 12, textAlign: \"right\" }}>"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 269,
+        "text": "style={{ background: \"#0284c7\", color: \"#ffffff\", border: \"none\", borderRadius: 6, padding: \"4px 10px\", cursor: \"pointer\", fontSize: 11, fontWeight: 600 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 282,
+        "text": "<div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"center\", fontSize: 12, color: \"#64748b\" }}>"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 726,
+        "text": "fontSize: `${Math.max(9.5, Math.min(15, Math.round(draft.homeFontSize * 0.78 * 10) / 10))}px`,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1494,
+        "text": "onClick={() => updateField(\"fontSize\", Math.min(10, draft.fontSize + 1))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1498,
+        "text": "<b>{draft.fontSize}</b>"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1502,
+        "text": "onClick={() => updateField(\"fontSize\", Math.max(1, draft.fontSize - 1))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1659,
+        "text": "<div style={{ fontSize: 11, marginTop: 3 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 266,
+        "text": "<h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: \"#0f172a\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 269,
+        "text": "<div style={{ fontSize: 11, color: \"#475569\", marginTop: 2 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 295,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 306,
+        "text": "<div style={{ padding: \"8px 12px\", borderRadius: 8, background: \"#fef2f2\", color: \"#991b1b\", fontSize: 13, marginBottom: 10, border: \"1px solid #fecaca\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 311,
+        "text": "<div style={{ padding: \"8px 12px\", borderRadius: 8, background: \"#f0fdf4\", color: \"#166534\", fontSize: 13, marginBottom: 10, border: \"1px solid #bbf7d0\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 320,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>إجمالي الحسابات</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 321,
+        "text": "<strong style={{ fontSize: 16 }}>{(summary?.stats.accountsCount ?? liveAccounts.length).toLocaleString(\"en-US\")}</strong>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 324,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>الفواتير والقيود</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 325,
+        "text": "<strong style={{ fontSize: 16 }}>{(summary?.stats.ledgerCount ?? liveLedger.length).toLocaleString(\"en-US\")}</strong>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 328,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>بنود الفواتير</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 329,
+        "text": "<strong style={{ fontSize: 16 }}>{(summary?.stats.invoiceLinesCount ?? 0).toLocaleString(\"en-US\")}</strong>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 332,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>الأصناف والمخازن</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 333,
+        "text": "<strong style={{ fontSize: 16 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 349,
+        "text": "style={{ display: \"inline-block\", background: \"#0284c7\", color: \"#fff\", padding: \"8px 16px\", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 353,
+        "text": "<div style={{ marginTop: 8, fontSize: 12, color: \"#475569\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 361,
+        "text": "<label style={{ display: \"inline-flex\", alignItems: \"center\", gap: 6, marginTop: 8, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 376,
+        "text": "style={{ background: \"#0f766e\", color: \"#fff\", border: \"none\", padding: \"8px 16px\", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 388,
+        "text": "style={{ background: \"#b45309\", color: \"#fff\", border: \"none\", padding: \"8px 14px\", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 399,
+        "text": "style={{ background: \"#059669\", color: \"#fff\", border: \"none\", padding: \"8px 14px\", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 408,
+        "text": "style={{ background: \"#334155\", color: \"#fff\", border: \"none\", padding: \"8px 14px\", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 425,
+        "text": "style={{ padding: \"8px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 12, background: \"#fff\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 441,
+        "text": "style={{ flex: 1, minWidth: 180, padding: \"8px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 12 }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 446,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 11, textAlign: \"right\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 468,
+        "text": "<div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"center\", marginTop: 10, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 491,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 505,
+        "text": "<div style={{ color: \"#b45309\", fontSize: 11 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 512,
+        "text": "<div style={{ color: \"#0369a1\", fontSize: 11 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 524,
+        "text": "<div key={imp.id} style={{ padding: 12, borderRadius: 10, background: \"#f8fafc\", border: \"1px solid #e2e8f0\", fontSize: 12 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 532,
+        "text": "<p style={{ color: \"#64748b\", fontSize: 13 }}>لم تُستورد ملفات مصادر بعد في سجل التدقيق.</p>"
+      },
+      {
+        "file": "src/components/InventoryBulkEditBar.tsx",
+        "line": 187,
+        "text": "<label style={{ display: \"block\", fontSize: 12, color: \"#854d0e\" }}>"
+      },
+      {
+        "file": "src/components/InventoryBulkEditBar.tsx",
+        "line": 235,
+        "text": "<div role=\"status\" style={{ fontSize: 12, color: \"#854d0e\" }}>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 43,
+        "text": "fontSize: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 355,
+        "text": "fontSize: 4,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 457,
+        "text": "fontSize: clampNum(safe.fontSize, 1, 12, DEFAULT_EXTENDED_SETTINGS.fontSize),"
+      },
+      {
+        "file": "flutter_app/lib/main.dart",
+        "line": 191,
+        "text": "fontSize: 18,"
+      },
+      {
+        "file": "flutter_app/lib/main.dart",
+        "line": 197,
+        "text": "style: TextStyle(color: Colors.white70, fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/manufacturing_screen.dart",
+        "line": 17,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/manufacturing_screen.dart",
+        "line": 57,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/manufacturing_screen.dart",
+        "line": 72,
+        "text": "style: const TextStyle(color: Color(0xFFF39A16), fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 27,
+        "text": "style: TextStyle(color: Colors.white70, fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 34,
+        "text": "fontSize: 20,"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 57,
+        "text": "const Text('الموظفون', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 73,
+        "text": "const Text('طلبات الإجازات', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/procurement_screen.dart",
+        "line": 20,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/customer_list_sheet.dart",
+        "line": 61,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),"
+      },
+      {
+        "file": "flutter_app/lib/screens/invoice_form_sheet.dart",
+        "line": 142,
+        "text": "style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/invoice_form_sheet.dart",
+        "line": 177,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),"
+      },
+      {
+        "file": "flutter_app/lib/screens/cloud_identity_screen.dart",
+        "line": 98,
+        "text": "style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/dashboard_screen.dart",
+        "line": 144,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "flutter_app/lib/screens/dashboard_screen.dart",
+        "line": 154,
+        "text": "fontSize: 13,"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 57,
+        "text": "fontSize: 16,"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 64,
+        "text": "style: TextStyle(color: Colors.white70, fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 87,
+        "text": "style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 127,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 137,
+        "text": "style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 162,
+        "text": "style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 168,
+        "text": "fontSize: 14,"
+      },
+      {
+        "file": "flutter_app/lib/screens/finance_screen.dart",
+        "line": 57,
+        "text": "style: const TextStyle(color: Color(0xFFD84949), fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/finance_screen.dart",
+        "line": 61,
+        "text": "style: const TextStyle(color: Color(0xFF169B62), fontSize: 12),"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 4920,
+        "text": "<small style={{ display: \"block\", fontSize: 9 }}>مرجعي — غير معتمد</small>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 5721,
+        "text": "<small style={{ display: \"block\", color: \"#b45309\", fontSize: 9.5 }}>بحاجة إلى تسوية</small>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 5863,
+        "text": "<table className=\"account-groups-table\" style={{ width: \"100%\", fontSize: 11 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12746,
+        "text": "style={{ fontSize: 11, padding: \"4px 10px\", whiteSpace: \"nowrap\" }}"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12836,
+        "text": "<table className=\"account-groups-table\" style={{ fontSize: 11.5 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12898,
+        "text": "fontSize: 10,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 12926,
+        "text": "<span style={{ fontSize: 11 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13065,
+        "text": "<table className=\"account-groups-table\" style={{ fontSize: 12, marginBottom: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13589,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13613,
+        "text": "fontSize: 11,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13630,
+        "text": "fontSize: 11,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 13696,
+        "text": "<p style={{ margin: \"0 0 10px\", fontSize: 13, lineHeight: 1.6, color: \"var(--nasqo-muted)\" }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14003,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14035,
+        "text": "<label style={{ display: \"grid\", gap: 4, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14056,
+        "text": "<label style={{ display: \"grid\", gap: 4, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14079,
+        "text": "<label style={{ display: \"grid\", gap: 4, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14096,
+        "text": "<label style={{ display: \"flex\", alignItems: \"center\", gap: 8, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14548,
+        "text": "<div data-testid={`cash-invoice-line-metadata-${line.id}`} style={{ fontSize: \"0.75em\", whiteSpace: \"pre-wrap\", overflowWrap: \"anywhere\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 109,
+        "text": "<h2 id=\"customer-list-title\" style={{ fontSize: \"15px\" }}>إدارة العملاء</h2>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 116,
+        "text": "style={{ background: \"transparent\", color: \"var(--nasqo-blue)\", fontWeight: \"bold\", fontSize: \"14px\" }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 138,
+        "text": "style={{ display: \"flex\", alignItems: \"center\", gap: \"3px\", padding: \"6px 10px\", fontSize: \"11px\", minHeight: \"34px\" }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 147,
+        "text": "<strong style={{ fontSize: \"12px\" }}>إضافة عميل جديد</strong>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 164,
+        "text": "style={{ minHeight: \"34px\", fontSize: \"11px\" }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 202,
+        "text": "<strong style={{ fontSize: \"12px\", display: \"block\", overflow: \"hidden\", textOverflow: \"ellipsis\", whiteSpace: \"nowrap\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 205,
+        "text": "<small style={{ fontSize: \"10px\", color: \"#666\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 219,
+        "text": "style={{ padding: \"4px 8px\", fontSize: \"10px\", minHeight: \"28px\", flexShrink: 0 }}"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 228,
+        "text": "<p style={{ textAlign: \"center\", color: \"#888\", fontSize: \"11px\", padding: \"10px\" }}>"
+      },
+      {
+        "file": "src/components/CustomerList.tsx",
+        "line": 242,
+        "text": "style={{ minHeight: \"34px\", fontSize: \"11px\" }}"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 67,
+        "text": "fontSize: 11.5,"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 76,
+        "text": "<div style={{ color: \"var(--nasqo-muted)\", marginTop: 2, fontSize: 11 }}>"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 89,
+        "text": "fontSize: 11,"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 122,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 11, textAlign: \"right\", color: \"var(--nasqo-ink)\" }}>"
+      },
+      {
+        "file": "src/components/CustomerLegacyArchiveSection.tsx",
+        "line": 158,
+        "text": "fontSize: 10.5,"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 267,
+        "text": "<h2 id=\"invoice-form-title\" style={{ fontSize: \"15px\" }}>إصدار فاتورة مبيعات جديدة</h2>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 274,
+        "text": "style={{ background: \"transparent\", color: \"var(--nasqo-blue)\", fontWeight: \"bold\", fontSize: \"14px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 289,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"28px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 297,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"28px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 309,
+        "text": "style={{ fontSize: \"11px\", padding: \"4px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 321,
+        "text": "<span style={{ fontSize: \"10px\", color: \"var(--nasqo-muted)\" }}>اختر العميل</span>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 329,
+        "text": "style={{ padding: \"3px 7px\", background: \"var(--nasqo-blue)\", color: \"#fff\", borderRadius: \"5px\", fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 365,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 373,
+        "text": "style={{ fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 378,
+        "text": "<label className=\"erp-checkbox\" style={{ fontSize: \"11px\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 391,
+        "text": "<h3 style={{ fontSize: \"12px\" }}>بنود الأصناف</h3>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 396,
+        "text": "style={{ display: \"flex\", alignItems: \"center\", gap: \"3px\", padding: \"3px 7px\", background: \"var(--nasqo-blue)\", color: \"#fff\", borderRadius: \"5px\", fontSize: \"10px\", minHeight: \"26px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 404,
+        "text": "<p role=\"status\" style={{ color: \"#92400e\", fontSize: 11, margin: \"4px 0\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 408,
+        "text": "<label style={{ display: \"grid\", gap: 4, margin: \"4px 0 8px\", fontSize: 11, color: \"var(--nasqo-muted)\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 438,
+        "text": "style={{ width: \"100%\", fontSize: \"11px\", padding: \"3px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 483,
+        "text": "<div className=\"erp-stmt-list\" style={{ background: \"#edf5fc\", padding: \"8px\", borderRadius: \"6px\", margin: \"2px 0\", fontSize: \"11px\" }}>"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 507,
+        "text": "style={{ minHeight: \"36px\", fontSize: \"12px\" }}"
+      },
+      {
+        "file": "src/components/InvoiceForm.tsx",
+        "line": 519,
+        "text": "style={{ minHeight: \"36px\", fontSize: \"12px\" }}"
+      },
+      {
+        "file": "src/components/ErrorBoundary.tsx",
+        "line": 55,
+        "text": "<h1 style={{ fontSize: \"20px\", color: \"#4338ca\", marginBottom: \"10px\" }}>"
+      },
+      {
+        "file": "src/components/ErrorBoundary.tsx",
+        "line": 58,
+        "text": "<p style={{ fontSize: \"13px\", color: \"#566a7b\", marginBottom: \"18px\" }}>"
+      },
+      {
+        "file": "src/components/ErrorBoundary.tsx",
+        "line": 70,
+        "text": "fontSize: \"14px\","
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 105,
+        "text": "fontSize: 13,"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 121,
+        "text": "fontSize: 13,"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 132,
+        "text": "style={{ padding: \"6px 12px\", borderRadius: 8, border: \"1px solid #cbd5e1\", background: \"#f8fafc\", cursor: \"pointer\", fontSize: 12 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 155,
+        "text": "style={{ flex: \"1 1 220px\", padding: \"7px 12px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 13 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 161,
+        "text": "style={{ padding: \"7px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 13 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 174,
+        "text": "style={{ padding: \"7px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 13 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 188,
+        "text": "<p role=\"status\" style={{ margin: 0, fontSize: 12, color: \"#854d0e\" }}>"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 195,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 12, textAlign: \"right\" }}>"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 244,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 12, textAlign: \"right\" }}>"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 269,
+        "text": "style={{ background: \"#0284c7\", color: \"#ffffff\", border: \"none\", borderRadius: 6, padding: \"4px 10px\", cursor: \"pointer\", fontSize: 11, fontWeight: 600 }}"
+      },
+      {
+        "file": "src/components/LegacyReconciliationView.tsx",
+        "line": 282,
+        "text": "<div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"center\", fontSize: 12, color: \"#64748b\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 266,
+        "text": "<h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: \"#0f172a\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 269,
+        "text": "<div style={{ fontSize: 11, color: \"#475569\", marginTop: 2 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 295,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 306,
+        "text": "<div style={{ padding: \"8px 12px\", borderRadius: 8, background: \"#fef2f2\", color: \"#991b1b\", fontSize: 13, marginBottom: 10, border: \"1px solid #fecaca\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 311,
+        "text": "<div style={{ padding: \"8px 12px\", borderRadius: 8, background: \"#f0fdf4\", color: \"#166534\", fontSize: 13, marginBottom: 10, border: \"1px solid #bbf7d0\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 320,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>إجمالي الحسابات</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 321,
+        "text": "<strong style={{ fontSize: 16 }}>{(summary?.stats.accountsCount ?? liveAccounts.length).toLocaleString(\"en-US\")}</strong>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 324,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>الفواتير والقيود</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 325,
+        "text": "<strong style={{ fontSize: 16 }}>{(summary?.stats.ledgerCount ?? liveLedger.length).toLocaleString(\"en-US\")}</strong>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 328,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>بنود الفواتير</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 329,
+        "text": "<strong style={{ fontSize: 16 }}>{(summary?.stats.invoiceLinesCount ?? 0).toLocaleString(\"en-US\")}</strong>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 332,
+        "text": "<div style={{ fontSize: 11, color: \"#64748b\" }}>الأصناف والمخازن</div>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 333,
+        "text": "<strong style={{ fontSize: 16 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 349,
+        "text": "style={{ display: \"inline-block\", background: \"#0284c7\", color: \"#fff\", padding: \"8px 16px\", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 353,
+        "text": "<div style={{ marginTop: 8, fontSize: 12, color: \"#475569\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 361,
+        "text": "<label style={{ display: \"inline-flex\", alignItems: \"center\", gap: 6, marginTop: 8, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 376,
+        "text": "style={{ background: \"#0f766e\", color: \"#fff\", border: \"none\", padding: \"8px 16px\", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 388,
+        "text": "style={{ background: \"#b45309\", color: \"#fff\", border: \"none\", padding: \"8px 14px\", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 399,
+        "text": "style={{ background: \"#059669\", color: \"#fff\", border: \"none\", padding: \"8px 14px\", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 408,
+        "text": "style={{ background: \"#334155\", color: \"#fff\", border: \"none\", padding: \"8px 14px\", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: \"pointer\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 425,
+        "text": "style={{ padding: \"8px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 12, background: \"#fff\" }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 441,
+        "text": "style={{ flex: 1, minWidth: 180, padding: \"8px 10px\", borderRadius: 8, border: \"1px solid #cbd5e1\", fontSize: 12 }}"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 446,
+        "text": "<table style={{ width: \"100%\", borderCollapse: \"collapse\", fontSize: 11, textAlign: \"right\" }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 468,
+        "text": "<div style={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"center\", marginTop: 10, fontSize: 12 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 491,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 505,
+        "text": "<div style={{ color: \"#b45309\", fontSize: 11 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 512,
+        "text": "<div style={{ color: \"#0369a1\", fontSize: 11 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 524,
+        "text": "<div key={imp.id} style={{ padding: 12, borderRadius: 10, background: \"#f8fafc\", border: \"1px solid #e2e8f0\", fontSize: 12 }}>"
+      },
+      {
+        "file": "src/components/FullSqliteImportModal.tsx",
+        "line": 532,
+        "text": "<p style={{ color: \"#64748b\", fontSize: 13 }}>لم تُستورد ملفات مصادر بعد في سجل التدقيق.</p>"
+      },
+      {
+        "file": "src/components/InventoryBulkEditBar.tsx",
+        "line": 187,
+        "text": "<label style={{ display: \"block\", fontSize: 12, color: \"#854d0e\" }}>"
+      },
+      {
+        "file": "src/components/InventoryBulkEditBar.tsx",
+        "line": 235,
+        "text": "<div role=\"status\" style={{ fontSize: 12, color: \"#854d0e\" }}>"
+      },
+      {
+        "file": "flutter_app/lib/main.dart",
+        "line": 191,
+        "text": "fontSize: 18,"
+      },
+      {
+        "file": "flutter_app/lib/main.dart",
+        "line": 197,
+        "text": "style: TextStyle(color: Colors.white70, fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/manufacturing_screen.dart",
+        "line": 17,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/manufacturing_screen.dart",
+        "line": 57,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/manufacturing_screen.dart",
+        "line": 72,
+        "text": "style: const TextStyle(color: Color(0xFFF39A16), fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 27,
+        "text": "style: TextStyle(color: Colors.white70, fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 34,
+        "text": "fontSize: 20,"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 57,
+        "text": "const Text('الموظفون', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/hr_screen.dart",
+        "line": 73,
+        "text": "const Text('طلبات الإجازات', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/procurement_screen.dart",
+        "line": 20,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/customer_list_sheet.dart",
+        "line": 61,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),"
+      },
+      {
+        "file": "flutter_app/lib/screens/invoice_form_sheet.dart",
+        "line": 142,
+        "text": "style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/invoice_form_sheet.dart",
+        "line": 177,
+        "text": "style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),"
+      },
+      {
+        "file": "flutter_app/lib/screens/cloud_identity_screen.dart",
+        "line": 98,
+        "text": "style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),"
+      },
+      {
+        "file": "flutter_app/lib/screens/dashboard_screen.dart",
+        "line": 144,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "flutter_app/lib/screens/dashboard_screen.dart",
+        "line": 154,
+        "text": "fontSize: 13,"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 57,
+        "text": "fontSize: 16,"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 64,
+        "text": "style: TextStyle(color: Colors.white70, fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 87,
+        "text": "style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 127,
+        "text": "fontSize: 12,"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 137,
+        "text": "style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 162,
+        "text": "style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),"
+      },
+      {
+        "file": "flutter_app/lib/screens/erp_hub_screen.dart",
+        "line": 168,
+        "text": "fontSize: 14,"
+      },
+      {
+        "file": "flutter_app/lib/screens/finance_screen.dart",
+        "line": 57,
+        "text": "style: const TextStyle(color: Color(0xFFD84949), fontSize: 12),"
+      },
+      {
+        "file": "flutter_app/lib/screens/finance_screen.dart",
+        "line": 61,
+        "text": "style: const TextStyle(color: Color(0xFF169B62), fontSize: 12),"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "حجم الخط",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "yellowPaper",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1511,
+        "text": "checked={draft.yellowPaper}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1512,
+        "text": "onChange={(e) => updateField(\"yellowPaper\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 44,
+        "text": "yellowPaper: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 356,
+        "text": "yellowPaper: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "ورق أصفر",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "printTarget",
+    "default": "pdf",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1437,
+        "text": "checked={draft.printTarget === \"pdf\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1438,
+        "text": "onChange={() => updateField(\"printTarget\", \"pdf\")}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1446,
+        "text": "checked={draft.printTarget === \"printer\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1447,
+        "text": "onChange={() => updateField(\"printTarget\", \"printer\")}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 45,
+        "text": "printTarget: \"pdf\" | \"printer\";"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 357,
+        "text": "printTarget: \"pdf\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "وجهة الطباعة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "backupReminderOnExit",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1757,
+        "text": "checked={draft.backupReminderOnExit}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1758,
+        "text": "onChange={(e) => updateField(\"backupReminderOnExit\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 46,
+        "text": "backupReminderOnExit: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 358,
+        "text": "backupReminderOnExit: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "تذكير النسخ عند الخروج",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "whatsappVariant",
+    "default": "business",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 206,
+        "text": "whatsappProvider: draft.whatsappVariant === \"green\" ? \"external\" : \"nasqo\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1575,
+        "text": "checked={draft.whatsappVariant === \"green\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1576,
+        "text": "onChange={() => updateField(\"whatsappVariant\", \"green\")}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1584,
+        "text": "checked={draft.whatsappVariant === \"business\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1585,
+        "text": "onChange={() => updateField(\"whatsappVariant\", \"business\")}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1593,
+        "text": "checked={draft.whatsappVariant === \"omar\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1594,
+        "text": "onChange={() => updateField(\"whatsappVariant\", \"omar\")}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 47,
+        "text": "whatsappVariant: WhatsAppClientVariant;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 359,
+        "text": "whatsappVariant: \"business\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "نسخة واتساب",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "passwordLock",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1768,
+        "text": "checked={draft.passwordLock}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1769,
+        "text": "onChange={(e) => updateField(\"passwordLock\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 48,
+        "text": "passwordLock: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 360,
+        "text": "passwordLock: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "قفل بكلمة مرور",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showBalanceInVoucher",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 443,
+        "text": "checked={draft.showBalanceInVoucher}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 444,
+        "text": "onChange={(e) => updateField(\"showBalanceInVoucher\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 49,
+        "text": "showBalanceInVoucher: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 361,
+        "text": "showBalanceInVoucher: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إظهار الرصيد في السند",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showTimeInVoucher",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 451,
+        "text": "checked={draft.showTimeInVoucher}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 452,
+        "text": "onChange={(e) => updateField(\"showTimeInVoucher\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 50,
+        "text": "showTimeInVoucher: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 362,
+        "text": "showTimeInVoucher: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إظهار الوقت في السند",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hideCashboxesOnHome",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 461,
+        "text": "[\"hideCashboxesOnHome\", \"إخفاء إجمالي الصناديق في الشاشة الرئيسية\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 51,
+        "text": "hideCashboxesOnHome: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 363,
+        "text": "hideCashboxesOnHome: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء الصناديق من الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hideVoucherSuggestions",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 462,
+        "text": "[\"hideVoucherSuggestions\", \"إخفاء اقتراحات تفاصيل السند\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 52,
+        "text": "hideVoucherSuggestions: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 364,
+        "text": "hideVoucherSuggestions: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء اقتراحات السند",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "useReceiptPaymentVoucher",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 458,
+        "text": "[\"useReceiptPaymentVoucher\", \"استخدام سند صرف/قبض\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 53,
+        "text": "useReceiptPaymentVoucher: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 365,
+        "text": "useReceiptPaymentVoucher: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "استخدام سند قبض وصرف",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "useTwoDecimals",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 616,
+        "text": "const formattedAbs = ext?.useTwoDecimals"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 459,
+        "text": "[\"useTwoDecimals\", \"استخدام الفاصل العشري .00\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 54,
+        "text": "useTwoDecimals: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 366,
+        "text": "useTwoDecimals: false,"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 616,
+        "text": "const formattedAbs = ext?.useTwoDecimals"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "استخدام منزلتين عشريتين",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showAllCurrenciesToLocal",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 460,
+        "text": "[\"showAllCurrenciesToLocal\", \"عرض خيار جميع العملات إلى عملة محلية\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 55,
+        "text": "showAllCurrenciesToLocal: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 367,
+        "text": "showAllCurrenciesToLocal: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "عرض كل العملات بالمحلية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hideAllUsersOption",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 464,
+        "text": "[\"hideAllUsersOption\", \"عدم عرض خيار جميع المستخدمين\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 56,
+        "text": "hideAllUsersOption: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 368,
+        "text": "hideAllUsersOption: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء خيار جميع المستخدمين",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "thermalPrintPdf",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1521,
+        "text": "[\"thermalPrintPdf\", \"طباعة السندات بطابعة حرارية 80mm\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 57,
+        "text": "thermalPrintPdf: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 369,
+        "text": "thermalPrintPdf: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "PDF للطباعة الحرارية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showGeneralEntryOnHome",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 463,
+        "text": "[\"showGeneralEntryOnHome\", \"إضافة قيد عام إلى الشاشة الرئيسية\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 58,
+        "text": "showGeneralEntryOnHome: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 370,
+        "text": "showGeneralEntryOnHome: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إظهار القيد العام في الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "useNotifMsgInPaymentReq",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1603,
+        "text": "[\"useNotifMsgInPaymentReq\", \"استخدام رسالة الإشعارات في طلب السداد\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 59,
+        "text": "useNotifMsgInPaymentReq: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 371,
+        "text": "useNotifMsgInPaymentReq: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "رسالة التنبيه في طلب الدفع",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showDateInSms",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1604,
+        "text": "[\"showDateInSms\", \"عرض تاريخ الإرسال في الرسائل النصية\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 60,
+        "text": "showDateInSms: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 372,
+        "text": "showDateInSms: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إظهار التاريخ في الرسالة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showVoucherNoInSms",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1605,
+        "text": "[\"showVoucherNoInSms\", \"عرض رقم السند في الرسائل النصية\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 61,
+        "text": "showVoucherNoInSms: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 373,
+        "text": "showVoucherNoInSms: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إظهار رقم السند في الرسالة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "statementFooterNote",
+    "default": "الرصيد صحيح إذا لم تتم المراجعة خلال سبعة أيام من تاريخ صدور الكشف",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2699,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2713,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2728,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 3068,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1542,
+        "text": "value={draft.statementFooterNote}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1543,
+        "text": "onChange={(e) => updateField(\"statementFooterNote\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 62,
+        "text": "statementFooterNote: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 374,
+        "text": "statementFooterNote: \"الرصيد صحيح إذا لم تتم المراجعة خلال سبعة أيام من تاريخ صدور الكشف\","
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2699,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2713,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 2728,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 3068,
+        "text": "footerNote: extendedSettings.statementFooterNote,"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "ملاحظة تذييل الكشف",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "messageIntro",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 620,
+        "text": "const intro = ext?.messageIntro?.trim() ? `${ext.messageIntro.trim()}\\n` : \"\";"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1624,
+        "text": "value={draft.messageIntro}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1625,
+        "text": "onChange={(e) => updateField(\"messageIntro\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 63,
+        "text": "messageIntro: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 375,
+        "text": "messageIntro: \"\","
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 54,
+        "text": "messageIntro?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 67,
+        "text": "const intro = input.extendedSettings?.messageIntro?.trim();"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 620,
+        "text": "const intro = ext?.messageIntro?.trim() ? `${ext.messageIntro.trim()}\\n` : \"\";"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 54,
+        "text": "messageIntro?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 67,
+        "text": "const intro = input.extendedSettings?.messageIntro?.trim();"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "مقدمة الرسالة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "messageOutro",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 621,
+        "text": "const outro = ext?.messageOutro?.trim() ? `\\n${ext.messageOutro.trim()}` : \"\";"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1633,
+        "text": "value={draft.messageOutro}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1634,
+        "text": "onChange={(e) => updateField(\"messageOutro\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 64,
+        "text": "messageOutro: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 376,
+        "text": "messageOutro: \"\","
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 55,
+        "text": "messageOutro?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 119,
+        "text": "const outro = input.extendedSettings?.messageOutro?.trim();"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 621,
+        "text": "const outro = ext?.messageOutro?.trim() ? `\\n${ext.messageOutro.trim()}` : \"\";"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 55,
+        "text": "messageOutro?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 119,
+        "text": "const outro = input.extendedSettings?.messageOutro?.trim();"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "خاتمة الرسالة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "creditBalanceLabel",
+    "default": "الرصيد لكم",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 613,
+        "text": "const creditLabel = ext?.creditBalanceLabel?.trim() || \"له\";"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 481,
+        "text": "value={draft.creditBalanceLabel}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 482,
+        "text": "onChange={(e) => updateField(\"creditBalanceLabel\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 65,
+        "text": "creditBalanceLabel: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 377,
+        "text": "creditBalanceLabel: \"الرصيد لكم\","
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 56,
+        "text": "creditBalanceLabel?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 106,
+        "text": "const creditLabel = input.extendedSettings?.creditBalanceLabel?.trim() || \"له\";"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 613,
+        "text": "const creditLabel = ext?.creditBalanceLabel?.trim() || \"له\";"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 56,
+        "text": "creditBalanceLabel?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 106,
+        "text": "const creditLabel = input.extendedSettings?.creditBalanceLabel?.trim() || \"له\";"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "تسمية الرصيد الدائن",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "debitBalanceLabel",
+    "default": "الرصيد عليكم",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 614,
+        "text": "const debitLabel = ext?.debitBalanceLabel?.trim() || \"عليه\";"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 489,
+        "text": "value={draft.debitBalanceLabel}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 490,
+        "text": "onChange={(e) => updateField(\"debitBalanceLabel\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 66,
+        "text": "debitBalanceLabel: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 378,
+        "text": "debitBalanceLabel: \"الرصيد عليكم\","
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 57,
+        "text": "debitBalanceLabel?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 107,
+        "text": "const debitLabel = input.extendedSettings?.debitBalanceLabel?.trim() || \"عليه\";"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 614,
+        "text": "const debitLabel = ext?.debitBalanceLabel?.trim() || \"عليه\";"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 57,
+        "text": "debitBalanceLabel?: string;"
+      },
+      {
+        "file": "src/utils/invoiceGridUtils.ts",
+        "line": 107,
+        "text": "const debitLabel = input.extendedSettings?.debitBalanceLabel?.trim() || \"عليه\";"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "تسمية الرصيد المدين",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "salesInvoiceFooterNote",
+    "default": "البضاعة لا ترد إلا في حالة أي خلل مصنعي فقط",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14245,
+        "text": "footerNote: ctx.extendedSettings.salesInvoiceFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14274,
+        "text": "footerNote: ctx.extendedSettings.salesInvoiceFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14420,
+        "text": "footerNote={ctx.extendedSettings.salesInvoiceFooterNote}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1551,
+        "text": "value={draft.salesInvoiceFooterNote}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1552,
+        "text": "onChange={(e) => updateField(\"salesInvoiceFooterNote\", e.target.value)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 67,
+        "text": "salesInvoiceFooterNote: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 379,
+        "text": "salesInvoiceFooterNote: \"البضاعة لا ترد إلا في حالة أي خلل مصنعي فقط\","
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14245,
+        "text": "footerNote: ctx.extendedSettings.salesInvoiceFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14274,
+        "text": "footerNote: ctx.extendedSettings.salesInvoiceFooterNote,"
+      },
+      {
+        "file": "src/Prototype.tsx",
+        "line": 14420,
+        "text": "footerNote={ctx.extendedSettings.salesInvoiceFooterNote}"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "تذييل فاتورة المبيعات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "sellBelowCost",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 503,
+        "text": "checked={draft.sellBelowCost}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 504,
+        "text": "onChange={(e) => updateField(\"sellBelowCost\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 68,
+        "text": "sellBelowCost: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 380,
+        "text": "sellBelowCost: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "البيع بأقل من التكلفة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "sellWithoutBalance",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 511,
+        "text": "checked={draft.sellWithoutBalance}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 512,
+        "text": "onChange={(e) => updateField(\"sellWithoutBalance\", e.target.checked)}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 69,
+        "text": "sellWithoutBalance: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 381,
+        "text": "sellWithoutBalance: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "البيع دون رصيد",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "invoicePrintTemplate",
+    "default": "1",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1461,
+        "text": "checked={draft.invoicePrintTemplate === \"1\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1462,
+        "text": "onChange={() => updateField(\"invoicePrintTemplate\", \"1\")}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1470,
+        "text": "checked={draft.invoicePrintTemplate === \"2\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1471,
+        "text": "onChange={() => updateField(\"invoicePrintTemplate\", \"2\")}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 70,
+        "text": "invoicePrintTemplate: \"1\" | \"2\";"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 382,
+        "text": "invoicePrintTemplate: \"1\","
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "قالب طباعة الفاتورة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hidePriceIn80mm",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1522,
+        "text": "[\"hidePriceIn80mm\", \"عدم طباعة سعر البيع في فواتير 80mm\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 71,
+        "text": "hidePriceIn80mm: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 383,
+        "text": "hidePriceIn80mm: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء السعر في 80 ملم",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "useWeightedAverage",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 518,
+        "text": "[\"useWeightedAverage\", \"استخدام المتوسط المرجح للتكلفة\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 72,
+        "text": "useWeightedAverage: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 384,
+        "text": "useWeightedAverage: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "استخدام المتوسط المرجح",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hideItemCost",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 520,
+        "text": "[\"hideItemCost\", \"عدم إظهار تكلفة الأصناف\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 73,
+        "text": "hideItemCost: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 385,
+        "text": "hideItemCost: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء تكلفة الصنف",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "showItemsInInvoiceDetails",
+    "default": true,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1523,
+        "text": "[\"showItemsInInvoiceDetails\", \"عرض الأصناف في تفاصيل الفاتورة\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 74,
+        "text": "showItemsInInvoiceDetails: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 386,
+        "text": "showItemsInInvoiceDetails: true,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "عرض الأصناف في تفاصيل الفاتورة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hideExpiryInInvoice",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1524,
+        "text": "[\"hideExpiryInInvoice\", \"عدم عرض تاريخ الانتهاء في الفاتورة\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 75,
+        "text": "hideExpiryInInvoice: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 387,
+        "text": "hideExpiryInInvoice: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء الصلاحية في الفاتورة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "useFreeBonusQty",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 519,
+        "text": "[\"useFreeBonusQty\", \"استخدام البونص (الكمية المجانية)\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 76,
+        "text": "useFreeBonusQty: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 388,
+        "text": "useFreeBonusQty: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "استخدام كمية مجانية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "hidePrintDateInInvoice",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1525,
+        "text": "[\"hidePrintDateInInvoice\", \"عدم عرض تاريخ الطباعة في الفاتورة\"],"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 77,
+        "text": "hidePrintDateInInvoice: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 389,
+        "text": "hidePrintDateInInvoice: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "إخفاء تاريخ طباعة الفاتورة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "useLargestUnitAsMain",
+    "default": false,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 521,
+        "text": "[\"useLargestUnitAsMain\", \"استخدام أكبر وحدة كـ وحدة رئيسية\"],"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 533,
+        "text": "{draft.useLargestUnitAsMain ? ("
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 78,
+        "text": "useLargestUnitAsMain: boolean;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 390,
+        "text": "useLargestUnitAsMain: false,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "الوحدة الأكبر كوحدة رئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardSize",
+    "default": "normal",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 130,
+        "text": "cardSize: DEFAULT_EXTENDED_SETTINGS.cardSize,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1160,
+        "text": "className={draft.cardSize === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1164,
+        "text": "cardSize: preset.id,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 80,
+        "text": "cardSize: CardSizePreset;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 391,
+        "text": "cardSize: \"normal\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 683,
+        "text": "root.dataset.cardSize = settings.cardSize || \"normal\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "حجم البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardPadding",
+    "default": 10,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 131,
+        "text": "cardPadding: DEFAULT_EXTENDED_SETTINGS.cardPadding,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1165,
+        "text": "cardPadding: preset.padding,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1184,
+        "text": "value={draft.cardPadding}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1185,
+        "text": "onChange={(e) => updateField(\"cardPadding\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1187,
+        "text": "<b><bdi>{draft.cardPadding}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 81,
+        "text": "cardPadding: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 392,
+        "text": "cardPadding: 10,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 458,
+        "text": "cardPadding: clampNum(safe.cardPadding, 6, 22, DEFAULT_EXTENDED_SETTINGS.cardPadding),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 671,
+        "text": "const padding = clampNum(settings.cardPadding, 6, 22, DEFAULT_EXTENDED_SETTINGS.cardPadding);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "حشو البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardGap",
+    "default": 9,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 132,
+        "text": "cardGap: DEFAULT_EXTENDED_SETTINGS.cardGap,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1166,
+        "text": "cardGap: preset.gap,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1197,
+        "text": "value={draft.cardGap}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1198,
+        "text": "onChange={(e) => updateField(\"cardGap\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1200,
+        "text": "<b><bdi>{draft.cardGap}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/exportPdf.ts",
+        "line": 190,
+        "text": "const cardGap = 24;"
+      },
+      {
+        "file": "src/utils/exportPdf.ts",
+        "line": 191,
+        "text": "const cardW = (width - 128 - cardGap * 2) / 3;"
+      },
+      {
+        "file": "src/utils/exportPdf.ts",
+        "line": 211,
+        "text": "const x = width - 64 - cardW * (index + 1) - cardGap * index;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 82,
+        "text": "cardGap: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 393,
+        "text": "cardGap: 9,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 459,
+        "text": "cardGap: clampNum(safe.cardGap, 4, 22, DEFAULT_EXTENDED_SETTINGS.cardGap),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 672,
+        "text": "const gap = clampNum(settings.cardGap, 4, 22, DEFAULT_EXTENDED_SETTINGS.cardGap);"
+      }
+    ],
+    "consumers": [
+      {
+        "file": "src/utils/exportPdf.ts",
+        "line": 190,
+        "text": "const cardGap = 24;"
+      },
+      {
+        "file": "src/utils/exportPdf.ts",
+        "line": 191,
+        "text": "const cardW = (width - 128 - cardGap * 2) / 3;"
+      },
+      {
+        "file": "src/utils/exportPdf.ts",
+        "line": 211,
+        "text": "const x = width - 64 - cardW * (index + 1) - cardGap * index;"
+      }
+    ],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "الفجوة بين البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardScale",
+    "default": 100,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 133,
+        "text": "cardScale: DEFAULT_EXTENDED_SETTINGS.cardScale,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1167,
+        "text": "cardScale: preset.scale,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1210,
+        "text": "value={draft.cardScale}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1211,
+        "text": "onChange={(e) => updateField(\"cardScale\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1213,
+        "text": "<b><bdi>{draft.cardScale}%</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 83,
+        "text": "cardScale: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 394,
+        "text": "cardScale: 100,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 460,
+        "text": "cardScale: clampNum(safe.cardScale, 85, 125, DEFAULT_EXTENDED_SETTINGS.cardScale),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 673,
+        "text": "const scale = clampNum(settings.cardScale, 85, 125, DEFAULT_EXTENDED_SETTINGS.cardScale);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "مقياس البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardShape",
+    "default": "rounded",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 134,
+        "text": "cardShape: DEFAULT_EXTENDED_SETTINGS.cardShape,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1227,
+        "text": "className={draft.cardShape === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1231,
+        "text": "cardShape: preset.id,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 84,
+        "text": "cardShape: CardShapePreset;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 395,
+        "text": "cardShape: \"rounded\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 684,
+        "text": "root.dataset.cardShape = settings.cardShape || \"rounded\";"
+      }
+    ],
+    "consumers": [],
+    "status": "ناجح بدليل",
+    "effect": "تغير DOM/CSS بالفعل في Chromium",
+    "labelAr": "شكل البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardRadius",
+    "default": 12,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 135,
+        "text": "cardRadius: DEFAULT_EXTENDED_SETTINGS.cardRadius,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1232,
+        "text": "cardRadius: preset.radius,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1249,
+        "text": "value={draft.cardRadius}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1250,
+        "text": "onChange={(e) => updateField(\"cardRadius\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1252,
+        "text": "<b><bdi>{draft.cardRadius}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 85,
+        "text": "cardRadius: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 396,
+        "text": "cardRadius: 12,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 461,
+        "text": "cardRadius: clampNum(safe.cardRadius, 0, 28, DEFAULT_EXTENDED_SETTINGS.cardRadius),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 674,
+        "text": "const radius = clampNum(settings.cardRadius, 0, 28, DEFAULT_EXTENDED_SETTINGS.cardRadius);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "استدارة البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardShadow",
+    "default": "soft",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 136,
+        "text": "cardShadow: DEFAULT_EXTENDED_SETTINGS.cardShadow,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1287,
+        "text": "className={draft.cardShadow === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1290,
+        "text": "updateField(\"cardShadow\", preset.id);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 86,
+        "text": "cardShadow: CardShadowPreset;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 397,
+        "text": "cardShadow: \"soft\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 681,
+        "text": "CARD_SHADOW_PRESETS.find((p) => p.id === settings.cardShadow) ?? CARD_SHADOW_PRESETS[1];"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 685,
+        "text": "root.dataset.cardShadow = settings.cardShadow || \"soft\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "ظل البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardBorderStyle",
+    "default": "thin",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 137,
+        "text": "cardBorderStyle: DEFAULT_EXTENDED_SETTINGS.cardBorderStyle,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1264,
+        "text": "className={draft.cardBorderStyle === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1268,
+        "text": "cardBorderStyle: preset.id,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 87,
+        "text": "cardBorderStyle: CardBorderStyle;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 398,
+        "text": "cardBorderStyle: \"thin\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 676,
+        "text": "settings.cardBorderStyle === \"none\""
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 686,
+        "text": "root.dataset.cardBorderStyle = settings.cardBorderStyle || \"thin\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "نمط حدود البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardBorderWidth",
+    "default": 1,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 138,
+        "text": "cardBorderWidth: DEFAULT_EXTENDED_SETTINGS.cardBorderWidth,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1269,
+        "text": "cardBorderWidth: preset.width,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 88,
+        "text": "cardBorderWidth: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 399,
+        "text": "cardBorderWidth: 1,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 462,
+        "text": "cardBorderWidth: clampNum(safe.cardBorderWidth, 0, 4, DEFAULT_EXTENDED_SETTINGS.cardBorderWidth),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 678,
+        "text": ": clampNum(settings.cardBorderWidth, 0, 4, DEFAULT_EXTENDED_SETTINGS.cardBorderWidth);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "سمك حدود البطاقات",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardColorPreset",
+    "default": "auto",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 139,
+        "text": "cardColorPreset: DEFAULT_EXTENDED_SETTINGS.cardColorPreset,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1309,
+        "text": "className={`card-ctrl-preset-chip ${draft.cardColorPreset === preset.id ? \"active\" : \"\"}`}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1313,
+        "text": "cardColorPreset: preset.id,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1336,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardBgColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1343,
+        "text": "onClick={() => updateFields({ cardBgColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1359,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardBorderColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1366,
+        "text": "onClick={() => updateFields({ cardBorderColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1382,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardTextColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1389,
+        "text": "onClick={() => updateFields({ cardTextColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1405,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardAccentColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1412,
+        "text": "onClick={() => updateFields({ cardAccentColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 89,
+        "text": "cardColorPreset: CardColorPreset;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 400,
+        "text": "cardColorPreset: \"auto\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 687,
+        "text": "root.dataset.cardColorPreset = settings.cardColorPreset || \"auto\";"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 697,
+        "text": "settings.cardColorPreset !== \"auto\" ||"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 702,
+        "text": "const preset = CARD_COLOR_PRESETS.find((p) => p.id === settings.cardColorPreset);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "ألوان البطاقات الجاهزة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardBgColor",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 140,
+        "text": "cardBgColor: DEFAULT_EXTENDED_SETTINGS.cardBgColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1314,
+        "text": "cardBgColor: preset.bg,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1334,
+        "text": "value={draft.cardBgColor || \"#ffffff\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1336,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardBgColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1339,
+        "text": "{draft.cardBgColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1343,
+        "text": "onClick={() => updateFields({ cardBgColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 90,
+        "text": "cardBgColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 401,
+        "text": "cardBgColor: \"\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 698,
+        "text": "Boolean(settings.cardBgColor || settings.cardBorderColor || settings.cardTextColor || settings.cardAccentColor);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 703,
+        "text": "const bg = settings.cardBgColor || preset?.bg || \"\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "خلفية البطاقة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardBorderColor",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 141,
+        "text": "cardBorderColor: DEFAULT_EXTENDED_SETTINGS.cardBorderColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1315,
+        "text": "cardBorderColor: preset.border,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1357,
+        "text": "value={draft.cardBorderColor || \"#cbd5e1\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1359,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardBorderColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1362,
+        "text": "{draft.cardBorderColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1366,
+        "text": "onClick={() => updateFields({ cardBorderColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 91,
+        "text": "cardBorderColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 402,
+        "text": "cardBorderColor: \"\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 698,
+        "text": "Boolean(settings.cardBgColor || settings.cardBorderColor || settings.cardTextColor || settings.cardAccentColor);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 704,
+        "text": "const border = settings.cardBorderColor || preset?.border || \"\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون حدود البطاقة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardTextColor",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 142,
+        "text": "cardTextColor: DEFAULT_EXTENDED_SETTINGS.cardTextColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1316,
+        "text": "cardTextColor: preset.text,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1380,
+        "text": "value={draft.cardTextColor || \"#0f172a\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1382,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardTextColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1385,
+        "text": "{draft.cardTextColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1389,
+        "text": "onClick={() => updateFields({ cardTextColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 92,
+        "text": "cardTextColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 403,
+        "text": "cardTextColor: \"\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 698,
+        "text": "Boolean(settings.cardBgColor || settings.cardBorderColor || settings.cardTextColor || settings.cardAccentColor);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 705,
+        "text": "const ink = settings.cardTextColor || preset?.text || \"\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون نص البطاقة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "cardAccentColor",
+    "default": "",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 143,
+        "text": "cardAccentColor: DEFAULT_EXTENDED_SETTINGS.cardAccentColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1317,
+        "text": "cardAccentColor: preset.accent,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1403,
+        "text": "value={draft.cardAccentColor || brandColor}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1405,
+        "text": "updateFields({ cardColorPreset: \"custom\", cardAccentColor: e.target.value })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1408,
+        "text": "{draft.cardAccentColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1412,
+        "text": "onClick={() => updateFields({ cardAccentColor: \"\", cardColorPreset: \"custom\" })}"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 93,
+        "text": "cardAccentColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 404,
+        "text": "cardAccentColor: \"\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 698,
+        "text": "Boolean(settings.cardBgColor || settings.cardBorderColor || settings.cardTextColor || settings.cardAccentColor);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 706,
+        "text": "const accent = settings.cardAccentColor || preset?.accent || \"\";"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون إبراز البطاقة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeButtonStyle",
+    "default": "pill",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 151,
+        "text": "homeButtonStyle: DEFAULT_EXTENDED_SETTINGS.homeButtonStyle,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 638,
+        "text": "data-home-preview-style={draft.homeButtonStyle}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 718,
+        "text": "draft.homeButtonStyle === \"tile\" || draft.homeButtonStyle === \"icon-grid\""
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 749,
+        "text": "className={draft.homeButtonStyle === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 753,
+        "text": "homeButtonStyle: preset.id,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 95,
+        "text": "homeButtonStyle: HomeButtonStyle;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 405,
+        "text": "homeButtonStyle: \"pill\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 463,
+        "text": "homeButtonStyle: validStyles.includes(safe.homeButtonStyle as HomeButtonStyle)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 464,
+        "text": "? (safe.homeButtonStyle as HomeButtonStyle)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 465,
+        "text": ": DEFAULT_EXTENDED_SETTINGS.homeButtonStyle,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 599,
+        "text": "style: normalized.homeButtonStyle,"
+      }
+    ],
+    "consumers": [],
+    "status": "ناجح بدليل",
+    "effect": "تغير DOM/CSS بالفعل في Chromium",
+    "labelAr": "شكل أزرار الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeColumns",
+    "default": "auto",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 152,
+        "text": "homeColumns: DEFAULT_EXTENDED_SETTINGS.homeColumns,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 639,
+        "text": "data-home-preview-columns={draft.homeColumns}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 775,
+        "text": "className={draft.homeColumns === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 778,
+        "text": "updateField(\"homeColumns\", preset.id);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 96,
+        "text": "homeColumns: HomeColumnsMode;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 406,
+        "text": "homeColumns: \"auto\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 466,
+        "text": "homeColumns: validCols.includes(safe.homeColumns as HomeColumnsMode)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 467,
+        "text": "? (safe.homeColumns as HomeColumnsMode)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 468,
+        "text": ": DEFAULT_EXTENDED_SETTINGS.homeColumns,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 600,
+        "text": "columns: normalized.homeColumns,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 628,
+        "text": "root.dataset.homeColumns = tokens.columns;"
+      }
+    ],
+    "consumers": [],
+    "status": "ناجح بدليل",
+    "effect": "تغير DOM/CSS بالفعل في Chromium",
+    "labelAr": "عدد أعمدة الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeBannerStyle",
+    "default": "card",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 153,
+        "text": "homeBannerStyle: DEFAULT_EXTENDED_SETTINGS.homeBannerStyle,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 640,
+        "text": "data-home-preview-banner={draft.homeBannerStyle}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 671,
+        "text": "{draft.homeBannerStyle !== \"hidden\" ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 673,
+        "text": "className={`home-ctrl-preview-banner style-${draft.homeBannerStyle}`}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 691,
+        "text": "{draft.homeBannerStyle !== \"compact\" ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 795,
+        "text": "className={draft.homeBannerStyle === preset.id ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 798,
+        "text": "updateField(\"homeBannerStyle\", preset.id);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 97,
+        "text": "homeBannerStyle: HomeBannerStyle;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 407,
+        "text": "homeBannerStyle: \"card\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 469,
+        "text": "homeBannerStyle: validBanners.includes(safe.homeBannerStyle as HomeBannerStyle)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 470,
+        "text": "? (safe.homeBannerStyle as HomeBannerStyle)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 471,
+        "text": ": DEFAULT_EXTENDED_SETTINGS.homeBannerStyle,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 601,
+        "text": "bannerStyle: normalized.homeBannerStyle,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 629,
+        "text": "root.dataset.homeBannerStyle = tokens.bannerStyle;"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "نمط شريط الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeButtonRadius",
+    "default": 26,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 154,
+        "text": "homeButtonRadius: DEFAULT_EXTENDED_SETTINGS.homeButtonRadius,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 716,
+        "text": "borderRadius: `${Math.min(draft.homeButtonRadius, 24)}px`,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 754,
+        "text": "homeButtonRadius: preset.radius,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 816,
+        "text": "value={draft.homeButtonRadius}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 817,
+        "text": "onChange={(e) => updateField(\"homeButtonRadius\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 819,
+        "text": "<b><bdi>{draft.homeButtonRadius}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 98,
+        "text": "homeButtonRadius: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 408,
+        "text": "homeButtonRadius: 26,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 472,
+        "text": "homeButtonRadius: clampNum(safe.homeButtonRadius, 0, 32, DEFAULT_EXTENDED_SETTINGS.homeButtonRadius),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 608,
+        "text": "buttonRadiusPx: `${normalized.homeButtonRadius}px`,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "استدارة أزرار الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeButtonHeight",
+    "default": 48,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 155,
+        "text": "homeButtonHeight: DEFAULT_EXTENDED_SETTINGS.homeButtonHeight,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 719,
+        "text": "? `${Math.max(48, Math.round(draft.homeButtonHeight * 0.92))}px`"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 720,
+        "text": ": `${Math.max(30, Math.round(draft.homeButtonHeight * 0.72))}px`,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 755,
+        "text": "homeButtonHeight: preset.height,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 829,
+        "text": "value={draft.homeButtonHeight}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 830,
+        "text": "onChange={(e) => updateField(\"homeButtonHeight\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 832,
+        "text": "<b><bdi>{draft.homeButtonHeight}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 99,
+        "text": "homeButtonHeight: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 409,
+        "text": "homeButtonHeight: 48,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 473,
+        "text": "homeButtonHeight: clampNum(safe.homeButtonHeight, 44, 76, DEFAULT_EXTENDED_SETTINGS.homeButtonHeight),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 609,
+        "text": "buttonHeightPx: `${normalized.homeButtonHeight}px`,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "ارتفاع أزرار الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeGridGap",
+    "default": 9,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 156,
+        "text": "homeGridGap: DEFAULT_EXTENDED_SETTINGS.homeGridGap,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 703,
+        "text": "gap: `${Math.max(4, Math.round(draft.homeGridGap * 0.7))}px`,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 842,
+        "text": "value={draft.homeGridGap}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 843,
+        "text": "onChange={(e) => updateField(\"homeGridGap\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 845,
+        "text": "<b><bdi>{draft.homeGridGap}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 100,
+        "text": "homeGridGap: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 410,
+        "text": "homeGridGap: 9,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 474,
+        "text": "homeGridGap: clampNum(safe.homeGridGap, 4, 20, DEFAULT_EXTENDED_SETTINGS.homeGridGap),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 610,
+        "text": "gridGapPx: `${normalized.homeGridGap}px`,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "فجوة شبكة الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeColorPreset",
+    "default": "indigo",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 157,
+        "text": "homeColorPreset: DEFAULT_EXTENDED_SETTINGS.homeColorPreset,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 919,
+        "text": "className={`card-ctrl-preset-chip ${draft.homeColorPreset === preset.id ? \"active\" : \"\"}`}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 923,
+        "text": "homeColorPreset: preset.id,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 956,
+        "text": "homeColorPreset: \"custom\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 967,
+        "text": "updateFields({ homePrimaryBtnColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 985,
+        "text": "homeColorPreset: \"custom\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 995,
+        "text": "updateFields({ homeSecondaryBtnColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1013,
+        "text": "homeColorPreset: \"custom\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1023,
+        "text": "updateFields({ homeHeaderColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1041,
+        "text": "homeColorPreset: \"custom\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1051,
+        "text": "updateFields({ homeBannerBgColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1069,
+        "text": "homeColorPreset: \"custom\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1079,
+        "text": "updateFields({ homeCanvasBgColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1097,
+        "text": "homeColorPreset: \"custom\","
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1107,
+        "text": "updateFields({ homeBtnTextColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 101,
+        "text": "homeColorPreset: HomeColorPreset;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 411,
+        "text": "homeColorPreset: \"indigo\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 490,
+        "text": "parsed.homeColorPreset === \"classic\" &&"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 499,
+        "text": "patch.homeColorPreset = DEFAULT_EXTENDED_SETTINGS.homeColorPreset;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 562,
+        "text": "const preset = HOME_COLOR_PRESETS.find((p) => p.id === normalized.homeColorPreset);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 602,
+        "text": "colorPreset: normalized.homeColorPreset,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 630,
+        "text": "root.dataset.homeColorPreset = tokens.colorPreset;"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "ألوان الرئيسية الجاهزة",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homePrimaryBtnColor",
+    "default": "#4338ca",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 158,
+        "text": "homePrimaryBtnColor: DEFAULT_EXTENDED_SETTINGS.homePrimaryBtnColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 924,
+        "text": "homePrimaryBtnColor: preset.primary,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 953,
+        "text": "value={draft.homePrimaryBtnColor || homeTokens.primaryBg || \"#4338ca\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 957,
+        "text": "homePrimaryBtnColor: e.target.value,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 962,
+        "text": "{draft.homePrimaryBtnColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 967,
+        "text": "updateFields({ homePrimaryBtnColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 102,
+        "text": "homePrimaryBtnColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 412,
+        "text": "homePrimaryBtnColor: \"#4338ca\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 491,
+        "text": "!parsed.homePrimaryBtnColor &&"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 500,
+        "text": "patch.homePrimaryBtnColor = DEFAULT_EXTENDED_SETTINGS.homePrimaryBtnColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 573,
+        "text": "const primaryBg = pick(normalized.homePrimaryBtnColor, preset?.primary);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون زر الرئيسية الأساسي",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeSecondaryBtnColor",
+    "default": "#0891b2",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 159,
+        "text": "homeSecondaryBtnColor: DEFAULT_EXTENDED_SETTINGS.homeSecondaryBtnColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 925,
+        "text": "homeSecondaryBtnColor: preset.secondary,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 982,
+        "text": "value={draft.homeSecondaryBtnColor || homeTokens.secondaryBg || \"#0891b2\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 986,
+        "text": "homeSecondaryBtnColor: e.target.value,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 990,
+        "text": "{draft.homeSecondaryBtnColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 995,
+        "text": "updateFields({ homeSecondaryBtnColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 103,
+        "text": "homeSecondaryBtnColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 413,
+        "text": "homeSecondaryBtnColor: \"#0891b2\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 492,
+        "text": "!parsed.homeSecondaryBtnColor &&"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 501,
+        "text": "patch.homeSecondaryBtnColor = DEFAULT_EXTENDED_SETTINGS.homeSecondaryBtnColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 574,
+        "text": "const secondaryBg = pick(normalized.homeSecondaryBtnColor, preset?.secondary);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون زر الرئيسية الثانوي",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeHeaderColor",
+    "default": "#312e81",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 160,
+        "text": "homeHeaderColor: DEFAULT_EXTENDED_SETTINGS.homeHeaderColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 926,
+        "text": "homeHeaderColor: preset.header,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1010,
+        "text": "value={draft.homeHeaderColor || homeTokens.headerBg || \"#312e81\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1014,
+        "text": "homeHeaderColor: e.target.value,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1018,
+        "text": "{draft.homeHeaderColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1023,
+        "text": "updateFields({ homeHeaderColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 104,
+        "text": "homeHeaderColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 414,
+        "text": "homeHeaderColor: \"#312e81\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 493,
+        "text": "!parsed.homeHeaderColor &&"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 502,
+        "text": "patch.homeHeaderColor = DEFAULT_EXTENDED_SETTINGS.homeHeaderColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 575,
+        "text": "const headerBg = pick(normalized.homeHeaderColor, preset?.header);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون رأس الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeBannerBgColor",
+    "default": "#eef2ff",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 161,
+        "text": "homeBannerBgColor: DEFAULT_EXTENDED_SETTINGS.homeBannerBgColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 927,
+        "text": "homeBannerBgColor: preset.bannerBg,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1038,
+        "text": "value={draft.homeBannerBgColor || homeTokens.bannerBg || \"#ffffff\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1042,
+        "text": "homeBannerBgColor: e.target.value,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1046,
+        "text": "{draft.homeBannerBgColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1051,
+        "text": "updateFields({ homeBannerBgColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 105,
+        "text": "homeBannerBgColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 415,
+        "text": "homeBannerBgColor: \"#eef2ff\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 494,
+        "text": "!parsed.homeBannerBgColor &&"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 503,
+        "text": "patch.homeBannerBgColor = DEFAULT_EXTENDED_SETTINGS.homeBannerBgColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 576,
+        "text": "const bannerBg = pick(normalized.homeBannerBgColor, preset?.bannerBg);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "خلفية شريط الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeCanvasBgColor",
+    "default": "#f5f7ff",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 162,
+        "text": "homeCanvasBgColor: DEFAULT_EXTENDED_SETTINGS.homeCanvasBgColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 928,
+        "text": "homeCanvasBgColor: preset.canvasBg,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1066,
+        "text": "value={draft.homeCanvasBgColor || homeTokens.canvasBg || \"#f8fafc\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1070,
+        "text": "homeCanvasBgColor: e.target.value,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1074,
+        "text": "{draft.homeCanvasBgColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1079,
+        "text": "updateFields({ homeCanvasBgColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 106,
+        "text": "homeCanvasBgColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 416,
+        "text": "homeCanvasBgColor: \"#f5f7ff\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 495,
+        "text": "!parsed.homeCanvasBgColor &&"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 504,
+        "text": "patch.homeCanvasBgColor = DEFAULT_EXTENDED_SETTINGS.homeCanvasBgColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 577,
+        "text": "const canvasBg = pick(normalized.homeCanvasBgColor, preset?.canvasBg);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "خلفية الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeBtnTextColor",
+    "default": "#ffffff",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 163,
+        "text": "homeBtnTextColor: DEFAULT_EXTENDED_SETTINGS.homeBtnTextColor,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 929,
+        "text": "homeBtnTextColor: preset.btnText,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1094,
+        "text": "value={draft.homeBtnTextColor || homeTokens.btnText || \"#ffffff\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1098,
+        "text": "homeBtnTextColor: e.target.value,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1102,
+        "text": "{draft.homeBtnTextColor ? ("
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 1107,
+        "text": "updateFields({ homeBtnTextColor: \"\", homeColorPreset: \"custom\" })"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 107,
+        "text": "homeBtnTextColor: string;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 417,
+        "text": "homeBtnTextColor: \"#ffffff\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 496,
+        "text": "!parsed.homeBtnTextColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 505,
+        "text": "patch.homeBtnTextColor = DEFAULT_EXTENDED_SETTINGS.homeBtnTextColor;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 578,
+        "text": "const btnText = pick(normalized.homeBtnTextColor, preset?.btnText);"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "لون نص أزرار الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeFontFamily",
+    "default": "ibm-plex",
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 164,
+        "text": "homeFontFamily: DEFAULT_EXTENDED_SETTINGS.homeFontFamily,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 859,
+        "text": "className={`home-font-chip ${draft.homeFontFamily === font.id ? \"active\" : \"\"}`}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 863,
+        "text": "updateField(\"homeFontFamily\", font.id);"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 108,
+        "text": "homeFontFamily: AppFontFamily;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 418,
+        "text": "homeFontFamily: \"ibm-plex\","
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 475,
+        "text": "homeFontFamily: validFonts.includes(safe.homeFontFamily as AppFontFamily)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 476,
+        "text": "? (safe.homeFontFamily as AppFontFamily)"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 477,
+        "text": ": DEFAULT_EXTENDED_SETTINGS.homeFontFamily,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 510,
+        "text": "!parsed.homeFontFamily ||"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 511,
+        "text": "parsed.homeFontFamily === \"system\" ||"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 512,
+        "text": "parsed.homeFontFamily === \"tajawal\""
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 514,
+        "text": "patch.homeFontFamily = DEFAULT_EXTENDED_SETTINGS.homeFontFamily;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 564,
+        "text": "APP_FONT_FAMILY_PRESETS.find((f) => f.id === normalized.homeFontFamily) ??"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 603,
+        "text": "fontFamily: normalized.homeFontFamily,"
+      }
+    ],
+    "consumers": [],
+    "status": "ناجح بدليل",
+    "effect": "تغير DOM/CSS بالفعل في Chromium",
+    "labelAr": "خط الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  },
+  {
+    "key": "homeFontSize",
+    "default": 14,
+    "storageScope": "SQLite hybridUiPreferences per local database/device; renderer also localStorage. No multiuser propagation proved",
+    "references": [
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 165,
+        "text": "homeFontSize: DEFAULT_EXTENDED_SETTINGS.homeFontSize,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 726,
+        "text": "fontSize: `${Math.max(9.5, Math.min(15, Math.round(draft.homeFontSize * 0.78 * 10) / 10))}px`,"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 880,
+        "text": "className={draft.homeFontSize === preset.size ? \"active\" : \"\"}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 883,
+        "text": "updateField(\"homeFontSize\", preset.size);"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 902,
+        "text": "value={draft.homeFontSize}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 903,
+        "text": "onChange={(e) => updateField(\"homeFontSize\", Number(e.target.value))}"
+      },
+      {
+        "file": "src/components/SystemSettingsPage.tsx",
+        "line": 905,
+        "text": "<b><bdi>{draft.homeFontSize}px</bdi></b>"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 109,
+        "text": "homeFontSize: number;"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 419,
+        "text": "homeFontSize: 14,"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 478,
+        "text": "homeFontSize: clampNum(safe.homeFontSize, 11, 20, DEFAULT_EXTENDED_SETTINGS.homeFontSize),"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 596,
+        "text": "const fontScale = Number((normalized.homeFontSize / 14).toFixed(3));"
+      },
+      {
+        "file": "src/utils/appSettings.ts",
+        "line": 605,
+        "text": "fontSizePx: `${normalized.homeFontSize}px`,"
+      }
+    ],
+    "consumers": [],
+    "status": "جزئي",
+    "effect": "حُفظ فقط؛ الأثر السلوكي لم يُثبت",
+    "labelAr": "حجم خط الرئيسية",
+    "storage": "77/77: حفظ مستقل وقراءة باتصال SQLite جديد، بلا قيود مالية",
+    "android": "لم يُختبر"
+  }
+]

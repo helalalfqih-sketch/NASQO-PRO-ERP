@@ -1,0 +1,3 @@
+00:00 +0: loading /workspace/NASQO-audit-repairs/flutter_app/test/cashier_settings_test.dart
+00:00 +0: cashier preferences survive native backup and clearing never posts or deletes
+00:00 +1: All tests passed!

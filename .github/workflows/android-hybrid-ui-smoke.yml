@@ -1,0 +1,109 @@
+name: Audit repairs Android acceptance (debug only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: stable
+          cache: true
+      - name: Build assets and debug APK
+        run: |
+          npm install --no-audit --no-fund
+          npm run check:runtime
+          npm run sync:flutter-hybrid
+          cd flutter_app
+          flutter create --platforms=android --org=com.indexesstore .
+          node ../scripts/setup-android-hybrid.mjs
+          flutter pub get
+          flutter build apk --debug
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk > build/app/outputs/flutter-apk/SHA256SUMS.txt
+          cd ..
+          node scripts/setup-android-audit.mjs
+          cd flutter_app/android
+          ./gradlew app:assembleDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-audit-debug-apk
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            flutter_app/build/app/outputs/flutter-apk/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-audit-instrumentation
+          path: flutter_app/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+  android:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-audit-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-audit-instrumentation
+          path: flutter_app/build/app/outputs/apk/androidTest/debug/
+      - name: Emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: |
+            mkdir -p qa/android-results
+            adb install -r flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            adb install -r flutter_app/build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            adb shell input keyevent KEYCODE_HOME
+            sleep 15
+            adb logcat -v threadtime NASQO_ACCEPTANCE:I NASQO_LIFECYCLE:I AndroidRuntime:E flutter:E '*:S' > qa/android-results/logcat-live.txt 2>&1 &
+            adb shell am instrument -w -r com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
+            adb logcat -d > qa/android-results/logcat.txt
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-pdf.png > qa/android-results/receiver-pdf.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-xlsx.png > qa/android-results/receiver-xlsx.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/receiver-png.png > qa/android-results/receiver-png.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/employee-sqlite.png > qa/android-results/employee-sqlite.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/import-items-review.png > qa/android-results/import-items-review.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/import-accounts-review.png > qa/android-results/import-accounts-review.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/failure.png > qa/android-results/failure.png
+            adb exec-out run-as com.indexesstore.nasqo_pro_erp cat files/failure-tree.txt > qa/android-results/failure-tree.txt
+            adb exec-out screencap -p > qa/android-results/final.png
+            adb shell am start -n com.indexesstore.nasqo_pro_erp/.MainActivity
+            adb shell input keyevent 3
+            adb shell am start -n com.indexesstore.nasqo_pro_erp/.MainActivity
+            adb shell am force-stop com.indexesstore.nasqo_pro_erp
+            adb shell am start -n com.indexesstore.nasqo_pro_erp/.MainActivity
+            sleep 5
+            adb logcat -d > qa/android-results/lifecycle.txt
+            grep -q 'INSTRUMENTATION_CODE: -1' qa/android-results/instrumentation.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-audit-android-evidence
+          path: qa/android-results/
+          if-no-files-found: warn

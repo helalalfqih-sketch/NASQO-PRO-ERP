@@ -1,0 +1,74 @@
+{
+  "source": "current worktree (see report SHA)",
+  "results": [
+    {
+      "id": "golden-invoice-pdf",
+      "status": "ناجح بدليل",
+      "environment": "Chromium 360x800, built hybrid assets, synthetic SQLite snapshot replay; no Android",
+      "elapsedMs": 1797.6153319999999,
+      "actual": {
+        "name": "nasqo-invoice-1-2026-11-25.pdf",
+        "bytes": 183237,
+        "actualLines": [
+          {
+            "id": 1,
+            "lineKind": "item",
+            "inventoryItemId": "golden-item",
+            "itemName": "صنف القبول العربي",
+            "sku": "",
+            "warehouseName": "مخزن اختبار",
+            "price": 8,
+            "quantity": 2,
+            "total": 16,
+            "discount": 0,
+            "bonus": 0,
+            "unit": "حبة",
+            "unitNum": 1,
+            "details": "",
+            "expiryDate": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "large-invoice-pdf",
+      "status": "ناجح بدليل",
+      "environment": "Chromium 360x800, built hybrid assets, synthetic SQLite snapshot replay; no Android",
+      "elapsedMs": 21709.414429,
+      "actual": {
+        "name": "nasqo-invoice-5000-2026-11-25.pdf",
+        "bytes": 3931540,
+        "lines": 150,
+        "headers": 13,
+        "generationMs": 10427.800000000047,
+        "mockHandoffMs": 1011.8999999999069
+      }
+    },
+    {
+      "id": "performance-large-5000-ledger-1000-items",
+      "status": "ناجح بدليل",
+      "environment": "Chromium 360x800, built hybrid assets, synthetic SQLite snapshot replay; no Android",
+      "elapsedMs": 7762.360976,
+      "actual": {
+        "smallStartupMs": [
+          512.2467300000026,
+          198.2722610000019,
+          217.1591550000012
+        ],
+        "largeStartupMs": [
+          698.6623289999989,
+          476.2866759999997,
+          775.9337010000017
+        ],
+        "longStatementMs": 2505.3147790000003,
+        "catalogSearchMs": 142.79194799999823,
+        "ledgerRows": 5000,
+        "items": 1000,
+        "device": "Linux headless Chromium, 360x800, no CPU throttling",
+        "notAndroid": true
+      }
+    }
+  ],
+  "errors": [],
+  "external": []
+}

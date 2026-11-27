@@ -1,0 +1,5 @@
+00:00 +0: loading /workspace/NASQO-play-internal/flutter_app/test/unassigned_catalog_test.dart
+00:00 +0: /workspace/NASQO-play-internal/flutter_app/test/unassigned_catalog_test.dart: warehouse-free card round-trips, then first purchase binds atomically exactly once
+00:00 +1: /workspace/NASQO-play-internal/flutter_app/test/unassigned_catalog_test.dart: warehouse-free card round-trips, then first purchase binds atomically exactly once
+00:01 +2: /workspace/NASQO-play-internal/flutter_app/test/local_catalog_parity_test.dart: local master settings and stock catalog edits keep accounting values and rollback batches
+00:01 +3: All tests passed!

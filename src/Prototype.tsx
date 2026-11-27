@@ -1,3 +1,10 @@
+import { DeleteRecordDialog } from "./components/DeleteRecordDialog";
+import { catalogCardsForReport } from "./utils/catalogWorkbook";
+import { emptyReferenceDefaults, eligibleCashbox, resolveCashbox } from "./utils/documentReferences";
+import { ReferenceManagerDialog } from "./components/ReferenceManagerDialog";
+import { CashboxReferenceManager } from "./components/CashboxReferenceManager";
+import { useReportPreview, reportTotalText, reportSources, useReportSource, buildStatementReport, reportSummaryText, exportReport, type ReportSource, type ReportDocument, outputBytes } from "./utils/reportDocument";
+import { formatQuantity } from "./utils/quantityFormat";
 import {
   createContext,
   useCallback,
@@ -5,6 +12,7 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -88,6 +96,8 @@ import { GoogleDriveModal } from "./components/GoogleDriveModal";
 import { GoogleSignInButton } from "./components/GoogleSignInButton";
 import { InventoryBulkEditBar } from "./components/InventoryBulkEditBar";
 import { NotificationCenter } from "./components/NotificationCenter";
+import { LegacyRecordsPanel } from "./components/LegacyRecordsPanel";
+import { legacyRecordDraft, legacyCopySourceSha, legacyCopySourceMatches, type LegacyRecord } from "./utils/legacyRecordDraft";
 import { PrintOptionsModal } from "./components/PrintOptionsModal";
 import { UnifiedSearchFilterBar } from "./components/UnifiedSearchFilterBar";
 import { DateRangeFields } from "./components/DateRangeFields";
@@ -107,6 +117,8 @@ import {
   computeInvoiceLineNet,
   stepInvoiceQuantity,
 } from "./utils/invoiceGridUtils";
+import { findInvoiceCatalogItems } from "./utils/invoiceCatalog";
+import { getCatalogReferenceCost, approvedInventoryValue } from "./utils/catalogCosts";
 import {
   countActiveFilters,
   createInitialSearchState,
@@ -161,6 +173,7 @@ import {
   createInventoryItem,
   createLedgerEntry,
   createOrUpdateAccount,
+  deleteAccount,
   deleteCurrencyRecord,
   deleteInventoryCatalogItem,
   downloadUnifiedSqliteFile,
@@ -172,6 +185,7 @@ import {
   fetchUnifiedJsonExport,
   getGoogleAccessToken,
   importInventoryItemsBatch,
+  importAccountCardsBatch,
   importSmartProSqlIntoServer,
   importSqliteBytesIntoServer,
   isLocalWorkspaceSession,
@@ -181,6 +195,8 @@ import {
   resetLocalWorkspaceDatabase,
   restoreJsonBackupIntoServer,
   saveAccountGroup,
+  deleteAccountGroup,
+  deleteWarehouse,
   saveCurrencyRecord,
   saveWarehouse,
   saveWorkspaceSettings,
@@ -262,14 +278,25 @@ import {
   generatePrintableInvoicePdfFromDatabase,
 } from "./utils/exportPdf";
 import { readHapticsEnabled, triggerHaptic, writeHapticsEnabled } from "./utils/haptics";
-import { parseItemsSpreadsheetBytes } from "./utils/importItemsFile";
+import type { ImportedInventoryItemInput } from "./utils/importItemsFile";
+import type { AccountCardImport } from "./utils/accountCsvImport";
+import { MAX_IMPORT_BYTES } from "./utils/tabularImport";
+import { DataImportReview, RestoreReviewDialog, type ImportReview } from "./components/DataImportReview";
+import { registerRestoreApproval, type RestoreReview } from "./utils/restoreApproval";
 import { useThemeMode, type ThemeMode } from "./utils/theme";
 import { OutlinedAmountField } from "./components/OutlinedAmountField";
 import { GlobalNasqoBrandLoader, NasqoBrandLoader } from "./components/NasqoBrandLoader";
 import { runWithBrandLoader } from "./utils/brandLoaderBus";
 import { hybridBridge } from "./hybrid/bridge";
+import { nativeDriveCall } from "./hybrid/cloudSession";
+import { outputNativeDocument, shareNativeText, usesNativeDocumentOutput } from "./hybrid/documentOutput";
 import { useHybridPresentation } from "./hybrid/presentationAdapter";
 import type { HybridUiPreferences } from "./hybrid/contracts";
+import { consumeBackLayer, useBackLayer } from "./hybrid/backCoordinator";
+import { PendingSubmissionStore } from "./hybrid/pendingSubmission";
+import { useUnsavedForm } from "./hybrid/useUnsavedForm";
+import { UiResumeWorkspaceContext } from "./hybrid/resumeContext";
+import { readUiState, writeUiState, removeUiState, readValidatedRoutes, usePersistentUiState } from "./hybrid/resumeState";
 
 type IconComponent = ComponentType<{ className?: string }>;
 type SheetKind = "filters" | "export" | "notifications" | null;
@@ -280,6 +307,7 @@ type OverlayKind =
   | "account-create-extended"
   | "invoice"
   | "trash"
+  | "quotes-list"
   | "inventory-add"
   | "notifications"
   | "qr-scanner"
@@ -370,7 +398,7 @@ type LiveWorkspaceState = {
         }),
   ) => void;
   erpData: ErpWorkspaceData;
-  updateErpData: (next: ErpWorkspaceData) => void;
+  updateErpData: (next: ErpWorkspaceData) => Promise<boolean>;
   openErpModule: (moduleId: ErpModuleId) => void;
   syncing: boolean;
   syncError: string | null;
@@ -381,17 +409,20 @@ type LiveWorkspaceState = {
   openSheet: (kind: Exclude<SheetKind, null>) => void;
   openAccountPicker: () => void;
   openQuickSearch: () => void;
-  openAccountEdit: (account?: AccountRecord) => void;
+  openAccountEdit: (account?: AccountRecord, sourceKey?: string) => void;
   openTransaction: (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => void;
   openAccountCreate: (mode?: AccountCreateMode, defaultCategory?: AccountCategory) => void;
+  openAccountReference: (select:(id:string)=>void, cash?:boolean, currency?:string)=>void;
+  openCashboxReference: (select:((id:number)=>void)|undefined,currency:string)=>void;
+  openCashier: () => void;
   openInvoice: (defaultCategory?: AccountCategory, intent?: InvoiceIntent) => void;
   openVendorInvoice: (account?: AccountRecord, intent?: InvoiceIntent) => void;
-  openInvoiceEdit: (entry: LedgerEntryRecord, account?: AccountRecord) => void;
+  openInvoiceEdit: (entry: LedgerEntryRecord, account?: AccountRecord, sourceKey?: string) => void;
   openDashboardMenu: () => void;
   resetWorkspaceToEmptyNow: () => void;
   seedDemoWorkspaceNow: () => void;
-  openExportMenu: (kind?: ExportKind, account?: AccountRecord) => void;
-  openPrintOptions: (kind?: ExportKind, account?: AccountRecord) => void;
+  openExportMenu: (kind?: ExportKind, account?: AccountRecord, sourceKey?: string) => void;
+  openPrintOptions: (kind?: ExportKind, account?: AccountRecord, sourceKey?: string) => void;
   openBackupModal: () => void;
   openGoogleDriveModal: () => void;
   openFullSqliteImport: () => void;
@@ -447,7 +478,44 @@ function useWorkspace(): LiveWorkspaceState {
   return ctx;
 }
 
-function downloadFile(filename: string, content: string, mimeType: string) {
+function matchesUiShape(value: unknown, example: unknown): boolean {
+  if (example === null) return value === null || typeof value === "boolean";
+  if (Array.isArray(example)) return Array.isArray(value);
+  if (typeof example === "object") return Boolean(value) && typeof value === "object" &&
+    Object.entries(example as Record<string, unknown>).every(([key, part]) =>
+      matchesUiShape((value as Record<string, unknown>)[key], part));
+  return typeof value === typeof example;
+}
+
+function useWorkspaceUiState<T>(slot: string, initial: T | (() => T)) {
+  const ctx = useWorkspace();
+  const sample = typeof initial === "function" ? (initial as () => T)() : initial;
+  return usePersistentUiState<T>(ctx.workspace?.id ?? ctx.uid, slot, initial,
+    import.meta.env.VITE_NASQO_HYBRID === "1", (value) => matchesUiShape(value, sample));
+}
+
+function UnsavedFormPrompt({ guard }: { guard: ReturnType<typeof useUnsavedForm> }) {
+  if (!guard.promptOpen) return null;
+  return <div className="center-modal-layer" style={{ zIndex: 1000 }} data-testid="unsaved-form-dialog">
+    <button className="center-modal-backdrop" aria-label="إغلاق تنبيه التعديلات" onClick={guard.continueEditing} />
+    <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعديلات غير محفوظة">
+      <h2>تعديلات غير محفوظة</h2>
+      <p>حفظ المسودة محلي فقط ولا يرحّل قيدًا أو حركة مخزون.</p>
+      {guard.error ? <p role="alert">{guard.error}</p> : null}
+      <div className="form-modal-actions">
+        <button onClick={guard.continueEditing}>متابعة التحرير</button>
+        <button onClick={guard.discard}>تجاهل التعديلات</button>
+        <button onClick={guard.saveAndClose}>حفظ مسودة دون ترحيل</button>
+      </div>
+    </section>
+  </div>;
+}
+
+async function downloadFile(filename: string, content: string, mimeType: string): Promise<boolean> {
+  if(usesNativeDocumentOutput()){
+    if(!mimeType.startsWith("text/csv"))throw new Error("استخدم تصدير النسخة الاحتياطية المحلية");
+    return outputNativeDocument(new TextEncoder().encode(content),filename,"text/csv");
+  }
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -457,16 +525,15 @@ function downloadFile(filename: string, content: string, mimeType: string) {
   link.click();
   document.body.removeChild(link);
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }
 
 function triggerPrintWithLoader(label = "جاري تجهيز الطباعة...") {
   if (typeof window !== "undefined" && window.__nasqoHybridReady) {
-    void runWithBrandLoader(label, async () => {
-      await hybridBridge.invoke("printDocument", {
-        title: label,
-        kind: "report",
-      });
-    });
+    void hybridBridge.invoke("printDocument", {
+      title: label,
+      kind: "report",
+    }).catch(err=>window.alert(err instanceof Error?err.message:"تعذر فتح معاينة الطباعة"));
     return;
   }
   void runWithBrandLoader(
@@ -482,6 +549,11 @@ async function shareOrCopyText(title: string, text: string, showToast: (msg: str
   await runWithBrandLoader(
     "جاري تجهيز المشاركة...",
     async () => {
+      if(usesNativeDocumentOutput()){
+        try{const result=await shareNativeText(title,text);if(result.opened)showToast("تم فتح قائمة المشاركة");}
+        catch(err){showToast(err instanceof Error?err.message:"تعذر فتح المشاركة");}
+        return;
+      }
       try {
         if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
           await navigator.share({ title, text });
@@ -514,6 +586,14 @@ async function openWhatsAppChat(
     account?.name ? `جاري فتح واتساب لمراسلة ${account.name}...` : "جاري فتح واتساب...",
     async () => {
       triggerHaptic("light");
+      if(usesNativeDocumentOutput()){
+        try{
+          const phone=new URL(buildWhatsAppMessageUrl(account?.phone,message)).pathname.replace(/^\//,"");
+          const result=await shareNativeText("نسقو برو",message,phone);
+          if(result.opened)showToast(result.targeted?"تم فتح واتساب؛ راجع الرسالة قبل الإرسال":"اختر واتساب وجهة الاتصال في قائمة المشاركة");
+        }catch(err){showToast(err instanceof Error?err.message:"تعذر فتح المشاركة");}
+        return;
+      }
       try {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(message);
@@ -939,6 +1019,7 @@ function NasqoProductionShell() {
                 </p>
               ) : null}
                             <div className="auth-gsi-wrap" style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%", marginTop: "12px" }}>
+                {primaryMode === "off" && (
                 <button
                   className="auth-google-btn"
                   onClick={() => void enterLocalWorkspace()}
@@ -948,6 +1029,7 @@ function NasqoProductionShell() {
                   <RocketIcon />
                   <span>الدخول السريع — بدء العمل</span>
                 </button>
+                )}
                 <GoogleSignInButton
                   onClick={() => void handleSignIn()}
                   disabled={authBusy}
@@ -1037,24 +1119,24 @@ export function AuthenticatedWorkspace({
   const [ledger, setLedger] = useState<LedgerEntryRecord[]>([]);
   const [warehouses, setWarehouses] = useState<WarehouseRecord[]>([]);
   const [inventory, setInventory] = useState<InventoryItemRecord[]>([]);
-  const [categoryCurrencies, setCategoryCurrencies] = useState<Partial<Record<AccountCategory, string>>>({});
-  const [statementCurrencies, setStatementCurrencies] = useState<Record<string, string>>({});
+  const [categoryCurrencies, setCategoryCurrencies] = usePersistentUiState<Partial<Record<AccountCategory, string>>>(user.uid, "category-currencies", {}, hybrid.isHybrid, (value) => !!value && typeof value === "object" && Object.values(value).every((v) => typeof v === "string"));
+  const [statementCurrencies, setStatementCurrencies] = usePersistentUiState<Record<string, string>>(user.uid, "statement-currencies", {}, hybrid.isHybrid, (value) => !!value && typeof value === "object" && Object.values(value).every((v) => typeof v === "string"));
   const [activeStatementAccountId, setActiveStatementAccountId] = useState<string | null>(null);
-  const [statementFilter, setStatementFilter] = useState<{
+  const [statementFilter, setStatementFilter] = usePersistentUiState<{
     docKind: "all" | "invoice" | "voucher" | "return" | "quote" | "order";
     sortOrder: "asc" | "desc";
     period: string;
     fromDate: string;
     toDate: string;
     showPreviousBalance: boolean | null;
-  }>({
+  }>(user.uid, "statement-filter", {
     docKind: "all",
     sortOrder: "desc",
     period: "الكل",
     fromDate: "",
     toDate: "",
     showPreviousBalance: null,
-  });
+  }, hybrid.isHybrid, (value) => Boolean(value) && typeof value === "object" && ["all", "invoice", "voucher", "return", "quote", "order"].includes((value as {docKind: string}).docKind) && ["asc", "desc"].includes((value as {sortOrder: string}).sortOrder) && ["period", "fromDate", "toDate"].every((key) => typeof (value as Record<string, unknown>)[key] === "string"));
   const [erpData, setErpData] = useState<ErpWorkspaceData>(() => loadErpWorkspaceData(user.uid));
   const [syncFlags, setSyncFlags] = useState({ accounts: false, ledger: false, inventory: false });
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -1064,6 +1146,20 @@ export function AuthenticatedWorkspace({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [overlay, setOverlay] = useState<OverlayKind>(null);
+  const [importReview, setImportReview] = useState<ImportReview | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const importInFlight = useRef(false);
+  const [restoreReview, setRestoreReview] = useState<RestoreReview | null>(null);
+  const restoreResolver = useRef<((approved: boolean) => void) | null>(null);
+  const finishRestoreReview = useCallback((approved: boolean) => {
+    setRestoreReview(null);
+    restoreResolver.current?.(approved);
+    restoreResolver.current = null;
+  }, []);
+  useBackLayer(Boolean(importReview), () => { if (!importInFlight.current) setImportReview(null); return true; }, 250);
+  useBackLayer(Boolean(restoreReview), () => { finishRestoreReview(false); return true; }, 250);
+  const [unavailableDraft, setUnavailableDraft] = useState(false);
+  useBackLayer(unavailableDraft, () => { setUnavailableDraft(false); return true; }, 200);
   const [pickerMode, setPickerMode] = useState<"statement" | "edit" | "whatsapp" | "search">("statement");
   const [editingAccount, setEditingAccount] = useState<AccountRecord | undefined>();
   const [accountCreateCategory, setAccountCreateCategory] = useState<AccountCategory>("purchases");
@@ -1075,6 +1171,7 @@ export function AuthenticatedWorkspace({
     open: boolean;
     kind: ExportKind;
     account?: AccountRecord;
+    source?: ReportSource;
   }>({ open: false, kind: "statement" });
   const [dashboardMenuOpen, setDashboardMenuOpen] = useState(false);
   const [invoiceSeed, setInvoiceSeed] = useState<{
@@ -1082,9 +1179,22 @@ export function AuthenticatedWorkspace({
     editingEntry?: LedgerEntryRecord;
     intent: InvoiceIntent;
     kindOverride?: "purchase" | "sale";
+    cashier?: boolean;
     revision: number;
   }>({ intent: "invoice", revision: 0 });
   const returnOverlay = useRef<OverlayKind>(null);
+  const referenceAppRoot=useRef<HTMLDivElement>(null);
+  const [referenceAccount,setReferenceAccount]=useState<{select:(id:string)=>void;cash:boolean;currency?:string;scope:string}|null>(null);
+  const [referenceCashbox,setReferenceCashbox]=useState<{select?:((id:number)=>void);currency:string;scope:string}|null>(null);
+  const openAccountReference=useCallback((select:(id:string)=>void,cash=false,currency?:string)=>{setReferenceAccount({select,cash,currency,scope:user.uid});},[user.uid]);
+  const openCashboxReference=useCallback((select:((id:number)=>void)|undefined,currency:string)=>{setReferenceCashbox({select,currency,scope:user.uid});},[user.uid]);
+  useLayoutEffect(()=>{
+    if(!referenceCashbox&&!referenceAccount)return;
+    const background=Array.from(referenceAppRoot.current?.children??[]).filter((node):node is HTMLElement=>node instanceof HTMLElement&&!node.matches('.reference-manager-layer, .reference-account-layer'));
+    const previous=background.map(node=>node.inert);
+    background.forEach(node=>{node.inert=true;});
+    return()=>background.forEach((node,index)=>{node.inert=previous[index];});
+  },[Boolean(referenceCashbox),Boolean(referenceAccount)]);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | null>(null);
   const flowRef = useRef<FlowControls | null>(null);
@@ -1096,6 +1206,7 @@ export function AuthenticatedWorkspace({
   const [printContext, setPrintContext] = useState<{
     kind: ExportKind;
     account?: AccountRecord;
+    source?: ReportSource;
   }>({ kind: "statement" });
   const [transferAccountId, setTransferAccountId] = useState<string | undefined>();
   const [extendedSettings, setExtendedSettingsState] = useState<ExtendedAppSettings>(() => {
@@ -1309,13 +1420,14 @@ export function AuthenticatedWorkspace({
     });
   }, [user.uid]);
 
-  const updateErpData = useCallback(
-    (next: ErpWorkspaceData) => {
-      setErpData(next);
-      saveErpWorkspaceData(user.uid, next);
-    },
-    [user.uid],
-  );
+  const erpSaving = useRef(false);
+  const updateErpData = useCallback(async (next: ErpWorkspaceData): Promise<boolean> => {
+    if (erpSaving.current) return false;
+    erpSaving.current=true;
+    try { await saveErpWorkspaceData(user.uid,next); return true; }
+    catch(error){showToast(error instanceof Error?error.message:"تعذر حفظ السجل");return false;}
+    finally {erpSaving.current=false;}
+  }, [user.uid]);
 
 
 
@@ -1384,6 +1496,18 @@ export function AuthenticatedWorkspace({
     if (activeElement instanceof HTMLElement) activeElement.blur();
   }, [keyboard]);
 
+  const dismissForRestore = useRef(dismissKeyboard);
+  dismissForRestore.current = dismissKeyboard;
+  useEffect(() => {
+    const unregister = registerRestoreApproval((review) => new Promise<boolean>(resolve => {
+      restoreResolver.current?.(false);
+      restoreResolver.current = resolve;
+      dismissForRestore.current();
+      setRestoreReview(review);
+    }));
+    return () => { unregister(); restoreResolver.current?.(false); restoreResolver.current = null; };
+  }, [user.uid]);
+
   const openSheet = useCallback((kind: Exclude<SheetKind, null>) => {
     dismissKeyboard();
     setSheet(kind);
@@ -1433,12 +1557,12 @@ export function AuthenticatedWorkspace({
   const openTransaction = useCallback(
     (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => {
       dismissKeyboard();
-      const targetAccount = account ?? accounts[0];
+      const targetAccount = account ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       setTransactionTarget({ account: targetAccount, editingEntry });
       setOverlay("transaction");
       hybrid.notifyOpenVoucher({ accountId: targetAccount?.id, entryId: editingEntry?.id });
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, workspace, dismissKeyboard, hybrid],
   );
 
   const openAccountCreate = useCallback(
@@ -1451,11 +1575,30 @@ export function AuthenticatedWorkspace({
     [dismissKeyboard],
   );
 
+  const recoverExistingInvoiceDraft = useCallback(() => {
+    if (!hybrid.isHybrid) return false;
+    const saved = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
+    if (!saved) return false;
+    const account = accounts.find((item) => item.id === saved.accountId);
+    const entry = saved.editingEntryId ? ledger.find((item) => item.id === saved.editingEntryId && !item.deleted) : undefined;
+    if (!canRestoreInvoiceDraft(saved, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+      setUnavailableDraft(true);
+      return true;
+    }
+    setInvoiceSeed((seed) => ({ account, editingEntry: entry, intent: saved.intent, cashier: saved.cashier,
+      kindOverride: saved.kindOverride, revision: seed.revision + 1 }));
+    setOverlay("invoice");
+    showToast("استُعيدت المسودة المحلية. تابعها أو تجاهلها صراحةً قبل إنشاء مستند آخر.");
+    return true;
+  }, [hybrid.isHybrid, user.uid, accounts, ledger, warehouses, inventory, cashboxes, currencies, workspace, showToast]);
+
   const openInvoice = useCallback(
     (defaultCategory?: AccountCategory, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
-      const matchingAccount =
-        (defaultCategory ? accounts.find((a) => a.category === defaultCategory) : undefined) ?? accounts[0];
+      if (recoverExistingInvoiceDraft()) return;
+      const matchingAccount = defaultCategory !== "sales" && accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)?.note?.startsWith("nasqo:default:")
+        ? accounts.find(a=>a.note === "nasqo:default:cash-supplier" && a.currency === workspace?.defaultCurrency) ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)
+        : accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       const kindOverride =
         defaultCategory === "sales" ? "sale" : defaultCategory === "purchases" ? "purchase" : undefined;
       setInvoiceSeed((value) => ({
@@ -1472,13 +1615,23 @@ export function AuthenticatedWorkspace({
         kindOverride,
       });
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, workspace, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
+
+  const openCashier = useCallback(() => {
+    dismissKeyboard();
+    if (recoverExistingInvoiceDraft()) return;
+    const prefs = workspace?.cashierSettings;
+    setInvoiceSeed(value => ({ account: accounts.find(a => a.id === (prefs?.accountId ?? workspace?.referenceDefaults?.accountId)),
+      intent: "invoice", kindOverride: "sale", cashier: true, revision: value.revision + 1 }));
+    setOverlay("invoice");
+  }, [accounts, workspace, dismissKeyboard, recoverExistingInvoiceDraft]);
 
   const openVendorInvoice = useCallback(
     (account?: AccountRecord, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
-      const targetAccount = account ?? accounts[0];
+      if (recoverExistingInvoiceDraft()) return;
+      const targetAccount = account ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
       const kindOverride = targetAccount ? (targetAccount.category === "sales" ? "sale" : "purchase") : undefined;
       setInvoiceSeed((value) => ({
         account: targetAccount,
@@ -1494,12 +1647,13 @@ export function AuthenticatedWorkspace({
         kindOverride,
       });
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, workspace, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
 
   const openInvoiceEdit = useCallback(
     (entry: LedgerEntryRecord, account?: AccountRecord) => {
       dismissKeyboard();
+      if (recoverExistingInvoiceDraft()) return;
       const targetAccount = account ?? accounts.find((a) => a.id === entry.accountId) ?? accounts[0];
       const entryIntent: InvoiceIntent =
         entry.kind === "quote"
@@ -1532,8 +1686,39 @@ export function AuthenticatedWorkspace({
       });
       setOverlay("invoice");
     },
-    [accounts, dismissKeyboard, hybrid],
+    [accounts, dismissKeyboard, hybrid, recoverExistingInvoiceDraft],
   );
+
+  const openLegacyDraft = useCallback((record: LegacyRecord) => {
+    dismissKeyboard();
+    if (recoverExistingInvoiceDraft()) return;
+    try {
+      const draft = legacyRecordDraft(record, { accounts, inventory, warehouses, ledger, cashboxes,
+        currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] });
+      const existing = ledger.find((item) => item.id === draft.entryId);
+      if (existing) {
+        if (existing.deleted) throw new Error("سبق إنشاء نسخة من هذا السجل وهي في السلة؛ استعدها من السلة المحلية.");
+        setOverlay(null);
+        flowRef.current?.push(cashInvoicePreviewScreen(existing.id));
+        showToast("سبق حفظ نسخة من هذا السجل؛ فُتحت النسخة الموجودة دون إنشاء مستند مكرر.");
+        return;
+      }
+      if (!isInvoiceUiDraft(draft) || !canRestoreInvoiceDraft(draft, { accounts, inventory, warehouses, ledger, cashboxes, workspace,
+        currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) throw new Error("لا يمكن نقل جميع مراجع المستند إلى مسودة آمنة.");
+      if (!writeUiState(user.uid, "invoice-draft", draft)) throw new Error("تعذر حفظ المسودة المحلية؛ لم يُغيّر المستند الأصلي.");
+      setInvoiceSeed((seed) => ({ account: accounts.find((item) => item.id === draft.accountId),
+        editingEntry: undefined, intent: draft.intent, kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
+      setOverlay("invoice");
+      showToast("فُتحت نسخة محفوظة كمسودة محلية. الأصل كما هو، ولم يُرحّل أي مبلغ أو مخزون.");
+    } catch (error) { showToast(error instanceof Error ? error.message : "تعذر فتح المسودة"); }
+  }, [accounts, inventory, warehouses, ledger, currencies, cashboxes, workspace, user.uid, dismissKeyboard, recoverExistingInvoiceDraft, showToast]);
+
+  const openLegacyAccount = useCallback((id: string) => {
+    dismissKeyboard();
+    if (!accounts.some((account) => account.id === id)) { showToast("الحساب المرتبط غير موجود."); return; }
+    setOverlay(null);
+    flowRef.current?.push(supplierScreen(id));
+  }, [accounts, dismissKeyboard, showToast]);
 
   const openDashboardMenu = useCallback(() => {
     dismissKeyboard();
@@ -1577,23 +1762,18 @@ export function AuthenticatedWorkspace({
     returnOverlay.current = null;
   }, [dismissKeyboard]);
 
-  const openExportMenu = useCallback(
-    (kind: ExportKind = "statement", account?: AccountRecord) => {
-      dismissKeyboard();
-      setExportState((s) => ({ open: !s.open, kind, account }));
-    },
-    [dismissKeyboard],
-  );
-
-  const openPrintOptions = useCallback(
-    (kind: ExportKind = "statement", account?: AccountRecord) => {
-      dismissKeyboard();
-      setExportState((s) => ({ ...s, open: false }));
-      setPrintContext({ kind, account });
-      setOverlay("print-options");
-    },
-    [dismissKeyboard],
-  );
+  const findReportSource = (kind:ExportKind,account?:AccountRecord,key?:string) =>
+    reportSources.get(key ?? (kind === "statement" ? `statement:${account?.id ?? "missing"}` : kind));
+  const openExportMenu = useCallback((kind:ExportKind="statement",account?:AccountRecord,sourceKey?:string)=>{
+    dismissKeyboard();const source=findReportSource(kind,account,sourceKey);
+    if(!source){showToast("افتح التقرير وحدد حسابه أو نطاقه قبل التصدير");return;}
+    setExportState(s=>({open:!s.open,kind,account,source}));
+  },[dismissKeyboard]);
+  const openPrintOptions = useCallback((kind:ExportKind="statement",account?:AccountRecord,sourceKey?:string)=>{
+    dismissKeyboard();const source=findReportSource(kind,account,sourceKey);
+    if(!source){showToast("افتح التقرير وحدد حسابه أو نطاقه قبل الطباعة");return;}
+    setExportState(s=>({...s,open:false}));setPrintContext({kind,account,source});setOverlay("print-options");
+  },[dismissKeyboard]);
 
   const openBackupModal = useCallback(() => {
     dismissKeyboard();
@@ -1607,8 +1787,14 @@ export function AuthenticatedWorkspace({
 
   const openFullSqliteImport = useCallback(() => {
     dismissKeyboard();
+    if(hybrid.isHybrid){
+      void hybridBridge.invoke<"restoreLocalBackup",{nativeRestored?:boolean}>("restoreLocalBackup",{workspaceId:user.uid})
+        .then(result=>{if(result?.nativeRestored) window.location.reload();})
+        .catch(err=>showToast(err instanceof Error?err.message:"تعذر فتح النسخة المحلية."));
+      return;
+    }
     setOverlay("full-sqlite-import");
-  }, [dismissKeyboard]);
+  }, [dismissKeyboard,hybrid,showToast,user.uid]);
 
   const setCategoryCurrency = useCallback(
     (category: AccountCategory, currency: string) => {
@@ -1671,42 +1857,26 @@ export function AuthenticatedWorkspace({
   }, [currencies]);
 
   const buildBackupJsonString = useCallback(
-    (backupName: string, exportedAt: string = new Date().toISOString()) => {
-      const payload = {
-        format: "nasqo-pro-erp-backup",
-        version: 2,
-        name: backupName,
-        exportedAt,
-        workspace,
-        accountGroups,
-        cashboxes,
-        accounts,
-        ledger,
-        warehouses,
-        inventory,
-        erpData,
-      };
-      return JSON.stringify(payload, null, 2);
-    },
-    [accountGroups, accounts, cashboxes, erpData, inventory, ledger, warehouses, workspace],
+    async (backupName: string, exportedAt: string = new Date().toISOString()) => {
+      const payload = await fetchUnifiedJsonExport(user.uid);
+      if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).sqliteSnapshot) {
+        throw new Error("تعذر إنشاء نسخة كاملة من قاعدة العمل؛ لم تُرفع أو تُستبدل أي نسخة.");
+      }
+      return JSON.stringify({ ...payload, name: backupName, exportedAt }, null, 2);
+    }, [user.uid],
   );
 
   const saveLocalNamedBackup = useCallback(
     async (backupName: string) => {
       await runWithLoader("جاري تجهيز وتصدير النسخة الاحتياطية...", async () => {
+        if(hybrid.isHybrid){
+          try{await hybrid.exportLocalBackup(backupName);}catch(err){showToast(err instanceof Error?err.message:"تعذر تصدير النسخة المحلية.");}
+          return;
+        }
         const exportedAt = new Date().toISOString();
         const fileName = buildLocalBackupDownloadName(backupName);
         try {
-          const serverExport = await fetchUnifiedJsonExport(user.uid);
-          const merged =
-            serverExport && typeof serverExport === "object"
-              ? { ...(serverExport as Record<string, unknown>), name: backupName, exportedAt }
-              : JSON.parse(buildBackupJsonString(backupName, exportedAt));
-          downloadFile(
-            fileName,
-            JSON.stringify(merged, null, 2),
-            "application/json;charset=utf-8",
-          );
+          await downloadFile(fileName, await buildBackupJsonString(backupName, exportedAt), "application/json;charset=utf-8");
           const savedIso = recordLastBackupNow(exportedAt);
           setLastBackupIso(savedIso);
           triggerHaptic("success");
@@ -1722,7 +1892,7 @@ export function AuthenticatedWorkspace({
         }
       });
     },
-    [buildBackupJsonString, runWithLoader, showToast, user.uid],
+    [buildBackupJsonString, runWithLoader, showToast, user.uid, hybrid],
   );
 
   const saveCloudNamedBackup = useCallback(
@@ -1730,6 +1900,16 @@ export function AuthenticatedWorkspace({
       await runWithLoader("جاري رفع النسخة الاحتياطية إلى Google Drive...", async () => {
         const exportedAtIso = new Date().toISOString();
         const fileName = buildLocalBackupDownloadName(backupName);
+        if (hybrid.isHybrid) {
+          const token=getGoogleAccessToken()??(await connectGoogleDrive()).accessToken;
+          const folder=await findOrCreateDriveFolder(token,"NASQO Pro Backups");
+          const saved=await nativeDriveCall<{id?:string;name?:string;cancelled?:boolean}>("backupNative",{name:fileName,parentId:folder.id});
+          if(saved.cancelled)return;
+          if(!saved.id)throw new Error("لم يتأكد حفظ نسخة Drive.");
+          const iso=recordLastBackupNow(exportedAtIso);setLastBackupIso(iso);
+          showToast(`تم حفظ النسخة في Google Drive: ${saved.name??fileName}`);
+          return;
+        }
         let token = getGoogleAccessToken();
         if (!token) {
           const authResult = await connectGoogleDrive();
@@ -1739,7 +1919,7 @@ export function AuthenticatedWorkspace({
           const folder = await findOrCreateDriveFolder(token, "NASQO Pro Backups");
           await uploadFileToDrive(token, {
             name: fileName,
-            content: buildBackupJsonString(backupName, exportedAtIso),
+            content: await buildBackupJsonString(backupName, exportedAtIso),
             mimeType: "application/json",
             parentId: folder.id,
             description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
@@ -1750,7 +1930,7 @@ export function AuthenticatedWorkspace({
             const folder = await findOrCreateDriveFolder(authResult.accessToken, "NASQO Pro Backups");
             await uploadFileToDrive(authResult.accessToken, {
               name: fileName,
-              content: buildBackupJsonString(backupName, exportedAtIso),
+              content: await buildBackupJsonString(backupName, exportedAtIso),
               mimeType: "application/json",
               parentId: folder.id,
               description: "نسخة احتياطية كاملة لنظام نسقو برو ERP",
@@ -1786,6 +1966,7 @@ export function AuthenticatedWorkspace({
       showToast,
       user.uid,
       warehouses.length,
+      hybrid.isHybrid,
     ],
   );
 
@@ -1797,81 +1978,58 @@ export function AuthenticatedWorkspace({
 
   const triggerJsonRestore = useCallback(() => {
     if (hybrid.isHybrid) {
-      void hybrid
-        .pickFile({
-          purpose: "restore-backup",
-          accept: [".json", ".db", ".sqlite", ".sqlite3", ".sql", ".backup", ".gz"],
-        })
-        .then(async (picked) => {
-          if (!picked || !picked.base64Content) return;
-          const binary = atob(picked.base64Content);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-          await restoreBackupRef.current?.(bytes, picked.fileName || "backup.sqlite");
-        })
+      void hybridBridge.invoke<"restoreLocalBackup",{nativeRestored?:boolean}>("restoreLocalBackup",{workspaceId:user.uid})
+        .then(result => { if(result?.nativeRestored) window.location.reload(); })
         .catch((err) => {
           showToast(err instanceof Error ? err.message : "تعذر اختيار ملف النسخة الاحتياطية.");
         });
       return;
     }
     jsonRestoreInputRef.current?.click();
-  }, [hybrid, showToast]);
+  }, [hybrid, showToast,user.uid]);
 
-  const triggerCsvImport = useCallback(() => {
-    if (hybrid.isHybrid) {
-      void hybrid
-        .pickFile({
-          purpose: "import-accounts-csv",
-          accept: [".csv", ".txt"],
-        })
-        .then((picked) => {
-          if (!picked || !picked.base64Content) return;
-          showToast(`تم اختيار ملف الحسابات: ${picked.fileName}`);
-        })
-        .catch((err) => {
-          showToast(err instanceof Error ? err.message : "تعذر فتح منتقي الملفات.");
-        });
-      return;
-    }
-    csvImportInputRef.current?.click();
-  }, [hybrid, showToast]);
+  const openImportReview = useCallback((kind: ImportReview["kind"], bytes: Uint8Array, fileName: string) => {
+    if (bytes.length > MAX_IMPORT_BYTES) throw new Error("حجم ملف الاستيراد يتجاوز 8 ميغابايت.");
+    dismissKeyboard();
+    setImportReview({ kind, bytes, fileName, defaultCurrency: workspace?.defaultCurrency || "ريال" });
+  }, [dismissKeyboard, workspace?.defaultCurrency]);
 
-  const triggerItemsImport = useCallback(() => {
+  const triggerTableImport = useCallback((kind: ImportReview["kind"]) => {
     if (hybrid.isHybrid) {
-      void hybrid
-        .pickFile({
-          purpose: "import-items",
-          accept: [".xlsx", ".xls", ".csv"],
-        })
-        .then(async (picked) => {
-          if (!picked || !picked.base64Content) return;
+      void hybrid.pickFile({ purpose: kind === "items" ? "import-items" : "import-accounts-csv", accept: kind === "items" ? [".xlsx", ".xls", ".csv", ".tsv", ".txt"] : [".csv", ".txt"] })
+        .then(picked => {
+          if (!picked?.base64Content) return;
+          if (picked.base64Content.length > MAX_IMPORT_BYTES * 4 / 3 + 8) throw new Error("حجم ملف الاستيراد يتجاوز 8 ميغابايت.");
           const binary = atob(picked.base64Content);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-          const parsed = parseItemsSpreadsheetBytes(bytes, picked.fileName || "items.xlsx");
-          if (parsed.items.length === 0) {
-            showToast("لم يتم العثور على أصناف صالحة داخل الملف.");
-            return;
-          }
-          const defaultWh = warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id;
-          const result = await importInventoryItemsBatch(user.uid, parsed.items, {
-            mode: "upsert",
-            warehouseId: defaultWh,
-          });
-          triggerHaptic("success");
-          showToast(`تم استيراد ${result.total} صنف بنجاح (جديد: ${result.inserted} • محدّث: ${result.updated})`, 6000);
+          openImportReview(kind, Uint8Array.from(binary, c => c.charCodeAt(0)), picked.fileName || (kind === "items" ? "items.xlsx" : "accounts.csv"));
         })
-        .catch((err) => {
-          showToast(err instanceof Error ? err.message : "تعذر استيراد ملف الأصناف.");
-        });
+        .catch(err => showToast(err instanceof Error ? err.message : "تعذر فتح ملف الاستيراد."));
       return;
     }
-    itemsImportInputRef.current?.click();
-  }, [hybrid, showToast, user.uid, warehouses]);
+    (kind === "items" ? itemsImportInputRef : csvImportInputRef).current?.click();
+  }, [hybrid, openImportReview, showToast]);
+  const triggerCsvImport = useCallback(() => triggerTableImport("accounts"), [triggerTableImport]);
+  const triggerItemsImport = useCallback(() => triggerTableImport("items"), [triggerTableImport]);
+
+  const confirmTableImport = async (rows: AccountCardImport[] | ImportedInventoryItemInput[]) => {
+    if (!importReview || importInFlight.current) return;
+    importInFlight.current = true;
+    setImportBusy(true);
+    try {
+      const result = await runWithLoader<{inserted: number; skipped: number; total: number}>("جاري حفظ البطاقات الجديدة...", () => importReview.kind === "accounts"
+        ? importAccountCardsBatch(user.uid, rows as AccountCardImport[])
+        : importInventoryItemsBatch(user.uid, rows as ImportedInventoryItemInput[], { mode: "skip" }));
+      setImportReview(null);
+      triggerHaptic("success");
+      showToast(`اكتمل الاستيراد: ${result.inserted} بطاقة جديدة • ${result.skipped} موجودة تم تجاوزها.`, 6000);
+    } catch (err) {
+      throw err instanceof Error ? err : new Error("تعذر الاستيراد؛ راجع الملف قبل إعادة المحاولة.");
+    } finally { importInFlight.current = false; setImportBusy(false); }
+  };
 
   const restoreBackupFromBytes = useCallback(
     async (bytes: Uint8Array, fileName: string) => {
-      await runWithLoader(`جارٍ استعادة ${fileName} وتجهيز النظام...`, async () => {
+
         try {
           let effectiveBytes = bytes;
           if (
@@ -1941,7 +2099,7 @@ export function AuthenticatedWorkspace({
 
           const jsonRes = await restoreJsonBackupIntoServer(
             user.uid,
-            inspection.payload as Record<string, unknown>,
+            inspection.payload as Record<string, unknown>, fileName,
           );
           const r = jsonRes.restored ?? {};
           triggerHaptic("success");
@@ -1961,7 +2119,6 @@ export function AuthenticatedWorkspace({
             );
           }
         }
-      });
     },
     [runWithLoader, showToast, user.uid],
   );
@@ -1975,90 +2132,119 @@ export function AuthenticatedWorkspace({
     await restoreBackupFromBytes(new Uint8Array(buffer), file.name);
   };
 
-  const handleCsvAccountImport = async (event: ChangeEvent<HTMLInputElement>) => {
+  const readTableImportFile = async (event: ChangeEvent<HTMLInputElement>, kind: ImportReview["kind"]) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    await runWithLoader("جاري استيراد الحسابات من الملف...", async () => {
-      try {
-        const text = await file.text();
-        const lines = text
-          .replace(/^\uFEFF/, "")
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean);
-        let imported = 0;
-        for (let i = 1; i < lines.length; i += 1) {
-          const cols = lines[i].split(",").map((c) => c.replace(/^"|"$/g, "").trim());
-          const name = cols[0];
-          if (!name) continue;
-          const phone = cols[1] ?? "";
-          const openingBalance = parseArabicNumber(cols[2] ?? "0");
-          await createOrUpdateAccount(user.uid, {
-            name,
-            phone,
-            openingBalance,
-            openingDirection: "credit",
-            category: "purchases",
-            codeNumber: accounts.length + imported + 10,
-          });
-          imported += 1;
-        }
-        showToast(`تم استيراد ${imported} حساب من الملف`);
-      } catch {
-        showToast("تعذر استيراد ملف الحسابات");
-      }
-    });
+    try {
+      if (file.size > MAX_IMPORT_BYTES) throw new Error("حجم ملف الاستيراد يتجاوز 8 ميغابايت.");
+      openImportReview(kind, new Uint8Array(await file.arrayBuffer()), file.name);
+    } catch (err) { showToast(err instanceof Error ? err.message : "تعذر قراءة الملف."); }
   };
-
-  const handleItemsFileImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    await runWithLoader(`جاري قراءة واستيراد الأصناف من ${file.name}...`, async () => {
-      try {
-        const buffer = await file.arrayBuffer();
-        const parsed = parseItemsSpreadsheetBytes(
-          new Uint8Array(buffer),
-          workspace?.defaultCurrency ?? "ريال",
-        );
-        if (!parsed.items.length) {
-          triggerHaptic("warning");
-          showToast("لم يتم العثور على أصناف صالحة داخل الملف المحدد.", 5000);
-          return;
-        }
-        const defaultWh = warehouses.find((w) => w.isDefault)?.id || warehouses[0]?.id;
-        const result = await importInventoryItemsBatch(user.uid, parsed.items, {
-          mode: "upsert",
-          warehouseId: defaultWh,
-        });
-        triggerHaptic("success");
-        showToast(
-          `تم استيراد ${result.total} صنف بنجاح (جديد: ${result.inserted} • محدّث: ${result.updated}${result.skipped > 0 ? ` • متجاوز: ${result.skipped}` : ""})`,
-          6000,
-        );
-      } catch (err) {
-        triggerHaptic("warning");
-        showToast(
-          err instanceof Error && err.message
-            ? `تعذر استيراد الأصناف: ${err.message}`
-            : "تعذر قراءة ملف الأصناف — تأكد أن الملف بصيغة Excel (.xls / .xlsx) أو CSV صالحة.",
-          6000,
-        );
-      }
-    });
-  };
+  const handleCsvAccountImport = (event: ChangeEvent<HTMLInputElement>) => readTableImportFile(event, "accounts");
+  const handleItemsFileImport = (event: ChangeEvent<HTMLInputElement>) => readTableImportFile(event, "items");
 
   const handleSignOut = useCallback(async () => {
     setDrawerOpen(false);
+    if(hybrid.isHybrid){
+      try{await signOutUser();showToast("تم تسجيل الخروج من Google؛ قاعدة العمل المحلية محفوظة.");}
+      catch(err){showToast(err instanceof Error?err.message:"تعذر تسجيل الخروج.");}
+      return;
+    }
     if (user.uid === LOCAL_WORKSPACE_UID) {
       onLocalSignOut();
       return;
     }
     await signOutUser();
-  }, [onLocalSignOut, user.uid]);
+  }, [onLocalSignOut, user.uid,hybrid.isHybrid,showToast]);
 
   const syncing = !(syncFlags.accounts && syncFlags.ledger && syncFlags.inventory);
+
+  const didRestoreUi = useRef(false);
+  useEffect(() => {
+    if (!hybrid.isHybrid || syncing || !workspace || workspace.id !== user.uid || !flowRef.current || didRestoreUi.current) return;
+    const resolve = (id: string): FlowScreen | null => {
+      if (id === "dashboard") return dashboardScreen();
+      if (id.startsWith("supplier-")) {
+        const accountId = id.slice("supplier-".length);
+        return accounts.some((account) => account.id === accountId) ? supplierScreen(accountId) : null;
+      }
+      if (id.startsWith("accounts-")) {
+        const match = /^accounts-(purchases|sales|clients|employees|transfers|shop)-(all|[0-9]+)$/.exec(id);
+        if (!match) return null;
+        const group = match[2] === "all" ? undefined : accountGroups.find((g) => g.id === Number(match[2]));
+        if (match[2] !== "all" && !group) return null;
+        return purchasesScreen(match[1] as AccountCategory, group?.id, group?.name);
+      }
+      if (id.startsWith("invoice-preview-")) {
+        const entryId = id.slice("invoice-preview-".length);
+        return ledger.some((entry) => entry.id === entryId && !entry.deleted) ? cashInvoicePreviewScreen(entryId) : null;
+      }
+      if (id.startsWith("inventory-report-")) {
+        const warehouseId = id.slice("inventory-report-".length);
+        return warehouseId === "all" ? inventoryReportScreen() : warehouses.some((w) => w.id === warehouseId) ? inventoryReportScreen(warehouseId) : null;
+      }
+      for (const [prefix, factory] of [["simple-entry-", simpleEntryScreen], ["currency-exchange-", currencyScreen]] as const) {
+        if (id.startsWith(prefix)) {
+          const accountId = id.slice(prefix.length);
+          return accountId === "default" ? factory() : accounts.some((account) => account.id === accountId) ? factory(accountId) : null;
+        }
+      }
+      const simple: Record<string, () => FlowScreen> = { shop: shopScreen, warehouses: warehousesScreen,
+        "items-catalog": itemsScreen, "daily-journal": dailyJournalScreen,
+        "analytics-dashboard": analyticsDashboardScreen, "system-settings": systemSettingsScreen,
+        "reference-defaults": referenceDefaultsScreen, "cashier-settings": cashierSettingsScreen, "whatsapp-settings": whatsappSettingsScreen };
+      return simple[id]?.() ?? null;
+    };
+    const restored = readValidatedRoutes(user.uid, (id) => Boolean(resolve(id)));
+    didRestoreUi.current = true;
+    for (const id of restored.slice(1)) {
+      const screen = resolve(id);
+      if (screen) flowRef.current.push(screen);
+    }
+    const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
+    if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+      setInvoiceSeed((seed) => ({ account: accounts.find((a) => a.id === draft.accountId),
+        editingEntry: ledger.find((e) => e.id === draft.editingEntryId), intent: draft.intent, cashier: draft.cashier,
+        kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
+      setOverlay("invoice");
+    } else if (draft) setUnavailableDraft(true);
+    const activeForm = readUiState<Record<string, unknown> | null>(user.uid, "active-form", null,
+      (value) => Boolean(value) && typeof value === "object" && typeof (value as Record<string, unknown>).kind === "string");
+    if (activeForm?.kind === "screen" && typeof activeForm.screenId === "string" && !restored.includes(activeForm.screenId)) {
+      const screen = resolve(activeForm.screenId);
+      if (screen) flowRef.current.push(screen);
+    }
+    if (activeForm?.kind === "transaction") {
+      const account = typeof activeForm.accountId === "string" ? accounts.find((item) => item.id === activeForm.accountId) : undefined;
+      const entry = typeof activeForm.editingEntryId === "string" ? ledger.find((item) => item.id === activeForm.editingEntryId && !item.deleted) : undefined;
+      if ((!activeForm.accountId || account) && (!activeForm.editingEntryId || entry)) {
+        setTransactionTarget({ account, editingEntry: entry }); setOverlay("transaction");
+      }
+    }
+    if (activeForm?.kind === "account") {
+      const account = typeof activeForm.accountId === "string" ? accounts.find((item) => item.id === activeForm.accountId) : undefined;
+      if (!activeForm.accountId || account) {
+        setEditingAccount(account);
+        if (["purchases", "sales", "clients", "employees", "transfers", "shop"].includes(String(activeForm.defaultCategory))) {
+          setAccountCreateCategory(activeForm.defaultCategory as AccountCategory);
+        }
+        if (draft) returnOverlay.current = "invoice";
+        setOverlay(activeForm.mode === "compact" ? "account-create-compact" : "account-create-extended");
+      }
+    }
+  }, [hybrid.isHybrid, syncing, workspace, user.uid, accounts, ledger, warehouses, accountGroups, inventory, cashboxes, currencies]);
+
+  useEffect(() => {
+    if (!hybrid.isHybrid) return;
+    const saveRoutes = (event: Event) => {
+      if (!didRestoreUi.current || workspace?.id !== user.uid) return;
+      const ids = (event as CustomEvent<unknown>).detail;
+      if (Array.isArray(ids) && ids.every((id) => typeof id === "string")) writeUiState(user.uid, "flow-stack", ids);
+    };
+    window.addEventListener("nasqo:flow-change", saveRoutes);
+    return () => window.removeEventListener("nasqo:flow-change", saveRoutes);
+  }, [hybrid.isHybrid, workspace?.id, user.uid]);
 
   const notifications = useMemo(
     () =>
@@ -2199,6 +2385,9 @@ export function AuthenticatedWorkspace({
       openAccountEdit,
       openTransaction,
       openAccountCreate,
+      openAccountReference,
+      openCashboxReference,
+      openCashier,
       openInvoice,
       openVendorInvoice,
       openInvoiceEdit,
@@ -2291,6 +2480,8 @@ export function AuthenticatedWorkspace({
       launchFavorite,
       ledger,
       openAccountCreate,
+      openAccountReference,
+      openCashboxReference,
       openAccountEdit,
       openAccountGroups,
       openAccountPicker,
@@ -2308,6 +2499,7 @@ export function AuthenticatedWorkspace({
       openDrawer,
       openErpModule,
       openExportMenu,
+      openCashier,
       openInvoice,
       openInvoiceEdit,
       openPrintOptions,
@@ -2375,11 +2567,12 @@ export function AuthenticatedWorkspace({
       return;
     }
     if (target === "currency") {
-      flowRef.current?.push(currencyScreen(accounts[0]?.id));
+      flowRef.current?.push(currencyScreen());
       return;
     }
     if (target === "quotes" || target === "orders") {
-      openVendorInvoice(accounts[0], target === "quotes" ? "quote" : "order");
+      if (target === "quotes" && hybrid.isHybrid) setOverlay("quotes-list");
+      else openVendorInvoice(undefined, target === "quotes" ? "quote" : "order");
       return;
     }
     if (target === "warehouses") {
@@ -2424,128 +2617,39 @@ export function AuthenticatedWorkspace({
     }
   };
 
-  const executeExcelExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
-    void runWithBrandLoader(
-      "جاري تصدير ملف Excel...",
-      () => {
-        if (kind === "inventory") {
-          const csv = buildCsvContent(
-            ["الصنف", "الوحدة", "الكمية", "متوسط التكلفة"],
-            inventory.map((i) => [i.name, i.unit, i.quantity, i.avgCost]),
-          );
-          downloadFile("inventory-report.csv", csv, "text/csv;charset=utf-8");
-          showToast("تم تصدير تقرير المخزون بصيغة Excel");
-        } else if (kind === "purchases") {
-          const csv = buildCsvContent(
-            ["الحساب", "الهاتف", "سقف المديونية", "عليه", "له", "الرصيد"],
-            accounts
-              .filter((a) => a.category === "purchases")
-              .map((a) => {
-                const s = computeAccountSummary(a, ledger);
-                return [a.name, a.phone, a.creditLimit, s.debitTotal, s.creditTotal, s.netBalance];
-              }),
-          );
-          downloadFile("purchases-accounts.csv", csv, "text/csv;charset=utf-8");
-          showToast("تم تصدير حسابات المشتريات بصيغة Excel");
-        } else {
-          const targetAcc = targetAccount ?? accounts[0];
-          const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-          const csv = buildCsvContent(
-            ["الرقم", "التاريخ", "النوع", "المبلغ", "البيان", "الرصيد"],
-            (statement?.rows ?? []).map((r) => [r.entryNumber, r.entryDate, r.typeLabel, r.amount, r.details, r.runningBalance]),
-          );
-          downloadFile(`statement-${targetAcc?.codeNumber ?? "all"}.csv`, csv, "text/csv;charset=utf-8");
-          showToast("تم تصدير كشف الحساب بصيغة Excel");
-        }
-      },
-      { minDurationMs: 420 },
-    );
+  const reportExportBusy=useRef(false);
+  const outputReport = async(source:ReportSource|undefined,format:"pdf"|"excel"|"image",mode:"save"|"share"|"print",all=false,confirmation=false)=>{
+    if(reportExportBusy.current)return;
+    reportExportBusy.current=true;
+    try{if(!source)throw new Error("سياق التقرير مفقود؛ افتح التقرير من جديد");
+      await runWithBrandLoader("جاري تجهيز التقرير المحدد...",async()=>{
+        let report=await source(all);
+        if(confirmation){if(report.kind!=="statement")throw new Error("مصادقة الرصيد تتطلب كشف حساب محدد");report={...report,title:"مصادقة الرصيد — "+report.scope.account,confirmation:true,rows:[]};}
+        const ok=await exportReport(report,format,mode);
+        showToast(!ok?"أُلغي الإجراء؛ قد تكون صفحات سابقة حُفظت بالفعل":mode==="share"?"فُتحت نافذة مشاركة المرفق؛ لم يُؤكّد إرساله":mode==="print"?"فُتحت معاينة طباعة المستند": "تم حفظ ملف التقرير");
+      });
+    }catch(error){showToast(error instanceof Error?error.message:"تعذر إنشاء التقرير");}
+    finally{reportExportBusy.current=false;}
   };
-
-  const handlePrintPngExport = (kind: ExportKind, targetAccount?: AccountRecord) => {
-    void runWithBrandLoader(
-      "جاري تصدير التقرير كصورة...",
-      () => {
-        const company = workspace?.companyName || "نسقو برو";
-        if (kind === "inventory") {
-          const invSummary = computeInventorySummary(inventory);
-          exportSummaryAsPngImage({
-            filename: "nasqo-inventory-report.png",
-            companyName: company,
-            title: "تقرير حركة المخزون",
-            subtitle: `عدد الأصناف: ${invSummary.items.length} | إجمالي القيمة: ${formatAmount(invSummary.totalValue)}`,
-            accentColor: extendedSettings.reportColor || brandColor,
-            rows: inventory.slice(0, 10).map((i) => [i.name, `${formatAmount(i.quantity)} ${i.unit}`]),
-            footerNote: extendedSettings.statementFooterNote,
-          });
-        } else if (kind === "purchases") {
-          const list = accounts.filter((a) => a.category === "purchases");
-          exportSummaryAsPngImage({
-            filename: "nasqo-purchases-summary.png",
-            companyName: company,
-            title: "ملخص حسابات المشتريات والموردين",
-            subtitle: `إجمالي الحسابات: ${list.length}`,
-            accentColor: extendedSettings.reportColor || brandColor,
-            rows: list.slice(0, 10).map((a) => {
-              const s = computeAccountSummary(a, ledger);
-              return [a.name, `${formatAmount(s.netBalance)} ${a.currency}`];
-            }),
-            footerNote: extendedSettings.statementFooterNote,
-          });
-        } else {
-          const targetAcc = targetAccount ?? accounts[0];
-          const statement = targetAcc ? computeStatementRows(targetAcc, ledger) : null;
-          exportSummaryAsPngImage({
-            filename: `statement-${targetAcc?.codeNumber ?? "all"}.png`,
-            companyName: company,
-            title: `كشف حساب: ${targetAcc?.name ?? ""}`,
-            subtitle: `الصافي: ${formatAmount(statement?.netBalance ?? 0)} ${targetAcc?.currency ?? "ريال"}`,
-            accentColor: extendedSettings.reportColor || brandColor,
-            rows: (statement?.rows ?? []).slice(0, 10).map((r) => [
-              `${r.typeLabel} (#${r.entryNumber})`,
-              `${formatAmount(r.amount)} ${r.currency}`,
-            ]),
-            footerNote: extendedSettings.statementFooterNote,
-          });
-        }
-        showToast("تم تصدير التقرير كصورة PNG بنجاح");
-      },
-      { minDurationMs: 420 },
-    );
-  };
-
-  const handleExportAction = (kind: ExportKind, action: "pdf-print" | "pdf-share" | "excel" | "excel-share" | "balance" | "import") => {
-    setExportState((s) => ({ ...s, open: false }));
-    if (action === "import") {
-      triggerCsvImport();
-      return;
-    }
-    if (action === "pdf-print") {
-      openPrintOptions(kind, exportState.account);
-      return;
-    }
-    if (action === "balance") {
-      triggerPrintWithLoader("جاري تجهيز مصادقة الرصيد للطباعة...");
-      return;
-    }
-    if (action === "excel" || action === "excel-share") {
-      executeExcelExport(kind, exportState.account);
-      return;
-    }
-    if (action === "pdf-share") {
-      const targetAcc = exportState.account ?? accounts[0];
-      const summary = targetAcc ? computeAccountSummary(targetAcc, ledger) : null;
-      const text = targetAcc
-        ? `كشف حساب: ${targetAcc.name} | الرصيد: ${formatAmount(summary?.netBalance ?? 0)} ${targetAcc.currency}`
-        : `تقرير ${workspace?.companyName ?? "نسقو برو"}`;
-      void shareOrCopyText("كشف حساب - نسقو برو", text, showToast);
-    }
+  const handleExportAction = (kind:ExportKind,action:"pdf-print"|"pdf-share"|"excel"|"excel-share"|"balance"|"import")=>{
+    setExportState(s=>({...s,open:false}));
+    if(action==="import"){triggerCsvImport();return;}
+    if(action==="pdf-print"){setPrintContext({kind,account:exportState.account,source:exportState.source});setOverlay("print-options");return;}
+    void outputReport(exportState.source,action.startsWith("excel")?"excel":"pdf",action.endsWith("share")?"share":"save",false,action==="balance");
   };
 
   // Hardware/system Back closes transient UI before navigating the screen stack.
   // At the dashboard the history guard keeps the installed PWA in the app.
+  useBackLayer(Boolean(overlay) && !["invoice", "transaction", "account-create-compact", "account-create-extended"].includes(overlay ?? ""),
+    () => { closeOverlay(); return true; }, 50);
+  useBackLayer(Boolean(sheet), () => { setSheet(null); return true; }, 40);
+  useBackLayer(drawerOpen, () => { setDrawerOpen(false); return true; }, 30);
+  useBackLayer(dashboardMenuOpen, () => { setDashboardMenuOpen(false); return true; }, 30);
+  useBackLayer(exportState.open, () => { setExportState((state) => ({ ...state, open: false })); return true; }, 30);
   const handleSystemBack = () => {
-    if (overlay) { setOverlay(null); return true; }
+    if (keyboard.visible) { keyboard.hide(); return true; }
+    if (consumeBackLayer()) return true;
+    if (overlay) { closeOverlay(); return true; }
     if (drawerOpen) { setDrawerOpen(false); return true; }
     if (dashboardMenuOpen) { setDashboardMenuOpen(false); return true; }
     if (exportState.open) { setExportState((current) => ({ ...current, open: false })); return true; }
@@ -2555,8 +2659,27 @@ export function AuthenticatedWorkspace({
 
   return (
     <WorkspaceContext.Provider value={ctx}>
-      <div className="nasqo-app" dir="rtl">
+      <UiResumeWorkspaceContext.Provider value={hybrid.isHybrid ? workspace?.id ?? "" : ""}>
+      <div ref={referenceAppRoot} className={`nasqo-app${referenceCashbox || referenceAccount ? " has-reference-manager" : ""}`} dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
+        {importReview ? <DataImportReview review={importReview} busy={importBusy} onCancel={() => { if (!importInFlight.current) setImportReview(null); }} onConfirm={confirmTableImport} /> : null}
+        {restoreReview ? <RestoreReviewDialog review={restoreReview} onFinish={finishRestoreReview} /> : null}
+        {unavailableDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
+          <button className="center-modal-backdrop" aria-label="الاحتفاظ بالمسودة" onClick={() => setUnavailableDraft(false)} />
+          <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعذر استعادة المسودة">
+            <h2>تعذر استعادة المسودة بأمان</h2>
+            <p>أحد الحسابات أو الأصناف أو المخازن المرتبطة لم يعد متاحًا. المسودة محفوظة محليًا ولم تُرحّل.</p>
+            <div className="form-modal-actions">
+              <button onClick={() => setUnavailableDraft(false)}>الاحتفاظ بالمسودة</button>
+              <button onClick={() => {
+                const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
+                if (draft && new PendingSubmissionStore().has(user.uid, draft.entryId)) { showToast("تأكيد الحفظ معلق؛ لا يمكن تجاهل المسودة قبل التحقق من السجل."); return; }
+                if (removeUiState(user.uid, "invoice-draft")) setUnavailableDraft(false);
+                else showToast("تعذر إزالة المسودة المحلية.");
+              }}>تجاهل المسودة صراحةً</button>
+            </div>
+          </section>
+        </div> : null}
         {user.uid !== LOCAL_WORKSPACE_UID && syncing && cloudInitializationError ? (
           <div className="nasqo-cloud-hydration-lock" role="status" data-testid="cloud-hydration-lock">
             <section>
@@ -2580,6 +2703,7 @@ export function AuthenticatedWorkspace({
         />
         <InvoiceModal
           key={invoiceSeed.revision}
+          cashier={invoiceSeed.cashier}
           initialAccount={invoiceSeed.account}
           editingEntry={invoiceSeed.editingEntry}
           intent={invoiceSeed.intent}
@@ -2647,7 +2771,10 @@ export function AuthenticatedWorkspace({
           open={overlay === "account-create-extended"}
           onClose={closeOverlay}
         />
-        <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} />
+        {referenceCashbox?<CashboxReferenceManager workspace={user.uid} currency={referenceCashbox.currency} boxes={cashboxes} accounts={accounts} blocked={Boolean(referenceAccount)} onSelect={referenceCashbox.select?((id)=>{if(referenceCashbox.scope===user.uid)referenceCashbox.select?.(id);}):undefined} onClose={()=>setReferenceCashbox(null)} onAddAccount={select=>openAccountReference(select,true,referenceCashbox.currency)}/>:null}
+        {referenceAccount?<ReferenceAccountManager cash={referenceAccount.cash} currency={referenceAccount.currency} onSelect={id=>{if(referenceAccount.scope===user.uid)referenceAccount.select(id);setReferenceAccount(null);}} onClose={()=>setReferenceAccount(null)}/>:null}
+        <TrashModal open={overlay === "trash"} onClose={() => setOverlay(null)} onLegacyDraft={openLegacyDraft} onLegacyAccount={openLegacyAccount} />
+        <QuotesListModal open={overlay === "quotes-list"} onClose={() => setOverlay(null)} onLegacyDraft={openLegacyDraft} onLegacyAccount={openLegacyAccount} />
         <TrialBalanceModal open={overlay === "trial-balance"} onClose={() => setOverlay(null)} />
         <AccountGroupsModal open={overlay === "account-groups"} onClose={() => setOverlay(null)} />
         <ChartOfAccountsModal open={overlay === "chart-of-accounts"} onClose={() => setOverlay(null)} />
@@ -2681,77 +2808,9 @@ export function AuthenticatedWorkspace({
             setInventoryEditing(undefined);
           }}
         />
-        <PrintOptionsModal
-          open={overlay === "print-options"}
-          subjectLabel={
-            printContext.account
-              ? `كشف حساب: ${printContext.account.name}`
-              : printContext.kind === "inventory"
-                ? "تقرير حركة المخزون"
-                : printContext.kind === "purchases"
-                  ? "تقرير المشتريات والموردين"
-                  : undefined
-          }
-          onClose={() => setOverlay(null)}
-          onPrintPdf={(allCurrencies) => {
-            if (hybrid.isHybrid) {
-              const title = printContext.account
-                ? `كشف حساب: ${printContext.account.name}`
-                : printContext.kind === "inventory"
-                  ? "تقرير حركة المخزون"
-                  : printContext.kind === "purchases"
-                    ? "تقرير المشتريات والموردين"
-                    : "تقرير نسقو برو";
-              void hybrid
-                .exportPdf({
-                  filename: `nasqo-${printContext.kind}-${new Date().toISOString().slice(0, 10)}.pdf`,
-                  title,
-                  kind: printContext.kind,
-                  accountId: printContext.account?.id,
-                  allCurrencies,
-                })
-                .then((ok) => {
-                  if (ok) {
-                    showToast(allCurrencies ? "تم إرسال PDF لجميع العملات إلى Flutter" : "تم إرسال PDF إلى خدمة الطباعة في Flutter");
-                  }
-                })
-                .catch((err) => {
-                  showToast(err instanceof Error ? err.message : "تعذر تصدير PDF عبر Flutter");
-                });
-              return;
-            }
-            triggerPrintWithLoader(
-              allCurrencies ? "جاري تجهيز طباعة جميع العملات..." : "جاري تجهيز معاينة الطباعة PDF...",
-            );
-            showToast(allCurrencies ? "تم فتح معاينة PDF لجميع العملات" : "تم فتح معاينة PDF");
-          }}
-          onExportExcel={() => executeExcelExport(printContext.kind, printContext.account)}
-          onExportImage={() => handlePrintPngExport(printContext.kind, printContext.account)}
-          onShare={() => {
-            const targetAcc = printContext.account ?? accounts[0];
-            const summary = targetAcc ? computeAccountSummary(targetAcc, ledger) : null;
-            const text = targetAcc
-              ? `كشف حساب: ${targetAcc.name} | الرصيد: ${formatAmount(summary?.netBalance ?? 0)} ${targetAcc.currency}`
-              : `تقرير ${workspace?.companyName ?? "نسقو برو"}`;
-            void shareOrCopyText("تقرير نسقو برو", text, showToast);
-          }}
-          onSendWhatsApp={() => {
-            const targetAcc = printContext.account ?? accounts[0];
-            if (targetAcc) {
-              const summary = computeAccountSummary(targetAcc, ledger);
-              const msg = buildAccountBalanceMessage(
-                targetAcc,
-                summary.netBalance,
-                summary.tone,
-                workspace?.companyName,
-                extendedSettings,
-              );
-              void openWhatsAppChat(targetAcc, msg, showToast);
-            } else {
-              void openWhatsAppChat(undefined, `تقرير ${workspace?.companyName ?? "نسقو برو"}`, showToast);
-            }
-          }}
-        />
+        <PrintOptionsModal open={overlay === "print-options"} subjectLabel={printContext.account?.name}
+          showAllCurrencies={printContext.kind === "statement"} onClose={closeOverlay}
+          onOutput={(format,mode,all)=>void outputReport(printContext.source,format,mode,all)} />
         <BackupNameModal
           open={overlay === "backup-name"}
           onClose={() => setOverlay(null)}
@@ -2780,6 +2839,7 @@ export function AuthenticatedWorkspace({
           onBackupUploaded={(fileName) => {
             const savedIso = recordLastBackupNow();
             setLastBackupIso(savedIso);
+            if(hybrid.isHybrid)return;
             void createCloudBackupRecord(user.uid, {
               name: fileName,
               accountsCount: accounts.length,
@@ -2793,6 +2853,7 @@ export function AuthenticatedWorkspace({
           onNotify={showToast}
         />
         <TransferModal
+          workspace={workspace}
           open={overlay === "transfer"}
           uid={user.uid}
           accounts={accounts}
@@ -2801,6 +2862,8 @@ export function AuthenticatedWorkspace({
           ledger={ledger}
           defaultAccountId={transferAccountId}
           onClose={() => setOverlay(null)}
+          onManageAccount={(select)=>openAccountReference(select)}
+          onManageCashbox={(select,currency)=>openCashboxReference(select,currency)}
           onCreateAccount={() => {
             returnOverlay.current = "transfer";
             openAccountCreate("extended");
@@ -2810,8 +2873,8 @@ export function AuthenticatedWorkspace({
           onGenerateImage={(data) => {
             void runWithBrandLoader(
               "جاري تصدير صورة سند الحوالة...",
-              () => {
-                exportSummaryAsPngImage({
+              async () => {
+                const saved=await exportSummaryAsPngImage({
                   filename: `nasqo-transfer-${Date.now()}.png`,
                   companyName: workspace?.companyName || "نسقو برو",
                   title: data.title,
@@ -2820,10 +2883,10 @@ export function AuthenticatedWorkspace({
                   rows: data.rows,
                   footerNote: extendedSettings.statementFooterNote,
                 });
-                showToast("تم تنزيل صورة سند الحوالة بنجاح");
+                showToast(saved?"تم حفظ صورة سند الحوالة":"تم إلغاء حفظ الصورة");
               },
               { minDurationMs: 420 },
-            );
+            ).catch(err=>showToast(err instanceof Error?err.message:"تعذر حفظ صورة الحوالة"));
           }}
         />
         <NotificationCenter
@@ -2835,6 +2898,7 @@ export function AuthenticatedWorkspace({
           onMarkAllRead={handleMarkAllNotificationsRead}
           onDismiss={handleDismissNotification}
           onSelectNotification={handleSelectNotification}
+          importedRecords={<LegacyRecordsPanel kind="alerts" onAccount={openLegacyAccount} />}
         />
         {overlay === "qr-scanner" ? (
           <Suspense fallback={<NasqoBrandLoader size="md" label="جاري فتح الماسح..." />}>
@@ -2896,6 +2960,7 @@ export function AuthenticatedWorkspace({
           </div>
         ) : null}
       </div>
+      </UiResumeWorkspaceContext.Provider>
     </WorkspaceContext.Provider>
   );
 }
@@ -2916,6 +2981,7 @@ function DashboardBottomNav({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const [quickOpen, setQuickOpen] = useState(false);
+  useBackLayer(quickOpen, () => { setQuickOpen(false); return true; });
 
   useEffect(() => {
     if (!quickOpen) return;
@@ -3271,7 +3337,7 @@ function purchasesScreen(
   return {
     id: `accounts-${category}-${groupId ?? "all"}`,
     headerHeight: 58,
-    header: (flow) => <PurchasesHeader flow={flow} category={category} groupTitle={groupTitle} />,
+    header: (flow) => <PurchasesHeader flow={flow} category={category} groupTitle={groupTitle} groupId={groupId} />,
     footerHeight: 54,
     footer: () => <CategoryFinancialFooter category={category} groupId={groupId} />,
     render: (flow) => <PurchasesPage flow={flow} category={category} groupId={groupId} />,
@@ -3282,10 +3348,12 @@ function PurchasesHeader({
   flow,
   category,
   groupTitle,
+  groupId,
 }: {
   flow: FlowControls;
   category: AccountCategory;
   groupTitle?: string;
+  groupId?: number;
 }) {
   const ctx = useWorkspace();
   return (
@@ -3294,9 +3362,9 @@ function PurchasesHeader({
       subtitle=""
       onBack={flow.pop}
       actions={[
-        { label: "طباعة", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("purchases") },
+        { label: "طباعة", icon: FileTextIcon, onClick: () => ctx.openPrintOptions("purchases",undefined,`accounts:${category}:${groupId??"all"}`) },
         { label: "تصفية", icon: MixerHorizontalIcon, onClick: () => ctx.openSheet("filters") },
-        { label: "تصدير المشتريات", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases") },
+        { label: `تصدير ${categoryTitle(category)}`, icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases",undefined,`accounts:${category}:${groupId??"all"}`) },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: ctx.openAccountPicker },
       ]}
     />
@@ -3305,27 +3373,15 @@ function PurchasesHeader({
 
 function CategoryFinancialFooter({ category, groupId }: { category: AccountCategory; groupId?: number }) {
   const ctx = useWorkspace();
-  const activeCurrency = ctx.categoryCurrencies[category] ?? ctx.workspace?.defaultCurrency ?? "ريال";
-  const currencyFilter = activeCurrency === "الكل" ? undefined : activeCurrency;
-  const catAccounts = ctx.accounts.filter((a) =>
-    groupId !== undefined ? a.groupId === groupId : a.category === category,
-  );
-  let debit = 0;
-  let credit = 0;
-  for (const acc of catAccounts) {
-    const s = computeAccountSummary(acc, ctx.ledger, currencyFilter);
-    debit += s.debitTotal;
-    credit += s.creditTotal;
-  }
-  const balance = Math.abs(credit - debit);
+  const report=useReportPreview(`accounts:${category}:${groupId??"all"}`);
   return (
     <FinancialFooter
-      debit={formatAmount(debit)}
-      credit={formatAmount(credit)}
-      balance={formatAmount(balance)}
+      debit={reportTotalText(report,"debit")}
+      credit={reportTotalText(report,"credit")}
+      balance={reportTotalText(report,"balance")}
       hidePrimaryAction
       onPrimary={() => ctx.openAccountCreate("extended", category)}
-      onMenu={() => ctx.openExportMenu("purchases")}
+      onMenu={() => ctx.openExportMenu("purchases",undefined,`accounts:${category}:${groupId??"all"}`)}
     />
   );
 }
@@ -3373,11 +3429,11 @@ function SupplierHeader({
   onSearch: () => void;
 }) {
   const ctx = useWorkspace();
-  const account = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const account = ctx.accounts.find((a) => a.id === accountId);
   const isCashAccount = Boolean(account?.isCashAccount);
   return (
     <AppHeader
-      title={isCashAccount ? `مشتريات ${account.name}` : account?.name || "كشف الحساب"}
+      title={isCashAccount ? `مشتريات ${account?.name ?? ""}` : account?.name || "كشف الحساب"}
       subtitle={isCashAccount ? "" : "كشف حساب"}
       className={isCashAccount ? "cash-statement-header" : ""}
       onBack={flow.pop}
@@ -3391,6 +3447,11 @@ function SupplierHeader({
   );
 }
 
+function statementTotalText(statement:ReturnType<typeof computeStatementRows>,kind:"debit"|"credit"|"balance"|"previous"){
+ if(statement.currencyTotals)return statement.currencyTotals.map(t=>`${formatAmount(t[kind])} ${t.currency}`).join(" / ");
+ return formatAmount(kind==="debit"?statement.debitTotal:kind==="credit"?statement.creditTotal:kind==="previous"?statement.previousBalance:statement.netBalance);
+}
+
 function SupplierFooter({
   accountId,
   onCashMenu,
@@ -3399,7 +3460,8 @@ function SupplierFooter({
   onCashMenu: () => void;
 }) {
   const ctx = useWorkspace();
-  const account = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const report=useReportPreview(`statement:${accountId}`);
+  const account = ctx.accounts.find((a) => a.id === accountId);
   if (!account) return null;
   const activeCurrency = ctx.statementCurrencies[account.id] ?? account.currency ?? "ريال";
   const statement = computeStatementRows(account, ctx.ledger, {
@@ -3411,9 +3473,9 @@ function SupplierFooter({
   }
   return (
     <FinancialFooter
-      debit={formatAmount(statement.debitTotal)}
-      credit={formatAmount(statement.creditTotal)}
-      balance={formatAmount(statement.netBalance)}
+      debit={reportTotalText(report,"debit")}
+      credit={reportTotalText(report,"credit")}
+      balance={reportTotalText(report,"balance")}
       compact
       onPrimary={() => ctx.flowRef.current?.push(simpleEntryScreen(account.id))}
       onMenu={onCashMenu}
@@ -3434,7 +3496,7 @@ function SupplierScreenRouter({
 }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
-  const account = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const account = ctx.accounts.find((a) => a.id === accountId);
   if (!account) {
     return (
       <MobileScroll className="app-screen">
@@ -3469,7 +3531,7 @@ function ShopHeader({ flow }: { flow: FlowControls }) {
       onBack={flow.pop}
       actions={[
         { label: "تصفية", icon: MixerHorizontalIcon, onClick: () => ctx.openSheet("filters") },
-        { label: "تصدير", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases") },
+        { label: "تصدير", icon: DownloadIcon, onClick: () => ctx.openExportMenu("purchases",undefined,"accounts:shop:all") },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: ctx.openAccountPicker },
       ]}
     />
@@ -3504,7 +3566,7 @@ function ShopFooter() {
         type="button"
         className="shop-totals-menu"
         aria-label="خيارات التصدير"
-        onClick={() => ctx.openExportMenu("purchases")}
+        onClick={() => ctx.openExportMenu("purchases",undefined,"accounts:shop:all")}
       >
         <HamburgerMenuIcon />
       </button>
@@ -3574,6 +3636,11 @@ function ShopPage({ flow }: { flow: FlowControls }) {
     { fromDate: "", toDate: "", sortBy: "date", sort: "تنازلي", byCurrency: false },
   );
 
+  useReportSource("accounts:shop:all",()=>{
+    const rows=ordered.flatMap(a=>{const report=buildStatementReport(a,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true},false);return report.totals.map(t=>({id:a.id+":"+t.currency,currency:t.currency,cells:[a.codeNumber,a.name,a.phone,t.debit,t.credit,t.balance,t.currency]}));});
+    const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[3]);t.credit+=Number(row.cells[4]);t.balance=t.credit-t.debit;return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
+    return {kind:"accounts",title:"حسابات المحل",scope:{from:fromDate,to:toDate,search:searchQuery,currency:byCurrency?currencyFilter:"الكل"},columns:["الرقم","الحساب","الهاتف","عليه","له","الرصيد","العملة"],rows,totals};
+  });
   return (
     <div className="nasqo-pinned-layout shop-layout" dir="rtl">
       <UnifiedSearchFilterBar
@@ -3688,7 +3755,7 @@ function ShopPage({ flow }: { flow: FlowControls }) {
             </div>
           ) : null}
           {ordered.slice(0, visibleCount).map((acc) => {
-            const s = computeAccountSummary(acc, periodLedger, activeCurrencyParam);
+            const s = buildStatementReport(acc,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true});
             return (
               <article className="shop-account-card" key={acc.id}>
                 <button
@@ -3699,7 +3766,7 @@ function ShopPage({ flow }: { flow: FlowControls }) {
                   <MobileIcon />
                 </button>
                 <strong>{acc.name}</strong>
-                <span>{formatAmount(s.netBalance)}</span>
+                <span>{reportTotalText(s,"balance")}</span>
                 <button aria-label={`إضافة سند لـ ${acc.name}`} onClick={() => ctx.openTransaction(acc)}>
                   <PlusIcon />
                 </button>
@@ -3760,6 +3827,7 @@ function WarehousesPage({
   ctx.flowRef.current = flow;
   const [editing, setEditing] = useState<WarehouseRecord | "new" | null>(null);
   const keyboard = useKeyboard();
+  const [deleting,setDeleting]=useState<WarehouseRecord|null>(null);
   const [searchOpen, setSearchOpen] = useState(true);
   const [searchState, setSearchState] = useState(() => createInitialSearchState());
   const search = searchState.query;
@@ -3838,6 +3906,7 @@ function WarehousesPage({
               </strong>
               <b>{warehouse.codeNumber}</b>
               <div className="warehouse-card-actions">
+                <button aria-label={`حذف ${warehouse.name}`} onClick={()=>{keyboard.hide();setDeleting(warehouse);}}><TrashIcon/></button>
                 <button aria-label={`تعديل ${warehouse.name}`} onClick={() => open(warehouse)}>
                   <Pencil1Icon />
                 </button>
@@ -3855,6 +3924,7 @@ function WarehousesPage({
       <button className="fab warehouse-fab" aria-label="إضافة مخزن" onClick={() => open("new")}>
         <PlusIcon />
       </button>
+      {deleting&&<DeleteRecordDialog name={deleting.name} onDelete={()=>deleteWarehouse(ctx.uid,deleting.id)} onClose={()=>setDeleting(null)} onDeleted={()=>{setDeleting(null);ctx.showToast("تم حذف المخزن");}}/>}
       {editing !== null ? (
         <WarehouseModal
           key={editing === "new" ? "new" : editing.id}
@@ -3896,18 +3966,20 @@ function WarehouseModal({
   const [details, setDetails] = useState(warehouse?.details ?? "");
   const [isDefault, setIsDefault] = useState(warehouse?.isDefault ?? false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const target = screenRef.current?.querySelector(".nasqo-app");
   if (!target) return null;
 
   const submit = async () => {
     if (!name.trim()) {
-      setError(true);
+      setError("أدخل اسم المخزن أولًا");
       return;
     }
     setSaving(true);
     try {
       await onSave({ name: name.trim(), details, isDefault });
+    } catch(e) {
+      setError(e instanceof Error?e.message:"تعذر حفظ المخزن. بقيت المدخلات لإعادة المحاولة.");
     } finally {
       setSaving(false);
     }
@@ -3924,9 +3996,9 @@ function WarehouseModal({
           value={name}
           onChange={(event) => {
             setName(event.target.value);
-            setError(false);
+            setError("");
           }}
-          aria-invalid={error}
+          aria-invalid={!!error}
         />
         <KeyboardInput
           aria-label="تفاصيل المخزن"
@@ -3946,7 +4018,7 @@ function WarehouseModal({
         </label>
         {error ? (
           <p className="form-error" role="alert">
-            أدخل اسم المخزن أولًا
+            {error}
           </p>
         ) : null}
         <div className="form-modal-actions">
@@ -3968,20 +4040,15 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const [overflowOpen, setOverflowOpen] = useState(false);
+  useBackLayer(overflowOpen, () => { setOverflowOpen(false); return true; });
   const portal = screenRef.current?.querySelector(".nasqo-app");
 
   const downloadTemplate = () => {
     const csv = "\uFEFFالاسم,الرمز,الوحدة,متوسط التكلفة,سعر البيع,الوحدة 2,العبوة 2,سعر 2,الوحدة 3,العبوة 3,سعر 3\n";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "nasqo-items-template.csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    ctx.showToast("تم تحميل نموذج استيراد الأصناف");
+    void outputBytes(new TextEncoder().encode(csv),"nasqo-items-template.csv","text/csv","save")
+      .then(ok=>ctx.showToast(ok?"تم حفظ قالب الأصناف CSV":"أُلغي الحفظ"))
+      .catch(error=>ctx.showToast(error instanceof Error?error.message:"تعذر حفظ القالب"));
   };
 
   const runAction = (fn: () => void) => {
@@ -3993,7 +4060,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
   return (
     <>
       <AppHeader
-        title="الأصناف"
+        title="ملف الأصناف"
         subtitle=""
         onBack={() => {
           setOverflowOpen(false);
@@ -4001,7 +4068,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
         }}
         actions={[
           {
-            label: "حركة المخازن",
+            label: "حركة المخزون",
             icon: ActivityLogIcon,
             onClick: () => runAction(() => flow.push(inventoryReportScreen())),
           },
@@ -4046,7 +4113,7 @@ function ItemsHeader({ flow }: { flow: FlowControls }) {
                 <button
                   type="button"
                   role="menuitem"
-                  onClick={() => runAction(() => ctx.openExportMenu("inventory"))}
+                  onClick={() => runAction(() => ctx.openExportMenu("inventory", undefined, "catalog"))}
                 >
                   <DownloadIcon />
                   <span>خيارات الطباعة والتصدير</span>
@@ -4094,6 +4161,9 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [showAll, setShowAll] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [pendingDelete,setPendingDelete]=useState<{id:string;name:string}|null>(null);
+  const deleteBusy=useRef(false);
+  useBackLayer(Boolean(pendingDelete),()=>{setPendingDelete(null);return true;},105);
   const [formError, setFormError] = useState("");
   const searchQuery = searchState.query;
   const searchActive = isSearchActiveMode(searchState);
@@ -4165,16 +4235,45 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     [filteredItems, safePage, showAll],
   );
 
+  const catalogErrorRef = useRef<HTMLDivElement>(null);
+  useEffect(()=>{if(formError){keyboard.hide();catalogErrorRef.current?.scrollIntoView({block:"center"});}},[formError]);
+  const validateCatalogForm = (creating:boolean) => {
+    const fail=(message:string)=>{setFormError(message);return false;};
+    const native=import.meta.env.VITE_NASQO_HYBRID === "1";
+    if(!name.trim() || name.trim().length>120)return fail("اسم الصنف مطلوب ولا يتجاوز 120 حرفًا.");
+    if(sku.trim().length>64)return fail("الباركود لا يتجاوز 64 حرفًا.");
+    if(!unit.trim() || unit.trim().length>32)return fail("أدخل الوحدة الأساسية بطول لا يتجاوز 32 حرفًا.");
+    const validNumber=(raw:string)=>/^[0-9٠-٩۰-۹.,٬٫\s]+$/.test(raw)&&Number.isFinite(Number(raw.replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))).replace(/[,٬\s]/g,"").replace(/٫/g,".")));
+    for(const [label,raw] of [["سعر التكلفة",avgCost],["سعر البيع",sellingPrice],["سعر البيع للوحدة 2",sprice2],["سعر البيع للوحدة 3",sprice3]]){
+      if(raw.trim()&&(!validNumber(raw)||parseArabicNumber(raw)>1e10||label!=="سعر التكلفة"&&Math.abs(parseArabicNumber(raw)*100-Math.round(parseArabicNumber(raw)*100))>0.00001))return fail(`${label}: أدخل مبلغًا غير سالب بمنزلتين عشريتين كحد أقصى.`);
+    }
+    if(native && creating && parseArabicNumber(avgCost)!==0)return fail("سعر التكلفة للصنف الجديد يجب أن يكون صفرًا؛ تُسجّل تكلفة المخزون من فاتورة الشراء أو إجراء اعتماد المخزون، دون ترحيل من بطاقة الصنف.");
+    if(native && !creating && parseArabicNumber(avgCost)!==(ctx.inventory.find(i=>i.id===selectedId)?.avgCost??0))return fail("لا يمكن تغيير تكلفة المخزون من بطاقة الصنف. احتفظ بالتكلفة الحالية واستخدم إجراء المخزون المعتمد لتغيير التقييم.");
+    if(native && currencyCode!=="ريال")return fail("عملة الصنف المحلي المدعومة حاليًا هي الريال؛ لم تُحفظ البيانات ولم تُرحّل أي حركة.");
+    if(unit3.trim()&&!unit2.trim())return fail("أدخل الوحدة 2 ومعاملها قبل إضافة الوحدة 3.");
+    for(const [n,label,count,price] of [[2,unit2,count2,sprice2],[3,unit3,count3,sprice3]] as const){
+      if(!label.trim()){
+        if(count.trim()&&(!validNumber(count)||parseArabicNumber(count)!==0)||price.trim()&&parseArabicNumber(price)!==0)return fail(`أدخل اسم الوحدة ${n} أو امسح معاملها وسعرها؛ لن تُهمل القيم المدخلة.`);
+        continue;
+      }
+      if(label.trim().length>32||label.trim()===unit.trim()||(n===3&&label.trim()===unit2.trim()))return fail(`اسم الوحدة ${n} يجب أن يكون مختلفًا عن الوحدات الأخرى ولا يتجاوز 32 حرفًا.`);
+      const factor=parseArabicNumber(count);
+      if(!count.trim()||!validNumber(count)||!Number.isInteger(factor)||factor<1||factor>1e7)return fail(`معامل التحويل للوحدة ${n} مطلوب: أدخل عددًا صحيحًا موجبًا، دون افتراض المعامل 1 تلقائيًا.`);
+    }
+    if(unit3.trim()&&parseArabicNumber(count2)*parseArabicNumber(count3)>1e7)return fail("حاصل معاملي التحويل يتجاوز الحد المدعوم (10,000,000 وحدة أساسية).");
+    if(defaultUnit===2&&!unit2.trim()||defaultUnit===3&&!unit3.trim())return fail("الوحدة الافتراضية المختارة غير مُعرّفة؛ اختر وحدة مكتملة البيانات.");
+    return true;
+  };
+
   const handleSaveNew = async () => {
     setFormError("");
+    if(!validateCatalogForm(true))return;
     const trimmedName = name.trim();
     if (!trimmedName) {
       const msg = "أدخل اسم الصنف أولًا قبل الحفظ.";
       setFormError(msg);
-      ctx.showToast(msg);
       return;
     }
-    const targetWh = ctx.warehouses.find((w) => w.isDefault)?.id || ctx.warehouses[0]?.id || "";
     setSaving(true);
     try {
       await createInventoryItem(ctx.uid, {
@@ -4184,15 +4283,15 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         quantity: 0,
         avgCost: avgCost.trim() ? parseArabicNumber(avgCost) : 0,
         ...(sellingPrice.trim() ? { sellingPrice: parseArabicNumber(sellingPrice) } : {}),
-        ...(unit2.trim() ? { unit2: unit2.trim(), count2: parseArabicNumber(count2) || 1, ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
-        ...(unit3.trim() ? { unit3: unit3.trim(), count3: parseArabicNumber(count3) || 1, ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
+        ...(unit2.trim() ? { unit2: unit2.trim(), count2: parseArabicNumber(count2), ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
+        ...(unit3.trim() ? { unit3: unit3.trim(), count3: parseArabicNumber(count3), ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
         defaultUnit,
         currencyCode,
         isActive,
         ...(expiryDate.trim() ? { expiryDate: expiryDate.trim() } : {}),
-        warehouseId: targetWh,
         quantityUnverified: false,
       });
+      removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
       triggerHaptic("success");
       ctx.showToast(`تم حفظ الصنف «${trimmedName}» في سجل الأصناف (بدون حركة مخزنية أو شراء)`);
       resetForm();
@@ -4200,7 +4299,6 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "تعذر حفظ الصنف.";
       setFormError(msg);
-      ctx.showToast(msg);
     } finally {
       setSaving(false);
     }
@@ -4210,16 +4308,15 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     if (!selectedId) {
       const msg = "حدد صنفًا من الجدول أولًا لتعديل بياناته.";
       setFormError(msg);
-      ctx.showToast(msg);
       return;
     }
     const trimmedName = name.trim();
     if (!trimmedName) {
       const msg = "اسم الصنف مطلوب.";
       setFormError(msg);
-      ctx.showToast(msg);
       return;
     }
+    if(!validateCatalogForm(false))return;
     setSaving(true);
     setFormError("");
     try {
@@ -4230,14 +4327,15 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         avgCost: avgCost.trim() ? parseArabicNumber(avgCost) : 0,
         ...(sellingPrice.trim() ? { sellingPrice: parseArabicNumber(sellingPrice) } : {}),
         unit2: unit2.trim(),
-        ...(unit2.trim() ? { count2: parseArabicNumber(count2) || 1, ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
+        ...(unit2.trim() ? { count2: parseArabicNumber(count2), ...(sprice2.trim() ? { sprice2: parseArabicNumber(sprice2) } : {}) } : {}),
         unit3: unit3.trim(),
-        ...(unit3.trim() ? { count3: parseArabicNumber(count3) || 1, ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
+        ...(unit3.trim() ? { count3: parseArabicNumber(count3), ...(sprice3.trim() ? { sprice3: parseArabicNumber(sprice3) } : {}) } : {}),
         defaultUnit,
         currencyCode,
         isActive,
         expiryDate: expiryDate.trim(),
       });
+      removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
       triggerHaptic("success");
       ctx.showToast(`تم تعديل بطاقة الصنف «${trimmedName}» دون المساس بحركة المخزون`);
       resetForm();
@@ -4245,23 +4343,32 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "تعذر تعديل الصنف.";
       setFormError(msg);
-      ctx.showToast(msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteSelected = async () => {
-    if (!selectedId) {
+  const handleDeleteSelected = () => {
+    keyboard.hide();
+    const item=ctx.inventory.find(i=>i.id===selectedId);
+    if(item)setPendingDelete({id:item.id,name:item.name});
+    else ctx.showToast("حدد صنفًا لحذفه");
+  };
+  const confirmDeleteSelected = async () => {
+    if(deleteBusy.current||!pendingDelete)return;
+    const target=pendingDelete;
+    if (!target.id) {
       const msg = "حدد صنفًا من الجدول أولًا لحذفه.";
       setFormError(msg);
       ctx.showToast(msg);
       return;
     }
-    setSaving(true);
+    deleteBusy.current=true;setSaving(true);
     setFormError("");
     try {
-      await deleteInventoryCatalogItem(ctx.uid, selectedId);
+      await deleteInventoryCatalogItem(ctx.uid, target.id);
+      setPendingDelete(null);
+      removeUiState(ctx.workspace?.id??ctx.uid,"catalog-draft");
       triggerHaptic("success");
       ctx.showToast("تم حذف الصنف من سجل الأصناف");
       resetForm();
@@ -4271,11 +4378,29 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
       setFormError(msg);
       ctx.showToast(msg);
     } finally {
-      setSaving(false);
+      deleteBusy.current=false;setSaving(false);
     }
   };
 
+  useReportSource("catalog",()=>({catalogCards:catalogCardsForReport(filteredItems),kind:"catalog",title:"ملف الأصناف",scope:{search:searchQuery},columns:["الرقم","الصنف","الباركود","الوحدة","التكلفة المرجعية","سعر البيع","العملة"],rows:filteredItems.map(i=>({id:i.id,currency:i.currencyCode||"ريال",cells:[i.legacyId??i.id,i.name,i.sku??"",i.unit,getCatalogReferenceCost(i)??i.avgCost??0,i.sellingPrice??0,i.currencyCode||"ريال"]})),totals:[]}));
+  const catalogDraft={selectedId,name,sku,unit,avgCost,sellingPrice,unit2,count2,sprice2,unit3,count3,sprice3,defaultUnit,expiryDate,currencyCode,isActive};
+  const catalogScope=ctx.workspace?.id??ctx.uid;
+  const catalogGuard=useUnsavedForm({active:formOpen,dirty:Boolean(name.trim()||sku.trim()),
+    onClose:()=>{keyboard.hide();setFormOpen(false);},
+    saveDraft:()=>!saving&&writeUiState(catalogScope,"catalog-draft",catalogDraft),
+    discardDraft:()=>{if(saving)return false;const ok=removeUiState(catalogScope,"catalog-draft");if(ok)resetForm();return ok;}});
+  useEffect(()=>{
+    const d=readUiState<typeof catalogDraft|null>(catalogScope,"catalog-draft",null,v=>{if(!v||typeof v!=="object")return false;const d=v as Record<string,unknown>;return ["name","sku","unit","avgCost","sellingPrice","unit2","count2","sprice2","unit3","count3","sprice3","expiryDate","currencyCode"].every(k=>typeof d[k]==="string"&&String(d[k]).length<=2000)&&(d.selectedId===null||typeof d.selectedId==="string")&&[1,2,3].includes(Number(d.defaultUnit))&&typeof d.isActive==="boolean";});
+    if(!d)return;
+    if(d.selectedId&&!ctx.inventory.some(i=>i.id===d.selectedId)){ctx.showToast("الصنف في المسودة لم يعد موجودًا؛ لم تُفتح مسودة قديمة للتعديل");return;}
+    setSelectedId(d.selectedId);setName(d.name);setSku(d.sku);setUnit(d.unit);setAvgCost(d.avgCost);setSellingPrice(d.sellingPrice);setUnit2(d.unit2);setCount2(d.count2);setSprice2(d.sprice2);setUnit3(d.unit3);setCount3(d.count3);setSprice3(d.sprice3);setDefaultUnit(d.defaultUnit);setExpiryDate(d.expiryDate);setCurrencyCode(d.currencyCode);setIsActive(d.isActive);setFormOpen(true);
+  },[catalogScope]);
+  useBackLayer(formOpen&&saving,()=>{ctx.showToast("انتظر تأكيد حفظ الصنف");return true;},110);
   const showEditorForm = formOpen && !searchState.isFocused;
+  const selectedCatalogItem = ctx.inventory.find((item) => item.id === selectedId);
+  const selectedReferenceCost = (selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified)
+    ? getCatalogReferenceCost(selectedCatalogItem)
+    : undefined;
 
   return (
     <div className="nasqo-pinned-layout items-catalog-layout" data-testid="items-catalog-screen" dir="rtl">
@@ -4290,12 +4415,12 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         unitLabel="صنف"
         isFocused={searchState.isFocused}
         onFocus={() => {
-          setFormOpen(false);
+          if(formOpen){keyboard.hide();catalogGuard.requestClose();return;}
           setSearchState((prev) => onSearchFocus(prev));
         }}
         onBlur={() => setSearchState((prev) => onSearchBlur(prev))}
         onQueryChange={(next) => {
-          setFormOpen(false);
+          if(formOpen)return;
           setPageIndex(0);
           setSearchState((prev) => onSearchQueryChange(prev, next));
         }}
@@ -4316,7 +4441,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
             onClick={() => {
               keyboard.hide();
               if (showEditorForm) {
-                setFormOpen(false);
+                catalogGuard.requestClose();
               } else {
                 resetForm();
                 setFormOpen(true);
@@ -4334,28 +4459,29 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
         }
       />
 
+      <UnsavedFormPrompt guard={catalogGuard}/>
+      {pendingDelete?<div className="center-modal-layer" data-testid="catalog-delete-confirm"><section className="ref-dialog-card" role="alertdialog" aria-label="تأكيد حذف الصنف"><h2>حذف الصنف «{pendingDelete.name}»؟</h2><p>لا يمكن حذف صنف مرتبط بحركات؛ لن تتغير القيود القديمة.</p><button disabled={saving} onClick={()=>void confirmDeleteSelected()}>تأكيد الحذف</button><button disabled={saving} onClick={()=>setPendingDelete(null)}>إلغاء</button></section></div>:null}
       <MobileScroll className="nasqo-flex-scroll app-screen">
         <main className="items-catalog-page" dir="rtl">
+          {!ctx.inventory.length&&!showEditorForm?<div className="nasqo-empty-card" data-testid="catalog-empty"><p>لا توجد أصناف بعد</p><button className="ref-btn green" onClick={()=>{keyboard.hide();resetForm();setFormOpen(true);}}>إضافة أول صنف</button></div>:null}
+          {filteredItems.length===0&&ctx.inventory.length>0?<p role="status">لا توجد أصناف تطابق البحث</p>:null}
           {showEditorForm ? (
             <section className="items-catalog-form-card" aria-label="بيانات الصنف" data-testid="catalog-form-card">
               <div className="items-catalog-form-header">
                 <div className="items-catalog-form-title">
-                  {selectedId ? "تعديل بيانات الصنف" : "إضافة صنف جديد"}
+                  {selectedId ? `تعديل الصنف: ${ctx.inventory.find(i=>i.id===selectedId)?.name??name}` : "إضافة صنف جديد"}
                 </div>
                 <button
                   type="button"
                   className="nasqo-inline-close-btn"
                   aria-label="إغلاق نموذج بيانات الصنف"
-                  onClick={() => {
-                    keyboard.hide();
-                    setFormOpen(false);
-                  }}
+                  onClick={() => {keyboard.hide();catalogGuard.requestClose();}}
                 >
                   <Cross2Icon />
                 </button>
               </div>
               {formError ? (
-                <div className="field-inline-error" role="alert" data-testid="items-catalog-error">
+                <div ref={catalogErrorRef} className="field-inline-error" role="alert" data-testid="items-catalog-error">
                   {formError}
                 </div>
               ) : null}
@@ -4405,7 +4531,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     />
                   </div>
                   <div className="items-catalog-field">
-                    <span className="items-lbl blue">سعر التكلفة</span>
+                    <span className="items-lbl blue">{(selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified) ? "التكلفة المعتمدة" : "سعر التكلفة"}</span>
                     <KeyboardInput
                       aria-label="سعر التكلفة"
                       data-testid="catalog-item-cost"
@@ -4414,6 +4540,14 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                       value={avgCost}
                       onChange={(e) => setAvgCost(e.target.value)}
                     />
+                    {import.meta.env.VITE_NASQO_HYBRID === "1" ? <small className="items-unit-help">{selectedId ? "تكلفة المخزون لا تُعدّل من بطاقة الصنف." : "الصنف الجديد يبدأ بتكلفة ورصيد صفر؛ تكلفة الشراء تُسجّل من الفاتورة."}</small> : null}
+                    {(selectedCatalogItem?.quantityUnverified || selectedCatalogItem?.costUnverified) ? (
+                      <small data-testid="catalog-reference-cost">
+                        سعر التكلفة المرجعي: {selectedReferenceCost !== undefined && Number.isFinite(selectedReferenceCost)
+                          ? formatAmount(selectedReferenceCost)
+                          : "غير متوفر"} — سعر الشراء المرجعي
+                      </small>
+                    ) : null}
                   </div>
                   <div className="items-catalog-field">
                     <span className="items-lbl blue">سعر البيع</span>
@@ -4430,6 +4564,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
 
                 <div className="items-optional-units-box">
                   <div className="items-optional-units-banner">وحدات اختيارية يمكنك اضافتها او تجاهلها</div>
+                  <p className="items-unit-help">مثال: الدُرزن = 12 حبة، والكرتون = 6 درازن = 72 حبة.</p>
                   <div className="items-optional-units-grid">
                     <div className="items-opt-col">
                       <div className="items-catalog-field">
@@ -4443,7 +4578,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         />
                       </div>
                       <div className="items-catalog-field">
-                        <span className="items-lbl blue">معامل التحويل</span>
+                        <span className="items-lbl blue">عدد الوحدات الأساسية داخل الوحدة ٢</span>
                         <KeyboardInput
                           aria-label="معامل التحويل 2"
                           data-testid="catalog-item-count2"
@@ -4478,7 +4613,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         />
                       </div>
                       <div className="items-catalog-field">
-                        <span className="items-lbl blue">معامل التحويل</span>
+                        <span className="items-lbl blue">عدد وحدات ٢ داخل الوحدة ٣</span>
                         <KeyboardInput
                           aria-label="معامل التحويل 3"
                           data-testid="catalog-item-count3"
@@ -4533,26 +4668,26 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
               </div>
 
               <div className="items-catalog-defaults-row">
-                <span className="items-lbl blue">الافتراضية</span>
+                <div className="items-catalog-default-unit-field"><span className="items-lbl blue">الوحدة الافتراضية</span>
                 <div className="items-default-unit-radios" role="radiogroup" aria-label="الوحدة الافتراضية">
                   <label>
                     <input type="radio" checked={defaultUnit === 1} onChange={() => setDefaultUnit(1)} /> الوحدة ١
                   </label>
                   <label>
-                    <input type="radio" checked={defaultUnit === 2} onChange={() => setDefaultUnit(2)} /> الوحدة ٢
+                    <input type="radio" checked={defaultUnit === 2} disabled={!unit2.trim()} onChange={() => setDefaultUnit(2)} /> الوحدة ٢
                   </label>
                   <label>
-                    <input type="radio" checked={defaultUnit === 3} onChange={() => setDefaultUnit(3)} /> الوحدة ٣
+                    <input type="radio" checked={defaultUnit === 3} disabled={!unit2.trim() || !unit3.trim()} onChange={() => setDefaultUnit(3)} /> الوحدة ٣
                   </label>
                 </div>
-                <span className="items-lbl blue">تاريخ الانتهاء</span>
+                </div><label className="items-catalog-expiry-field"><span className="items-lbl blue">تاريخ الانتهاء</span>
                 <input
                   type="date"
                   className="items-expiry-input"
                   aria-label="تاريخ الانتهاء"
                   value={expiryDate}
                   onChange={(e) => setExpiryDate(e.target.value)}
-                />
+                /></label>
               </div>
 
               <div className="items-catalog-actions-row">
@@ -4561,6 +4696,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     type="button"
                     className="items-btn save"
                     data-testid="catalog-save-btn"
+                    hidden={Boolean(selectedId)}
                     disabled={saving}
                     onClick={() => void handleSaveNew()}
                   >
@@ -4570,19 +4706,17 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                     type="button"
                     className="items-btn edit"
                     data-testid="catalog-update-btn"
+                    hidden={!selectedId}
                     disabled={saving || !selectedId}
                     onClick={() => void handleUpdateSelected()}
                   >
-                    تعديل
+                    حفظ التعديل
                   </button>
                   <button
                     type="button"
                     className="items-btn cancel"
                     data-testid="catalog-cancel-btn"
-                    onClick={() => {
-                      resetForm();
-                      setFormOpen(false);
-                    }}
+                    onClick={() => {keyboard.hide();catalogGuard.requestClose();}}
                   >
                     الغاء الأمر
                   </button>
@@ -4631,6 +4765,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                 <tbody>
                   {visibleItems.map((item, idx) => {
                     const isSelected = item.id === selectedId;
+                    const referenceCost = getCatalogReferenceCost(item);
                     const defUnitName =
                       item.defaultUnit === 2 && item.unit2
                         ? item.unit2
@@ -4648,7 +4783,16 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
                         <td><bdi>{item.sku || "—"}</bdi></td>
                         <td className="item-name-cell">{item.name}</td>
                         <td>{item.unit || "حبة"}</td>
-                        <td>{formatAmount(item.avgCost)}</td>
+                        <td data-testid={`catalog-cost-${item.id}`}>
+                          {(item.quantityUnverified || item.costUnverified) ? (
+                            <>
+                              {referenceCost !== undefined
+                                ? formatAmount(referenceCost)
+                                : "—"}
+                              <small style={{ display: "block", fontSize: 9 }}>سعر مرجعي</small>
+                            </>
+                          ) : formatAmount(item.avgCost)}
+                        </td>
                         <td>{formatAmount(item.sellingPrice ?? 0)}</td>
                         <td>{item.unit2 || ""}</td>
                         <td>{item.sprice2 ? formatAmount(item.sprice2) : "0"}</td>
@@ -4665,50 +4809,51 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
             </div>
           )}
 
-          {!searchActive ? (
             <footer className="items-catalog-footer">
-              <div className="items-pagination-bar">
+              {totalPages>1?<div className="items-pagination-bar">
                 <button
                   type="button"
                   className="items-page-btn"
+                  data-testid="catalog-next-page"
                   disabled={showAll || safePage + 1 >= totalPages}
-                  onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+                  onClick={() => { keyboard.hide(); setPageIndex(Math.min(totalPages - 1, safePage + 1)); }}
                 >
                   الصفحة التالية
                 </button>
-                <span className="items-page-indicator">
-                  صفحة رقم {safePage + 1} من {totalPages} ({filteredItems.length} صنف)
+                <span className="items-page-indicator" data-testid="catalog-page-indicator">
+                  {showAll ? `عرض جميع النتائج (${filteredItems.length} صنف)` : `صفحة رقم ${safePage + 1} من ${totalPages} (${filteredItems.length} صنف)`}
                 </span>
                 <button
                   type="button"
                   className="items-page-btn"
+                  data-testid="catalog-previous-page"
                   disabled={showAll || safePage <= 0}
-                  onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+                  onClick={() => { keyboard.hide(); setPageIndex(Math.max(0, safePage - 1)); }}
                 >
                   الصفحة السابقة
                 </button>
                 <button
                   type="button"
                   className="items-page-btn"
-                  onClick={() => setShowAll((v) => !v)}
+                  data-testid="catalog-show-all"
+                  onClick={() => { keyboard.hide(); setPageIndex(0); setShowAll((v) => !v); }}
                 >
                   {showAll ? "تقسيم صفحات" : "عرض الكل"}
                 </button>
-              </div>
-              <div className="items-shortcuts-strip">
-                <span>تعديل صنف: F2</span>
+              </div>:null}
+              {selectedId ? <div className="items-touch-actions">
+                <button type="button" className="items-page-btn" onClick={()=>{const item=ctx.inventory.find(i=>i.id===selectedId);if(item)selectItemForEdit(item);}}>تعديل الصنف المحدد</button>
                 <button
                   type="button"
                   className="currencies-footer-hint"
                   data-testid="catalog-delete-btn"
                   onClick={() => void handleDeleteSelected()}
                 >
-                  حذف صنف : DELETE
+                  حذف الصنف المحدد
                 </button>
-                <span>التنقل : TAB</span>
-              </div>
+
+              </div> : null}
             </footer>
-          ) : null}
         </main>
       </MobileScroll>
     </div>
@@ -4729,6 +4874,7 @@ function InventoryHeader({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const [overflowOpen, setOverflowOpen] = useState(false);
+  useBackLayer(overflowOpen, () => { setOverflowOpen(false); return true; });
   const portal = screenRef.current?.querySelector(".nasqo-app");
 
   const runAction = (fn: () => void) => {
@@ -4740,7 +4886,7 @@ function InventoryHeader({ flow }: { flow: FlowControls }) {
   return (
     <>
       <AppHeader
-        title="حركة المخازن"
+        title="حركة المخزون"
         subtitle=""
         onBack={() => {
           setOverflowOpen(false);
@@ -4864,8 +5010,14 @@ function InventoryReportPage({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [movementReport, setMovementReport] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>> | null>(null);
   const [activeMovementItem, setActiveMovementItem] = useState<InventoryItemRecord | null>(null);
+  const [itemHistoryScope, setItemHistoryScope] = useState<"report" | "all">("report");
   const [itemMoves, setItemMoves] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movements"]>([]);
   const [loadingMoves, setLoadingMoves] = useState(false);
+  const [itemMovesPage, setItemMovesPage] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movementPage"]>();
+  const [itemMovesError, setItemMovesError] = useState("");
+  const movementGeneration = useRef(0);
+  const movementRequest = useRef<number | null>(null);
+  const movementPageRef = useRef<Awaited<ReturnType<typeof fetchInventoryMovementsReport>>["movementPage"]>(undefined);
   const [visibleRowCount, setVisibleRowCount] = useState(80);
   const searchQuery = searchState.query;
   const searchActive = isSearchActiveMode(searchState);
@@ -4911,7 +5063,7 @@ function InventoryReportPage({
     const rawReportRows = movementReport?.itemRows ?? [];
     const seenIds = new Set(rawReportRows.map((r) => r.id));
     const missingFromReport: typeof rawReportRows = ctx.inventory
-      .filter((i) => !seenIds.has(i.id) && (!selectedWarehouseId || i.warehouseId === selectedWarehouseId))
+      .filter((i) => !seenIds.has(i.id) && (!selectedWarehouseId || i.warehouseId === selectedWarehouseId || (i.quantityUnverified && i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] !== undefined)))
       .map((i) => ({
         id: i.id,
         code: i.legacyId ?? null,
@@ -4929,15 +5081,16 @@ function InventoryReportPage({
         transferOutQty: 0,
         buyTotal: 0,
         sellTotal: 0,
-        availableQty: i.quantityUnverified ? 0 : i.quantity,
+        availableQty: i.quantityUnverified ? (selectedWarehouseId ? (i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] ?? 0) : (i.computedQuantity ?? 0)) : i.quantity,
         unitCost: i.avgCost,
-        remainingValue: Math.round((i.quantityUnverified ? 0 : i.quantity) * i.avgCost * 100) / 100,
+        remainingValue: Math.round(approvedInventoryValue(i) * 100) / 100,
         profit: 0,
         avgCost: i.avgCost,
         sellingPrice: i.sellingPrice,
         catalogQuantity: i.quantity,
         quantityUnverified: Boolean(i.quantityUnverified),
-        hasMovement: false,
+        costUnverified: Boolean(i.costUnverified),
+        hasMovement: Boolean(i.quantityUnverified && (selectedWarehouseId ? i.legacyInvoiceQtyByWarehouse?.[selectedWarehouseId] !== undefined : i.computedQuantity !== undefined)),
       }));
     return [...rawReportRows, ...missingFromReport].sort((a, b) =>
       b.name.localeCompare(a.name, "ar"),
@@ -4964,12 +5117,19 @@ function InventoryReportPage({
     return allScopeRows;
   }, [allScopeRows, inventoryById, onlyMoved, searchQuery]);
 
+  useReportSource("inventory",()=>{
+    if(!movementReport)throw new Error("انتظر اكتمال قراءة تقرير المخزون أو أعد المحاولة");
+    const estimates=reportRows.some(r=>r.estimatedRemainingValue!==undefined);
+    const rows=reportRows.map(r=>{const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");return {id:r.id,currency,cells:[r.code??r.id,r.name,r.unit,r.availableQty,r.buyTotal,r.sellTotal,r.remainingValue,r.profit,currency,...(estimates?[r.estimatedRemainingValue??"—",r.quantityUnverified?"كمية غير معتمدة":r.costUnverified?(r.remainingValue>0?"قيمة المشتريات الجديدة فقط؛ تكلفة الرصيد القديم غير معتمدة":"تكلفة الرصيد القديم غير معتمدة"):"معتمد"]:[])]};});
+    const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[4]);t.credit+=Number(row.cells[5]);t.balance+=Number(row.cells[6]);return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
+    return {catalogCards:catalogCardsForReport(ctx.inventory,new Set(reportRows.map(r=>r.id))),kind:"inventory",title:"حركة المخزون",scope:{warehouse:ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name||"جميع المخازن",from:fromDate,to:toDate,currency:selectedCurrency,search:searchQuery,...(estimates?{"التقييم":"التقدير حسب أساس السعر المختار، لا يدخل القيمة المعتمدة","أساس السعر":profitBasis==="cost"?"سعر التكلفة المرجعي":profitBasis==="last"?"آخر سعر شراء":"متوسط الشراء"}:{})},columns:["الرقم","الصنف","الوحدة","المتوفر","الشراء","البيع",estimates?"قيمة المتبقي المعتمدة":"قيمة المتبقي","الربح","العملة",...(estimates?["قيمة المتبقي التقديرية","حالة الاعتماد"]:[])],rows,totals};
+  });
   const showOpeningCol = useMemo(
     () => Boolean(fromDate) || reportRows.some((r) => (r.openingQty ?? 0) !== 0),
     [fromDate, reportRows],
   );
   const totalRemainingQty = useMemo(
-    () => Math.round(reportRows.reduce((sum, r) => sum + Number(r.availableQty ?? 0), 0) * 100) / 100,
+    () => Math.round(reportRows.reduce((sum, r) => sum + Number(r.availableQty ?? 0), 0) * 1000) / 1000,
     [reportRows],
   );
 
@@ -4986,15 +5146,79 @@ function InventoryReportPage({
       : fallbackSummary.items;
   }, [fallbackSummary.items, inventoryById, reportRows, searchQuery]);
 
+  const closeItemMovements = useCallback(() => {
+    movementGeneration.current += 1;
+    movementRequest.current = null;
+    setActiveMovementItem(null);
+  }, []);
+
+  useBackLayer(Boolean(activeMovementItem), () => { closeItemMovements(); return true; });
+
+  const loadItemMovements = useCallback(async (offset: number, generation: number) => {
+    if (!activeMovementItem || generation !== movementGeneration.current || movementRequest.current === generation) return;
+    movementRequest.current = generation;
+    setLoadingMoves(true);
+    setItemMovesError("");
+    try {
+      const res = await fetchInventoryMovementsReport(ctx.uid, {
+        itemId: activeMovementItem.id,
+        warehouseId: itemHistoryScope === "report" ? selectedWarehouseId || undefined : undefined,
+        fromDate: itemHistoryScope === "report" ? fromDate || undefined : undefined,
+        toDate: itemHistoryScope === "report" ? toDate || undefined : undefined,
+        currency: itemHistoryScope === "report" && selectedCurrency !== "الكل" ? selectedCurrency : undefined,
+        profitBasis,
+        movementOffset: offset,
+        movementLimit: 100,
+      });
+      if (generation !== movementGeneration.current) return;
+      if (res.movementPage && (res.movementPage.offset !== offset ||
+          (res.movementPage.hasMore && (res.movementPage.nextOffset === null || res.movementPage.nextOffset <= offset)))) {
+        throw new Error("تعذر استكمال سجل الحركات. أعد المحاولة.");
+      }
+      if (offset > 0 && movementPageRef.current && res.movementPage &&
+          movementPageRef.current.totalCount !== res.movementPage.totalCount) {
+        throw new Error("تغيّر سجل الحركات. أغلق الكشف وافتحه مجددًا لتحديثه.");
+      }
+      setItemMoves((previous) => {
+        if (offset === 0) return res.movements;
+        const seen = new Set(previous.map((row) => row.movementId).filter(Boolean));
+        return [...previous, ...res.movements.filter((row) => {
+          if (!row.movementId) return true;
+          if (seen.has(row.movementId)) return false;
+          seen.add(row.movementId);
+          return true;
+        })];
+      });
+      movementPageRef.current = res.movementPage;
+      setItemMovesPage(res.movementPage);
+    } catch (error) {
+      if (generation === movementGeneration.current) {
+        setItemMovesError(error instanceof Error ? error.message : "تعذر جلب سجل الحركات. أعد المحاولة.");
+      }
+    } finally {
+      if (generation === movementGeneration.current) {
+        movementRequest.current = null;
+        setLoadingMoves(false);
+      }
+    }
+  }, [activeMovementItem?.id, ctx.uid, selectedWarehouseId, fromDate, toDate, selectedCurrency, profitBasis, itemHistoryScope]);
+
+  useEffect(() => {
+    const generation = ++movementGeneration.current;
+    movementRequest.current = null;
+    movementPageRef.current = undefined;
+    setItemMoves([]);
+    setItemMovesPage(undefined);
+    setItemMovesError("");
+    setLoadingMoves(false);
+    if (activeMovementItem) void loadItemMovements(0, generation);
+    return () => { movementGeneration.current += 1; };
+  }, [loadItemMovements, ctx.ledger, ctx.inventory]);
+
   const openItemMovements = (item: InventoryItemRecord) => {
     keyboard.hide();
+    setItemHistoryScope("report");
     setActiveMovementItem(item);
-    setItemMoves([]);
-    setLoadingMoves(true);
-    void fetchInventoryMovementsReport(ctx.uid, { itemId: item.id })
-      .then((res) => setItemMoves(res.movements))
-      .catch(() => setItemMoves([]))
-      .finally(() => setLoadingMoves(false));
   };
 
   const toggleItem = (id: string) => {
@@ -5017,14 +5241,17 @@ function InventoryReportPage({
     }
   };
 
-  const totals = movementReport?.totals ?? {
-    totalSales: 0,
-    totalPurchases: 0,
-    totalProfit: 0,
-    totalRemainingValue: 0,
-    activeItemsCount: 0,
-    profitBasis,
-  };
+  const scopedCurrencyTotals=Object.values(reportRows.reduce((out,r)=>{
+    const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");
+    const t=out[currency]??={currency,totalSales:0,totalPurchases:0,totalProfit:0,totalRemainingValue:0,activeItemsCount:0};
+    t.totalSales+=r.sellTotal;t.totalPurchases+=r.buyTotal;t.totalProfit+=r.profit;t.totalRemainingValue+=r.remainingValue;t.activeItemsCount++;return out;
+  },{} as Record<string,{currency:string;totalSales:number;totalPurchases:number;totalProfit:number;totalRemainingValue:number;activeItemsCount:number}>));
+  const totals=scopedCurrencyTotals.length===1?scopedCurrencyTotals[0]:{totalSales:0,totalPurchases:0,totalProfit:0,totalRemainingValue:0,activeItemsCount:reportRows.length};
+  const estimatedCurrencyTotals=Object.values(reportRows.reduce((out,row)=>{
+    if(row.estimatedRemainingValue===undefined)return out;
+    const currency=row.currencyCode||inventoryById.get(row.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال";
+    out[currency]??={currency,value:0};out[currency].value+=row.estimatedRemainingValue;return out;
+  },{} as Record<string,{currency:string;value:number}>));
 
   const activeFiltersCount = countActiveFilters(
     {
@@ -5048,8 +5275,8 @@ function InventoryReportPage({
   const profitBasisLabel =
     profitBasis === "avg" ? "متوسط السعر" : profitBasis === "cost" ? "سعر التكلفة" : "آخر سعر";
   const multiCurrencyTotals =
-    selectedCurrency === "الكل" && (movementReport?.totalsByCurrency?.length ?? 0) > 1
-      ? movementReport!.totalsByCurrency!
+    scopedCurrencyTotals.length > 1
+      ? scopedCurrencyTotals
       : null;
 
   const movePortal = screenRef.current?.querySelector(".nasqo-app") ?? document.body;
@@ -5057,6 +5284,9 @@ function InventoryReportPage({
   return (
     <>
       <div className="nasqo-pinned-layout smart-movements-layout" data-testid="inventory-report-screen" dir="rtl">
+        {movementReport && "dataScopeNote" in movementReport && typeof movementReport.dataScopeNote === "string" ? (
+          <details style={{padding:"6px 10px",fontSize:"12px",color:"#64748b"}}><summary>تفاصيل مصدر الأرصدة</summary><p>{movementReport.dataScopeNote}</p></details>
+        ) : null}
         <UnifiedSearchFilterBar
           testId="inventory-search-bar"
           inputTestId="inventory-search-input"
@@ -5330,7 +5560,7 @@ function InventoryReportPage({
                     const liveItem = inventoryById.get(row.id);
                     const checked = selectedIds.has(row.id);
                     const isActiveRow = activeRowId ? activeRowId === row.id : idx === 0;
-                    const shownAvailable = movementReport ? row.availableQty : (liveItem?.quantity ?? row.availableQty);
+                    const shownAvailable = movementReport || liveItem?.quantityUnverified ? row.availableQty : (liveItem?.quantity ?? row.availableQty);
                     const showSearchDetails = searchQuery.trim().length > 0;
                     return (
                       <tr
@@ -5356,28 +5586,34 @@ function InventoryReportPage({
                           {row.name}
                           {showSearchDetails && row.sku ? <small className="inv-sku-meta"> ({row.sku})</small> : null}
                         </td>
-                        {showOpeningCol ? <td>{formatAmount(row.openingQty ?? 0)}</td> : null}
-                        <td>{formatAmount(row.buyQty)}</td>
-                        <td>{formatAmount(row.sellQty)}</td>
-                        <td>{formatAmount(row.transferInQty)}</td>
-                        <td>{formatAmount(row.transferOutQty)}</td>
+                        {showOpeningCol ? <td>{formatQuantity(row.openingQty ?? 0)}</td> : null}
+                        <td>{formatQuantity(row.buyQty)}</td>
+                        <td>{formatQuantity(row.sellQty)}</td>
+                        <td>{formatQuantity(row.transferInQty)}</td>
+                        <td>{formatQuantity(row.transferOutQty)}</td>
                         {showOpeningCol ? (
                           <td>
                             {(row.periodNetQty ?? 0) < 0
-                              ? `${formatAmount(Math.abs(row.periodNetQty ?? 0))}-`
-                              : formatAmount(row.periodNetQty ?? 0)}
+                              ? `${formatQuantity(Math.abs(row.periodNetQty ?? 0))}-`
+                              : formatQuantity(row.periodNetQty ?? 0)}
                           </td>
                         ) : null}
                         <td>{formatAmount(row.buyTotal)}</td>
                         <td>{formatAmount(row.sellTotal)}</td>
                         <td>
-                          <b>{formatAmount(shownAvailable)}</b>
-                          {showSearchDetails && liveItem?.quantityUnverified ? (
-                            <small style={{ display: "block", color: "#b45309", fontSize: 9.5 }}>بحاجة إلى تسوية</small>
-                          ) : null}
+                          <b>{formatQuantity(shownAvailable)}</b>
+                          {row.quantityUnverified ? (
+                            <small style={{ display: "block", color: isActiveRow ? "#fff" : "#b45309", fontSize: 9.5 }}>كمية غير معتمدة</small>
+                          ) : row.costUnverified ? <small style={{ display: "block", color: isActiveRow ? "#fff" : "#b45309", fontSize: 9.5 }}>كمية معتمدة — التكلفة غير معتمدة</small> : null}
                         </td>
                         <td>{row.unit}</td>
-                        <td>{formatAmount(row.remainingValue)}</td>
+                        <td>{row.costUnverified && row.remainingValue > 0 ? <>
+                          <bdi>{formatAmount(row.remainingValue)}</bdi><small style={{display:"block"}}>قيمة المشتريات الجديدة فقط</small>
+                          {row.estimatedRemainingValue!==undefined ? <small style={{display:"block"}}>تقدير الإجمالي: {formatAmount(row.estimatedRemainingValue)}</small> : null}
+                        </> : row.estimatedRemainingValue!==undefined ? <>
+                          <bdi>{formatAmount(row.estimatedRemainingValue)}</bdi>
+                          <small style={{display:"block"}}>تقديرية — غير معتمدة</small>
+                        </> : row.costUnverified||row.quantityUnverified ? "غير معتمدة" : formatAmount(row.remainingValue)}</td>
                         <td>
                           {row.profit < 0 ? `${formatAmount(Math.abs(row.profit))}-` : formatAmount(row.profit)}
                         </td>
@@ -5450,7 +5686,7 @@ function InventoryReportPage({
             </div>
 
             {!searchActive ? (
-              <footer className="smart-mv-bottom-bar" data-testid="inventory-movements-footer">
+              <footer className={`smart-mv-bottom-bar${estimatedCurrencyTotals.length>0?" has-estimates":""}`} data-testid="inventory-movements-footer">
                 <label className="smart-mv-show-all-toggle">
                   <input
                     type="checkbox"
@@ -5460,17 +5696,21 @@ function InventoryReportPage({
                   <span>إظهار كل أصناف الدليل ({ctx.inventory.length})</span>
                 </label>
                 <div className="smart-mv-bottom-center">
-                  كمية المتبقي : <bdi>{formatAmount(totalRemainingQty)}</bdi>
+                  كمية المتبقي : <bdi>{formatQuantity(totalRemainingQty)}</bdi>
+                  {estimatedCurrencyTotals.length>0&&<div data-testid="inventory-estimated-value">
+                    قيمة المتبقي التقديرية : {estimatedCurrencyTotals.map(t=>`${formatAmount(t.value)} ${t.currency}`).join(" • ")}
+                    <small style={{display:"block"}}>للأرصدة غير المعتمدة — حسب أساس السعر المختار</small>
+                  </div>}
                   {multiCurrencyTotals ? (
                     <>
                       {" | "}
                       {multiCurrencyTotals
-                        .map((ct) => `${formatAmount(ct.totalRemainingValue)} ${ct.currency}`)
+                        .map((ct) => `${estimatedCurrencyTotals.length>0?"المعتمدة: ":""}${formatAmount(ct.totalRemainingValue)} ${ct.currency}`)
                         .join(" • ")}
                     </>
                   ) : (
                     <>
-                      {" | "}قيمة المتبقي : <bdi>{formatAmount(totals.totalRemainingValue)}</bdi>
+                      {" | "}{estimatedCurrencyTotals.length>0?"قيمة المتبقي المعتمدة":"قيمة المتبقي"} : <bdi>{formatAmount(totals.totalRemainingValue)}</bdi>
                     </>
                   )}
                 </div>
@@ -5487,21 +5727,20 @@ function InventoryReportPage({
           <div className="center-modal-layer" data-testid="item-movements-modal">
             <button
               className="center-modal-backdrop"
-              onClick={() => setActiveMovementItem(null)}
+              onClick={closeItemMovements}
               aria-label="إغلاق حركة الصنف"
             />
             <section
-              className="account-groups-modal"
+              className="account-groups-modal item-history-dialog"
               role="dialog"
               aria-modal="true"
               aria-labelledby="item-moves-title"
-              style={{ maxWidth: 560, maxHeight: "82vh", display: "flex", flexDirection: "column" }}
             >
               <header className="smart-modal-header" style={{ flexShrink: 0 }}>
                 <button
                   type="button"
                   className="smart-modal-close"
-                  onClick={() => setActiveMovementItem(null)}
+                  onClick={closeItemMovements}
                   aria-label="إغلاق"
                 >
                   <Cross2Icon />
@@ -5509,11 +5748,18 @@ function InventoryReportPage({
                 <h2 id="item-moves-title">حركة صنف: {activeMovementItem.name}</h2>
                 <span className="smart-modal-spacer" aria-hidden="true" />
               </header>
-              <div style={{ padding: "8px 12px", overflowY: "auto", flex: 1, minHeight: 0 }}>
-                {loadingMoves ? (
+              <div className="item-history-scope" data-testid="item-history-scope">
+                <div className="item-history-scope-actions" role="group" aria-label="نطاق حركة الصنف">
+                  <button className={`nasqo-aux-toggle${itemHistoryScope === "report" ? " is-expanded" : ""}`} aria-pressed={itemHistoryScope === "report"} onClick={()=>{keyboard.hide();setItemHistoryScope("report");}}>فلاتر التقرير</button>
+                  <button className={`nasqo-aux-toggle${itemHistoryScope === "all" ? " is-expanded" : ""}`} aria-pressed={itemHistoryScope === "all"} onClick={()=>{keyboard.hide();setItemHistoryScope("all");}}>سجل الصنف كاملًا</button>
+                </div>
+                <p>{itemHistoryScope === "all" ? "جميع المخازن والعملات والتواريخ — فلاتر التقرير الأصلي محفوظة" : `المخزن: ${ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name || "جميع المخازن"} · العملة: ${selectedCurrency} · الفترة: ${formatDateRangeLabel(fromDate,toDate) || "كامل السجل"}`}</p>
+              </div>
+              <MobileScroll className="item-history-scroll"><div className="item-history-body">
+                {loadingMoves && itemMoves.length === 0 ? (
                   <NasqoBrandLoader size="sm" label="جاري جلب سجل الحركات..." />
-                ) : itemMoves.length === 0 ? (
-                  <p className="cash-empty">لا توجد فواتير أو تحويلات مخزنية مرتبطة بهذا الصنف.</p>
+                ) : itemMoves.length === 0 && !itemMovesError ? (
+                  <p className="cash-empty">لا توجد حركات لهذا الصنف ضمن المخزن والعملة والفترة المحددة.</p>
                 ) : (
                   <table className="account-groups-table" style={{ width: "100%", fontSize: 11 }}>
                     <thead>
@@ -5528,7 +5774,7 @@ function InventoryReportPage({
                     </thead>
                     <tbody>
                       {itemMoves.map((mv, idx) => (
-                        <tr key={`${mv.refId}-${idx}`}>
+                        <tr key={mv.movementId ?? `${mv.refId}-${idx}`} data-testid="item-movement-row" data-movement-id={mv.movementId}>
                           <td>{mv.date || "—"}</td>
                           <td>
                             {mv.label} {mv.entryNumber ? `#${mv.entryNumber}` : ""}
@@ -5536,18 +5782,34 @@ function InventoryReportPage({
                           <td>{mv.accountName}</td>
                           <td>{mv.warehouseName}</td>
                           <td style={{ color: mv.effectQty < 0 ? "#dc2626" : "#059669", fontWeight: 700 }}>
-                            {formatAmount(mv.quantity)} {mv.unit}
+                            {formatQuantity(mv.quantity)} {mv.unit}
                           </td>
-                          <td>{mv.price > 0 ? formatAmount(mv.price) : "—"}</td>
+                          <td>{mv.price > 0 ? <><bdi>{formatAmount(mv.price)}</bdi><small className="item-history-currency">{mv.currency}</small></> : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 )}
-              </div>
+                {itemMovesError ? (
+                  <div role="alert" data-testid="item-movements-error">
+                    <p>{itemMovesError}</p>
+                    <button type="button" className="load-more-list-btn" data-testid="item-movements-retry"
+                      disabled={loadingMoves}
+                      onClick={() => void loadItemMovements(itemMovesPage?.nextOffset ?? 0, movementGeneration.current)}>
+                      إعادة المحاولة
+                    </button>
+                  </div>
+                ) : itemMovesPage?.hasMore ? (
+                  <button type="button" className="load-more-list-btn" data-testid="item-movements-load-more"
+                    disabled={loadingMoves}
+                    onClick={() => void loadItemMovements(itemMovesPage.nextOffset!, movementGeneration.current)}>
+                    {loadingMoves ? "جاري تحميل المزيد..." : "عرض المزيد من الحركات"}
+                  </button>
+                ) : null}
+              </div></MobileScroll>
               <footer className="account-groups-footer" style={{ flexShrink: 0 }}>
-                <span>إجمالي الحركات المعروضة: {itemMoves.length}</span>
-                <button type="button" className="ag-btn close" onClick={() => setActiveMovementItem(null)}>
+                <span data-testid="item-movements-count">الحركات المعروضة: {itemMoves.length}{itemMovesPage ? ` من ${itemMovesPage.totalCount}` : ""}</span>
+                <button type="button" className="ag-btn close" onClick={closeItemMovements}>
                   إغلاق
                 </button>
               </footer>
@@ -5948,9 +6210,13 @@ function DailyJournalPage({ flow }: { flow: FlowControls }) {
                       title="نقل إلى سلة المحذوفات"
                       style={{ color: "#c91b08" }}
                       onClick={async () => {
-                        await setLedgerDeleted(ctx.uid, item.id, true);
-                        triggerHaptic("warning");
-                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        try {
+                          await setLedgerDeleted(ctx.uid, item.id, true);
+                          triggerHaptic("warning");
+                          ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        } catch (error) {
+                          ctx.showToast(error instanceof Error ? error.message : "تعذر نقل العملية إلى السلة");
+                        }
                       }}
                     >
                       <TrashIcon />
@@ -5989,7 +6255,60 @@ type DraftInvoiceRow = {
   quantity: string;
   price: string;
   discount: string;
+  priceEdited?: boolean;
+  priceLookupKey?: string;
+  priceSuggested?: boolean;
 };
+
+type InvoiceUiDraft = {
+  cashier?: boolean;
+  version: 1;
+  sourceSha?: string;
+  intent: InvoiceIntent;
+  kindOverride?: "purchase" | "sale";
+  accountId: string;
+  editingEntryId?: string;
+  entryId: string;
+  fields: Record<string, unknown>;
+};
+
+function isInvoiceUiDraft(value: unknown): value is InvoiceUiDraft {
+  if (!value || typeof value !== "object") return false;
+  const draft = value as InvoiceUiDraft;
+  const f = draft.fields;
+  if (draft.version !== 1 || !["invoice", "return", "quote", "order"].includes(draft.intent) ||
+      typeof draft.accountId !== "string" || !/^[A-Za-z0-9:_-]{1,140}$/.test(draft.entryId) ||
+      (draft.editingEntryId !== undefined && typeof draft.editingEntryId !== "string") ||
+      (draft.sourceSha !== undefined && (typeof draft.sourceSha !== "string" || !/^[a-f0-9]{64}$/.test(draft.sourceSha))) ||
+      !f || typeof f !== "object") return false;
+  if (!["content", "payment", "kind", "amount", "note", "documentNumber", "entryNumber", "entryDate", "expenseCategory", "currency", "exchangeRate", "warehouseId", "accountId", "itemSearch", "localTaxAmount", "localTaxMode", "localOriginalId"].every((key) => typeof f[key] === "string")) return false;
+  return f.accountId === draft.accountId && ["amount", "rate"].includes(String(f.localTaxMode)) &&
+    (f.cashboxId === undefined || (typeof f.cashboxId === "number" && Number.isSafeInteger(f.cashboxId))) &&
+    ["items", "free"].includes(String(f.content)) && ["cash", "credit"].includes(String(f.payment)) &&
+    ["purchase", "sale"].includes(String(f.kind)) && typeof f.isReturn === "boolean" &&
+    (f.freeAmountOnly === undefined || typeof f.freeAmountOnly === "boolean") &&
+    (f.freeRows === undefined || (Array.isArray(f.freeRows) && f.freeRows.length <= 150 &&
+      f.freeRows.every((row) => row && ["rowId", "itemName", "unit", "quantity", "price", "discount"].every((key) => typeof row[key] === "string") && !row.inventoryItemId))) &&
+    Array.isArray(f.rows) && f.rows.length <= 500 && f.rows.every((row) => row &&
+      ["rowId", "itemName", "unit", "quantity", "price", "discount"].every((key) => typeof row[key] === "string") &&
+      (row.inventoryItemId === undefined || typeof row.inventoryItemId === "string") &&
+      (row.unitNum === undefined || [1, 2, 3].includes(row.unitNum))) &&
+    f.localReturnQty !== null && typeof f.localReturnQty === "object" &&
+    Object.values(f.localReturnQty).every((quantity) => typeof quantity === "string");
+}
+
+function canRestoreInvoiceDraft(draft: InvoiceUiDraft, records: Pick<LiveWorkspaceState,
+  "accounts" | "ledger" | "warehouses" | "inventory" | "cashboxes" | "currencyCodes" | "workspace">): boolean {
+  const fields = draft.fields;
+  return legacyCopySourceMatches(draft, records.workspace?.legacySourceSha) &&
+    (!draft.accountId || records.accounts.some((record) => record.id === draft.accountId)) &&
+    (!draft.editingEntryId || records.ledger.some((record) => record.id === draft.editingEntryId && !record.deleted)) &&
+    (fields.content === "free" || !fields.warehouseId || records.warehouses.some((record) => record.id === fields.warehouseId)) &&
+    (fields.cashboxId === undefined || records.cashboxes.some((record) => record.id === fields.cashboxId)) &&
+    (!fields.localOriginalId || records.ledger.some((record) => record.id === fields.localOriginalId && !record.deleted)) &&
+    records.currencyCodes.includes(String(fields.currency)) &&
+    (fields.content === "free" || (fields.rows as DraftInvoiceRow[]).every((row) => !row.inventoryItemId || records.inventory.some((record) => record.id === row.inventoryItemId)));
+}
 
 function stripAutoLineSummary(details: string): string {
   const trimmed = details.trim();
@@ -6003,7 +6322,8 @@ function unitPriceForProduct(item: InventoryItemRecord, unitNum: 1 | 2 | 3, kind
   const c3 = item.count3 && item.count3 > 0 ? item.count3 : 1;
   const mult = unitNum === 2 ? c2 : unitNum === 3 ? c2 * c3 : 1;
   if (kind === "purchase") {
-    return item.avgCost > 0 ? Math.round(item.avgCost * mult * 100) / 100 : 0;
+    const reference = item.costUnverified || item.quantityUnverified ? getCatalogReferenceCost(item) ?? 0 : item.avgCost;
+    return reference > 0 ? Math.round(reference * mult * 100) / 100 : 0;
   }
   if (unitNum === 2 && item.sprice2 && item.sprice2 > 0) return item.sprice2;
   if (unitNum === 3 && item.sprice3 && item.sprice3 > 0) return item.sprice3;
@@ -6012,6 +6332,7 @@ function unitPriceForProduct(item: InventoryItemRecord, unitNum: 1 | 2 | 3, kind
 }
 
 function InvoiceModal({
+  cashier = false,
   open,
   initialAccount,
   editingEntry,
@@ -6020,6 +6341,7 @@ function InvoiceModal({
   onClose,
   onAddAccount,
 }: {
+  cashier?: boolean;
   open: boolean;
   initialAccount?: AccountRecord;
   editingEntry?: LedgerEntryRecord;
@@ -6029,52 +6351,107 @@ function InvoiceModal({
   onAddAccount: () => void;
 }) {
   const ctx = useWorkspace();
+  const cashierPrefs = cashier && !editingEntry ? ctx.workspace?.cashierSettings : undefined;
+  const defaults = useRef(ctx.workspace?.referenceDefaults).current;
+  const initialReferenceAccount = initialAccount ?? ctx.accounts.find(a=>a.id===(cashier ? cashierPrefs?.accountId ?? defaults?.accountId : defaults?.accountId));
+  const initialCurrency = editingEntry?.currency ?? cashierPrefs?.currency ?? initialReferenceAccount?.currency ?? ctx.workspace?.defaultCurrency ?? "ريال";
+
+  const [restoredDraft] = useState(() => {
+    if (import.meta.env.VITE_NASQO_HYBRID !== "1") return null;
+    const saved = readUiState<InvoiceUiDraft | null>(ctx.uid, "invoice-draft", null, isInvoiceUiDraft);
+    if (!saved || saved.intent !== intent || saved.editingEntryId !== editingEntry?.id ||
+        saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? initialReferenceAccount?.id ?? "")) return null;
+    if (!canRestoreInvoiceDraft(saved, ctx)) return null;
+    return saved;
+  });
+  const restoreField = <T,>(name: string, fallback: T): T => restoredDraft ? restoredDraft.fields[name] as T ?? fallback : fallback;
   const initialContent: "items" | "free" =
     editingEntry?.invoiceContent === "free" ? "free" : "items";
   const initialPayment: "cash" | "credit" = editingEntry
     ? editingEntry.payment === "cash"
       ? "cash"
       : "credit"
-    : initialAccount?.isCashAccount
+    : cashier ? "cash" : initialAccount?.isCashAccount || initialAccount?.note?.startsWith("nasqo:default:")
       ? "cash"
       : "credit";
   const initialKind: "purchase" | "sale" =
-    kindOverride ?? (initialAccount?.category === "sales" ? "sale" : "purchase");
+    kindOverride ?? (editingEntry ? ((editingEntry.direction === "debit") !== (editingEntry.kind === "return") ? "sale" : "purchase") : (initialAccount?.category === "sales" ? "sale" : "purchase"));
 
-  const [content, setContent] = useState<"items" | "free">(initialContent);
-  const [payment, setPayment] = useState<"cash" | "credit">(initialPayment);
-  const [kind, setKind] = useState<"purchase" | "sale">(initialKind);
-  const [isReturn, setReturn] = useState(editingEntry ? editingEntry.kind === "return" : intent === "return");
-  const [amount, setAmount] = useState(editingEntry ? String(editingEntry.amount || "") : "");
-  const [note, setNote] = useState(editingEntry ? stripAutoLineSummary(editingEntry.details) : "");
-  const [documentNumber, setDocumentNumber] = useState(editingEntry?.documentNumber ?? "");
-  const [entryNumber, setEntryNumber] = useState(editingEntry ? String(editingEntry.entryNumber) : "");
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const draftKind=editingEntry?.kind==="quote"||editingEntry?.kind==="order" ? editingEntry.kind
+    : intent==="quote"||intent==="order" ? intent : null;
+  const localDraft=hybridLocal&&draftKind!==null&&!editingEntry?.deleted&&(!editingEntry||editingEntry.localDraft===true);
+  const metadataOnly=hybridLocal&&editingEntry?.kind==="invoice"&&editingEntry.postingStatus==="posted"&&
+    !editingEntry.deleted&&editingEntry.journalLines?.length;
+  const [localTaxAmount,setLocalTaxAmount] = useState(restoreField("localTaxAmount", editingEntry?.taxAmount==null?"":String(editingEntry.taxAmount)));
+  const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">(restoreField("localTaxMode", "amount"));
+  const [localOriginalId,setLocalOriginalId] = useState(restoreField("localOriginalId", ""));
+  const [localReturnQty,setLocalReturnQty] = useState<Record<string,string>>(restoreField("localReturnQty", {}));
+  const [content, setContent] = useState<"items" | "free">(restoreField("content", initialContent));
+  const [payment, setPayment] = useState<"cash" | "credit">(restoreField("payment", initialPayment));
+  const [kind, setKind] = useState<"purchase" | "sale">(restoreField("kind", initialKind));
+  const [isReturn, setReturn] = useState(restoreField("isReturn", editingEntry ? editingEntry.kind === "return" : intent === "return"));
+  const [amount, setAmount] = useState(restoreField("amount", editingEntry ? String(editingEntry.amount || "") : ""));
+  const [note, setNote] = useState(restoreField("note", editingEntry ? stripAutoLineSummary(editingEntry.details) : ""));
+  const [documentNumber, setDocumentNumber] = useState(restoreField("documentNumber", editingEntry?.documentNumber ?? ""));
+  const [entryNumber, setEntryNumber] = useState(restoreField("entryNumber", editingEntry ? String(editingEntry.entryNumber) : ""));
   const [entryDate, setEntryDate] = useState(
-    editingEntry?.entryDate || new Date().toISOString().slice(0, 10),
+    restoreField("entryDate", editingEntry?.entryDate || new Date().toISOString().slice(0, 10)),
   );
-  const [expenseCategory, setExpenseCategory] = useState(editingEntry?.expenseCategory ?? "");
+  const [expenseCategory, setExpenseCategory] = useState(restoreField("expenseCategory", editingEntry?.expenseCategory ?? ""));
   const [currency, setCurrency] = useState<CurrencyCode>(
-    editingEntry?.currency ?? initialAccount?.currency ?? "ريال",
+    restoreField("currency", initialCurrency),
   );
   const [exchangeRate, setExchangeRate] = useState(
-    editingEntry ? String(editingEntry.exchangeRate || 1) : "1",
+    restoreField("exchangeRate", editingEntry ? String(editingEntry.exchangeRate || 1) : "1"),
   );
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    () => editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
+    () => restoredDraft ? restoredDraft.fields.cashboxId as number | undefined : editingEntry ? editingEntry.cashboxId : resolveCashbox(defaults,ctx.cashboxes,initialCurrency,initialReferenceAccount,cashierPrefs?.cashboxId),
   );
   const [warehouseId, setWarehouseId] = useState(
-    editingEntry?.warehouseId ||
-      ctx.warehouses.find((w) => w.isDefault)?.id ||
-      ctx.warehouses[0]?.id ||
-      "",
+    restoreField("warehouseId", editingEntry ? editingEntry.warehouseId ?? "" : (cashier ? cashierPrefs?.warehouseId ?? defaults?.warehouseId ?? "" :
+      (defaults ? defaults.warehouseId : ctx.warehouses.find((w) => w.isDefault)?.id) ||
+      "")),
   );
   const [accountId, setAccountId] = useState(
-    editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
+    restoreField("accountId", editingEntry?.accountId ?? initialAccount?.id ?? initialReferenceAccount?.id ?? ""),
   );
-  const [itemSearch, setItemSearch] = useState("");
-  const [rows, setRows] = useState<DraftInvoiceRow[]>([
+  const priceContext = useRef({ open, kind, warehouseId, currency });
+  priceContext.current = { open, kind, warehouseId, currency };
+  const manualCashbox = useRef(Boolean(editingEntry || restoredDraft));
+  const chooseCashbox = (id:number|undefined) => { manualCashbox.current=true;setCashboxId(id); };
+  const chooseAccount = (id:string) => {
+    setAccountId(id);
+    if(!manualCashbox.current) setCashboxId(resolveCashbox(defaults,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id),cashierPrefs?.cashboxId));
+  };
+  const chooseKind = (value:"purchase"|"sale") => {
+    setKind(value);
+    const current = ctx.accounts.find(a=>a.id===accountId);
+    if (!editingEntry && current?.note?.startsWith("nasqo:default:")) {
+      const target = ctx.accounts.find(a=>a.currency===currency && a.note===`nasqo:default:cash-${value==="purchase"?"supplier":"customer"}`);
+      if(target) chooseAccount(target.id);
+    }
+  };
+  const chooseCurrency = (value:CurrencyCode) => {
+    setCurrency(value);
+    if(manualCashbox.current) setCashboxId(eligibleCashbox(ctx.cashboxes,cashboxId,value));
+    else setCashboxId(resolveCashbox(defaults,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId),cashierPrefs?.cashboxId));
+  };
+  const [itemSearch, setItemSearch] = useState(restoreField("itemSearch", ""));
+  const [quickPage, setQuickPage] = useState(0);
+  const quickItems = (cashierPrefs?.quickItemIds ?? []).map(id => ctx.inventory.find(i => i.id === id && i.isActive !== false)).filter((i): i is InventoryItemRecord => Boolean(i));
+  const [rows, setRows] = useState<DraftInvoiceRow[]>(restoreField("rows", [
     { rowId: "row_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
-  ]);
+  ]));
+  const [freeRows, setFreeRows] = useState<DraftInvoiceRow[]>(restoreField("freeRows", [
+    { rowId: "free_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
+  ]));
+  const [freeAmountOnly, setFreeAmountOnly] = useState(restoreField("freeAmountOnly",
+    Boolean(editingEntry?.invoiceContent === "free" || (restoredDraft?.fields.content === "free" && !restoredDraft.fields.freeRows))));
+  const updateFreeRow = (id: string, patch: Partial<DraftInvoiceRow>) => {
+    setFormError(null);
+    setFreeRows((current) => current.map((row) => row.rowId === id ? { ...row, ...patch } : row));
+  };
   const [loadingLines, setLoadingLines] = useState(Boolean(editingEntry));
   const [linesLoadedEmpty, setLinesLoadedEmpty] = useState(false);
   const [priceHint, setPriceHint] = useState<{
@@ -6093,29 +6470,77 @@ function InvoiceModal({
   const accountSelectRef = useRef<HTMLButtonElement>(null);
   const freeAmountInputRef = useRef<HTMLInputElement>(null);
   const itemSearchInputRef = useRef<HTMLInputElement>(null);
+  const invoiceErrorRef = useRef<HTMLDivElement>(null);
   const rowNameRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowQtyRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const rowPriceRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const draftNewEntryIdRef = useRef<string>("");
+  const draftNewEntryIdRef = useRef<string>(restoredDraft?.entryId ?? `inv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
   const keyboard = useKeyboard();
   const now = useMemo(
     () => new Intl.DateTimeFormat("ar", { weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date()),
     [],
   );
 
-  useEffect(() => {
-    if (!cashboxId && ctx.cashboxes[0]?.id) {
-      setCashboxId(ctx.cashboxes[0].id);
+  const [leavePrompt, setLeavePrompt] = useState(false);
+  const fields = { content, payment, kind, isReturn, amount, note, documentNumber, entryNumber,
+    entryDate, expenseCategory, currency, exchangeRate, cashboxId, warehouseId, accountId,
+    itemSearch, rows, freeRows, freeAmountOnly, localTaxAmount, localTaxMode, localOriginalId, localReturnQty };
+  const fieldJson = JSON.stringify(fields);
+  const initialFields = useRef(fieldJson);
+  if (loadingLines && !restoredDraft) initialFields.current = fieldJson;
+  const dirty = Boolean(restoredDraft) || fieldJson !== initialFields.current;
+  const completed = useRef(false);
+  const currentDraft: InvoiceUiDraft = { version: 1, cashier, intent, kindOverride, accountId,
+    sourceSha: restoredDraft?.sourceSha ?? legacyCopySourceSha(editingEntry?.id),
+    editingEntryId: editingEntry?.id, entryId: draftNewEntryIdRef.current, fields };
+  const latestDraft = useRef(currentDraft);
+  latestDraft.current = currentDraft;
+  const persistDraft = () => writeUiState(ctx.uid, "invoice-draft", latestDraft.current);
+  const pendingReceipt = () => {
+    try { return hybridLocal && new PendingSubmissionStore().has(ctx.uid, draftNewEntryIdRef.current); }
+    catch { return true; }
+  };
+  const finishClose = () => {
+    completed.current = true;
+    if (hybridLocal) removeUiState(ctx.uid, "invoice-draft");
+    onClose();
+  };
+  const requestClose = () => {
+    keyboard.hide();
+    if (saving || pendingReceipt()) {
+      ctx.showToast("تأكيد الحفظ غير مكتمل. تحقّق من السجل قبل إغلاق المستند أو إعادة الحفظ.");
+      return;
     }
-  }, [cashboxId, ctx.cashboxes]);
+    if (dirty) setLeavePrompt(true);
+    else finishClose();
+  };
+  useBackLayer(open, () => {
+    if (leavePrompt) setLeavePrompt(false);
+    else requestClose();
+    return true;
+  }, 100);
+  useLayoutEffect(() => {
+    if (!hybridLocal || !open || !dirty || completed.current) return;
+    persistDraft();
+    const checkpoint = () => { if (!completed.current) persistDraft(); };
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [hybridLocal, open, dirty, fieldJson, ctx.uid]);
 
   useEffect(() => {
     if (!open) {
       setFormError(null);
+
       return;
     }
     setFormError(null);
-    if (!editingEntry) {
+    if (!editingEntry || restoredDraft) {
       if (!draftNewEntryIdRef.current) {
         draftNewEntryIdRef.current = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       }
@@ -6135,7 +6560,8 @@ function InvoiceModal({
           if (lines.some((l) => (l.discount ?? 0) > 0)) {
             setShowDiscounts(true);
           }
-          setRows(
+          if (editingEntry.invoiceContent === "free") setFreeAmountOnly(false);
+          (editingEntry.invoiceContent === "free" ? setFreeRows : setRows)(
             lines.map((l, idx) => {
               const linked = l.inventoryItemId
                 ? ctx.inventory.find((i) => i.id === l.inventoryItemId)
@@ -6169,7 +6595,7 @@ function InvoiceModal({
     return () => {
       active = false;
     };
-  }, [ctx.inventory, ctx.uid, editingEntry, open]);
+  }, [ctx.uid, editingEntry?.id, open, restoredDraft]);
 
   const inventoryById = useMemo(
     () => (open ? new Map(ctx.inventory.map((i) => [i.id, i])) : new Map<string, InventoryItemRecord>()),
@@ -6178,27 +6604,10 @@ function InvoiceModal({
 
   const matchingInventory = useMemo(() => {
     if (!open) return [];
-    const q = normalizeArabicSearch(itemSearch);
-    if (!q) return [];
-    const sorted = [...ctx.inventory].filter((item) =>
-      matchesArabicSearch(
-        `${item.name} ${item.sku ?? ""} ${item.legacyId ?? ""} ${item.id} ${item.unit} ${item.unit2 ?? ""} ${item.unit3 ?? ""}`,
-        q,
-      ),
-    );
-    sorted.sort((a, b) => {
-      const aExact = a.sku?.toLowerCase() === q || String(a.legacyId ?? "") === q ? 0 : 1;
-      const bExact = b.sku?.toLowerCase() === q || String(b.legacyId ?? "") === q ? 0 : 1;
-      if (aExact !== bExact) return aExact - bExact;
-      const aPrefix = normalizeArabicSearch(a.name).startsWith(q) ? 0 : 1;
-      const bPrefix = normalizeArabicSearch(b.name).startsWith(q) ? 0 : 1;
-      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
-      const aWh = warehouseId && a.warehouseId === warehouseId ? 0 : 1;
-      const bWh = warehouseId && b.warehouseId === warehouseId ? 0 : 1;
-      return aWh - bWh;
-    });
-    return sorted.slice(0, 10);
-  }, [ctx.inventory, itemSearch, open, warehouseId]);
+    // Item master selection is independent of warehouse balance verification.
+    // Posting validates the selected warehouse later, without leaving this form.
+    return findInvoiceCatalogItems(ctx.inventory, itemSearch, warehouseId, hybridLocal);
+  }, [ctx.inventory, itemSearch, open, warehouseId, hybridLocal]);
 
   const parsedLegacyRows = useMemo<DraftInvoiceRow[]>(() => {
     if (!open) return [];
@@ -6235,12 +6644,21 @@ function InvoiceModal({
 
   if (!open) return null;
 
-  const selectedAccount = ctx.accounts.find((a) => a.id === accountId) ?? ctx.accounts[0];
+  const invoiceAccounts=(hybridLocal||cashier)&&!isReturn?ctx.accounts.filter(a=>a.currency===currency && !a.isCashAccount && !a.note?.startsWith("nasqo:system:")):ctx.accounts;
+  const invoiceCashboxes=(hybridLocal||cashier)?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
+  const effectiveCashboxId=eligibleCashbox(ctx.cashboxes,cashboxId,currency);
+  const selectedAccount = invoiceAccounts.find((a) => a.id === accountId);
   const selectedWarehouse = ctx.warehouses.find((w) => w.id === warehouseId);
   const accountSummary = selectedAccount
     ? computeAccountSummary(selectedAccount, ctx.ledger, currency)
     : null;
 
+  const validLocalQuantity = (q: number) => Number.isFinite(q) && q >= 0 && q <= 10000000 && Math.abs(q * 1000 - Math.round(q * 1000)) <= 0.00001;
+  const localGross = (q: number, p: number) => {
+    const ticks = Math.round(q * 1000), cents = Math.round(p * 100);
+    return validLocalQuantity(q) && Number.isSafeInteger(cents) && cents >= 0
+      ? Number((BigInt(ticks) * BigInt(cents) + 500n) / 1000n) / 100 : q * p;
+  };
   const validLines: InvoiceLineInput[] = rows
     .filter((r) => r.itemName.trim().length > 0 && parseArabicNumber(r.quantity) > 0)
     .map((r) => {
@@ -6256,14 +6674,33 @@ function InvoiceModal({
         quantity: qty,
         price,
         discount,
-        total: Math.round(Math.max(0, qty * price - discount) * 100) / 100,
+        total: Math.round(Math.max(0, (hybridLocal ? localGross(qty, price) : qty * price) - discount) * 100) / 100,
       };
     });
 
+  const freeLines: InvoiceLineInput[] = freeAmountOnly ? [] : freeRows
+    .filter((r) => r.itemName.trim().length > 0)
+    .map((r) => ({ itemName: r.itemName.trim(), unit: r.unit.trim() || "حبة", unitNum: 1,
+      quantity: parseArabicNumber(r.quantity), price: parseArabicNumber(r.price), discount: 0,
+      total: localGross(parseArabicNumber(r.quantity), parseArabicNumber(r.price)) }));
+  const freeTotal = freeLines.reduce((sum, l) => sum + Math.round(l.total * 100), 0) / 100;
+  const submittedLines = content === "items" ? validLines : freeLines;
   const computedItemsTotal = validLines.reduce((sum, l) => sum + l.total, 0);
   const computedItemsDiscount = validLines.reduce((sum, l) => sum + (l.discount ?? 0), 0);
   const computedItemsQty = validLines.reduce((sum, l) => sum + l.quantity, 0);
-  const effectiveAmount = content === "items" && validLines.length > 0 ? computedItemsTotal : parseArabicNumber(amount);
+  const parsedTax = parseArabicNumber(localTaxAmount);
+  const taxBps = Math.round(parsedTax*100);
+  const validTaxRate = Number.isFinite(parsedTax) && parsedTax>=0 && parsedTax<=100 && Math.abs(parsedTax*100-taxBps)<0.000001;
+  const netMinor = Math.round(computedItemsTotal*100);
+  const calculatedTax = validTaxRate && Number.isSafeInteger(netMinor) && netMinor>=0
+    ? Number((BigInt(netMinor)*BigInt(taxBps)+5000n)/10000n)/100 : 0;
+  const taxTotal = hybridLocal && content === "items" && !isReturn
+    ? localTaxMode==="rate"?calculatedTax:Math.max(0,parsedTax):0;
+  const effectiveAmount = content === "items" && validLines.length > 0
+    ? Math.round((computedItemsTotal + taxTotal)*100)/100 : content === "free" && !freeAmountOnly ? freeTotal : parseArabicNumber(amount);
+  const eligibleLocalReturns = ctx.ledger.filter(e=>e.kind==="invoice" && e.stockPosting &&
+    !e.deleted && !e.returnedById && e.stockSale === (kind === "sale"));
+  const localOriginal=eligibleLocalReturns.find(e=>e.id===localOriginalId);
 
   const applyParsedLegacyRows = () => {
     if (parsedLegacyRows.length === 0) return;
@@ -6273,7 +6710,20 @@ function InvoiceModal({
     ctx.showToast(`تم استخراج ${parsedLegacyRows.length} صنف من البيان؛ راجع الأسعار ثم احفظ.`);
   };
 
+  const historicalStockPending = (item: InventoryItemRecord) =>
+    hybridLocal && (item.quantityUnverified === true ||
+      (item.warehouseId !== warehouseId && item.legacyHistoricalQtyByWarehouse?.[warehouseId] !== undefined));
+  const newCatalogCard = (item: InventoryItemRecord) => item.catalogOnly === true &&
+    !item.warehouseId && item.quantity === 0 && item.avgCost === 0 &&
+    !item.quantityUnverified && !item.costUnverified;
+  const invoiceStockQty = (item: InventoryItemRecord) => hybridLocal
+    ? (newCatalogCard(item) || (kind === "purchase" && item.warehouseId !== warehouseId && !historicalStockPending(item)) ? 0 : historicalStockPending(item) || item.warehouseId !== warehouseId ? null : item.quantity)
+    : (item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0));
+  const invoiceStockStatus = (item: InventoryItemRecord) =>
+    historicalStockPending(item) ? "رصيد المخزن غير معتمد" : "الصنف غير مرتبط بالمخزن المحدد";
   const pickProductIntoInvoice = (item: InventoryItemRecord) => {
+    keyboard.hide();
+    setFormError(null);
     const defUnit: 1 | 2 | 3 =
       item.defaultUnit === 2 && item.unit2
         ? 2
@@ -6287,6 +6737,7 @@ function InvoiceModal({
           ? item.unit3
           : item.unit || "حبة";
     const suggestedPrice = unitPriceForProduct(item, defUnit, kind);
+    const lookupKey = `${Date.now()}-${Math.random()}`;
 
     let targetRowId = "";
     setRows((prev) => {
@@ -6302,8 +6753,9 @@ function InvoiceModal({
             ? {
                 ...r,
                 quantity: nextQty,
-                ...(suggestedPrice > 0 && !parseArabicNumber(r.price)
-                  ? { price: String(suggestedPrice) }
+                priceLookupKey: lookupKey,
+                ...(suggestedPrice > 0 && !parseArabicNumber(r.price) && !r.priceEdited
+                  ? { price: String(suggestedPrice), priceSuggested: true }
                   : {}),
               }
             : r,
@@ -6323,6 +6775,8 @@ function InvoiceModal({
         unitNum: defUnit,
         quantity: emptyIdx >= 0 ? prev[emptyIdx].quantity || "1" : "1",
         price: suggestedPrice > 0 ? String(suggestedPrice) : "",
+        priceLookupKey: lookupKey,
+        priceSuggested: suggestedPrice > 0,
         discount: emptyIdx >= 0 ? prev[emptyIdx].discount || "" : "",
       };
       if (emptyIdx >= 0) {
@@ -6347,6 +6801,14 @@ function InvoiceModal({
     });
     void fetchProductPriceStats(ctx.uid, item.id)
       .then((stats) => {
+        if (!priceContext.current.open || priceContext.current.kind !== kind || priceContext.current.warehouseId !== warehouseId || priceContext.current.currency !== currency) return;
+        if (kind === "purchase" && (stats.lastPurchasePrice ?? 0) > 0) {
+          const factor = defUnit === 1 ? 1 : defUnit === 2 ? item.count2 ?? 0 : (item.count2 ?? 0) * (item.count3 ?? 0);
+          const price = Math.round(stats.lastPurchasePrice! * factor * 100) / 100;
+          if (price > 0) setRows(current => current.map(row => row.priceLookupKey === lookupKey && row.inventoryItemId === item.id &&
+            (row.unitNum ?? 1) === defUnit && !row.priceEdited && (!parseArabicNumber(row.price) || row.priceSuggested === true)
+              ? { ...row, price: String(price), priceSuggested: true } : row));
+        }
         if (stats.txCount > 0) {
           setPriceHint({
             name: item.name,
@@ -6392,11 +6854,19 @@ function InvoiceModal({
         : nextUnitNum === 3 && item.unit3
           ? item.unit3
           : item.unit || "حبة";
-    const nextPrice = unitPriceForProduct(item, nextUnitNum, kind);
+    let nextPrice = unitPriceForProduct(item, nextUnitNum, kind);
+    if(kind === "purchase" && nextPrice <= 0 && parseArabicNumber(row.price) > 0){
+      const factor=(unit: number)=>unit===1?1:unit===2?item.count2??0:(item.count2??0)*(item.count3??0);
+      const previousFactor=factor(row.unitNum??1),nextFactor=factor(nextUnitNum);
+      if(previousFactor>0&&nextFactor>0)nextPrice=Math.round(parseArabicNumber(row.price)/previousFactor*nextFactor*100)/100;
+    }
     updateRow(row.rowId, {
       unitNum: nextUnitNum,
       unit: nextUnitName,
-      ...(nextPrice > 0 ? { price: String(nextPrice) } : {}),
+      priceLookupKey: undefined,
+      priceEdited: false,
+      priceSuggested: nextPrice > 0,
+      price: nextPrice > 0 ? String(nextPrice) : "",
     });
   };
 
@@ -6409,6 +6879,28 @@ function InvoiceModal({
   };
 
   const handleSave = async (mode: "save" | "whatsapp" | "print" = "save") => {
+    if (saving) return;
+    if (hybridLocal && !legacyCopySourceMatches(currentDraft, ctx.workspace?.legacySourceSha)) {
+      setFormError({ field: "submit", message: "تغير مصدر النسخة المستوردة؛ لا يمكن حفظ هذه المسودة في قاعدة أخرى. بقيت المسودة محفوظة." });
+      return;
+    }
+    if (hybridLocal && !persistDraft()) {
+      setFormError({ field: "submit", message: "تعذر حفظ حالة المستند محليًا؛ لم تُرسل عملية مالية." });
+      return;
+    }
+    if (hybridLocal && pendingReceipt()) {
+      setSaving(true);
+      try {
+        // The durable receipt guard only reads a fresh snapshot for this known ID.
+        await createLedgerEntry(ctx.uid, { id: draftNewEntryIdRef.current, accountId,
+          accountName: ctx.accounts.find((account) => account.id === accountId)?.name ?? "" });
+        finishClose();
+        ctx.showToast("تم التحقق من المستند المحفوظ سابقًا دون إعادة ترحيل.");
+      } catch (error) {
+        setFormError({ field: "submit", message: error instanceof Error ? error.message : "تعذر التحقق من نتيجة الحفظ" });
+      } finally { setSaving(false); }
+      return;
+    }
     const focusInvalid = (
       el: HTMLElement | null | undefined,
       errObj: NonNullable<typeof formError>,
@@ -6422,6 +6914,26 @@ function InvoiceModal({
       }
     };
 
+    if (hybridLocal && isReturn && !editingEntry) {
+      const original=eligibleLocalReturns.find(e=>e.id===localOriginalId);
+      if(!original){focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر الفاتورة المخزنية الأصلية للمرتجع."});return;}
+      const returnLines=(original.returnableLines??[]).map(l=>({itemId:l.itemId,quantity:parseArabicNumber(localReturnQty[l.itemId]??"0")}));
+      if(!returnLines.some(l=>l.quantity>0)||returnLines.some(l=>!validLocalQuantity(l.quantity)||l.quantity<0||l.quantity>(original.returnableLines?.find(x=>x.itemId===l.itemId)?.quantity??0))){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"حدد الكميات المراد إرجاعها ضمن الكمية المتبقية بالفاتورة."});return;
+      }
+      setSaving(true);setFormError(null);keyboard.hide();
+      try{
+        if(!draftNewEntryIdRef.current) draftNewEntryIdRef.current = "ret_"+Date.now()+"_"+Math.random().toString(36).slice(2,9);
+        const nextNum=maxNumericField(ctx.ledger,(e)=>e.entryNumber,1000)+1;
+        await createLedgerEntry(ctx.uid,{id:draftNewEntryIdRef.current,kind:"return",
+          originalInvoiceId:original.id,accountId:original.accountId,accountName:original.accountName,
+          returnLines:returnLines.filter(l=>l.quantity>0),
+          entryNumber:nextNum,entryDate:entryDate.trim()||new Date().toISOString().slice(0,10)});
+        triggerHaptic("success");ctx.showToast("تم ترحيل الكميات المرتجعة وعكس قيدها ومخزونها");finishClose();
+      }catch(err){setFormError({field:"submit",message:err instanceof Error?err.message:"تعذر حفظ المرتجع"});}
+      finally{setSaving(false);}
+      return;
+    }
     if (!selectedAccount) {
       focusInvalid(accountSelectRef.current, {
         field: "account",
@@ -6430,8 +6942,73 @@ function InvoiceModal({
       return;
     }
 
+    if(!editingEntry && !localDraft && !isReturn && content === "items" && !selectedWarehouse) {
+      focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر مخزنًا للفاتورة قبل الحفظ."}); return;
+    }
+    if(!editingEntry && !localDraft && !isReturn && payment === "cash" && !effectiveCashboxId) {
+      focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر صندوقًا نقديًا من عملة الفاتورة قبل الحفظ."}); return;
+    }
+    if(metadataOnly&&editingEntry){
+      setSaving(true);
+      try{
+        await updateLedgerEntry(ctx.uid,editingEntry.id,{accountId:editingEntry.accountId,accountName:editingEntry.accountName,
+          details:note.trim()===stripAutoLineSummary(editingEntry.details)?editingEntry.details:note.trim(),
+          documentNumber:documentNumber.trim()});
+        ctx.showToast("تم حفظ البيان والمرجع فقط؛ لم تتغير القيود أو الكميات.");
+        finishClose();
+      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
+      finally{setSaving(false);}
+      return;
+    }
+    if (hybridLocal && ((editingEntry && !localDraft) || isReturn || (draftKind!==null && !localDraft))) {
+      focusInvalid(accountSelectRef.current, {
+        field:"submit",message:"تعديل المستند المرحّل أو المستورد يتطلب مسار عكس معتمد.",
+      });
+      return;
+    }
+    if(hybridLocal && content==="items"){
+      const invalidLine = validLines.find((line) => {
+        const item = line.inventoryItemId ? inventoryById.get(line.inventoryItemId) : undefined;
+        return !item || (!localDraft && (historicalStockPending(item) || (kind !== "purchase" && item.costUnverified === true))) ||
+          (item.warehouseId !== warehouseId && !(kind === "purchase" && !isReturn && !historicalStockPending(item)));
+      });
+      if (invalidLine) {
+        const item = invalidLine.inventoryItemId ? inventoryById.get(invalidLine.inventoryItemId) : undefined;
+        const reason = !item ? "اختر الصنف من ملف الأصناف."
+          : newCatalogCard(item)
+            ? `الصنف «${item.name}» بطاقة جديدة بلا رصيد؛ سجّل فاتورة شراء في المخزن قبل البيع.`
+          : !localDraft && historicalStockPending(item)
+            ? `رصيد الصنف «${item.name}» غير معتمد للمخزن المحدد؛ لم يُرحّل أي قيد أو حركة مخزون.`
+            : !localDraft && item.costUnverified
+              ? `كمية الصنف «${item.name}» معتمدة؛ التكلفة غير معتمدة بعد، ولم يُرحّل أي قيد أو حركة مخزون.`
+            : `الصنف «${item.name}» غير مرتبط بالمخزن المحدد. اختر مخزنه الصحيح أو أعد اختيار الصنف لهذا المخزن قبل الحفظ.`;
+        setFormError({ field: "submit", message: `${reason} بقيت الفاتورة مفتوحة ويمكنك حفظ مسودة دون ترحيل.` });
+        keyboard.hide();
+        requestAnimationFrame(() => invoiceErrorRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+        return;
+      }
+      if((!localDraft&&currency!=="ريال") || !selectedWarehouse || !validLines.length ||
+        (localTaxMode==="rate"&&!validTaxRate) || (localTaxMode==="amount"&&parsedTax<0) ||
+        validLines.some(l=>!l.inventoryItemId || !validLocalQuantity(l.quantity) || ![1,2,3].includes(l.unitNum??1))){
+        focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن ووحدات الأصناف المعتمدة وكميات حتى ثلاث منازل عشرية وضريبة صالحة؛ العملة المحلية ريال."});
+        return;
+      }
+    }
     if (content === "free") {
-      if (parseArabicNumber(amount) <= 0) {
+      if (!freeAmountOnly) {
+        const numericText = (v: string) => /^(?:[0-9٠-٩۰-۹]+(?:[.٫][0-9٠-٩۰-۹]+)?|[.٫][0-9٠-٩۰-۹]+)$/.test(v.replace(/[,٬\s]/g, ""));
+        const badRow = freeRows.find((r) => !r.itemName.trim() || r.itemName.length > 200 ||
+          !numericText(r.price) || !numericText(r.quantity) || !validLocalQuantity(parseArabicNumber(r.quantity)) || parseArabicNumber(r.quantity) <= 0 ||
+          !Number.isFinite(parseArabicNumber(r.price)) || parseArabicNumber(r.price) < 0 || parseArabicNumber(r.price) > 10000000000 ||
+          Math.abs(parseArabicNumber(r.price) * 100 - Math.round(parseArabicNumber(r.price) * 100)) > 0.00001);
+        if (freeRows.length === 0 || badRow || !Number.isFinite(freeTotal) || freeTotal <= 0 || freeTotal > 10000000000) {
+          focusInvalid(badRow ? rowNameRefs.current[badRow.rowId] : null, {
+            field: "items", message: "أكمل اسم كل بند وكمية موجبة حتى ثلاث منازل عشرية وسعرًا حتى منزلتين؛ يجب أن يكون الإجمالي أكبر من صفر.",
+          });
+          return;
+        }
+      }
+      if (freeAmountOnly && parseArabicNumber(amount) <= 0) {
         focusInvalid(freeAmountInputRef.current, {
           field: "amount",
           message: "يجب إدخال إجمالي مبلغ أكبر من صفر قبل حفظ الفاتورة.",
@@ -6490,11 +7067,11 @@ function InvoiceModal({
             ? parsedEntryNum
             : maxNumericField(ctx.ledger, (e) => e.entryNumber, 1000) + 1;
       const entryKind =
-        intent === "quote" ? "quote" : intent === "order" ? "order" : isReturn ? "return" : "invoice";
+        draftKind ?? (isReturn ? "return" : "invoice");
       const typeLabel =
-        intent === "quote"
+        draftKind === "quote"
           ? "عرض سعر"
-          : intent === "order"
+          : draftKind === "order"
             ? "طلبية جديدة"
             : isReturn
               ? kind === "purchase"
@@ -6512,7 +7089,7 @@ function InvoiceModal({
 
       const itemsSummaryText =
         content === "items" && validLines.length > 0
-          ? `[ ${validLines.map((l) => `${l.itemName} (${formatAmount(l.quantity)} ${l.unit})`).join("، ")} ]`
+          ? `[ ${validLines.map((l) => `${l.itemName} (${formatQuantity(l.quantity)} ${l.unit})`).join("، ")} ]`
           : "";
       const finalDetails = [note.trim(), itemsSummaryText].filter(Boolean).join(" — ") || typeLabel;
       const cleanDate = entryDate.trim() || new Date().toISOString().slice(0, 10);
@@ -6520,24 +7097,26 @@ function InvoiceModal({
       const payload: Partial<LedgerEntryRecord> & { accountId: string; accountName: string } = {
         accountId: selectedAccount.id,
         accountName: selectedAccount.name,
-        ...(payment === "cash" && cashboxId ? { cashboxId } : { cashboxId: undefined }),
+         ...(payment === "cash" && effectiveCashboxId ? { cashboxId:effectiveCashboxId } : { cashboxId: undefined }),
         kind: entryKind,
         typeLabel,
         payment,
         direction,
         amount: effectiveAmount,
-        settledOnReceipt: payment === "cash",
+        ...(hybridLocal && content==="items" ? {taxAmount:taxTotal,
+          ...(localTaxMode==="rate"?{taxRateBps:taxBps}:{})}:{}),
+        settledOnReceipt: payment === "cash" && !localDraft,
         currency,
         exchangeRate: parseArabicNumber(exchangeRate) || 1,
         details: finalDetails,
         documentNumber: documentNumber.trim() || String(nextNum),
-        warehouseId: selectedWarehouse?.id ?? "",
-        warehouseName: selectedWarehouse?.name ?? "",
+        warehouseId: content === "items" ? selectedWarehouse?.id ?? "" : "",
+        warehouseName: content === "items" ? selectedWarehouse?.name ?? "" : "",
         invoiceContent: content,
         entryNumber: nextNum,
         deleted: editingEntry?.deleted ?? false,
         entryDate: cleanDate,
-        lines: content === "items" ? validLines : [],
+        lines: submittedLines,
         ...(kind === "purchase" && expenseCategory ? { expenseCategory } : {}),
       };
 
@@ -6545,7 +7124,7 @@ function InvoiceModal({
       if (editingEntry) {
         await updateLedgerEntry(ctx.uid, editingEntry.id, payload);
         triggerHaptic("success");
-        onClose();
+        finishClose();
         ctx.showToast(`تم تعديل ${typeLabel} رقم #${nextNum} بنجاح`);
       } else {
         targetId = await createLedgerEntry(ctx.uid, {
@@ -6553,7 +7132,7 @@ function InvoiceModal({
           ...payload,
         });
         triggerHaptic("success");
-        onClose();
+        finishClose();
         ctx.showToast(`تم حفظ ${typeLabel} رقم #${nextNum} بنجاح`);
       }
       if (mode === "print" && targetId) {
@@ -6609,7 +7188,7 @@ function InvoiceModal({
           accountName: selectedAccount.name,
           payment,
           currency,
-          lines: content === "items" ? validLines : [],
+          lines: submittedLines,
           totalAmount: effectiveAmount,
           totalDiscount: content === "items" ? computedItemsDiscount : 0,
           note: note.trim(),
@@ -6650,7 +7229,7 @@ function InvoiceModal({
 
   return (
     <div className="center-modal-layer" data-testid="invoice-modal">
-      <button className="center-modal-backdrop" aria-label="إغلاق الفاتورة" onClick={onClose} />
+      <button className="center-modal-backdrop" aria-label="إغلاق الفاتورة" onClick={requestClose} />
       <section className="invoice-modal invoice-modal-pro" role="dialog" aria-modal="true" aria-labelledby="invoice-title">
         <header className="invoice-modal-head">
           <div className="invoice-modal-head-title">
@@ -6679,13 +7258,14 @@ function InvoiceModal({
               type="button"
               className="invoice-modal-close"
               aria-label="إغلاق"
-              onClick={onClose}
+              onClick={requestClose}
             >
               <Cross2Icon />
             </button>
           </div>
         </header>
 
+        <fieldset disabled={saving || pendingReceipt()} style={{ display: "contents", border: 0 }}>
         <div className="invoice-modal-body">
           <div className="invoice-radio-bar invoice-segment-row">
             <div className="invoice-radio-group">
@@ -6736,7 +7316,7 @@ function InvoiceModal({
                 type="radio"
                 name="invoice-kind"
                 checked={kind === "purchase"}
-                onChange={() => setKind("purchase")}
+                onChange={() => chooseKind("purchase")}
               />
               <span>{isReturn ? "مردود شراء" : "فاتورة شراء"}</span>
             </label>
@@ -6745,7 +7325,7 @@ function InvoiceModal({
                 type="radio"
                 name="invoice-kind"
                 checked={kind === "sale"}
-                onChange={() => setKind("sale")}
+                onChange={() => chooseKind("sale")}
               />
               <span>{isReturn ? "مردود بيع" : "فاتورة بيع"}</span>
             </label>
@@ -6761,11 +7341,11 @@ function InvoiceModal({
 
           <div className="invoice-section-card">
             <AccountSelectCombobox
-              accounts={ctx.accounts}
+              accounts={invoiceAccounts}
               value={selectedAccount?.id ?? ""}
               onChange={(nextId) => {
                 if (formError?.field === "account") setFormError(null);
-                setAccountId(nextId);
+                chooseAccount(nextId);
               }}
               preferredCategories={
                 kind === "sale" ? ["sales", "clients", "shop"] : ["purchases", "shop"]
@@ -6781,11 +7361,37 @@ function InvoiceModal({
               listTestId="invoice-account-list"
               addTestId="invoice-account-add"
               invalid={formError?.field === "account"}
-              onAddAccount={onAddAccount}
+              onAddAccount={()=>ctx.openAccountReference(chooseAccount,false,currency)}
               addAccountAriaLabel="إضافة حساب للفاتورة"
               triggerRef={accountSelectRef}
             />
-
+            {hybridLocal && !editingEntry && isReturn && <label className="invoice-field-box">
+              <span>الفاتورة المخزنية الأصلية (مرتجع جزئي أو كامل)</span>
+              <select aria-label="الفاتورة الأصلية للمرتجع" value={localOriginalId} onChange={e=>{setLocalOriginalId(e.target.value);setLocalReturnQty({});}}>
+                <option value="">اختر الفاتورة الأصلية</option>
+                {eligibleLocalReturns.map(e=><option key={e.id} value={e.id}>#{e.entryNumber} — {e.accountName} — {formatAmount(e.amount)}</option>)}
+              </select>
+              {localOriginal?.returnableLines?.map(l=><label className="invoice-field-box" key={l.itemId}>
+                <span>{l.itemName} — المتبقي {l.quantity} {l.unit}</span>
+                <KeyboardInput aria-label={"كمية إرجاع "+l.itemName} inputMode="decimal"
+                  value={localReturnQty[l.itemId]??""} onChange={e=>setLocalReturnQty(prev=>({...prev,[l.itemId]:e.target.value}))}/>
+              </label>)}
+              {localOriginal&&<button type="button" onClick={()=>setLocalReturnQty(Object.fromEntries((localOriginal.returnableLines??[]).map(l=>[l.itemId,String(l.quantity)])))}>إرجاع كامل الكمية المتبقية</button>}
+              <small>المرتجع يستخدم السعر والخصم والضريبة والتكلفة الأصلية تلقائيًا. مرتجع الشراء يتطلب رصيدًا وتقييمًا كافيين.</small>
+            </label>}
+            {hybridLocal && !editingEntry && !isReturn && content==="items" && (
+              <details className="invoice-field-box">
+                <summary>الضريبة (اختياري){taxTotal>0?" — "+formatAmount(taxTotal)+" "+currency:""}</summary>
+                <label className="invoice-field-box"><span>طريقة إدخال الضريبة</span>
+                  <select aria-label="طريقة الضريبة" value={localTaxMode} onChange={e=>{setLocalTaxMode(e.target.value as "amount"|"rate");setLocalTaxAmount("");}}>
+                    <option value="amount">قيمة ثابتة</option><option value="rate">نسبة مئوية</option>
+                  </select>
+                </label>
+                <label className="invoice-field-box"><span>{localTaxMode==="rate"?"نسبة الضريبة %":"قيمة الضريبة"}</span>
+                  <KeyboardInput aria-label="قيمة ضريبة الفاتورة" value={localTaxAmount} onChange={e=>setLocalTaxAmount(e.target.value)} inputMode="decimal"/>
+                </label>
+              </details>
+            )}
             {formError?.field === "account" ? (
               <div className="field-inline-error" role="alert" data-testid="invoice-account-error">
                 {formError.message}
@@ -6833,7 +7439,7 @@ function InvoiceModal({
                 value={warehouseId}
                 onChange={(e) => setWarehouseId(e.target.value)}
               >
-                {ctx.warehouses.length === 0 ? <option value="">المخزن الافتراضي</option> : null}
+                <option value="">غير محدد</option>
                 {ctx.warehouses.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
@@ -6841,15 +7447,16 @@ function InvoiceModal({
                 ))}
               </select>
             </label>
-            {payment === "cash" && ctx.cashboxes.length > 0 ? (
+            {payment === "cash" ? (
               <label className="invoice-field-box">
                 <span>الصندوق</span>
                 <select
                   aria-label="صندوق النقدية"
-                  value={cashboxId ?? ""}
-                  onChange={(e) => setCashboxId(Number(e.target.value))}
+                  value={effectiveCashboxId ?? ""}
+                  onChange={(e) => chooseCashbox(e.target.value ? Number(e.target.value) : undefined)}
                 >
-                  {ctx.cashboxes.map((cb) => (
+                  <option value="">غير محدد</option>
+                  {invoiceCashboxes.map((cb) => (
                     <option key={cb.id} value={cb.id}>
                       {cb.name}
                     </option>
@@ -6872,7 +7479,7 @@ function InvoiceModal({
               <select
                 aria-label="عملة الفاتورة"
                 value={currency}
-                onChange={(event) => setCurrency(event.target.value as CurrencyCode)}
+                onChange={(event) => chooseCurrency(event.target.value as CurrencyCode)}
               >
                 {ctx.currencyCodes.map((c) => (
                   <option key={c}>{c}</option>
@@ -6959,7 +7566,7 @@ function InvoiceModal({
                   ref={itemSearchInputRef}
                   data-testid="invoice-item-search"
                   aria-label="بحث عن صنف أو باركود"
-                  placeholder="ابحث باسم الصنف أو رقمه أو الباركود..."
+                  placeholder="ابحث في ملف الأصناف بالاسم أو الرقم أو الباركود..."
                   value={itemSearch}
                   onFocus={(e) => {
                     e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -6988,6 +7595,13 @@ function InvoiceModal({
                 ) : null}
               </div>
 
+              {cashier && !itemSearch.trim() ? <section className="cashier-quick-grid" aria-label="أصناف الكاشير" data-testid="cashier-quick-items">
+                {quickItems.slice(quickPage * 24, (quickPage + 1) * 24).map(item =>
+                  <button type="button" key={item.id} className="ref-btn" onClick={() => pickProductIntoInvoice(item)}>{item.name}</button>)}
+                {quickItems.length > 24 ? <div className="cashier-quick-pager"><button className="ref-btn" disabled={quickPage === 0} onClick={() => setQuickPage(p => p - 1)}>أصناف سابقة</button><span>{quickPage + 1} / {Math.ceil(quickItems.length / 24)}</span><button className="ref-btn" disabled={(quickPage + 1) * 24 >= quickItems.length} onClick={() => setQuickPage(p => p + 1)}>أصناف تالية</button></div> : null}
+                {!quickItems.length ? <p>لم تخصص أصنافًا سريعة. يمكنك البحث عن الصنف أو تخصيصه من إعدادات الكاشير.</p> : null}
+              </section> : null}
+
               {itemSearch.trim() ? (
                 <div
                   className="invoice-item-suggestions"
@@ -6998,7 +7612,7 @@ function InvoiceModal({
                     <p className="instant-search-empty">لا توجد أصناف مطابقة لـ «{itemSearch.trim()}»</p>
                   ) : (
                     matchingInventory.map((item) => {
-                      const stockQty = item.quantity !== 0 ? item.quantity : (item.computedQuantity ?? item.quantity ?? 0);
+                      const stockQty = invoiceStockQty(item);
                       return (
                         <button
                           type="button"
@@ -7008,7 +7622,7 @@ function InvoiceModal({
                         >
                           <span>
                             <strong>{item.name}</strong>
-                            <small> · كمية المخزن: {formatAmount(stockQty)}</small>
+                            <small> · {stockQty === null ? invoiceStockStatus(item) : "كمية المخزن: " + formatQuantity(stockQty) + (item.costUnverified ? " — التكلفة غير معتمدة" : "")}</small>
                             {item.sku ? <small> · باركود: {item.sku}</small> : null}
                           </span>
                           <b>
@@ -7055,11 +7669,7 @@ function InvoiceModal({
                           ? inventoryById.get(row.inventoryItemId)
                           : undefined;
                         const hasMultiUnit = Boolean(linkedItem && (linkedItem.unit2 || linkedItem.unit3));
-                        const stockQty = linkedItem
-                          ? linkedItem.quantity !== 0
-                            ? linkedItem.quantity
-                            : (linkedItem.computedQuantity ?? linkedItem.quantity ?? 0)
-                          : null;
+                        const stockQty = linkedItem ? invoiceStockQty(linkedItem) : null;
                         const isRowInvalid =
                           formError?.rowId === row.rowId &&
                           (formError.field === "items" ||
@@ -7130,9 +7740,11 @@ function InvoiceModal({
                                   />
                                 )}
                                 {stockQty !== null ? (
-                                  <span className="invoice-erp-stock-meta" title={`المتاح بالمخزن: ${formatAmount(stockQty)}`}>
-                                    متاح: <bdi>{formatAmount(stockQty)}</bdi>
+                                  <span className="invoice-erp-stock-meta" title={`المتاح بالمخزن: ${formatQuantity(stockQty)}`}>
+                                    كمية المخزن: <bdi>{formatQuantity(stockQty)}</bdi>{linkedItem?.costUnverified ? " — التكلفة غير معتمدة" : ""}
                                   </span>
+                                ) : linkedItem ? (
+                                  <span className="invoice-erp-stock-meta" data-testid="invoice-line-stock-status">{invoiceStockStatus(linkedItem)}</span>
                                 ) : null}
                                 <button
                                   type="button"
@@ -7214,7 +7826,7 @@ function InvoiceModal({
                                   onFocus={(e) => e.currentTarget.select()}
                                   onChange={(e) => {
                                     if (formError) setFormError(null);
-                                    updateRow(row.rowId, { price: e.target.value });
+                                    updateRow(row.rowId, { price: e.target.value, priceEdited: true, priceSuggested: false });
                                   }}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") {
@@ -7228,6 +7840,7 @@ function InvoiceModal({
                                     }
                                   }}
                                 />
+                                {row.priceSuggested ? <small>سعر مقترح قابل للتعديل</small> : null}
                               </div>
 
                               {hasDiscountColumn ? (
@@ -7272,7 +7885,7 @@ function InvoiceModal({
               <div className="invoice-totals-bar">
                 <div className="invoice-total-stat">
                   <span>الكمية</span>
-                  <b>{formatAmount(computedItemsQty)}</b>
+                  <b>{formatQuantity(computedItemsQty)}</b>
                 </div>
                 {computedItemsDiscount > 0 ? (
                   <div className="invoice-total-stat">
@@ -7296,7 +7909,39 @@ function InvoiceModal({
               ) : null}
             </section>
           ) : (
-            <div className="invoice-free-amount-wrap">
+            <section className="invoice-free-lines" data-testid="invoice-free-lines">
+              <div className="invoice-free-lines-header">
+                <b>بنود حرة</b>
+                <button type="button" className="invoice-add-line-btn" onClick={() => {
+                  keyboard.hide(); setFormError(null); setFreeAmountOnly(!freeAmountOnly);
+                }}>{freeAmountOnly ? "إدخال بنود" : "مبلغ فقط"}</button>
+              </div>
+              <p>بنود وصفية لا تغيّر كمية المخزون.</p>
+              {!freeAmountOnly ? <>
+                {freeRows.map((row, index) => <div className="invoice-free-line" key={row.rowId}>
+                  <div className="invoice-free-line-name">
+                    <KeyboardInput aria-label={`اسم البند الحر ${index + 1}`} placeholder="اسم الصنف أو الخدمة"
+                      maxLength={200} value={row.itemName} ref={(el) => { rowNameRefs.current[row.rowId] = el; }}
+                      onChange={(e) => updateFreeRow(row.rowId, { itemName: e.target.value })} />
+                    <button type="button" aria-label={`حذف البند الحر ${index + 1}`} onClick={() => {
+                      keyboard.hide(); setFormError(null); setFreeRows((current) => current.filter((r) => r.rowId !== row.rowId));
+                    }}><TrashIcon width={18} height={18} /></button>
+                  </div>
+                  <div className="invoice-free-line-values">
+                    <label>الكمية<KeyboardInput aria-label={`كمية البند الحر ${index + 1}`} inputMode="decimal" value={row.quantity}
+                      onChange={(e) => updateFreeRow(row.rowId, { quantity: e.target.value })} /></label>
+                    <label>السعر<KeyboardInput aria-label={`سعر البند الحر ${index + 1}`} inputMode="decimal" value={row.price} placeholder="0"
+                      onChange={(e) => updateFreeRow(row.rowId, { price: e.target.value })} /></label>
+                    <label>الإجمالي<b>{formatAmount(localGross(parseArabicNumber(row.quantity), parseArabicNumber(row.price)))}</b></label>
+                  </div>
+                </div>)}
+                <button type="button" className="invoice-add-line-btn" disabled={freeRows.length >= 150} onClick={() => {
+                  setFormError(null); setFreeRows((current) => [...current, { rowId: `free_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" }]);
+                }}>+ بند حر</button>
+                <div className="invoice-totals-bar"><span>الإجمالي</span><b data-testid="invoice-free-total">{formatAmount(freeTotal)} {currency}</b></div>
+                {formError?.field === "items" ? <div className="field-inline-error" role="alert">{formError.message}</div> : null}
+              </> : <div className="invoice-free-amount-wrap">
               <OutlinedAmountField
                 label={`المبلغ (${currency})`}
                 ariaLabel="إجمالي مبلغ الفاتورة"
@@ -7318,7 +7963,8 @@ function InvoiceModal({
                   {formError.message}
                 </div>
               ) : null}
-            </div>
+            </div>}
+            </section>
           )}
 
           <label className="invoice-field-box invoice-note-box">
@@ -7345,11 +7991,13 @@ function InvoiceModal({
           ) : null}
 
           {formError ? (
-            <div className="field-inline-error" role="alert" data-testid="invoice-validation-error">
+            <div ref={invoiceErrorRef} className="field-inline-error" role="alert" data-testid="invoice-validation-error">
               {formError.message}
             </div>
           ) : null}
 
+          {metadataOnly ? <div className="field-inline-error" role="status">المستند مرحّل؛ الحفظ يغيّر البيان والمرجع فقط. لن تُحفظ تعديلات المبلغ أو الأصناف أو الحساب.</div> : null}
+          {localDraft ? <div className="field-inline-error" role="status">مسودة تجارية: لا تُرحّل قيودًا ولا تحجز مخزونًا.</div> : null}
           {editingEntry && !editingEntry.deleted ? (
             <button
               type="button"
@@ -7361,7 +8009,7 @@ function InvoiceModal({
                 try {
                   await setLedgerDeleted(ctx.uid, editingEntry.id, true);
                   triggerHaptic("warning");
-                  onClose();
+                  finishClose();
                   ctx.showToast(`تم نقل العملية #${editingEntry.entryNumber} إلى سلة المحذوفات`);
                 } catch (err) {
                   ctx.showToast(err instanceof Error ? err.message : "تعذر نقل العملية إلى السلة");
@@ -7375,12 +8023,13 @@ function InvoiceModal({
           ) : null}
         </div>
 
+        </fieldset>
         <footer className="invoice-modal-footer">
           <div className="form-modal-actions form-modal-actions-3 invoice-actions-erp">
             <button type="button" className="save" data-testid="invoice-save-btn" disabled={saving} onClick={() => void handleSave("save")}>
               {saving
                 ? "جاري الحفظ..."
-                : editingEntry
+                : pendingReceipt() ? "التحقق من نتيجة الحفظ" : metadataOnly ? "حفظ البيان والمرجع فقط" : editingEntry
                   ? "حفظ التعديل"
                   : intent === "quote"
                     ? "حفظ عرض السعر"
@@ -7394,18 +8043,38 @@ function InvoiceModal({
               type="button"
               className="save-print save-whatsapp"
               data-testid="invoice-save-whatsapp-btn"
-              disabled={saving}
+              disabled={saving||Boolean(metadataOnly)}
               onClick={() => void handleSave("whatsapp")}
             >
               <WhatsAppIcon />
               <span>حفظ وإرسال واتس</span>
             </button>
-            <button type="button" className="cancel" onClick={onClose}>
+            <button type="button" className="cancel" onClick={requestClose}>
               إلغاء
             </button>
           </div>
         </footer>
       </section>
+      {leavePrompt ? (
+        <div className="center-modal-layer" style={{ zIndex: 1000 }} data-testid="invoice-unsaved-dialog">
+          <button className="center-modal-backdrop" aria-label="إغلاق تنبيه التعديلات" onClick={() => setLeavePrompt(false)} />
+          <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-modal="true" aria-label="تعديلات غير محفوظة">
+            <h2>تعديلات غير محفوظة</h2>
+            <p>يمكنك متابعة التحرير أو تجاهل التعديلات أو حفظ مسودة محلية دون ترحيل.</p>
+            <div className="form-modal-actions">
+              <button onClick={() => setLeavePrompt(false)}>متابعة التحرير</button>
+              <button onClick={finishClose}>تجاهل التعديلات</button>
+              <button onClick={() => {
+                if (!persistDraft()) { ctx.showToast("تعذر حفظ المسودة محليًا. بقيت التعديلات مفتوحة."); return; }
+                completed.current = true;
+                setLeavePrompt(false);
+                onClose();
+                ctx.showToast("حُفظت مسودة محلية دون ترحيل أو حركة مخزون؛ تُستعاد عند إعادة الفتح.");
+              }}>حفظ مسودة دون ترحيل</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -7771,7 +8440,7 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     { id: "warehouses", label: "المخازن", icon: CubeIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); flow.push(warehousesScreen()); } },
     { id: "sales-dashboard", label: "لوحة المبيعات", icon: BarChartIcon, defaultTone: "blue", defaultGroup: "admin-blue", action: () => { triggerHaptic("light"); flow.push(analyticsDashboardScreen()); } },
     { id: "trial-balance", label: "ميزان المراجعة", icon: GaugeIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-trial-balance-btn", action: () => { triggerHaptic("light"); ctx.openTrialBalance(); } },
-    { id: "items", label: "الأصناف", icon: TagPriceIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-items-btn", action: () => { triggerHaptic("light"); flow.push(itemsScreen()); } },
+    { id: "items", label: "ملف الأصناف", icon: TagPriceIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-items-btn", action: () => { triggerHaptic("light"); flow.push(itemsScreen()); } },
     { id: "stock-movement", label: "حركة المخزون", icon: ActivityLogIcon, defaultTone: "amber", defaultGroup: "admin-amber", testId: "open-stock-movement-btn", action: () => { triggerHaptic("light"); flow.push(inventoryReportScreen()); } },
   ];
 
@@ -8334,15 +9003,17 @@ function PurchasesPage({
 }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [sortDirection, setSortDirection] = useState("تنازلي");
-  const [sortBy, setSortBy] = useState("date");
+  const [fromDate, setFromDate] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:fromDate`, "");
+  const [toDate, setToDate] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:toDate`, "");
+  const [sortDirection, setSortDirection] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:sortDirection`, "تنازلي");
+  const [sortBy, setSortBy] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:sortBy`, "date");
   const currencyFilter = ctx.categoryCurrencies[category] ?? ctx.workspace?.defaultCurrency ?? "ريال";
-  const [byCurrency, setByCurrency] = useState(false);
-  const [searchState, setSearchState] = useState(() => createInitialSearchState());
+  const [byCurrency, setByCurrency] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:byCurrency`, false);
+  const [searchState, setSearchState] = useWorkspaceUiState(`purchases:${category}:${groupId ?? "all"}:searchState`, () => createInitialSearchState());
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  useBackLayer(createMenuOpen, () => { setCreateMenuOpen(false); return true; });
   const [operationVendor, setOperationVendor] = useState<AccountRecord | null>(null);
+  useBackLayer(Boolean(operationVendor), () => { setOperationVendor(null); return true; });
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
   const searchQuery = searchState.query;
@@ -8418,6 +9089,7 @@ function PurchasesPage({
   }, [activeCurrencyParam, periodLedger]);
   const categoryAccounts = ctx.accounts.filter(
     (a) =>
+      !a.note?.startsWith("nasqo:system:") &&
       (groupId !== undefined ? a.groupId === groupId : a.category === category) &&
       (!byCurrency ||
         !activeCurrencyParam ||
@@ -8448,6 +9120,11 @@ function PurchasesPage({
     { fromDate: "", toDate: "", sortBy: "date", sortDirection: "تنازلي", byCurrency: false },
   );
 
+  useReportSource(`accounts:${category}:${groupId??"all"}`,()=>{
+    const rows=visibleVendors.flatMap(a=>{const report=buildStatementReport(a,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true},false);return report.totals.map(t=>({id:a.id+":"+t.currency,currency:t.currency,cells:[a.codeNumber,a.name,a.phone,t.debit,t.credit,t.balance,t.currency]}));});
+    const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[3]);t.credit+=Number(row.cells[4]);t.balance=t.credit-t.debit;return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
+    return {kind:"accounts",title:categoryTitle(category),scope:{from:fromDate,to:toDate,search:searchQuery,currency:byCurrency?currencyFilter:"الكل"},columns:["الرقم","الحساب","الهاتف","عليه","له","الرصيد","العملة"],rows,totals};
+  });
   return (
     <div className="purchases-layout">
       <UnifiedSearchFilterBar
@@ -8580,6 +9257,8 @@ function PurchasesPage({
                   periodLedger,
                   activeCurrencyParam,
                 );
+                const scopedReport=buildStatementReport(vendor,periodLedger,{currency:byCurrency?currencyFilter:"الكل",showPreviousBalance:true});
+                const scopedBalance=reportTotalText(scopedReport,"balance");
                 return (
                   <article key={vendor.id} className="vendor-card" data-vendor-id={vendor.codeNumber}>
                     <button
@@ -8611,8 +9290,7 @@ function PurchasesPage({
                       </span>
                       <span className={`vendor-balance ${summary.tone}`}>
                         <strong>
-                          {formatAmount(summary.netBalance)}
-                          {summary.tone === "credit" ? "-" : ""}
+                          {scopedBalance}
                         </strong>
                       </span>
                     </button>
@@ -8628,7 +9306,7 @@ function PurchasesPage({
                         onClick={() =>
                           void shareOrCopyText(
                             vendor.name,
-                            `رصيد ${vendor.name}: ${formatAmount(summary.netBalance)} ${vendor.currency}`,
+                            `رصيد ${vendor.name}: ${scopedBalance}`,
                             ctx.showToast,
                           )
                         }
@@ -8643,13 +9321,7 @@ function PurchasesPage({
                         onClick={() =>
                           void openWhatsAppChat(
                             vendor,
-                            buildAccountBalanceMessage(
-                              vendor,
-                              summary.netBalance,
-                              summary.tone,
-                              ctx.workspace?.companyName,
-                              ctx.extendedSettings,
-                            ),
+                            `رصيد ${vendor.name}: ${scopedBalance}`,
                             ctx.showToast,
                           )
                         }
@@ -8760,7 +9432,8 @@ function SupplierPage({
   const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? true;
   const currency = ctx.statementCurrencies[account.id] ?? account.currency ?? "ريال";
   const [operationsOpen, setOperationsOpen] = useState(false);
-  const [searchUi, setSearchUi] = useState(() => createInitialSearchState());
+  useBackLayer(operationsOpen, () => { setOperationsOpen(false); return true; });
+  const [searchUi, setSearchUi] = useWorkspaceUiState(`supplier:${account.id}:search`, () => createInitialSearchState());
 
   useEffect(() => {
     ctx.setActiveStatementAccountId(account.id);
@@ -8809,6 +9482,8 @@ function SupplierPage({
       }),
     [account, ctx.ledger, currency, docKind, fromDate, searchUi.query, showPreviousBalance, sortOrder, toDate],
   );
+
+  useReportSource(`statement:${account.id}`,(all)=>buildStatementReport(account,ctx.ledger,{currency,searchQuery:searchUi.query,showPreviousBalance,fromDate,toDate,docKind,sortOrder},all));
 
   const searchActive = isSearchActiveMode(searchUi);
   const defaultCurrency = account.currency ?? "ريال";
@@ -8867,7 +9542,7 @@ function SupplierPage({
             <span>
               السابق:{" "}
               <strong>
-                <bdi>{formatAmount(statement.previousBalance)}</bdi>
+                <bdi>{statementTotalText(statement,"previous")}</bdi>
                 {statement.previousDirection === "credit"
                   ? " (له)"
                   : statement.previousDirection === "debit"
@@ -9005,7 +9680,7 @@ function SupplierPage({
                       : "صافي الرصيد الحالي"}
                 </span>
                 <strong>
-                  <bdi>{formatAmount(statement.netBalance)}</bdi> {displayCurrency}
+                  <bdi>{statementTotalText(statement,"balance")}</bdi> {statement.currencyTotals?"":displayCurrency}
                 </strong>
                 <small>
                   سقف المديونية: <bdi>{formatAmount(account.creditLimit)}</bdi> {account.currency}
@@ -9031,7 +9706,7 @@ function SupplierPage({
                   onClick={() =>
                     void openWhatsAppChat(
                       account,
-                      buildAccountBalanceMessage(
+                      statement.currencyTotals ? `كشف حساب ${account.name}: ${statementTotalText(statement,"balance")}` : buildAccountBalanceMessage(
                         account,
                         statement.netBalance,
                         statement.netDirection,
@@ -9158,9 +9833,13 @@ function SupplierPage({
                       title="نقل إلى سلة المحذوفات"
                       style={{ color: "#c91b08" }}
                       onClick={async () => {
-                        await setLedgerDeleted(ctx.uid, item.id, true);
-                        triggerHaptic("warning");
-                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        try {
+                          await setLedgerDeleted(ctx.uid, item.id, true);
+                          triggerHaptic("warning");
+                          ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                        } catch (error) {
+                          ctx.showToast(error instanceof Error ? error.message : "تعذر نقل العملية إلى السلة");
+                        }
                       }}
                     >
                       <TrashIcon />
@@ -9204,6 +9883,7 @@ function CashStatementFooter({
   onMenu: () => void;
 }) {
   const ctx = useWorkspace();
+  const report=useReportPreview(`statement:${account.id}`);
   return (
     <div className="cash-statement-footer" data-testid="cash-statement-footer">
       <button
@@ -9214,13 +9894,13 @@ function CashStatementFooter({
       </button>
       <div>
         <span>
-          عليه: <bdi>{formatAmount(statement.debitTotal)}</bdi>
+          عليه: <bdi>{reportTotalText(report,"debit")}</bdi>
         </span>
         <span>
-          له: <bdi>{formatAmount(statement.creditTotal)}</bdi>
+          له: <bdi>{reportTotalText(report,"credit")}</bdi>
         </span>
         <span>
-          الرصيد عليه: <bdi className="cash-statement-total-balance">{formatAmount(statement.netBalance)}</bdi>
+          الرصيد عليه: <bdi className="cash-statement-total-balance">{reportTotalText(report,"balance")}</bdi>
         </span>
       </div>
       <button aria-label="خيارات الرصيد" onClick={onMenu}>
@@ -9242,13 +9922,17 @@ function CashSupplierPage({
   const ctx = useWorkspace();
   const { period, fromDate, toDate, docKind, sortOrder } = ctx.statementFilter;
   const showPreviousBalance = ctx.statementFilter.showPreviousBalance ?? false;
-  const [currency, setCurrency] = useState("ريال");
+  const [storedCurrency, setCurrency] = useWorkspaceUiState(`supplier:${account.id}:currency`, "ريال");
+  const currency=storedCurrency==="مصارفة الكل بعملة ريال"?"جميع العملات بدون مصارفة":storedCurrency;
   const [operationsOpen, setOperationsOpen] = useState(false);
+  useBackLayer(operationsOpen, () => { setOperationsOpen(false); return true; });
   const [currencyOpen, setCurrencyOpen] = useState(false);
+  useBackLayer(currencyOpen, () => { setCurrencyOpen(false); return true; });
   const [searchMenuOpen, setSearchMenuOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState<CashSearchMode>("الكل");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  useBackLayer(searchMenuOpen, () => { setSearchMenuOpen(false); return true; });
+  const [searchMode, setSearchMode] = useWorkspaceUiState<CashSearchMode>(`supplier:${account.id}:mode`, "الكل");
+  const [searchOpen, setSearchOpen] = useWorkspaceUiState(`supplier:${account.id}:searchOpen`, false);
+  const [query, setQuery] = useWorkspaceUiState(`supplier:${account.id}:query`, "");
   const listRef = useRef<HTMLElement>(null);
   const keyboard = useKeyboard();
   const { screenRef } = useScreenPortal();
@@ -9298,6 +9982,8 @@ function CashSupplierPage({
       }),
     [account, ctx.ledger, currency, docKind, fromDate, query, searchMode, showPreviousBalance, sortOrder, toDate],
   );
+
+  useReportSource(`statement:${account.id}`,(all)=>buildStatementReport(account,ctx.ledger,{currency,searchQuery:query,showPreviousBalance,fromDate,toDate,docKind,sortOrder,searchMode},all));
 
   const searchPortal = screenRef.current?.querySelector(".nasqo-app");
   const startDate =
@@ -9434,7 +10120,7 @@ function CashSupplierPage({
           {showPreviousBalance ? (
             <div className="cash-statement-previous" role="status">
               <span>رصيد سابق</span>
-              <bdi>{formatAmount(statement.previousBalance)}</bdi>
+              <bdi>{statementTotalText(statement,"previous")}</bdi>
             </div>
           ) : null}
           {statement.rows.map((item) => (
@@ -9511,9 +10197,13 @@ function CashSupplierPage({
                     title="نقل إلى سلة المحذوفات"
                     style={{ color: "#c91b08" }}
                     onClick={async () => {
-                      await setLedgerDeleted(ctx.uid, item.id, true);
-                      triggerHaptic("warning");
-                      ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                      try {
+                        await setLedgerDeleted(ctx.uid, item.id, true);
+                        triggerHaptic("warning");
+                        ctx.showToast(`تم نقل العملية #${item.entryNumber} إلى سلة المحذوفات`);
+                      } catch (error) {
+                        ctx.showToast(error instanceof Error ? error.message : "تعذر نقل العملية إلى السلة");
+                      }
                     }}
                   >
                     <TrashIcon />
@@ -9541,6 +10231,7 @@ function CashSupplierPage({
                 aria-selected={currency === option}
                 key={option}
                 onClick={() => {
+                  if(option==="مصارفة الكل بعملة ريال"){ctx.showToast("المصارفة غير متاحة دون سعر صرف معتمد؛ اختر العملة أو جميع العملات دون مصارفة");setCurrencyOpen(false);return;}
                   setCurrency(option);
                   setCurrencyOpen(false);
                 }}
@@ -9630,17 +10321,39 @@ function SimpleEntryPage({
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
   const keyboard = useKeyboard();
-  const [fromAccountId, setFromAccountId] = useState(ctx.accounts[0]?.id ?? "");
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const completed = useRef(false);
+  const draftSlot = `simple-entry-draft:${initialToAccountId ?? "default"}`;
+  const [originalStoredDraft] = useState(() => hybridLocal ? readUiState<unknown>(ctx.uid, draftSlot, null) : null);
+  const [savedDraft] = useState(() => !hybridLocal ? null : readUiState<Record<string, string> | null>(ctx.uid, draftSlot, null,
+    (value) => Boolean(value) && typeof value === "object" && ["id", "fromAccountId", "toAccountId", "amount", "currency", "note", "documentNumber"].every((key) => typeof (value as Record<string, unknown>)[key] === "string") &&
+      ["fromAccountId", "toAccountId"].every((key) => ctx.accounts.some((account) => account.id === (value as Record<string, unknown>)[key]))));
+  const [invalidDraft, setInvalidDraft] = useState(Boolean(originalStoredDraft) && !savedDraft);
+  const documentId = useRef(savedDraft?.id ?? `simple_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+  const [fromAccountId, setFromAccountId] = useState(savedDraft?.fromAccountId ?? ctx.accounts[0]?.id ?? "");
   const [toAccountId, setToAccountId] = useState(
-    initialToAccountId ?? ctx.accounts[1]?.id ?? ctx.accounts[0]?.id ?? "",
+    savedDraft?.toAccountId ?? initialToAccountId ?? ctx.accounts[1]?.id ?? ctx.accounts[0]?.id ?? "",
   );
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<CurrencyCode>("ريال");
-  const [note, setNote] = useState("");
-  const [documentNumber, setDocumentNumber] = useState("");
+  const [amount, setAmount] = useState(savedDraft?.amount ?? "");
+  const [currency, setCurrency] = useState<CurrencyCode>(savedDraft?.currency ?? "ريال");
+  const [note, setNote] = useState(savedDraft?.note ?? "");
+  const [documentNumber, setDocumentNumber] = useState(savedDraft?.documentNumber ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [now, setNow] = useState(() => new Date());
+
+  const draftFields = { id: documentId.current, fromAccountId, toAccountId, amount, currency, note, documentNumber };
+  const draftJson = JSON.stringify(draftFields);
+  const initialDraftJson = useRef(draftJson);
+  const dirty = Boolean(savedDraft) || initialDraftJson.current !== draftJson;
+  const pending = () => { if (!hybridLocal) return false; try { return new PendingSubmissionStore().has(ctx.uid, documentId.current); } catch { return true; } };
+  const persist = () => !hybridLocal ? true : invalidDraft || completed.current ? false : writeUiState(ctx.uid, draftSlot, draftFields) && writeUiState(ctx.uid, "active-form", { kind: "screen", screenId: `simple-entry-${initialToAccountId ?? "default"}` });
+  const discard = () => { if (saving || pending()) return false; const removed = !hybridLocal || (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")); if (removed) completed.current = true; return removed; };
+  const leaveGuard = useUnsavedForm({ active: hybridLocal && flow.current.id === `simple-entry-${initialToAccountId ?? "default"}`,
+    dirty, onClose: flow.pop, saveDraft: persist, discardDraft: discard });
+  useBackLayer(hybridLocal && flow.current.id === `${draftSlot.startsWith("simple-entry") ? "simple-entry" : "currency-exchange"}-${draftSlot.split(":").slice(1).join(":")}` && (saving || pending()),
+    () => { if (completed.current) return false; ctx.showToast("تحقّق من نتيجة الحفظ قبل المغادرة."); return true; }, 200);
+  useLayoutEffect(() => { if (hybridLocal && dirty && !saving && !completed.current) persist(); }, [draftJson, dirty, hybridLocal]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
@@ -9661,6 +10374,15 @@ function SimpleEntryPage({
 
   const saveEntry = async () => {
     keyboard.hide();
+    if (saving || !persist()) { setError("تعذر حفظ حالة القيد محليًا."); return; }
+    if (pending()) {
+      setSaving(true);
+      try { await createLedgerEntry(ctx.uid, { id: documentId.current, accountId: toAccountId, accountName: "" });
+        completed.current = true; removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); leaveGuard.closeAfterSave();
+      } catch (error) { setError(error instanceof Error ? error.message : "تعذر التحقق من الحفظ"); }
+      finally { setSaving(false); }
+      return;
+    }
     const numericAmount = parseArabicNumber(amount);
     if (!fromAcc || !toAcc) {
       triggerHaptic("warning");
@@ -9682,6 +10404,7 @@ function SimpleEntryPage({
     try {
       const nextNum = Math.max(1000, ...ctx.ledger.map((e) => e.entryNumber)) + 1;
       await createLedgerEntry(ctx.uid, {
+        ...(hybridLocal ? { id: documentId.current } : {}),
         accountId: toAcc.id,
         accountName: toAcc.name,
         counterpartAccountId: fromAcc.id,
@@ -9701,15 +10424,21 @@ function SimpleEntryPage({
       });
       triggerHaptic("success");
       ctx.showToast(`تم حفظ القيد البسيط رقم #${nextNum} بنجاح`);
-      flow.pop();
+      completed.current = true;
+      if (hybridLocal) { removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); }
+      if (hybridLocal) leaveGuard.closeAfterSave(); else flow.pop();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "تعذر حفظ القيد");
     } finally {
       setSaving(false);
     }
   };
 
   return (
+    <>
     <MobileScroll className="app-screen simple-entry-scroll">
       <main className="simple-entry-page" data-testid="simple-entry-screen">
+        <fieldset disabled={invalidDraft || saving || pending()} style={{ display: "contents", border: 0 }}>
         <time className="simple-entry-time" dateTime={now.toISOString()}>
           <span>{now.toLocaleDateString("ar-SA", { weekday: "long" })}</span>{" "}
           <bdi>
@@ -9834,44 +10563,98 @@ function SimpleEntryPage({
             {error}
           </p>
         ) : null}
+        </fieldset>
         <div className="simple-entry-actions">
           <button className="save" data-testid="simple-entry-save" disabled={saving} onClick={saveEntry}>
-            {saving ? "جاري الحفظ..." : "حفظ"}
+            {saving ? "جاري الحفظ..." : pending() ? "التحقق من نتيجة الحفظ" : "حفظ"}
           </button>
-          <button className="cancel" data-testid="simple-entry-cancel" onClick={flow.pop}>
+          <button className="cancel" data-testid="simple-entry-cancel" onClick={hybridLocal ? leaveGuard.requestClose : flow.pop}>
             إلغاء
           </button>
         </div>
       </main>
     </MobileScroll>
+    <UnsavedFormPrompt guard={leaveGuard} />
+    {invalidDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
+      <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-label="تعذر استعادة المسودة">
+        <h2>تعذر استعادة المسودة بأمان</h2><p>أحد السجلات المرتبطة لم يعد متاحًا. لم تتغير المسودة المحفوظة.</p>
+        <div className="form-modal-actions">
+          <button onClick={() => { completed.current = true; leaveGuard.closeAfterSave(); }}>الاحتفاظ والرجوع</button>
+          <button onClick={() => {
+            const id = originalStoredDraft && typeof originalStoredDraft === "object" && "id" in originalStoredDraft ? String(originalStoredDraft.id) : "";
+            try { if (id && new PendingSubmissionStore().has(ctx.uid, id)) { ctx.showToast("نتيجة الحفظ معلقة؛ تحقّق من السجل أولًا."); return; } } catch { return; }
+            if (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")) setInvalidDraft(false);
+          }}>تجاهل المسودة صراحةً</button>
+        </div>
+      </section>
+    </div> : null}
+    </>
   );
 }
 
 function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialAccountId?: string }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
-  const [selectedAccountId, setSelectedAccountId] = useState(initialAccountId ?? ctx.accounts[0]?.id ?? "");
-  const [fromCurrency, setFromCurrency] = useState<CurrencyCode>(ctx.currencyCodes[1] ?? ctx.currencyCodes[0] ?? "ريال");
-  const [toCurrency, setToCurrency] = useState<CurrencyCode>(ctx.currencyCodes[0] ?? "ريال");
-  const [rate, setRate] = useState("530");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [mode, setMode] = useState<"buy" | "sell">("buy");
-  const [settlement, setSettlement] = useState<"account" | "cash">("account");
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const completed = useRef(false);
+  const draftSlot = `currency-draft:${initialAccountId ?? "default"}`;
+  const [originalStoredDraft] = useState(() => hybridLocal ? readUiState<unknown>(ctx.uid, draftSlot, null) : null);
+  const [savedDraft] = useState(() => !hybridLocal ? null : readUiState<Record<string, string> | null>(ctx.uid, draftSlot, null,
+    (value) => Boolean(value) && typeof value === "object" && ["id", "selectedAccountId", "fromCurrency", "toCurrency", "rate", "amount", "note", "mode", "settlement"].every((key) => typeof (value as Record<string, unknown>)[key] === "string") &&
+      ctx.accounts.some((account) => account.id === (value as Record<string, unknown>).selectedAccountId) &&
+      ["buy", "sell"].includes((value as Record<string, string>).mode) && ["account", "cash"].includes((value as Record<string, string>).settlement)));
+  const [invalidDraft, setInvalidDraft] = useState(Boolean(originalStoredDraft) && !savedDraft);
+  const documentId = useRef(savedDraft?.id ?? `currency_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+  const [selectedAccountId, setSelectedAccountId] = useState(savedDraft?.selectedAccountId ?? initialAccountId ?? ctx.workspace?.referenceDefaults?.accountId ?? "");
+  const [fromCurrency, setFromCurrency] = useState<CurrencyCode>((savedDraft?.fromCurrency) ?? ctx.currencyCodes[1] ?? ctx.currencyCodes[0] ?? "ريال");
+  const [toCurrency, setToCurrency] = useState<CurrencyCode>((savedDraft?.toCurrency) ?? ctx.workspace?.defaultCurrency ?? "ريال");
+  const defaults=useRef(ctx.workspace?.referenceDefaults).current;
+  const manualBox=useRef(Boolean(savedDraft));
+  const [cashboxId,setCashboxId]=useState<number|undefined>(()=>savedDraft ? (savedDraft.cashboxId ? Number(savedDraft.cashboxId) : undefined) : resolveCashbox(defaults,ctx.cashboxes,toCurrency,ctx.accounts.find(a=>a.id===selectedAccountId)));
+  const chooseAccount=(id:string)=>{setSelectedAccountId(id);if(!manualBox.current)setCashboxId(resolveCashbox(defaults,ctx.cashboxes,toCurrency,ctx.accounts.find(a=>a.id===id)));};
+  const chooseCurrency=(c:CurrencyCode)=>{setToCurrency(c);setCashboxId(manualBox.current?eligibleCashbox(ctx.cashboxes,cashboxId,c):resolveCashbox(defaults,ctx.cashboxes,c,ctx.accounts.find(a=>a.id===selectedAccountId)));};
+  const [rate, setRate] = useState((savedDraft?.rate) ?? "530");
+  const [amount, setAmount] = useState((savedDraft?.amount) ?? "");
+  const [note, setNote] = useState((savedDraft?.note) ?? "");
+  const [mode, setMode] = useState<"buy" | "sell">((savedDraft?.mode as "buy" | "sell" | undefined) ?? "buy");
+  const [settlement, setSettlement] = useState<"account" | "cash">((savedDraft?.settlement as "account" | "cash" | undefined) ?? "account");
   const [saving, setSaving] = useState(false);
 
-  const selectedAccount = ctx.accounts.find((a) => a.id === selectedAccountId) ?? ctx.accounts[0];
+  const draftFields = { id: documentId.current, selectedAccountId, fromCurrency, toCurrency, rate, amount, note, mode, settlement, cashboxId:cashboxId===undefined?"":String(cashboxId) };
+  const draftJson = JSON.stringify(draftFields);
+  const initialDraftJson = useRef(draftJson);
+  const dirty = Boolean(savedDraft) || initialDraftJson.current !== draftJson;
+  const pending = () => { if (!hybridLocal) return false; try { return new PendingSubmissionStore().has(ctx.uid, documentId.current); } catch { return true; } };
+  const persist = () => !hybridLocal ? true : invalidDraft || completed.current ? false : writeUiState(ctx.uid, draftSlot, draftFields) && writeUiState(ctx.uid, "active-form", { kind: "screen", screenId: `currency-exchange-${initialAccountId ?? "default"}` });
+  const discard = () => { if (saving || pending()) return false; const removed = !hybridLocal || (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")); if (removed) completed.current = true; return removed; };
+  const leaveGuard = useUnsavedForm({ active: hybridLocal && flow.current.id === `currency-exchange-${initialAccountId ?? "default"}`,
+    dirty, onClose: flow.pop, saveDraft: persist, discardDraft: discard });
+  useBackLayer(hybridLocal && flow.current.id === `${draftSlot.startsWith("simple-entry") ? "simple-entry" : "currency-exchange"}-${draftSlot.split(":").slice(1).join(":")}` && (saving || pending()),
+    () => { if (completed.current) return false; ctx.showToast("تحقّق من نتيجة الحفظ قبل المغادرة."); return true; }, 200);
+  useLayoutEffect(() => { if (hybridLocal && dirty && !saving && !completed.current) persist(); }, [draftJson, dirty, hybridLocal]);
+
+  const selectedAccount = ctx.accounts.find((a) => a.id === selectedAccountId) ;
   const parsedAmount = parseArabicNumber(amount);
   const isSameCurrency = fromCurrency === toCurrency;
   const parsedRate = isSameCurrency ? 1 : Math.max(0.0001, parseArabicNumber(rate) || 1);
   const converted = parsedAmount * parsedRate;
 
   const saveExchange = async () => {
+    if (saving || !persist()) { ctx.showToast("تعذر حفظ حالة المصارفة محليًا."); return; }
+    if (pending()) {
+      setSaving(true);
+      try { await createLedgerEntry(ctx.uid, { id: documentId.current, accountId: selectedAccountId, accountName: "" });
+        completed.current = true; removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); leaveGuard.closeAfterSave();
+      } catch (error) { ctx.showToast(error instanceof Error ? error.message : "تعذر التحقق من الحفظ"); }
+      finally { setSaving(false); }
+      return;
+    }
     if (!selectedAccount || parsedAmount <= 0) {
       triggerHaptic("warning");
       ctx.showToast("أدخل المبلغ واختر الحساب أولًا");
       return;
     }
+    if(settlement==="cash"&&!eligibleCashbox(ctx.cashboxes,cashboxId,toCurrency)){ctx.showToast("اختر صندوقًا من عملة الناتج قبل الحفظ.");return;}
     if (isSameCurrency) {
       triggerHaptic("warning");
       ctx.showToast("اختر عملتين مختلفتين لإتمام عملية صرف العملات (أو أضف عملة من نافذة العملات)");
@@ -9881,11 +10664,13 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
     try {
       const nextNum = Math.max(1000, ...ctx.ledger.map((e) => e.entryNumber)) + 1;
       await createLedgerEntry(ctx.uid, {
+        ...(hybridLocal ? { id: documentId.current } : {}),
         accountId: selectedAccount.id,
         accountName: selectedAccount.name,
         kind: "currency",
         typeLabel: mode === "buy" ? "صرف شراء" : "صرف بيع",
         payment: settlement === "cash" ? "cash" : "balance",
+        ...(settlement==="cash" ? {cashboxId} : {}),
         direction: mode === "buy" ? "credit" : "debit",
         amount: converted,
         currency: toCurrency,
@@ -9897,23 +10682,29 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
       });
       triggerHaptic("success");
       ctx.showToast(`تم حفظ عملية الصرف رقم #${nextNum}`);
-      flow.pop();
+      completed.current = true;
+      if (hybridLocal) { removeUiState(ctx.uid, draftSlot); removeUiState(ctx.uid, "active-form"); }
+      if (hybridLocal) leaveGuard.closeAfterSave(); else flow.pop();
+    } catch (error) {
+      ctx.showToast(error instanceof Error ? error.message : "تعذر حفظ المصارفة");
     } finally {
       setSaving(false);
     }
   };
 
   return (
+    <>
     <MobileScroll className="app-screen currency-page-scroll">
       <main className="currency-page" data-testid="currency-screen">
         <time className="currency-time">
           اليوم · {new Intl.DateTimeFormat("ar-SA", { hour: "2-digit", minute: "2-digit" }).format(new Date())}
         </time>
         <section className="currency-workspace">
+          <fieldset disabled={invalidDraft || saving || pending()} style={{ display: "contents", border: 0 }}>
           <AccountSelectCombobox
             accounts={ctx.accounts}
             value={selectedAccount?.id ?? ""}
-            onChange={(nextId) => setSelectedAccountId(nextId)}
+            onChange={chooseAccount}
             label="الحساب"
             placeholder="اختر الحساب"
             searchPlaceholder="ابحث عن الاسم هنا..."
@@ -9969,7 +10760,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
                 className="currency-rate-select"
                 aria-label="إلى عملة"
                 value={toCurrency}
-                onChange={(e) => setToCurrency(e.target.value as CurrencyCode)}
+                onChange={(e) => chooseCurrency(e.target.value as CurrencyCode)}
               >
                 {ctx.currencyCodes.map((c) => (
                   <option key={c}>{c}</option>
@@ -10009,6 +10800,7 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
               <input type="radio" name="currency-mode" checked={mode === "sell"} onChange={() => setMode("sell")} /> بيع
             </label>
           </div>
+          {settlement==="cash"?<label className="invoice-field-box"><span>الصندوق — {toCurrency}</span><select aria-label="صندوق المصارفة" value={cashboxId??""} onChange={e=>{manualBox.current=true;setCashboxId(e.target.value?Number(e.target.value):undefined);}}><option value="">غير محدد</option>{ctx.cashboxes.filter(b=>eligibleCashbox(ctx.cashboxes,b.id,toCurrency)!==undefined).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>:null}
           <div className="inline-radio-group settlement-group" aria-label="طريقة المصادقة">
             <label className={settlement === "account" ? "selected" : ""}>
               <input
@@ -10029,17 +10821,33 @@ function CurrencyPage({ flow, initialAccountId }: { flow: FlowControls; initialA
               مصادقة نقدية في الصندوق
             </label>
           </div>
+          </fieldset>
           <div className="form-modal-actions currency-actions">
-            <button className="cancel" onClick={flow.pop}>
+            <button className="cancel" onClick={hybridLocal ? leaveGuard.requestClose : flow.pop}>
               إلغاء
             </button>
             <button className="save" data-testid="currency-save" disabled={saving} onClick={saveExchange}>
-              {saving ? "جاري الحفظ..." : "حفظ"}
+              {saving ? "جاري الحفظ..." : pending() ? "التحقق من نتيجة الحفظ" : "حفظ"}
             </button>
           </div>
         </section>
       </main>
     </MobileScroll>
+    <UnsavedFormPrompt guard={leaveGuard} />
+    {invalidDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
+      <section className="transaction-modal" style={{ zIndex: 1 }} role="alertdialog" aria-label="تعذر استعادة المسودة">
+        <h2>تعذر استعادة المسودة بأمان</h2><p>أحد السجلات المرتبطة لم يعد متاحًا. لم تتغير المسودة المحفوظة.</p>
+        <div className="form-modal-actions">
+          <button onClick={() => { completed.current = true; leaveGuard.closeAfterSave(); }}>الاحتفاظ والرجوع</button>
+          <button onClick={() => {
+            const id = originalStoredDraft && typeof originalStoredDraft === "object" && "id" in originalStoredDraft ? String(originalStoredDraft.id) : "";
+            try { if (id && new PendingSubmissionStore().has(ctx.uid, id)) { ctx.showToast("نتيجة الحفظ معلقة؛ تحقّق من السجل أولًا."); return; } } catch { return; }
+            if (removeUiState(ctx.uid, draftSlot) && removeUiState(ctx.uid, "active-form")) setInvalidDraft(false);
+          }}>تجاهل المسودة صراحةً</button>
+        </div>
+      </section>
+    </div> : null}
+    </>
   );
 }
 
@@ -10222,6 +11030,9 @@ function AppDrawer({
         { label: "عروض الأسعار", icon: FileTextIcon, target: "quotes" },
         { label: "الطلبيات", icon: FilePlusIcon, target: "orders" },
         { label: "سلة المحذوفات", icon: TrashIcon, target: "trash" },
+        { label: "الكاشير", icon: ReaderIcon, action: () => { onClose(); ctx.openCashier(); } },
+        { label: "مراجع المستندات الافتراضية", icon: GearIcon, action: () => { onClose(); ctx.flowRef.current?.push(referenceDefaultsScreen()); } },
+        { label: "إعدادات الكاشير", icon: GearIcon, action: () => { onClose(); ctx.flowRef.current?.push(cashierSettingsScreen()); } },
         { label: "الإعدادات", icon: GearIcon, target: "settings" },
       ],
     },
@@ -10229,7 +11040,7 @@ function AppDrawer({
       title: "المخازن",
       items: [
         { label: "المخازن", icon: CubeIcon, target: "warehouses" },
-        { label: "الأصناف", icon: BackpackIcon, target: "items" },
+        { label: "ملف الأصناف", icon: BackpackIcon, target: "items" },
         { label: "إضافة صنف", icon: PlusIcon, action: () => { onClose(); ctx.openInventoryAdd(); } },
       ],
     },
@@ -10257,7 +11068,7 @@ function AppDrawer({
     {
       title: "الجلسة",
       items: [
-        { label: "تسجيل الخروج", icon: LockClosedIcon, action: ctx.handleSignOut },
+        { label: import.meta.env.VITE_NASQO_HYBRID === "1" ? "تسجيل الخروج من Google" : "تسجيل الخروج", icon: LockClosedIcon, action: ctx.handleSignOut },
       ],
     },
   ];
@@ -10581,14 +11392,22 @@ function TransactionModal({
   onClose: () => void;
 }) {
   const ctx = useWorkspace();
+  const defaultsRef=useRef(ctx.workspace?.referenceDefaults);
+  const referenceAccount=initialAccount ?? ctx.accounts.find(a=>a.id===ctx.workspace?.referenceDefaults?.accountId);
+  const referenceCurrency=editingEntry?.currency ?? referenceAccount?.currency ?? ctx.workspace?.defaultCurrency ?? "ريال";
+  const initialBox=()=>editingEntry ? editingEntry.cashboxId : resolveCashbox(defaultsRef.current,ctx.cashboxes,referenceCurrency,referenceAccount);
+  const manualCashbox=useRef(false);
+  const scope = ctx.workspace?.id ?? ctx.uid;
   const [accountId, setAccountId] = useState(
-    editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "",
+    editingEntry?.accountId ?? referenceAccount?.id ?? "",
   );
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const localDraftId = useRef("");
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id,
+    initialBox(),
   );
   const [currency, setCurrency] = useState<CurrencyCode>(
-    editingEntry?.currency ?? initialAccount?.currency ?? "ريال",
+    referenceCurrency,
   );
   const [amount, setAmount] = useState(editingEntry ? String(editingEntry.amount) : "");
   const [note, setNote] = useState(editingEntry?.details ?? "");
@@ -10600,24 +11419,106 @@ function TransactionModal({
   const [saving, setSaving] = useState(false);
   const [txError, setTxError] = useState<{ field?: "account" | "amount" | "submit"; message: string } | null>(null);
   const amountInputRef = useRef<HTMLInputElement>(null);
+  const keyboard = useKeyboard();
+  const [draftReady, setDraftReady] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const completed = useRef(false);
+  const initialFields = useRef("");
+  const fields = { accountId, cashboxId, currency, amount, note, payment, direction, expenseCategory };
+  const fieldJson = JSON.stringify(fields);
+  const dirty = draftReady && (restored || fieldJson !== initialFields.current);
+  const draft = { version: 1, entryId: localDraftId.current, editingEntryId: editingEntry?.id ?? "", fields };
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const persistDraft = () => !hybridLocal || (writeUiState(scope, "transaction-draft", latestDraft.current) &&
+    writeUiState(scope, "active-form", { kind: "transaction", accountId, editingEntryId: editingEntry?.id }));
+  const pendingReceipt = () => {
+    if (!hybridLocal || editingEntry || !localDraftId.current) return false;
+    try { return new PendingSubmissionStore().has(ctx.uid, localDraftId.current); }
+    catch { return true; }
+  };
+  const discardDraft = () => {
+    if (saving || pendingReceipt()) return false;
+    const removed = !hybridLocal || (removeUiState(scope, "transaction-draft") && removeUiState(scope, "active-form"));
+    if (removed) completed.current = true;
+    return removed;
+  };
+  const finishSave = () => {
+    completed.current = true;
+    if (hybridLocal) { removeUiState(scope, "transaction-draft"); removeUiState(scope, "active-form"); }
+    onClose();
+  };
+  const leaveGuard = useUnsavedForm({
+    active: open, dirty, onClose: () => { keyboard.hide(); onClose(); },
+    saveDraft: () => !saving && persistDraft(), discardDraft,
+  });
+  const requestClose = () => {
+    keyboard.hide();
+    if (saving) { ctx.showToast("انتظر تأكيد الحفظ قبل إغلاق السند."); return; }
+    leaveGuard.requestClose();
+  };
+  useBackLayer(open && saving, () => { requestClose(); return true; }, 110);
 
   useEffect(() => {
-    if (open) {
-      setTxError(null);
-      setAccountId(editingEntry?.accountId ?? initialAccount?.id ?? ctx.accounts[0]?.id ?? "");
-      setCashboxId(editingEntry?.cashboxId ?? ctx.cashboxes[0]?.id);
-      setCurrency(editingEntry?.currency ?? initialAccount?.currency ?? "ريال");
-      setAmount(editingEntry ? String(editingEntry.amount) : "");
-      setNote(editingEntry?.details ?? "");
-      setPayment(editingEntry?.payment === "balance" ? "balance" : "cash");
-      setDirection(editingEntry?.direction ?? "debit");
-      setExpenseCategory(editingEntry?.expenseCategory ?? "");
-    }
-  }, [ctx.accounts, ctx.cashboxes, editingEntry, initialAccount, open]);
+    if (!open) { setDraftReady(false); return; }
+    completed.current = false;
+    defaultsRef.current=ctx.workspace?.referenceDefaults;
+    const defaults = {
+      accountId: editingEntry?.accountId ?? referenceAccount?.id ?? "",
+      cashboxId: initialBox(),
+      currency: referenceCurrency,
+      amount: editingEntry ? String(editingEntry.amount) : "", note: editingEntry?.details ?? "",
+      payment: editingEntry?.payment === "balance" ? "balance" as const : "cash" as const,
+      direction: editingEntry?.direction ?? "debit", expenseCategory: editingEntry?.expenseCategory ?? "",
+    };
+    const saved = hybridLocal ? readUiState<typeof draft | null>(scope, "transaction-draft", null, (value) => {
+      if (!value || typeof value !== "object") return false;
+      const candidate = value as typeof draft;
+      const f = candidate.fields;
+      return candidate.version === 1 && typeof candidate.entryId === "string" && /^voucher_[A-Za-z0-9_]+$/.test(candidate.entryId) &&
+        candidate.editingEntryId === (editingEntry?.id ?? "") && Boolean(f) &&
+        [f.accountId, f.currency, f.amount, f.note, f.expenseCategory].every((v) => typeof v === "string") &&
+        ["cash", "balance"].includes(f.payment) && ["debit", "credit"].includes(f.direction) &&
+        (f.cashboxId === undefined || typeof f.cashboxId === "number") &&
+        (f.cashboxId === undefined || ctx.cashboxes.some((cashbox) => cashbox.id === f.cashboxId)) &&
+        ctx.accounts.some((a) => a.id === f.accountId) && ctx.currencyCodes.includes(f.currency) &&
+        (!initialAccount || initialAccount.id === f.accountId) &&
+        (!candidate.editingEntryId || ctx.ledger.some((e) => e.id === candidate.editingEntryId && !e.deleted));
+    }) : null;
+    const next = saved?.fields ?? defaults;
+    localDraftId.current = saved?.entryId ?? `voucher_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    initialFields.current = JSON.stringify(defaults);
+    manualCashbox.current=Boolean(editingEntry||saved);
+    setRestored(Boolean(saved));
+    setTxError(null); setAccountId(next.accountId); setCashboxId(next.cashboxId); setCurrency(next.currency);
+    setAmount(next.amount); setNote(next.note); setPayment(next.payment); setDirection(next.direction);
+    setExpenseCategory(next.expenseCategory); setDraftReady(true);
+    // Snapshot refreshes must not reset an open user's fields or operation ID.
+  }, [open, scope, editingEntry?.id, initialAccount?.id]);
 
+  useEffect(() => {
+    if (!hybridLocal || !open || !dirty || completed.current) return;
+    persistDraft();
+    const checkpoint = () => { if (!completed.current) persistDraft(); };
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [hybridLocal, open, dirty, fieldJson, scope]);
+
+  const chooseCashbox=(id:number|undefined)=>{manualCashbox.current=true;setCashboxId(id);};
+  const chooseAccount=(id:string)=>{setAccountId(id);if(!manualCashbox.current)setCashboxId(resolveCashbox(defaultsRef.current,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id)));};
+  const chooseCurrency=(value:CurrencyCode)=>{setCurrency(value);setCashboxId(manualCashbox.current?eligibleCashbox(ctx.cashboxes,cashboxId,value):resolveCashbox(defaultsRef.current,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId)));};
   if (!open) return null;
 
-  const selectedAccount = ctx.accounts.find((a) => a.id === accountId) ?? initialAccount ?? ctx.accounts[0];
+  const voucherAccounts=hybridLocal?ctx.accounts.filter(a=>a.currency===currency&&!a.isCashAccount&&!a.note?.startsWith("nasqo:system:")):ctx.accounts;
+  const voucherCashboxes=hybridLocal?ctx.cashboxes.filter(cb=>cb.currencyCode===currency&&cb.isActive!==false&&cb.state!==0):ctx.cashboxes;
+  const effectiveCashboxId=eligibleCashbox(ctx.cashboxes,cashboxId,currency);
+  const selectedAccount = voucherAccounts.find((a) => a.id === accountId);
   const summary = selectedAccount ? computeAccountSummary(selectedAccount, ctx.ledger, currency) : null;
   const currentTime = new Intl.DateTimeFormat("ar-SA", {
     weekday: "short",
@@ -10626,6 +11527,23 @@ function TransactionModal({
   }).format(new Date());
 
   const save = async (andPrint = false) => {
+    if (saving || !draftReady) return;
+    if (hybridLocal && !persistDraft()) {
+      setTxError({ field: "submit", message: "تعذر حفظ المسودة محليًا؛ لم يُرسل السند." });
+      return;
+    }
+    if (pendingReceipt()) {
+      setSaving(true);
+      try {
+        await createLedgerEntry(ctx.uid, { id: localDraftId.current, accountId,
+          accountName: ctx.accounts.find((account) => account.id === accountId)?.name ?? "" });
+        finishSave();
+        ctx.showToast("تم التحقق من السند المحفوظ سابقًا دون إعادة ترحيل.");
+      } catch (error) {
+        setTxError({ field: "submit", message: error instanceof Error ? error.message : "تعذر التحقق من نتيجة الحفظ" });
+      } finally { setSaving(false); }
+      return;
+    }
     if (!selectedAccount) {
       triggerHaptic("warning");
       const msg = "اختر حسابًا أولًا قبل الحفظ.";
@@ -10633,6 +11551,21 @@ function TransactionModal({
       ctx.showToast(msg, 4500);
       return;
     }
+    if (hybridLocal && editingEntry) {
+      if(editingEntry.postingStatus!=="posted"||!editingEntry.journalLines?.length||editingEntry.deleted){
+        const msg="التعديل الوصفي متاح للسند المحلي المرحّل فقط.";
+        setTxError({field:"submit",message:msg});ctx.showToast(msg);return;
+      }
+      setSaving(true);
+      try{
+        await updateLedgerEntry(ctx.uid,editingEntry.id,{accountId:editingEntry.accountId,accountName:editingEntry.accountName,details:note.trim()});
+        ctx.showToast("تم حفظ بيان السند دون تغيير القيود.");
+        finishSave();
+      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
+      finally{setSaving(false);}
+      return;
+    }
+    if(payment==="cash"&&!effectiveCashboxId){setTxError({field:"submit",message:"اختر صندوقًا نقديًا من عملة السند قبل الحفظ."});return;}
     const parsedAmount = parseArabicNumber(amount);
     if (parsedAmount <= 0) {
       triggerHaptic("warning");
@@ -10667,9 +11600,10 @@ function TransactionModal({
         ctx.showToast(`تم تعديل السند #${editingEntry.entryNumber}`);
       } else {
         targetEntryId = await createLedgerEntry(ctx.uid, {
+          ...(hybridLocal ? {id:localDraftId.current} : {}),
           accountId: selectedAccount.id,
           accountName: selectedAccount.name,
-          ...(cashboxId ? { cashboxId } : {}),
+          ...(effectiveCashboxId && (!hybridLocal || payment==="cash") ? {cashboxId:effectiveCashboxId} : {}),
           kind: "voucher",
           typeLabel,
           payment,
@@ -10686,7 +11620,7 @@ function TransactionModal({
         triggerHaptic("success");
         ctx.showToast(`تم حفظ السند رقم #${nextNum} بنجاح`);
       }
-      onClose();
+      finishSave();
       if (andPrint && targetEntryId) {
         ctx.flowRef.current?.push(cashInvoicePreviewScreen(targetEntryId));
       }
@@ -10706,7 +11640,7 @@ function TransactionModal({
     try {
       await setLedgerDeleted(ctx.uid, editingEntry.id, true);
       ctx.showToast(`تم نقل العملية #${editingEntry.entryNumber} إلى سلة المحذوفات`);
-      onClose();
+      finishSave();
     } finally {
       setSaving(false);
     }
@@ -10714,8 +11648,9 @@ function TransactionModal({
 
   return (
     <div className="center-modal-layer" data-testid="transaction-modal">
-      <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق السند" />
+      <button className="center-modal-backdrop" onClick={requestClose} aria-label="إغلاق السند" />
       <section className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="transaction-modal-title">
+        <fieldset disabled={saving || pendingReceipt()} style={{ display: "contents", border: 0 }}>
         <div className="transaction-modal-head-row">
           <h2 id="transaction-modal-title">
             {editingEntry
@@ -10740,11 +11675,11 @@ function TransactionModal({
         </div>
 
         <AccountSelectCombobox
-          accounts={ctx.accounts}
+          accounts={voucherAccounts}
           value={selectedAccount?.id ?? ""}
           onChange={(nextId) => {
             if (txError?.field === "account") setTxError(null);
-            setAccountId(nextId);
+            chooseAccount(nextId);
           }}
           placeholder="اختر حساب السند"
           searchPlaceholder="بحث سريع عن الحساب..."
@@ -10754,17 +11689,20 @@ function TransactionModal({
           searchTestId="transaction-account-search"
           listTestId="transaction-account-list"
           invalid={txError?.field === "account"}
+          onAddAccount={()=>ctx.openAccountReference(chooseAccount,false,currency)}
           compact
         />
         <div className="transaction-cashbox-row">
-          {ctx.cashboxes.length > 0 || editingEntry?.cashboxId ? (
+          <button type="button" aria-label="إدارة صندوق السند" onClick={()=>{keyboard.hide();ctx.openCashboxReference(chooseCashbox,currency);}}>+ صندوق</button>
+          {payment==="cash" || editingEntry?.cashboxId ? (
             <select
               className="transaction-fund"
               aria-label="صندوق النقد"
-              value={cashboxId ?? ""}
-              onChange={(e) => setCashboxId(Number(e.target.value))}
+              value={effectiveCashboxId ?? ""}
+              onChange={(e) => chooseCashbox(e.target.value?Number(e.target.value):undefined)}
             >
-              {ctx.cashboxes.map((cb) => (
+              <option value="">غير محدد</option>
+              {voucherCashboxes.map((cb) => (
                 <option key={cb.id} value={cb.id}>
                   {cb.name}
                 </option>
@@ -10780,7 +11718,7 @@ function TransactionModal({
             className="transaction-fund"
             aria-label="عملة السند"
             value={currency}
-            onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+            onChange={(e) => chooseCurrency(e.target.value as CurrencyCode)}
           >
             {ctx.currencyCodes.map((c) => (
               <option key={c} value={c}>
@@ -10890,20 +11828,45 @@ function TransactionModal({
           currency={currency}
           entryType={direction === "credit" ? "سند له" : "سند عليه / مصروف"}
         />
+        </fieldset>
         <div className="form-modal-actions form-modal-actions-3">
-          <button className="cancel" onClick={onClose}>
+          <button className="cancel" onClick={requestClose}>
             إلغاء
           </button>
-          <button className="save-print" disabled={saving} onClick={() => void save(true)}>
+          <button className="save-print" disabled={saving||(hybridLocal&&Boolean(editingEntry))} onClick={() => void save(true)}>
             حفظ وطباعة
           </button>
           <button className="save" disabled={saving} onClick={() => void save(false)}>
-            {saving ? "جاري الحفظ..." : "حفظ"}
+            {saving ? "جاري الحفظ..." : pendingReceipt() ? "التحقق من نتيجة الحفظ" : hybridLocal&&editingEntry ? "حفظ البيان فقط" : "حفظ"}
           </button>
         </div>
       </section>
+      <UnsavedFormPrompt guard={leaveGuard} />
     </div>
   );
+}
+
+function ReferenceAccountManager({cash,currency,onSelect,onClose}:{cash:boolean;currency?:string;onSelect:(id:string)=>void;onClose:()=>void}){
+ const ctx=useWorkspace(),keyboard=useKeyboard();const [query,setQuery]=useState("");const [edit,setEdit]=useState<AccountRecord|null|undefined>();const [pendingDelete,setPendingDelete]=useState<AccountRecord|null>(null);const [error,setError]=useState("");const [busy,setBusy]=useState(false);
+ const back=()=>{if(busy)return;keyboard.hide();setError("");if(pendingDelete)setPendingDelete(null);else onClose();};
+ useBackLayer(edit===undefined,()=>{back();return true;},300);
+ const rows=ctx.accounts.filter(a=>(!cash||a.isCashAccount)&&(!currency||a.currency===currency)&&matchesArabicSearch(a.name,query));
+ const startEdit=(account:AccountRecord|null)=>{keyboard.hide();setError("");setEdit(account);};
+ return <div className="reference-account-layer">
+ {edit===undefined?<ReferenceManagerDialog title={pendingDelete?"تأكيد حذف الحساب":cash?"حسابات الصناديق":"إدارة الحساب المرجعي"} description="الحفظ هنا لا يرحّل المستند المفتوح." onClose={back} busy={busy} alert={Boolean(pendingDelete)} testId="reference-account-manager" footer={<>
+  <button className="reference-button secondary" disabled={busy} onClick={back}>{pendingDelete?"إلغاء الحذف":"إلغاء والعودة"}</button>
+  {pendingDelete?<button className="reference-button danger" disabled={busy} onClick={async()=>{setBusy(true);setError("");try{await deleteAccount(ctx.uid,pendingDelete.id);setPendingDelete(null);}catch(e){setError(e instanceof Error?e.message:"تعذر الحذف");}finally{setBusy(false);}}}>تأكيد الحذف</button>:<button className="reference-button primary" onClick={()=>startEdit(null)}>إضافة حساب</button>}
+ </>}>
+ {pendingDelete?<p>حذف «{pendingDelete.name}»؟ السجل المرتبط بالحركات محمي.</p>:<>
+  <label className="reference-field"><span>بحث الحساب المرجعي</span><KeyboardInput aria-label="بحث الحساب المرجعي" placeholder="اكتب اسم الحساب..." value={query} onChange={e=>setQuery(e.target.value)}/></label>
+  <div className="reference-manager-list">{rows.map(a=><article className="reference-manager-row" key={a.id}>
+   <div className="reference-row-heading"><strong>{a.name}</strong><span>{a.currency}</span></div>
+   <div className="reference-row-actions"><button className="reference-button primary" aria-label={`${a.name} — اختيار والعودة`} onClick={()=>{keyboard.hide();onSelect(a.id);}}>اختيار والعودة</button><button className="reference-button secondary" aria-label={`تعديل ${a.name}`} onClick={()=>startEdit(a)}>تعديل</button><button className="reference-button danger" aria-label={`حذف ${a.name}`} onClick={()=>{keyboard.hide();setError("");setPendingDelete(a);}}>حذف</button></div>
+  </article>)}{!rows.length?<p className="reference-empty">لا توجد حسابات مطابقة.</p>:null}</div>
+ </>}
+ {error?<p className="reference-error" role="alert">{error}</p>:null}
+ </ReferenceManagerDialog>:<AccountCreateModal key={edit?.id??"reference-new"} mode="extended" open initialAccount={edit??undefined} defaultCategory={cash?"shop":"clients"} defaultCash={cash} defaultCurrency={currency} onSaved={onSelect} onClose={()=>setEdit(undefined)}/>}
+ </div>;
 }
 
 function AccountCreateModal({
@@ -10911,8 +11874,9 @@ function AccountCreateModal({
   open,
   initialAccount,
   defaultCategory = "purchases",
-  onClose,
+  onClose,onSaved,defaultCash=false,defaultCurrency,
 }: {
+  onSaved?:(id:string)=>void;defaultCash?:boolean;defaultCurrency?:string;
   mode: AccountCreateMode;
   open: boolean;
   initialAccount?: AccountRecord;
@@ -10920,6 +11884,10 @@ function AccountCreateModal({
   onClose: () => void;
 }) {
   const ctx = useWorkspace();
+  const scope = ctx.workspace?.id ?? ctx.uid;
+  const draftSlot = `account-draft:${mode}:${initialAccount?.id ?? defaultCategory}`;
+  const hybridLocal = import.meta.env.VITE_NASQO_HYBRID === "1";
+  const [localCashAccount,setLocalCashAccount] = useState(initialAccount?.isCashAccount ?? defaultCash);
   const [name, setName] = useState(initialAccount?.name ?? "");
   const [category, setCategory] = useState<AccountCategory>(initialAccount?.category ?? defaultCategory);
   const [phone, setPhone] = useState(initialAccount?.phone ?? "");
@@ -10938,31 +11906,120 @@ function AccountCreateModal({
   const [settlement, setSettlement] = useState(initialAccount?.settlement ?? false);
   const [documentNumber, setDocumentNumber] = useState(initialAccount?.documentNumberRequired ?? false);
   const [accountImage, setAccountImage] = useState<"1" | "2" | "3">(initialAccount?.accountImage ?? "1");
-  const [accountCurrency, setAccountCurrency] = useState<CurrencyCode>(initialAccount?.currency ?? "ريال");
+  const [accountCurrency, setAccountCurrency] = useState<CurrencyCode>(initialAccount?.currency ?? (defaultCurrency as CurrencyCode) ?? "ريال");
   const [sortOrder, setSortOrder] = useState(String(initialAccount?.sortOrder ?? ctx.accounts.length + 1));
   const [messageMethod, setMessageMethod] = useState<"sms" | "whatsapp">(initialAccount?.messageMethod ?? "sms");
   const [sendMode, setSendMode] = useState<"auto" | "confirm" | "never">(initialAccount?.sendMode ?? "never");
   const [saving, setSaving] = useState(false);
+  const [submissionPending, setSubmissionPending] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const completed = useRef(false);
+  const initialFields = useRef("");
   const keyboard = useKeyboard();
+  const fields = { localCashAccount, name, category, phone, note, debtLimit, openingBalance, openingAmount,
+    openingDirection, debtAmount, settlement, documentNumber, accountImage, accountCurrency, sortOrder, messageMethod, sendMode };
+  const fieldJson = JSON.stringify(fields);
+  const dirty = draftReady && (restored || submissionPending || fieldJson !== initialFields.current);
+  const draft = { version: 1, recordId: initialAccount?.id ?? "", submissionPending, fields };
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  const persistDraft = () => !hybridLocal || (writeUiState(scope, draftSlot, latestDraft.current) &&
+    writeUiState(scope, "active-form", { kind: "account", accountId: initialAccount?.id, mode, defaultCategory }));
+  const discardDraft = () => {
+    if (saving || submissionPending) return false;
+    const removed = !hybridLocal || (removeUiState(scope, draftSlot) && removeUiState(scope, "active-form"));
+    if (removed) completed.current = true;
+    return removed;
+  };
+  const leaveGuard = useUnsavedForm({ active: open, dirty,
+    onClose: () => { keyboard.hide(); onClose(); }, saveDraft: () => !saving && persistDraft(), discardDraft });
   const close = () => {
     keyboard.hide();
-    onClose();
+    if (saving) { ctx.showToast("انتظر تأكيد حفظ الحساب."); return; }
+    leaveGuard.requestClose();
   };
+  useBackLayer(open && saving, () => { close(); return true; }, 110);
+
+  useEffect(() => {
+    if (!open) { setDraftReady(false); return; }
+    completed.current = false;
+    const defaults = {
+      localCashAccount: initialAccount?.isCashAccount ?? defaultCash, name: initialAccount?.name ?? "",
+      category: initialAccount?.category ?? defaultCategory, phone: initialAccount?.phone ?? "", note: initialAccount?.note ?? "",
+      debtLimit: Boolean(initialAccount?.creditLimit), openingBalance: Boolean(initialAccount?.openingBalance),
+      openingAmount: initialAccount?.openingBalance ? String(initialAccount.openingBalance) : "",
+      openingDirection: initialAccount?.openingDirection ?? "debit", debtAmount: initialAccount?.creditLimit ? String(initialAccount.creditLimit) : "",
+      settlement: initialAccount?.settlement ?? false, documentNumber: initialAccount?.documentNumberRequired ?? false,
+      accountImage: initialAccount?.accountImage ?? "1", accountCurrency: initialAccount?.currency ?? (defaultCurrency as CurrencyCode) ?? "ريال",
+      sortOrder: String(initialAccount?.sortOrder ?? ctx.accounts.length + 1),
+      messageMethod: initialAccount?.messageMethod ?? "sms", sendMode: initialAccount?.sendMode ?? "never",
+    };
+    const saved = hybridLocal ? readUiState<typeof draft | null>(scope, draftSlot, null, (value) => {
+      if (!value || typeof value !== "object") return false;
+      const candidate = value as typeof draft;
+      const f = candidate.fields;
+      return candidate.version === 1 && candidate.recordId === (initialAccount?.id ?? "") &&
+        typeof candidate.submissionPending === "boolean" && matchesUiShape(f, defaults) &&
+        ["purchases", "sales", "clients", "employees", "transfers", "shop"].includes(f.category) &&
+        ["debit", "credit"].includes(f.openingDirection) && ["1", "2", "3"].includes(f.accountImage) &&
+        ["sms", "whatsapp"].includes(f.messageMethod) && ["auto", "confirm", "never"].includes(f.sendMode) &&
+        ctx.currencyCodes.includes(f.accountCurrency) &&
+        (!candidate.recordId || ctx.accounts.some((account) => account.id === candidate.recordId));
+    }) : null;
+    const next = saved?.fields ?? defaults;
+    initialFields.current = JSON.stringify(defaults);
+    setRestored(Boolean(saved)); setSubmissionPending(saved?.submissionPending ?? false);
+    setLocalCashAccount(next.localCashAccount); setName(next.name); setCategory(next.category); setPhone(next.phone); setNote(next.note);
+    setDebtLimit(next.debtLimit); setOpeningBalance(next.openingBalance); setOpeningAmount(next.openingAmount);
+    setOpeningDirection(next.openingDirection); setDebtAmount(next.debtAmount); setSettlement(next.settlement);
+    setDocumentNumber(next.documentNumber); setAccountImage(next.accountImage); setAccountCurrency(next.accountCurrency);
+    setSortOrder(next.sortOrder); setMessageMethod(next.messageMethod); setSendMode(next.sendMode); setDraftReady(true);
+  }, [open, scope, draftSlot, initialAccount?.id]);
+
+  useEffect(() => {
+    if (!hybridLocal || !open || !dirty || completed.current) return;
+    persistDraft();
+    const checkpoint = () => { if (!completed.current) persistDraft(); };
+    window.addEventListener("pagehide", checkpoint);
+    window.addEventListener("nasqo:checkpoint", checkpoint);
+    document.addEventListener("visibilitychange", checkpoint);
+    return () => {
+      window.removeEventListener("pagehide", checkpoint);
+      window.removeEventListener("nasqo:checkpoint", checkpoint);
+      document.removeEventListener("visibilitychange", checkpoint);
+    };
+  }, [hybridLocal, open, dirty, fieldJson, submissionPending, scope, draftSlot]);
+
   if (!open) return null;
   const testId = mode === "compact" ? "account-form-compact" : "account-form-extended";
 
   const submitAccount = async () => {
     keyboard.hide();
+    if (saving || !draftReady || submissionPending) {
+      if (submissionPending) ctx.showToast("تأكيد حفظ الحساب السابق غير مكتمل. راجع قائمة الحسابات؛ لم يُعَد إرسال الطلب.");
+      return;
+    }
     if (!name.trim()) {
       triggerHaptic("warning");
       ctx.showToast("أدخل اسم الحساب أولًا");
       return;
     }
+    if (hybridLocal && ((settlement && !initialAccount?.settlement) || (documentNumber && !initialAccount?.documentNumberRequired) ||
+        (!initialAccount && openingBalance && parseArabicNumber(openingAmount) !== 0))) {
+      ctx.showToast("بعض الإعدادات أو الرصيد الافتتاحي غير مدعومة في الإصدار المحلي بعد.");
+      return;
+    }
+    if (hybridLocal) {
+      latestDraft.current = { ...latestDraft.current, submissionPending: true };
+      if (!persistDraft()) { ctx.showToast("تعذر حفظ المسودة محليًا؛ لم يُرسل الحساب."); return; }
+      setSubmissionPending(true);
+    }
     setSaving(true);
     try {
       const nextCode =
         initialAccount?.codeNumber ?? Math.max(0, ...ctx.accounts.map((a) => a.codeNumber)) + 1;
-      await createOrUpdateAccount(
+      const savedAccountId=await createOrUpdateAccount(
         ctx.uid,
         {
           name: name.trim(),
@@ -10970,7 +12027,7 @@ function AccountCreateModal({
           phone,
           creditLimit: debtLimit ? parseArabicNumber(debtAmount) : initialAccount?.creditLimit ?? 1000000,
           currency: accountCurrency,
-          isCashAccount: initialAccount?.isCashAccount ?? false,
+          isCashAccount: hybridLocal ? localCashAccount : initialAccount?.isCashAccount ?? defaultCash,
           accountImage,
           sortOrder: parseArabicNumber(sortOrder) || 1,
           settlement,
@@ -10985,8 +12042,19 @@ function AccountCreateModal({
         initialAccount?.id,
       );
       triggerHaptic("success");
-      ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : "تم إنشاء الحساب وحفظه في السحابة");
+      ctx.showToast(initialAccount ? "تم تحديث بيانات الحساب" : import.meta.env.VITE_NASQO_HYBRID === "1" ? "تم إنشاء الحساب وحفظه محليًا" : "تم إنشاء الحساب وحفظه في السحابة");
+      completed.current = true;
+      if (hybridLocal) { removeUiState(scope, draftSlot); removeUiState(scope, "active-form"); }
+      setSubmissionPending(false);
+      onSaved?.(savedAccountId);
       onClose();
+    } catch (err) {
+      if (!(err instanceof UncertainWriteError)) {
+        setSubmissionPending(false);
+        latestDraft.current = { ...latestDraft.current, submissionPending: false };
+        if (hybridLocal) persistDraft();
+      }
+      ctx.showToast(err instanceof Error ? err.message : "تعذر حفظ الحساب");
     } finally {
       setSaving(false);
     }
@@ -11002,6 +12070,13 @@ function AccountCreateModal({
         aria-labelledby={`${testId}-title`}
       >
         <h2 id={`${testId}-title`}>{initialAccount ? "تعديل بيانات حساب" : "إضافة حساب جديد"}</h2>
+        {submissionPending ? <p role="status">تأكيد الحفظ غير مكتمل. راجع قائمة الحسابات قبل إنشاء حساب آخر؛ لم يُعَد إرسال الطلب.</p> : null}
+        <fieldset disabled={saving || submissionPending} style={{ display: "contents", border: 0 }}>
+        {hybridLocal && <div className="account-check-row">
+          <label><input type="checkbox" checked={localCashAccount} disabled={Boolean(initialAccount)}
+            onChange={e=>setLocalCashAccount(e.target.checked)}/> حساب صندوق نقدي</label>
+          <small>محليًا: بيانات الحساب والصورة والترتيب وتفضيلات الرسائل قابلة للحفظ. الرصيد الافتتاحي والسياسات المحاسبية تحتاج قيدًا معتمدًا.</small>
+        </div>}
         {mode === "compact" ? (
           <>
             <label className="underlined-form-field" htmlFor="compact-account-name">
@@ -11269,15 +12344,17 @@ function AccountCreateModal({
             ) : null}
           </>
         )}
+        </fieldset>
         <div className="form-modal-actions">
           <button className="cancel" onClick={close}>
             إلغاء
           </button>
-          <button className="save" disabled={saving} onClick={submitAccount}>
-            {saving ? "جاري الحفظ..." : "حفظ"}
+          <button className="save" disabled={saving || submissionPending} onClick={submitAccount}>
+            {saving ? "جاري الحفظ..." : onSaved?"حفظ واختيار":"حفظ"}
           </button>
         </div>
       </section>
+      <UnsavedFormPrompt guard={leaveGuard} />
     </div>
   );
 }
@@ -11491,6 +12568,8 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>("ريال");
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting,setDeleting]=useState<AccountGroupRecord|null>(null);
+  const keyboard=useKeyboard();
 
   const resetForm = () => {
     setEditingGroup(null);
@@ -11543,9 +12622,9 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
   };
 
   return (
-    <div className="center-modal-layer" data-testid="account-groups-modal">
+    <><div className="center-modal-layer" data-testid="account-groups-modal">
       <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق دليل الحسابات" />
-      <section className="account-groups-modal" role="dialog" aria-modal="true" aria-labelledby="account-groups-title">
+      <section className="account-groups-modal" hidden={!!deleting} role="dialog" aria-modal="true" aria-labelledby="account-groups-title">
         <header className="smart-modal-header">
           <button type="button" className="smart-modal-close" onClick={onClose} aria-label="إغلاق">
             <Cross2Icon />
@@ -11626,6 +12705,7 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
             >
               تعديل
             </button>
+            <button type="button" className="ag-btn cancel" disabled={saving||!editingGroup} onClick={()=>{keyboard.hide();setDeleting(editingGroup);}}>حذف المجموعة</button>
             <button type="button" className="ag-btn cancel" onClick={resetForm}>
               إلغاء الأمر
             </button>
@@ -11682,7 +12762,7 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
           </button>
         </footer>
       </section>
-    </div>
+    </div>{deleting&&<DeleteRecordDialog name={deleting.name} onDelete={()=>deleteAccountGroup(ctx.uid,deleting.id)} onClose={()=>setDeleting(null)} onDeleted={()=>{setDeleting(null);resetForm();ctx.showToast("تم حذف المجموعة");}}/>}</>
   );
 }
 
@@ -12027,6 +13107,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
             <Cross2Icon />
           </button>
           <h2 id="cashboxes-report-title">صناديق النقدية والتدفق النقدي</h2>
+          <button className="reference-header-action" onClick={()=>ctx.openCashboxReference(undefined,currencyFilter==="الكل"?defaultCurrency:currencyFilter)}>إدارة الصناديق</button>
           <span className="smart-modal-spacer" aria-hidden="true" />
         </header>
 
@@ -12088,6 +13169,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
         </section>
 
         <div className="account-groups-table-wrap cashboxes-table-wrap">
+          {import.meta.env.VITE_NASQO_HYBRID === "1" && <p>تقرير الصناديق التاريخية المستوردة؛ حسابات النقدية التشغيلية تظهر منفصلة أدناه. لا يمثل التقرير اعتمادًا نهائيًا للنقدية.</p>}
           {loading ? (
             <NasqoBrandLoader size="sm" label="جاري حساب حركة الصناديق..." />
           ) : (
@@ -12167,7 +13249,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
                         {formatAmount(report.reconciliation.unlinkedCashOut)})
                       </div>
                       <div>
-                        إجمالي صافي النقدية الموحد (يطابق الميزانية):{" "}
+                        إجمالي صافي النقدية في نطاق التقرير:{" "}
                         <b className="coa-cash-tag"><bdi>{formatAmount(report.reconciliation.totalCashNet)}</bdi></b>
                       </div>
                     </>
@@ -12237,6 +13319,7 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
   const [symbol, setSymbol] = useState("");
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<CurrencyRecord | null>(null);
 
   const currenciesList = useMemo<CurrencyRecord[]>(
     () =>
@@ -12311,8 +13394,12 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
       ctx.showToast("يرجى إدخال اسم العملة أولًا");
       return;
     }
-    const parsedSell = Math.max(0.0001, parseArabicNumber(sellRate) || 1);
-    const parsedBuy = Math.max(0.0001, parseArabicNumber(buyRate) || 1);
+    const parsedSell = parseArabicNumber(sellRate);
+    const parsedBuy = parseArabicNumber(buyRate);
+    if (!Number.isFinite(parsedSell) || parsedSell <= 0 || !Number.isFinite(parsedBuy) || parsedBuy <= 0) {
+      ctx.showToast("أدخل سعر شراء وبيع أكبر من صفر.");
+      return;
+    }
     setSaving(true);
     try {
       const targetId = isEditButton ? (editingCurrency?.id ?? selectedId ?? undefined) : editingCurrency?.id;
@@ -12345,24 +13432,12 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
       ctx.showToast("حدد عملة من الجدول أولًا");
       return;
     }
-    setSaving(true);
-    try {
-      const updated = await deleteCurrencyRecord(ctx.uid, target.id);
-      setSelectedId(updated[0]?.id ?? null);
-      resetForm();
-      triggerHaptic("success");
-      ctx.showToast(`تم حذف العملة: ${target.name}`);
-    } catch (err) {
-      triggerHaptic("warning");
-      ctx.showToast(err instanceof Error ? err.message : "لا يمكن حذف العملة الوحيدة المتبقية");
-    } finally {
-      setSaving(false);
-    }
-  }, [ctx, currenciesList, editingCurrency?.id, keyboard, resetForm, selectedId]);
+    setDeleting(target);
+  }, [ctx, currenciesList, editingCurrency?.id, keyboard, selectedId]);
 
   if (!open) return null;
 
-  return (
+  return (<>
     <div
       className="center-modal-layer"
       data-testid="currencies-modal"
@@ -12553,7 +13628,7 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
               if (target) loadRowForEdit(target);
             }}
           >
-            تعديل عملة: F2
+            تعديل العملة المحددة
           </button>
           <button
             type="button"
@@ -12561,16 +13636,41 @@ function CurrenciesModal({ open, onClose }: { open: boolean; onClose: () => void
             data-testid="currency-delete-btn"
             onClick={() => void handleDeleteSelected()}
           >
-            حذف عملة : DELETE
+            حذف العملة المحددة
           </button>
-          <span className="currencies-footer-hint">التنقل : TAB</span>
+
         </footer>
       </section>
     </div>
-  );
+    {deleting && <DeleteRecordDialog name={deleting.name}
+      onDelete={async () => { await deleteCurrencyRecord(ctx.uid, deleting.id); }}
+      onClose={() => setDeleting(null)}
+      onDeleted={() => { setDeleting(null); setSelectedId(null); resetForm(); ctx.showToast("تم حذف العملة"); }} />}
+  </>);
 }
 
-function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function QuotesListModal({ open, onClose, onLegacyDraft, onLegacyAccount }: {
+  open: boolean; onClose: () => void; onLegacyDraft: (record: LegacyRecord) => void; onLegacyAccount: (id: string) => void;
+}) {
+  const ctx = useWorkspace();
+  if (!open) return null;
+  const quotes = ctx.ledger.filter((entry) => entry.kind === "quote" && !entry.deleted);
+  return <div className="center-modal-layer" data-testid="quotes-list-modal">
+    <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق عروض الأسعار" />
+    <section className="warehouse-modal legacy-destination-modal" role="dialog" aria-modal="true" aria-labelledby="quotes-list-title">
+      <h2 id="quotes-list-title">عروض الأسعار</h2>
+      <button type="button" className="load-more-list-btn" onClick={() => ctx.openVendorInvoice(ctx.accounts[0], "quote")}>عرض سعر جديد</button>
+      <h3>العروض المحلية ({quotes.length})</h3>
+      <ul>{quotes.map((entry) => <li key={entry.id}><button type="button" onClick={() => ctx.openInvoiceEdit(entry)}>{entry.accountName} · {entry.entryNumber} · {entry.amount} {entry.currency}</button></li>)}</ul>
+      <LegacyRecordsPanel kind="offers" onDraft={onLegacyDraft} onAccount={onLegacyAccount} />
+      <div className="form-modal-actions"><button type="button" className="cancel" onClick={onClose}>إغلاق</button></div>
+    </section>
+  </div>;
+}
+
+function TrashModal({ open, onClose, onLegacyDraft, onLegacyAccount }: {
+  open: boolean; onClose: () => void; onLegacyDraft: (record: LegacyRecord) => void; onLegacyAccount: (id: string) => void;
+}) {
   const ctx = useWorkspace();
   if (!open) return null;
   const deletedEntries = ctx.ledger.filter((e) => e.deleted);
@@ -12578,8 +13678,9 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <div className="center-modal-layer" data-testid="trash-modal">
       <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق سلة المحذوفات" />
-      <section className="warehouse-modal" role="dialog" aria-modal="true" aria-labelledby="trash-title">
-        <h2 id="trash-title">سلة المحذوفات ({deletedEntries.length})</h2>
+      <section className="warehouse-modal legacy-destination-modal" role="dialog" aria-modal="true" aria-labelledby="trash-title">
+        <h2 id="trash-title">سلة المحذوفات المحلية ({deletedEntries.length})</h2>
+        <LegacyRecordsPanel kind="trash" onDraft={onLegacyDraft} onAccount={onLegacyAccount} />
         {deletedEntries.length === 0 ? (
           <p className="cash-empty">سلة المحذوفات فارغة.</p>
         ) : (
@@ -12608,8 +13709,10 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                 <div style={{ display: "flex", gap: 6 }}>
                   <button
                     onClick={async () => {
-                      await setLedgerDeleted(ctx.uid, item.id, false);
-                      ctx.showToast("تمت استعادة العملية");
+                      try {
+                        await setLedgerDeleted(ctx.uid, item.id, false);
+                        ctx.showToast("تمت استعادة العملية");
+                      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذرت الاستعادة");}
                     }}
                     style={{
                       padding: "4px 8px",
@@ -12623,8 +13726,10 @@ function TrashModal({ open, onClose }: { open: boolean; onClose: () => void }) {
                   </button>
                   <button
                     onClick={async () => {
-                      await permanentlyDeleteLedger(ctx.uid, item.id);
-                      ctx.showToast("تم الحذف النهائي");
+                      try {
+                        await permanentlyDeleteLedger(ctx.uid, item.id);
+                        ctx.showToast("تم الحذف النهائي");
+                      }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر الحذف");}
                     }}
                     style={{
                       padding: "4px 8px",
@@ -12728,6 +13833,157 @@ function ResetDatabaseConfirmModal({
   );
 }
 
+function referenceDefaultsScreen(): FlowScreen {
+  const screen: FlowScreen = { id: "reference-defaults", headerHeight: 50,
+    header: () => <SimpleAppHeader title="مراجع المستندات الافتراضية" onBack={() => window.dispatchEvent(new Event("nasqo:references-back"))} />,
+    render: flow => <ReferenceDefaultsBody flow={flow} active={flow.current.render === screen.render} /> };
+  return screen;
+}
+function ReferenceDefaultsBody({ flow, active }: { flow: FlowControls; active: boolean }) {
+  const ctx=useWorkspace(), keyboard=useKeyboard();
+  const [draft,setDraft]=useState(()=>ctx.workspace?.referenceDefaults ?? emptyReferenceDefaults());
+  const [currency,setCurrency]=useState(()=>ctx.workspace?.defaultCurrency ?? "ريال");
+  const [boxCurrency,setBoxCurrency]=useState(currency);
+  const [account,setAccount]=useState(""); const [group,setGroup]=useState("");
+  const [saving,setSaving]=useState(false), [error,setError]=useState(""), [notice,setNotice]=useState("");
+  const [leave,setLeave]=useState(false),[saved,setSaved]=useState(JSON.stringify({draft,currency}));
+  const dirty=JSON.stringify({draft,currency})!==saved, allowLeave=useRef(false);
+  const source=useRef({uid:ctx.uid,sha:ctx.workspace?.legacySourceSha});
+  const selectedAccount=ctx.accounts.find(a=>a.id===account), selectedGroup=ctx.accountGroups.find(g=>String(g.id)===group);
+  const back=()=>{keyboard.hide();if(saving)return;if(dirty)setLeave(true);else flow.pop();};
+  useBackLayer(active,()=>{if(allowLeave.current)return false;keyboard.hide();if(saving)return true;if(leave)setLeave(false);else if(dirty)setLeave(true);else return false;return true;},30);
+  useEffect(()=>{if(!active)return;window.addEventListener("nasqo:references-back",back);return()=>window.removeEventListener("nasqo:references-back",back);});
+  const change=(patch:Partial<typeof draft>)=>{setDraft(d=>({...d,...patch}));setNotice("");setError("");};
+  const setBox=(key:"systemCashboxes"|"accountCashboxes"|"groupCashboxes",id:string,value:string)=>{
+    const next={...draft[key]};if(value)next[id]=Number(value);else delete next[id];change({[key]:next});
+  };
+  const boxSelect=(label:string,key:"systemCashboxes"|"accountCashboxes"|"groupCashboxes",id:string,c:string)=>{
+    const boxes=ctx.cashboxes.filter(b=>eligibleCashbox(ctx.cashboxes,b.id,c)!==undefined),value=draft[key][id];
+    return <label className="cashier-settings-card">{label}<select aria-label={label} value={value??""} disabled={!id} onChange={e=>setBox(key,id,e.target.value)}>
+      <option value="">غير محدد — استخدام المستوى التالي</option>{boxes.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+      {value&&!boxes.some(b=>b.id===value)?<option value={value}>اختيار غير متاح — أعد الاختيار</option>:null}
+    </select></label>;
+  };
+  const cleaned={...draft,
+    warehouseId:ctx.warehouses.some(w=>w.id===draft.warehouseId)?draft.warehouseId:"",
+    accountId:ctx.accounts.some(a=>a.id===draft.accountId&&!a.isCashAccount&&a.currency===currency)?draft.accountId:"",
+    systemCashboxes:Object.fromEntries(Object.entries(draft.systemCashboxes).filter(([c,b])=>ctx.currencyCodes.includes(c)&&eligibleCashbox(ctx.cashboxes,b,c)!==undefined)),
+    accountCashboxes:Object.fromEntries(Object.entries(draft.accountCashboxes).filter(([id,b])=>{const a=ctx.accounts.find(a=>a.id===id);return a&&eligibleCashbox(ctx.cashboxes,b,a.currency)!==undefined;})),
+    groupCashboxes:Object.fromEntries(Object.entries(draft.groupCashboxes).filter(([id,b])=>{const g=ctx.accountGroups.find(g=>String(g.id)===id);return g&&eligibleCashbox(ctx.cashboxes,b,g.currencyCode)!==undefined;})),
+  };
+  const hasUnavailable=JSON.stringify(cleaned)!==JSON.stringify(draft);
+  const save=async()=>{
+    keyboard.hide();setError("");setNotice("");
+    if(!ctx.workspace||source.current.uid!==ctx.uid||source.current.sha!==ctx.workspace.legacySourceSha){setError("تغيرت مساحة العمل. افتح الإعدادات من جديد.");return;}
+    setSaving(true);
+    try{await saveWorkspaceSettings(ctx.uid,{...ctx.workspace,defaultCurrency:currency,referenceDefaults:draft});setSaved(JSON.stringify({draft,currency}));setNotice("تم حفظ المراجع للمستندات الجديدة. لم يتغير أي مستند أو رصيد.");}
+    catch(e){setError(e instanceof Error?e.message:"لم تحفظ الإعدادات.");}finally{setSaving(false);}
+  };
+  return <MobileScroll className="app-screen"><main className="cashier-settings-page" data-testid="reference-defaults-screen">
+    <p>يُختار الصندوق حسب الحساب، ثم تصنيفه، ثم افتراضي النظام من العملة نفسها. اختيارك اليدوي له الأولوية. الكاشير يستخدم صندوقه المخصص قبل افتراضي النظام.</p>
+    <p>تطبق على مستند جديد فقط. لا تغيّر مستندًا محفوظًا أو مسودة مفتوحة، ولا تعتمد كمية أو تكلفة.</p>
+    <fieldset disabled={saving}>
+      <label className="cashier-settings-card">العملة الافتراضية<select aria-label="عملة المستندات الافتراضية" value={currency} onChange={e=>{setCurrency(e.target.value);change({accountId:""});}}>{ctx.currencyCodes.map(c=><option key={c}>{c}</option>)}</select></label>
+      <label className="cashier-settings-card">المخزن الافتراضي<select aria-label="مخزن المستندات الافتراضي" value={draft.warehouseId} onChange={e=>change({warehouseId:e.target.value})}><option value="">غير محدد</option>{ctx.warehouses.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+      <section className="cashier-settings-card"><h3>حساب المستند الافتراضي</h3><AccountSelectCombobox accounts={ctx.accounts.filter(a=>!a.isCashAccount&&a.currency===currency)} value={draft.accountId} onChange={id=>change({accountId:id})} ariaLabel="حساب المستند الافتراضي" placeholder="غير محدد"/><button className="ref-btn" onClick={()=>change({accountId:""})}>إلغاء الحساب الافتراضي</button></section>
+      <section className="cashier-settings-card"><h3>صندوق النظام لكل عملة</h3><select aria-label="عملة صندوق النظام" value={boxCurrency} onChange={e=>setBoxCurrency(e.target.value)}>{ctx.currencyCodes.map(c=><option key={c}>{c}</option>)}</select>{boxSelect("صندوق النظام","systemCashboxes",boxCurrency,boxCurrency)}</section>
+      <section className="cashier-settings-card"><h3>صندوق التصنيف</h3><select aria-label="تصنيف الحساب الافتراضي" value={group} onChange={e=>setGroup(e.target.value)}><option value="">اختر التصنيف</option>{ctx.accountGroups.map(g=><option key={g.id} value={g.id}>{g.name} — {g.currencyCode}</option>)}</select>{boxSelect("الصندوق الخاص بالتصنيف","groupCashboxes",group,selectedGroup?.currencyCode??"")}</section>
+      <section className="cashier-settings-card"><h3>صندوق الحساب</h3><AccountSelectCombobox accounts={ctx.accounts} value={account} onChange={setAccount} ariaLabel="الحساب لتخصيص الصندوق" placeholder="اختر الحساب"/>{boxSelect("الصندوق الخاص بالحساب","accountCashboxes",account,selectedAccount?.currency??"")}</section>
+      {hasUnavailable?<section className="cashier-settings-card"><p role="alert">توجد مراجع محذوفة أو صناديق غير متاحة أو مختلفة العملة. لن تُستخدم تلقائيًا.</p><button className="ref-btn" onClick={()=>change(cleaned)}>إزالة التخصيصات غير المتاحة من النموذج</button><small>يلزم الحفظ لتثبيت الإزالة. لا يُحذف أي حساب أو صندوق.</small></section>:null}
+      {error?<p role="alert" className="auth-error">{error}</p>:null}{notice?<p role="status">{notice}</p>:null}
+      <div className="cashier-settings-actions"><button className="ref-btn green" onClick={()=>void save()}>{saving?"جارٍ الحفظ…":"حفظ مراجع المستندات"}</button><button className="ref-btn" onClick={back}>إلغاء والعودة</button></div>
+      {leave?<div role="alert"><p>هناك تعديلات لم تحفظ.</p><button className="ref-btn" onClick={()=>setLeave(false)}>متابعة التعديل</button><button className="ref-btn" onClick={()=>{allowLeave.current=true;flow.pop();}}>تجاهل والعودة</button></div>:null}
+    </fieldset>
+  </main></MobileScroll>;
+}
+
+function cashierSettingsScreen(): FlowScreen {
+  const screen: FlowScreen = { id: "cashier-settings", headerHeight: 50,
+    header: () => <SimpleAppHeader title="إعدادات الكاشير" onBack={() => window.dispatchEvent(new Event("nasqo:cashier-back"))} />,
+    render: flow => <CashierSettingsBody flow={flow} active={flow.current.render === screen.render} /> };
+  return screen;
+}
+
+function CashierSettingsBody({ flow, active }: { flow: FlowControls; active: boolean }) {
+  const ctx = useWorkspace();
+  const keyboard = useKeyboard();
+  const [draft, setDraft] = useState(() => ctx.workspace?.cashierSettings ?? {
+    warehouseId: ctx.warehouses.find(w => w.isDefault)?.id ?? "", cashboxId: null as number | null,
+    accountId: "", currency: ctx.workspace?.defaultCurrency ?? "ريال", quickItemIds: [] as string[],
+  });
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [editingItems, setEditingItems] = useState(false);
+  const [clearPrompt, setClearPrompt] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [savedJson, setSavedJson] = useState(JSON.stringify(draft));
+  const dirty = JSON.stringify(draft) !== savedJson;
+  const [leavePrompt, setLeavePrompt] = useState(false);
+  const source = useRef({uid:ctx.uid, sha:ctx.workspace?.legacySourceSha});
+  const allowLeave = useRef(false);
+  useBackLayer(active, () => {
+    if (allowLeave.current) return false;
+    keyboard.hide();
+    if (saving) return true;
+    if (clearPrompt) setClearPrompt(false);
+    else if (editingItems) setEditingItems(false);
+    else if (leavePrompt) setLeavePrompt(false);
+    else if (dirty) setLeavePrompt(true);
+    else return false;
+    return true;
+  }, 30);
+  const accounts = ctx.accounts.filter(a => !a.isCashAccount && a.currency === draft.currency);
+  const boxes = ctx.cashboxes.filter(b => b.currencyCode === draft.currency && b.isActive !== false && b.state !== 0);
+  const items = ctx.inventory.filter(i => i.isActive !== false && `${i.name} ${i.sku ?? ""} ${i.legacyId ?? ""}`.includes(search.trim()));
+  const update = (patch: Partial<typeof draft>) => { setDraft(d => ({ ...d, ...patch })); setNotice(""); setError(""); };
+  const save = async () => {
+    keyboard.hide(); setError(""); setNotice("");
+    if (!ctx.workspace || (source.current.uid !== ctx.uid || source.current.sha !== ctx.workspace.legacySourceSha)) { setError("تغيرت مساحة العمل. افتح الإعدادات من جديد."); return; }
+    if ((draft.warehouseId && !ctx.warehouses.some(w => w.id === draft.warehouseId)) ||
+        (draft.accountId && !accounts.some(a => a.id === draft.accountId)) ||
+        (draft.cashboxId !== null && !boxes.some(b => b.id === draft.cashboxId)) ||
+        !ctx.currencyCodes.includes(draft.currency) ||
+        draft.quickItemIds.some(id => !ctx.inventory.some(i => i.id === id && i.isActive !== false))) {
+      setError("أحد الاختيارات لم يعد متاحًا أو لا يطابق العملة. راجع المراجع والأصناف قبل الحفظ."); return;
+    }
+    setSaving(true);
+    try {
+      await saveWorkspaceSettings(ctx.uid, { ...ctx.workspace, cashierSettings: draft });
+      setSavedJson(JSON.stringify(draft)); setNotice("تم حفظ إعدادات الكاشير. تطبق على فاتورة كاشير جديدة فقط.");
+    } catch (e) { setError(e instanceof Error ? e.message : "لم تحفظ الإعدادات. حاول مجددًا."); }
+    finally { setSaving(false); }
+  };
+  const requestBack = () => { keyboard.hide(); if (saving) return; if (dirty) setLeavePrompt(true); else flow.pop(); };
+  useEffect(() => { if (!active) return; window.addEventListener("nasqo:cashier-back", requestBack); return () => window.removeEventListener("nasqo:cashier-back", requestBack); });
+  return <MobileScroll className="app-screen"><main className="cashier-settings-page" data-testid="cashier-settings-screen">
+    <p>تهيئة الأصناف السريعة والمخزن والصندوق والعميل والعملة. حفظ الإعدادات لا يرحّل فاتورة ولا يغيّر رصيدًا.</p>
+    <fieldset disabled={saving}>
+      <section className="cashier-settings-card"><h3>أصناف الكاشير</h3><p>تخصيص الأصناف المعروضة كأزرار سريعة في فاتورة الكاشير</p>
+        <strong data-testid="cashier-selected-count">تم تخصيص {draft.quickItemIds.length} صنفًا</strong>
+        <div className="cashier-settings-actions"><button className="ref-btn" onClick={() => { keyboard.hide(); setEditingItems(v => !v); }}>تخصيص الأصناف</button>
+        <button className="ref-btn" disabled={!draft.quickItemIds.length} onClick={() => { keyboard.hide(); setClearPrompt(true); }}>مسح الأصناف السريعة</button></div>
+        {clearPrompt ? <div role="alert"><p>إزالة الاختصارات فقط؟ لن تُحذف الأصناف أو أرصدتها. يلزم حفظ الإعدادات لتثبيت التغيير.</p><button className="ref-btn" onClick={() => { update({quickItemIds: []}); setClearPrompt(false); }}>تأكيد مسح الاختصارات</button><button className="ref-btn" onClick={() => setClearPrompt(false)}>تراجع</button></div> : null}
+        {editingItems ? <section data-testid="cashier-item-picker"><KeyboardInput aria-label="بحث أصناف الكاشير" placeholder="ابحث بالاسم أو الباركود أو الرقم" value={search} onChange={e => { setSearch(e.target.value); setPage(0); }} />
+          {items.slice(page * 30, (page + 1) * 30).map(item => <label className="cashier-item-option" key={item.id}><input type="checkbox" checked={draft.quickItemIds.includes(item.id)} onChange={e => update({ quickItemIds: e.target.checked ? [...draft.quickItemIds, item.id] : draft.quickItemIds.filter(id => id !== item.id) })}/><span>{item.name}<small>{item.sku}</small></span></label>)}
+          {!items.length ? <p>لا توجد أصناف مطابقة</p> : null}
+          <div className="cashier-settings-actions"><button className="ref-btn" disabled={page === 0} onClick={() => setPage(p => p - 1)}>السابق</button><span>{page + 1} / {Math.max(1, Math.ceil(items.length / 30))}</span><button className="ref-btn" disabled={(page + 1) * 30 >= items.length} onClick={() => setPage(p => p + 1)}>التالي</button></div>
+          <button className="ref-btn" onClick={() => { keyboard.hide(); setEditingItems(false); }}>إنهاء اختيار الأصناف</button>
+        </section> : null}
+      </section>
+      <label className="cashier-settings-card">المخزن الافتراضي<select aria-label="المخزن الافتراضي" value={draft.warehouseId} onChange={e => update({warehouseId:e.target.value})}><option value="">غير محدد</option>{ctx.warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
+      <label className="cashier-settings-card">الصندوق النقدي الافتراضي<select aria-label="الصندوق النقدي الافتراضي" value={draft.cashboxId ?? ""} onChange={e => update({cashboxId:e.target.value ? Number(e.target.value) : null})}><option value="">غير محدد</option>{boxes.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+      <label className="cashier-settings-card">حساب العميل الافتراضي<select aria-label="حساب العميل الافتراضي" value={draft.accountId} onChange={e => update({accountId:e.target.value})}><option value="">غير محدد</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+      <label className="cashier-settings-card">العملة الافتراضية<select aria-label="عملة الكاشير" value={draft.currency} onChange={e => update({currency:e.target.value as CurrencyCode, accountId:"", cashboxId:null})}>{ctx.currencyCodes.map(c => <option key={c} value={c}>{c}</option>)}</select><small>تغيير العملة يتطلب إعادة اختيار صندوق وحساب مطابقين.</small></label>
+      {error ? <p role="alert" className="auth-error">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
+      <div className="cashier-settings-actions"><button className="ref-btn green" onClick={() => void save()}>{saving ? "جارٍ الحفظ…" : "حفظ إعدادات الكاشير"}</button><button className="ref-btn" onClick={requestBack}>إلغاء والعودة</button></div>
+      <button className="ref-btn" disabled={dirty} onClick={() => { keyboard.hide(); ctx.openCashier(); }}>فتح الكاشير</button>
+      {leavePrompt ? <div role="alert"><p>هناك تعديلات لم تحفظ.</p><button className="ref-btn" onClick={() => setLeavePrompt(false)}>متابعة التعديل</button><button className="ref-btn" onClick={() => { allowLeave.current = true; flow.pop(); }}>تجاهل والعودة</button></div> : null}
+    </fieldset>
+  </main></MobileScroll>;
+}
+
 function systemSettingsScreen(): FlowScreen {
   return {
     id: "system-settings",
@@ -12742,6 +13998,8 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
   ctx.flowRef.current = flow;
   return (
     <SystemSettingsPage
+      onOpenReferenceDefaults={() => flow.push(referenceDefaultsScreen())}
+      onOpenCashierSettings={() => flow.push(cashierSettingsScreen())}
       uid={ctx.uid}
       userEmail={ctx.userEmail}
       workspace={ctx.workspace}
@@ -12759,7 +14017,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
       onOpenBackupModal={ctx.openBackupModal}
       onDownloadSqlite={() => {
         void downloadUnifiedSqliteFile(ctx.uid)
-          .then(() => ctx.showToast("تم حفظ وتحميل ملف قاعدة البيانات SQLite بنجاح"))
+          .then((saved) => ctx.showToast(saved?"تم حفظ نسخة قاعدة البيانات":"أُلغي الحفظ"))
           .catch((err) => {
             triggerHaptic("warning");
             ctx.showToast(
@@ -12786,15 +14044,20 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
             );
           });
       }}
-      onSeedDemoData={() => {
-        void ctx.seedDemoWorkspaceNow();
-      }}
-      onResetDatabase={() => {
-        ctx.resetWorkspaceToEmptyNow();
-      }}
+      onSeedDemoData={usesNativeDocumentOutput()?undefined:() => { void ctx.seedDemoWorkspaceNow(); }}
+      onResetDatabase={usesNativeDocumentOutput()?undefined:() => { ctx.resetWorkspaceToEmptyNow(); }}
       onOpenGoogleDrive={ctx.openGoogleDriveModal}
       onOpenFullSqliteImport={ctx.openFullSqliteImport}
       onRestoreJson={ctx.triggerJsonRestore}
+      onOpenInvoiceRoles={import.meta.env.VITE_NASQO_HYBRID === "1" ? () => {
+        void hybridBridge.invoke("openInvoiceRoles",{workspaceId:ctx.uid})
+          .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح إعدادات الترحيل."));
+      } : undefined}
+      onOpenStockReconciliation={import.meta.env.VITE_NASQO_HYBRID === "1" && ctx.inventory.some(i=>i.quantityUnverified||i.costUnverified||i.legacyStockPending) ? () => {
+        void hybridBridge.invoke<"openStockReconciliation",{changed?:boolean}>("openStockReconciliation",{workspaceId:ctx.uid})
+          .then(async result=>{if(result?.changed)await refreshWorkspaceFromServer(ctx.uid);})
+          .catch(err=>ctx.showToast(err instanceof Error?err.message:"تعذر فتح مطابقة المخزون."));
+      } : undefined}
       onOpenTrash={ctx.openTrash}
       onSignOut={ctx.handleSignOut}
       onNotify={ctx.showToast}
@@ -13189,6 +14452,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
   const [uploadingDrive, setUploadingDrive] = useState(false);
   const [generatedAt] = useState(() => new Date());
   const [invoiceLines, setInvoiceLines] = useState<UnifiedInvoiceLine[]>([]);
+  const [documentHeight, setDocumentHeight] = useState(908);
   const fitScale = Math.min(viewportWidth / 1280, 1);
   const scale = zoom ?? fitScale;
 
@@ -13234,13 +14498,14 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     triggerHaptic("light");
     try {
       await ctx.runWithLoader("جاري إنشاء ملف PDF للفاتورة...", async () => {
-        const { filename } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
+        const { filename,result } = await generatePrintableInvoicePdfFromDatabase(ctx.uid, entry.id, {
           companyName: ctx.workspace?.companyName || "نسقو برو",
           footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
           fallbackEntry: entry,
         });
+        if(result==="cancelled"){ctx.showToast("تم إلغاء حفظ الفاتورة");return;}
         triggerHaptic("success");
-        ctx.showToast(`تم تنزيل ملخص الفاتورة (${filename})`);
+        ctx.showToast(`تم حفظ ملخص الفاتورة (${filename})`);
       });
     } catch {
       triggerHaptic("warning");
@@ -13256,7 +14521,14 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
     triggerHaptic("light");
     try {
       await ctx.runWithLoader("جاري رفع الفاتورة إلى Google Drive...", async () => {
-        const summary = buildInvoicePdfSummaryData(entry, {
+        const detail = await fetchInvoiceDetailWithLines(ctx.uid, entry.id);
+        if ((detail.entry.invoiceContent === "items" && !detail.lines.length) ||
+            (detail.entry.lineCount ?? 0) > detail.lines.length) {
+          throw new Error("تفاصيل الأصناف غير متاحة؛ لم يُنشأ مستند ناقص.");
+        }
+        const summary = buildInvoicePdfSummaryData({ ...detail.entry,
+          lines: detail.lines.map((line) => ({ ...line, inventoryItemId: line.inventoryItemId ?? undefined })),
+        }, {
           companyName: ctx.workspace?.companyName || "نسقو برو",
           footerNote: ctx.extendedSettings.salesInvoiceFooterNote,
         });
@@ -13394,7 +14666,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
             className="cash-invoice-sheet-space"
             style={{
               width: 1280 * scale,
-              height: Math.max(908, 600 + Math.max(invoiceLines.length, entry.lineCount ?? 0, 1) * 52) * scale,
+              height: Math.max(documentHeight, 908, 600 + Math.max(invoiceLines.length, entry.lineCount ?? 0, 1) * 52) * scale,
               marginInline: "auto",
               direction: "ltr",
             }}
@@ -13406,6 +14678,7 @@ function CashInvoicePreviewPage({ entryId, flow }: { entryId: string; flow: Flow
               scale={scale}
               footerNote={ctx.extendedSettings.salesInvoiceFooterNote}
               invoiceLines={invoiceLines}
+              onHeightChange={setDocumentHeight}
             />
           </div>
         </div>
@@ -13421,6 +14694,7 @@ function CashInvoiceDocument({
   scale,
   footerNote,
   invoiceLines = [],
+  onHeightChange,
 }: {
   companyName: string;
   entry: LedgerEntryRecord;
@@ -13428,7 +14702,18 @@ function CashInvoiceDocument({
   scale: number;
   footerNote?: string;
   invoiceLines?: readonly UnifiedInvoiceLine[];
+  onHeightChange?: (height: number) => void;
 }) {
+  const documentRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const document = documentRef.current;
+    if (!document || !onHeightChange) return;
+    const measure = () => onHeightChange(document.offsetHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(document);
+    return () => observer.disconnect();
+  }, [onHeightChange]);
   const stamp = `${generatedAt.getFullYear()}-${String(generatedAt.getMonth() + 1).padStart(2, "0")}-${String(
     generatedAt.getDate(),
   ).padStart(2, "0")} ${String(generatedAt.getHours()).padStart(2, "0")}:${String(
@@ -13449,6 +14734,7 @@ function CashInvoiceDocument({
 
   return (
     <article
+      ref={documentRef}
       className="cash-invoice-document cash-invoice-document-flow"
       data-testid="cash-invoice-document"
       dir="rtl"
@@ -13484,10 +14770,15 @@ function CashInvoiceDocument({
         <p className="cash-invoice-recipient-flow">الأخ / {entry.accountName}</p>
         <p className="cash-invoice-salutation-flow">المحترم</p>
       </div>
-      <p className="cash-invoice-description-flow">
+      {entry.sourceReference ? (
+        <p className="cash-invoice-description-flow" data-testid="cash-invoice-source-reference" style={{ overflowWrap: "anywhere" }}>
+          المرجع / {entry.sourceReference}
+        </p>
+      ) : null}
+      <p className="cash-invoice-description-flow" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
         البيان /{entry.warehouseName ? ` (${entry.warehouseName})` : ""}
         {entry.details && entry.details !== entry.typeLabel
-          ? ` ${entry.details.replace(/\s*—\s*\[.*\]$/, "")}`
+          ? ` ${entry.details}`
           : ""}
       </p>
       <table className="cash-invoice-table cash-invoice-table-flow" aria-label="بنود المستند">
@@ -13511,10 +14802,18 @@ function CashInvoiceDocument({
           {invoiceLines.length > 0 ? (
             invoiceLines.map((line) => (
               <tr key={line.id}>
-                <td>{line.itemName || line.details || entry.typeLabel}</td>
+                <td>
+                  {line.itemName || line.details || entry.typeLabel}
+                  <div data-testid={`cash-invoice-line-metadata-${line.id}`} style={{ fontSize: "0.75em", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                    {line.details && line.details !== line.itemName ? <div>البيان: {line.details}</div> : null}
+                    {line.discount != null && line.discount !== 0 ? <div>خصم البند المسجل: {formatAmount(line.discount)}</div> : null}
+                    {line.bonus != null && line.bonus !== 0 ? <div>الكمية المجانية: {formatAmount(line.bonus)}</div> : null}
+                    {line.expiryDate ? <div>تاريخ الصلاحية: {line.expiryDate}</div> : null}
+                  </div>
+                </td>
                 <td>{line.unit || "حبة"}</td>
                 <td className="red">{formatAmount(line.price)}</td>
-                <td>{formatAmount(line.quantity)}</td>
+                <td>{formatQuantity(line.quantity)}</td>
                 <td className="blue">{formatAmount(line.total)}</td>
               </tr>
             ))
@@ -13540,6 +14839,13 @@ function CashInvoiceDocument({
         </tbody>
       </table>
       <div className="cash-invoice-summary-flow">
+        {entry.headerDiscount != null && entry.headerDiscount !== 0 ? (
+          <div data-testid="cash-invoice-header-discount">
+            <strong>خصم الفاتورة المسجل</strong>
+            <bdi>{formatAmount(entry.headerDiscount)}</bdi>
+            <small>الإجمالي هو المبلغ الأصلي للمستند</small>
+          </div>
+        ) : null}
         <div>
           <strong>الكمية</strong>
           <bdi data-testid="cash-invoice-quantity-total">{formatAmount(totalQuantity)}</bdi>

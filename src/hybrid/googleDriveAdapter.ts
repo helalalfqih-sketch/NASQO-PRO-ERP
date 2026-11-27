@@ -1,4 +1,5 @@
-import { hybridBridge } from "./bridge";
+import { isNativeDriveSessionInvalid, nativeDriveCall } from "./cloudSession";
+import { describeGoogleDriveConnectError } from "../utils/googleDriveAuthError";
 import {
   buildDriveFilesListUrl,
   classifyDriveMimeType,
@@ -59,7 +60,11 @@ export class DriveApiError extends Error {
 }
 
 async function callFlutterDrive<T>(operation: string, args: Record<string, unknown> = {}): Promise<T> {
-  return hybridBridge.invoke<"googleDriveAction", T>("googleDriveAction", { operation, args });
+  try{return await nativeDriveCall<T>(operation,args);}
+  catch(error){
+    if(isNativeDriveSessionInvalid(error))throw new DriveAuthExpiredError(describeGoogleDriveConnectError(error));
+    throw error;
+  }
 }
 
 export async function getDriveAbout(_accessToken: string): Promise<DriveAboutInfo> {
@@ -89,59 +94,43 @@ export async function createDriveFolder(
   return callFlutterDrive<DriveFileRecord>("createFolder", { folderName, parentId });
 }
 
-export async function uploadFileToDrive(
-  _accessToken: string,
-  options: { name: string; content: string | Uint8Array; mimeType: string; parentId?: string; description?: string },
-): Promise<DriveFileRecord> {
-  const payloadContent =
-    typeof options.content === "string"
-      ? options.content
-      : btoa(Array.from(options.content, (b) => String.fromCharCode(b)).join(""));
-  return callFlutterDrive<DriveFileRecord>("uploadFile", {
-    name: options.name,
-    mimeType: options.mimeType,
-    parentId: options.parentId,
-    description: options.description,
-    isBase64: typeof options.content !== "string",
-    content: payloadContent,
+async function uploadChunks(options:{name:string;content:string|Uint8Array;mimeType:string;parentId?:string;fileId?:string;description?:string}):Promise<DriveFileRecord>{
+  const bytes=typeof options.content==="string"?new TextEncoder().encode(options.content):options.content;
+  const started=await callFlutterDrive<{uploadId:string}>("beginUpload",{
+    name:options.name,mimeType:options.mimeType,parentId:options.parentId,fileId:options.fileId,sizeBytes:bytes.length,description:options.description,
   });
+  try{
+    for(let offset=0;offset<bytes.length;offset+=12000){
+      const chunk=bytes.subarray(offset,offset+12000);
+      const encoded=btoa(Array.from(chunk,b=>String.fromCharCode(b)).join(""));
+      const result=await callFlutterDrive<{received:number}>("appendUpload",{uploadId:started.uploadId,offset,base64:encoded});
+      if(result.received!==offset+chunk.length)throw new Error("لم يكتمل تجهيز الملف للرفع.");
+    }
+    const result=await callFlutterDrive<DriveFileRecord & {cancelled?:boolean}>("finishUpload",{uploadId:started.uploadId});
+    if(result.cancelled||!result.id)throw new Error("أُلغي رفع الملف.");
+    return result;
+  }finally{
+    await callFlutterDrive("abortUpload",{uploadId:started.uploadId}).catch(()=>undefined);
+  }
 }
+export async function uploadFileToDrive(
+  _accessToken:string,
+  options:{name:string;content:string|Uint8Array;mimeType:string;parentId?:string;description?:string},
+):Promise<DriveFileRecord>{return uploadChunks(options);}
 
 export async function updateDriveFileContent(
-  _accessToken: string,
-  fileId: string,
-  options: { name?: string; content: string | Uint8Array; mimeType: string; description?: string },
-): Promise<DriveFileRecord> {
-  const payloadContent =
-    typeof options.content === "string"
-      ? options.content
-      : btoa(Array.from(options.content, (b) => String.fromCharCode(b)).join(""));
-  return callFlutterDrive<DriveFileRecord>("updateFile", {
-    fileId,
-    name: options.name,
-    mimeType: options.mimeType,
-    description: options.description,
-    isBase64: typeof options.content !== "string",
-    content: payloadContent,
-  });
+  _accessToken:string,fileId:string,
+  options:{name?:string;content:string|Uint8Array;mimeType:string;description?:string},
+):Promise<DriveFileRecord>{
+  if(!options.name)throw new Error("حدد اسم الملف.");
+  return uploadChunks({...options,name:options.name,fileId});
 }
 
 export async function downloadDriveFileBytes(
-  _accessToken: string,
-  file: DriveFileRecord,
-): Promise<{ bytes: Uint8Array; downloadName: string; mimeType: string }> {
-  const res = await callFlutterDrive<{ base64Content: string; downloadName: string; mimeType: string }>(
-    "downloadFile",
-    { fileId: file.id, fileName: file.name, mimeType: file.mimeType },
-  );
-  const bin = atob(res.base64Content || "");
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
-  return {
-    bytes,
-    downloadName: res.downloadName || file.name,
-    mimeType: res.mimeType || file.mimeType || "application/octet-stream",
-  };
+  _accessToken:string,
+  _file:DriveFileRecord,
+):Promise<{bytes:Uint8Array;downloadName:string;mimeType:string}>{
+  throw new Error("تنزيل ملفات Android يتم من نافذة Drive عبر منتقي الملفات المحلي.");
 }
 
 export async function trashDriveFile(_accessToken: string, fileId: string): Promise<void> {
@@ -149,5 +138,6 @@ export async function trashDriveFile(_accessToken: string, fileId: string): Prom
 }
 
 export async function deleteDriveFilePermanently(_accessToken: string, fileId: string): Promise<void> {
-  await callFlutterDrive<void>("deleteFilePermanently", { fileId });
+  void fileId;
+  throw new Error("الحذف النهائي غير مفعّل في تطبيق Android؛ استخدم سلة المهملات.");
 }

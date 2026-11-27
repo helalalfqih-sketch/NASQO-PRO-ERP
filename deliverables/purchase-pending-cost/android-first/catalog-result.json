@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "sdk": "36",
+  "checks": [
+    "open empty catalog",
+    "enter synthetic card",
+    "save without creating a warehouse",
+    "card visible after process restart"
+  ],
+  "scope": "Real Android WebView and SQLite on isolated CI emulator. No financial posting or private data. Screenshots require separate visual review."
+}

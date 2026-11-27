@@ -1,0 +1,26 @@
+{
+  "baseCommit": "06b4a3e1bafe37ec8aa3f01b4edbcde6300ff6e7",
+  "dependencyFixCommit": "7942f93",
+  "workBranch": "agent/bitrise-android-ci",
+  "environment": "Codex Cloud local; NOT a Bitrise build",
+  "passed": {
+    "bitriseCliSchema": "3.4.1",
+    "protectedFiles": 28,
+    "javascriptTests": 44,
+    "flutterTests": 94,
+    "flutterAnalyze": "passed --no-fatal-infos; existing info diagnostics retained",
+    "hybridFilesVerified": 63
+  },
+  "notExecuted": [
+    "Bitrise project registration",
+    "Bitrise remote workflow",
+    "APK build in this change",
+    "Android UI/device checks"
+  ],
+  "sourceFilesSha256": {
+    "bitrise.yml": "8592f25837b9fa6cad749110cdad0800b74a6612dd58f4622226c4c6b83d5dc1",
+    "scripts/bitrise-android-ci.sh": "a806b465cfe6adb3fc363db3054617edf58500e7a0a21fa692d1d26172ea61c6",
+    "package-lock.json": "dfcde84808ae138d797214bc3588d3986989d96c8cc22d82fa3090ab2d7eb113",
+    "docs/BITRISE-SETUP-AR.md": "8c94185ba27fe0ea22840cbd134d2c58c94d48b45a62be24afcac8b6ad2e0a6b"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "source": "ce9857138b5a7f3082d2c2de694094f23083f9d9",
+  "version": "1.0.158",
+  "code": 1158,
+  "run": 45906218423,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "files": {
+    "NASQO-PRO-ERP.apk": {
+      "sha256": "4b95c97c55cb455f40de1c63fd20040ba164e562acc84605b1f26a5dc62b04b0",
+      "bytes": 59651605
+    },
+    "NASQO-PRO-ERP.aab": {
+      "sha256": "394d5b272e19aba690b651ebddae51a83b521c73e5884fa5602ba2d050313038",
+      "bytes": 30103416
+    }
+  },
+  "certificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "playUpload": false,
+  "acceptance": {
+    "run": 45908725483,
+    "harnessSource": "b4ab576b253343f7ed3f179b5b079c6b7f99c25b",
+    "result": "PASS",
+    "sdk": 36,
+    "syntheticOnly": true
+  }
+}

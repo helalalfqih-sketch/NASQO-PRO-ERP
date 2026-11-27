@@ -1,0 +1,13 @@
+✔ fresh reads recover search, filters, scroll and draft identity without a memory cache (3.173251ms)
+✔ a missing/deleted record truncates restoration before its dependent routes (1.255985ms)
+✔ corrupt/version-mismatched or cross-workspace envelopes fall back safely (0.569372ms)
+✔ schema checks reject malformed UI fields and storage failure never claims success (6.027854ms)
+✔ discard removes only the selected UI draft, without touching records or other workspaces (0.602733ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 426.217333

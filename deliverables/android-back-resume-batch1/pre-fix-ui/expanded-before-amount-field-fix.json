@@ -1,0 +1,82 @@
+{
+  "environment": "Chromium production hybrid bundle; synthetic bridge; NOT Android",
+  "results": [
+    {
+      "name": "supplier-menu-consumes-back-before-screen",
+      "passed": true
+    },
+    {
+      "name": "supplier-route-restores-after-new-document",
+      "passed": true
+    },
+    {
+      "name": "supplier-search-filter-scroll-restores-after-new-document",
+      "passed": true
+    },
+    {
+      "name": "missing-account-cold-restore-falls-back-safely",
+      "passed": true
+    },
+    {
+      "name": "invoice-back-protects-draft-and-restores-after-reload",
+      "passed": true
+    },
+    {
+      "name": "invoice-account-picker-back-closes-only-picker",
+      "passed": true
+    },
+    {
+      "name": "invoice-discard-clears-only-local-draft",
+      "passed": true
+    },
+    {
+      "name": "rapid-two-backs-close-one-layer-without-exit",
+      "passed": true
+    },
+    {
+      "name": "synthetic-lifecycle-events-preserve-page-and-draft-without-bootstrap",
+      "passed": true
+    },
+    {
+      "name": "simple-entry-unsaved-draft-restores-without-posting",
+      "passed": false,
+      "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('simple-entry-document')\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.be.visible\" with timeout 5000ms\n  - waiting for getByTestId('simple-entry-document')\n"
+    },
+    {
+      "name": "currency-unsaved-draft-restores-without-posting",
+      "passed": false,
+      "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('currency-screen')\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.be.visible\" with timeout 5000ms\n  - waiting for getByTestId('currency-screen')\n"
+    },
+    {
+      "name": "voucher-unsaved-draft-restores-without-posting",
+      "passed": false,
+      "error": "Error: expect(locator).toBeVisible() failed\n\nLocator: getByTestId('transaction-modal')\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"to.be.visible\" with timeout 5000ms\n  - waiting for getByTestId('transaction-modal')\n"
+    },
+    {
+      "name": "sales-account-unsaved-draft-retains-category-after-reload",
+      "passed": false,
+      "error": "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('account-form-extended').getByLabel('اسم الحساب الجديد', { exact: true })\u001b[22m\n"
+    },
+    {
+      "name": "missing-account-draft-is-preserved-until-explicit-discard",
+      "passed": true
+    },
+    {
+      "name": "simple-explicit-synthetic-save-closes-form-and-does-not-replay",
+      "passed": false,
+      "error": "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('simple-entry-amount')\u001b[22m\n"
+    },
+    {
+      "name": "currency-explicit-synthetic-save-closes-form-and-does-not-replay",
+      "passed": false,
+      "error": "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('currency-amount')\u001b[22m\n"
+    }
+  ],
+  "browserErrors": [
+    "useKeyboard must be used inside KeyboardProvider",
+    "useKeyboard must be used inside KeyboardProvider",
+    "useKeyboard must be used inside KeyboardProvider",
+    "useKeyboard must be used inside KeyboardProvider",
+    "useKeyboard must be used inside KeyboardProvider"
+  ]
+}

@@ -65,7 +65,20 @@ export const SCHEMA_LIMITS = {
   skuMax: 64,
 } as const;
 
+export type CashierSettings = {
+  warehouseId: string; cashboxId: number | null; accountId: string; currency: CurrencyCode; quickItemIds: string[];
+};
+
+export type ReferenceDefaults = {
+  warehouseId: string; accountId: string;
+  systemCashboxes: Record<string, number>; accountCashboxes: Record<string, number>; groupCashboxes: Record<string, number>;
+};
+
 export type WorkspaceSettings = {
+  referenceDefaults?: ReferenceDefaults;
+  cashierSettings?: CashierSettings;
+  /** Identity of immutable imported evidence; never a mutable company setting. */
+  legacySourceSha?: string;
   id: string;
   ownerId: string;
   companyName: string;
@@ -113,6 +126,7 @@ export type AccountRecord = {
 };
 
 export type CashboxRecord = {
+  accountId?: string;
   id: number;
   name: string;
   details: string;
@@ -163,6 +177,9 @@ export type LedgerEntryRecord = {
   exchangeRate: number;
   taxAmount?: number;
   discount?: number;
+  /** Source metadata only; never subtracted again from the stored amount. */
+  headerDiscount?: number;
+  sourceReference?: string;
   details: string;
   documentNumber: string;
   warehouseId: string;
@@ -175,7 +192,23 @@ export type LedgerEntryRecord = {
   expenseCategory?: string;
   deliveryDays?: number;
   sourceOrigin?: "native" | "smartpro_sql" | "legacy_sqlite";
-  postingStatus?: "draft" | "posted" | "reversed";
+  postingStatus?: "draft" | "posted" | "reversed" | "historical_unposted";
+  /** Editable quote/order created locally; never posted to accounts or stock. */
+  localDraft?: boolean;
+  /** Explicit balanced SQLite journal legs; authoritative when present. */
+  journalLines?: {accountId:string;debitMinor:number;creditMinor:number}[];
+  stockPosting?: boolean;
+  stockSale?: boolean;
+  stockCostMinor?: number;
+  returnableLines?: {itemId:string;itemName:string;unit:string;quantity:number}[];
+  returnLines?: {itemId:string;quantity:number}[];
+  taxRateBps?: number;
+  netBeforeTax?: number;
+  originalInvoiceId?: string;
+  returnedById?: string;
+  inventoryAccountId?: string;
+  costAccountId?: string;
+  taxAccountId?: string;
   idempotencyKey?: string;
   reversedEntryId?: string;
   reversalEntryId?: string;
@@ -222,8 +255,29 @@ export type InventoryItemRecord = {
   warehouseId: string;
   /** Live quantity computed from invoice_lines/transfers when static count is unverified */
   computedQuantity?: number;
+  /** Native zero-stock card, not yet assigned by its first posted purchase. */
+  catalogOnly?: boolean;
+  /** Unapproved historical invoice net by original warehouse, not an opening stock count. */
+  legacyInvoiceQtyByWarehouse?: Record<string, number>;
+  /** Pending historical reference, never available stock. */
+  legacyHistoricalQtyByWarehouse?: Record<string, number>;
+  legacyStockPending?: boolean;
+  legacyTransferIncomplete?: boolean;
+  legacyHistoryIncludesTransfers?: boolean;
+  legacySourceItemId?: string;
+  catalogSourceItemId?: string;
+  /** Imported catalog reference only; never an approved inventory valuation. */
+  legacyCatalogCost?: number;
+  /** Purchase-price reference only; never operational stock valuation. */
+  catalogReferenceCost?: number;
   /** true when the quantity could not be derived from the legacy data and needs a manual stock count */
   quantityUnverified?: boolean;
+  /** Quantity can be approved while inventory valuation is still pending. */
+  costUnverified?: boolean;
+  /** Recorded new purchase value, excluding the unvalued opening balance. */
+  approvedStockValue?: number;
+  unvaluedOpeningQuantity?: number;
+  quantityApprovalDate?: string;
   legacyRef?: string;
 };
 

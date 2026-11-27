@@ -1,0 +1,26 @@
+{
+  "result": "PASS",
+  "artifactSourceSha": "f2b2d8a6ea7a04f2203d200e0af924430745b75f",
+  "harnessSourceSha": "d2f258f6c302348b9e519e60367e9a58cd476f60",
+  "buildRunId": 45891984649,
+  "acceptanceRunId": 45893650334,
+  "acceptanceUrl": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/actions/runs/45893650334",
+  "versionName": "1.0.153",
+  "versionCode": 1153,
+  "sdk": 36,
+  "rebuild": false,
+  "apkSha256": "676ded3c2ac1ef6a762218f61f23b0b11db1230752e739e876377ba069a31389",
+  "visuallyReviewed": [
+    "catalog-entered.png",
+    "catalog-saved.png",
+    "catalog-persisted.png"
+  ],
+  "functionalChecks": [
+    "signed upgrade 1138 to 1153 retains UID",
+    "six navigation checks",
+    "create card without warehouse",
+    "card persists after force-stop/relaunch"
+  ],
+  "scope": "Synthetic isolated Android emulator, actual signed app and SQLite. No physical phone, private data, Play split install or complete visual/financial acceptance.",
+  "visualFollowup": "Existing form rows can reach/clip the left edge. No complete form layout acceptance is claimed."
+}

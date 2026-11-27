@@ -1,0 +1,11 @@
+# Legacy SQLite operational account migration (Android schema 8)
+
+The importer reads SmartPro SQLite files locally, using the same source tables as the web importer. The new explicit activation action copies the account register, catalog, warehouses and historical document identities into an empty, unenrolled local workspace. It preserves original SQLite bytes with SHA-256, including transfers, deleted records, offers and alerts. Their raw tables are not promoted to live domain features.
+
+Historical debit/credit sides remain the source register, not synthesized double-entry journals. Known-currency, single-sided or exactly cash-settled legacy documents contribute to the React account register; mixed sides and unresolved currencies stay historical_unposted. New supported vouchers and free invoices create normal balanced journals. Cashbox reconciliation, historical profit/cost reporting, and full GL equivalence are not certified. No historical entries are replayed into the outbox.
+
+The native schema has a single warehouse per inventory card and integral stock posting. Historical products can span warehouses, and raw inventory tables do not provide a trustworthy opening count/valuation. Imported catalog cards are locked against stock postings until a separate physical count, multi-warehouse allocation and valuation workflow is implemented. Do not interpret their operational zero placeholder as a verified on-hand count. New independently created items may use the existing stock engine.
+
+Activation does not replace existing live data. The original backup is included in schema-8 native exports; schema-7 native exports remain readable. Imported workspaces are explicitly blocked from remote sync and from legacy snapshot replacement/reset. The older native Flutter screen is hidden for this workspace; the React hybrid screen displays the original raw sides and metadata.
+
+Synthetic regression coverage checks known and unknown currency handling, mixed-side exclusion, historical line preservation including fractional quantities, new balanced postings, no source replay, duplicate activation rejection, stock protection and native backup round trip. Real-device acceptance and financial reconciliation remain required.

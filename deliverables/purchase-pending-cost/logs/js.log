@@ -1,0 +1,24 @@
+✔ native reference survives zero operational cost without changing approval or stock (1.122196ms)
+✔ old web catalog cost requires both unverified state and exact product provenance (0.323183ms)
+✔ explicit zero reference is retained and does not fall back to another price (0.188255ms)
+✔ only recorded purchase value counts while opening cost is pending (0.320261ms)
+✔ catalog includes unverified and other-warehouse products without changing stock (1.659773ms)
+✔ explicit imported family selects the existing approved selected-warehouse clone once (1.499532ms)
+✔ same warehouse unverified source stays selectable when no approved clone exists (0.323016ms)
+✔ identical names and SKUs do not collapse unrelated catalog records (0.351689ms)
+✔ 1. unified SQLite engine initializes cleanly, enforces foreign keys, and isolates workspaces (43.55393ms)
+✔ 2. SmartPro SQL dump parser & importer maps all entities, invoice lines, cash washes, and anomalies (25.102892ms)
+✔ 3. legacy SQLite binary import runs into the single unified SQLite DB cleanly (37.68508ms)
+✔ 4. multi-line native invoice persistence, cashbox mapping, currency-scoped category totals, and Arabic tafqeet (23.877561ms)
+✔ 5. empty ERP workspace starts clean, restores .back/.sqlite + native snapshots + JSON atomically (80.180175ms)
+✔ 6. schema v3 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance (40.161994ms)
+✔ 7. exact negative stock reversals, invoice line/total enforcement, and period opening balance report (32.41336ms)
+✔ 8. full JSON export/restore roundtrip preserves invoice lines & ERP entities, invalid {} rejects without wiping, rollback works, and SQLite merge respects replaceExisting: false (53.232301ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 647.366711

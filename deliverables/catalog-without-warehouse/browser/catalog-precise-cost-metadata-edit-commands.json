@@ -1,0 +1,48 @@
+[
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_getSnapshot_1795724779480_1_ex0y9",
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    },
+    "timestampMs": 1795724779480
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_navigate_1795724779689_2_jcuwq",
+    "action": "navigate",
+    "payload": {
+      "route": "items"
+    },
+    "timestampMs": 1795724779689
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_updateInventoryItem_1795724779862_3_lcy06",
+    "action": "updateInventoryItem",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "itemId": "item-0",
+      "updates": {
+        "name": "اسم اصطناعي مصحح",
+        "sku": "BAT-200",
+        "unit": "حبة",
+        "avgCost": 1.234567,
+        "sellingPrice": 52000,
+        "unit2": "",
+        "unit3": "",
+        "defaultUnit": 1,
+        "currencyCode": "ريال",
+        "isActive": true,
+        "expiryDate": ""
+      }
+    },
+    "timestampMs": 1795724779862,
+    "idempotencyKey": "idem_updateInventoryItem_item-0_1795724779862_1_vdcuhw"
+  }
+]

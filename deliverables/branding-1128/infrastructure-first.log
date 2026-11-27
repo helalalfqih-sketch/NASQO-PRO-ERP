@@ -1,0 +1,27 @@
+2026-11-25T19:57:37.7541399Z 00:14 +90: All tests passed!
+2026-11-25T19:58:43.0440629Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.24/kotlin-stdlib-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T19:58:43.0483382Z                         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/1.9.24/kotlin-gradle-plugins-bom-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T19:58:43.0490404Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin-api/1.9.24/kotlin-gradle-plugin-api-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T19:58:43.0495186Z BUILD FAILED in 1m 4s
+2026-11-25T19:59:03.2968953Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.24/kotlin-stdlib-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T19:59:03.2975650Z                         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/1.9.24/kotlin-gradle-plugins-bom-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T19:59:03.2980591Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin-api/1.9.24/kotlin-gradle-plugin-api-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T19:59:03.2983285Z BUILD FAILED in 19s
+2026-11-25T19:59:03.3253311Z Transient dependency download failure; retrying after 45s
+2026-11-25T20:00:08.0927868Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.24/kotlin-stdlib-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:00:08.0936656Z                         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/1.9.24/kotlin-gradle-plugins-bom-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:00:08.0943901Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin-api/1.9.24/kotlin-gradle-plugin-api-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:00:08.0948314Z BUILD FAILED in 19s
+2026-11-25T20:00:27.8505395Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.24/kotlin-stdlib-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:00:27.8511448Z                         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/1.9.24/kotlin-gradle-plugins-bom-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:00:27.8517673Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin-api/1.9.24/kotlin-gradle-plugin-api-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:00:27.8521609Z BUILD FAILED in 19s
+2026-11-25T20:00:27.8694887Z Transient dependency download failure; retrying after 120s
+2026-11-25T20:02:47.4265550Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.24/kotlin-stdlib-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:02:47.4283379Z                         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/1.9.24/kotlin-gradle-plugins-bom-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:02:47.4291360Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin-api/1.9.24/kotlin-gradle-plugin-api-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:02:47.4294992Z BUILD FAILED in 19s
+2026-11-25T20:03:06.8321870Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.24/kotlin-stdlib-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:03:06.8407014Z                         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugins-bom/1.9.24/kotlin-gradle-plugins-bom-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:03:06.8411180Z                > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-gradle-plugin-api/1.9.24/kotlin-gradle-plugin-api-1.9.24.pom'. Received status code 429 from server: Too Many Requests
+2026-11-25T20:03:06.8413617Z BUILD FAILED in 19s

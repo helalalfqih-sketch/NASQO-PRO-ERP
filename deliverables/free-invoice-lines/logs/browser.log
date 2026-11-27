@@ -1,0 +1,40 @@
+PASS manual-lines-total-and-mode-switch-preserve-independent-rows
+PASS free-draft-persists-across-reload-without-posting
+PASS free-save-sends-descriptions-with-no-stock-identities
+PASS saved-free-lines-appear-in-print-preview
+PASS incomplete-or-invalid-free-line-blocks-save-without-dropping-row
+PASS amount-only-remains-available-and-retains-unsent-lines
+{
+  "environment": "Chromium full built hybrid UI; synthetic host, NOT Android or accounting engine",
+  "baseline": false,
+  "bundle": "/workspace/NASQO-free-invoice/dist/hybrid",
+  "manifestSha256": "8306250bd1642f2b26df4900c627ac83ad19ceabe646781f00211a296ac388b0",
+  "results": [
+    {
+      "name": "manual-lines-total-and-mode-switch-preserve-independent-rows",
+      "passed": true
+    },
+    {
+      "name": "free-draft-persists-across-reload-without-posting",
+      "passed": true
+    },
+    {
+      "name": "free-save-sends-descriptions-with-no-stock-identities",
+      "passed": true
+    },
+    {
+      "name": "saved-free-lines-appear-in-print-preview",
+      "passed": true
+    },
+    {
+      "name": "incomplete-or-invalid-free-line-blocks-save-without-dropping-row",
+      "passed": true
+    },
+    {
+      "name": "amount-only-remains-available-and-retains-unsent-lines",
+      "passed": true
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": []
+}

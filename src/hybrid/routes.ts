@@ -97,8 +97,15 @@ export function getHybridRouteDescriptor(route: string): HybridRouteDescriptor |
 }
 
 export function normalizeFlowScreenIdToHybridRoute(screenId: string): HybridRouteId {
-  if (screenId.startsWith("supplier:")) return "supplier";
-  if (screenId.startsWith("cash-invoice-preview:")) return "cash-invoice-preview";
+  if (screenId.startsWith("supplier:") || screenId.startsWith("supplier-")) return "supplier";
+  if (screenId.startsWith("cash-invoice-preview:") || screenId.startsWith("cash-invoice-preview-")) return "cash-invoice-preview";
+  if (screenId.startsWith("invoice-preview-")) return "cash-invoice-preview";
+  if (screenId === "items-catalog") return "items";
+  if (screenId === "system-settings") return "settings";
+  if (screenId === "whatsapp-settings") return "whatsapp";
+  if (screenId.startsWith("currency-exchange-")) return "currency";
+  if (screenId.startsWith("inventory-report-")) return "inventory-report";
+  if (screenId.startsWith("simple-entry-")) return "simple-entry";
   if (screenId.startsWith("accounts-purchases") || screenId === "category-purchases" || screenId === "purchases") return "purchases";
   if (screenId.startsWith("accounts-sales") || screenId === "category-sales" || screenId === "sales") return "sales";
   if (screenId.startsWith("accounts-clients") || screenId === "category-clients" || screenId === "clients") return "clients";

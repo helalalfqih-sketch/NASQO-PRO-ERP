@@ -1238,39 +1238,26 @@ export function loadErpWorkspaceData(uid: string): ErpWorkspaceData {
   return erpMemoryCache.get(key) ?? erpMemoryCache.get("local-erp-workspace") ?? createEmptyErpData();
 }
 
-export function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): void {
-  const key = uid || "local-erp-workspace";
-  erpMemoryCache.set(key, data);
-  for (const listener of erpListeners) {
-    listener(data);
-  }
-  if (typeof window === "undefined") return;
-  const win = window as unknown as {
-    __nasqoHybridReady?: boolean;
-    __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
-  };
-  if (import.meta.env.VITE_NASQO_HYBRID === "1" || win.__nasqoHybridReady) {
-    win.__nasqoHybridSaveErp?.(key, data);
+export async function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): Promise<void> {
+  const { buildErpRecordChanges } = await import('./hybrid/erpRecordChanges.ts');
+  await saveErpRecordCommands(uid,buildErpRecordChanges(loadErpWorkspaceData(uid),data));
+}
+
+export async function saveErpRecordCommands(uid: string, changes: import('./erpRecordRules.ts').ErpRecordChange[]): Promise<void> {
+  if (!changes.length) return;
+  const key = uid || 'local-erp-workspace';
+  if (typeof window === 'undefined') throw new Error('خدمة حفظ السجلات غير متاحة');
+  const win = window as unknown as {__nasqoHybridReady?:boolean; __nasqoHybridSaveErpRecords?:(uid:string,changes:import('./erpRecordRules.ts').ErpRecordChange[])=>Promise<ErpWorkspaceData>};
+  if (win.__nasqoHybridReady || (import.meta as {env?:{VITE_NASQO_HYBRID?:string}}).env?.VITE_NASQO_HYBRID === '1') {
+    if (!win.__nasqoHybridSaveErpRecords) throw new Error('خدمة الحفظ الأصلية غير متاحة؛ لم يُحفظ السجل');
+    hydrateErpWorkspaceCache(key, await win.__nasqoHybridSaveErpRecords(key,changes));
     return;
   }
-  if (import.meta.env.VITE_NASQO_HYBRID !== "1") {
-    try {
-      const viteBase = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/";
-      const base = new URL("api/db/workspace/", new URL(viteBase, window.location.origin)).pathname;
-      const ctrl = new AbortController();
-      const timer = globalThis.setTimeout(() => ctrl.abort(), 12_000);
-      void fetch(`${base}local-erp-workspace/erp`, {
-        method: "PUT",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      })
-        .catch(() => {})
-        .finally(() => globalThis.clearTimeout(timer));
-    } catch {
-      // Ignore non-browser test environments
-    }
-  }
+  const base = new URL('api/db/workspace/',new URL((import.meta as {env?:{BASE_URL?:string}}).env?.BASE_URL || '/',window.location.origin)).pathname;
+  const response = await fetch(`${base}${encodeURIComponent(key)}/erp`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({changes})});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'تعذر حفظ السجل؛ بقيت المدخلات لإعادة المحاولة');
+  hydrateErpWorkspaceCache(key,result.erpData);
 }
 
 export function formatErpCurrency(amount: number, currency: CurrencyCode | string = "ريال"): string {

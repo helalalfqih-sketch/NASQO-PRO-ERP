@@ -1,0 +1,234 @@
+Activity Resolver Table:
+  Schemes:
+      genericidp:
+        7a55009 com.indexesstore.nasqo_pro_erp/com.google.firebase.auth.internal.GenericIdpActivity filter fbc020e
+          Action: "android.intent.action.VIEW"
+          Category: "android.intent.category.DEFAULT"
+          Category: "android.intent.category.BROWSABLE"
+          Scheme: "genericidp"
+          Authority: "firebase.auth": -1
+          Path: "PatternMatcher{LITERAL: /}"
+      recaptcha:
+        81542f com.indexesstore.nasqo_pro_erp/com.google.firebase.auth.internal.RecaptchaActivity filter a115a3c
+          Action: "android.intent.action.VIEW"
+          Category: "android.intent.category.DEFAULT"
+          Category: "android.intent.category.BROWSABLE"
+          Scheme: "recaptcha"
+          Authority: "firebase.auth": -1
+          Path: "PatternMatcher{LITERAL: /}"
+
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        eb3add3 com.indexesstore.nasqo_pro_erp/.MainActivity filter 5a97d10
+          Action: "android.intent.action.MAIN"
+          Category: "android.intent.category.LAUNCHER"
+
+Receiver Resolver Table:
+  Non-Data Actions:
+      android.intent.action.BATTERY_OKAY:
+        2d9044b com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter 2b7de28
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.ACTION_POWER_DISCONNECTED:
+        949e3c5 com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter 73a311a
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+      androidx.profileinstaller.action.SAVE_PROFILE:
+        8f5a71f com.indexesstore.nasqo_pro_erp/androidx.profileinstaller.ProfileInstallReceiver filter d9114ca
+          Action: "androidx.profileinstaller.action.SAVE_PROFILE"
+      android.intent.action.DEVICE_STORAGE_LOW:
+        8e9f741 com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter 23a44e6
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      android.net.conn.CONNECTIVITY_CHANGE:
+        3b19a27 com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy filter c0b4d4
+          Action: "android.net.conn.CONNECTIVITY_CHANGE"
+      android.intent.action.DEVICE_STORAGE_OK:
+        8e9f741 com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy filter 23a44e6
+          Action: "android.intent.action.DEVICE_STORAGE_LOW"
+          Action: "android.intent.action.DEVICE_STORAGE_OK"
+      androidx.profileinstaller.action.INSTALL_PROFILE:
+        8f5a71f com.indexesstore.nasqo_pro_erp/androidx.profileinstaller.ProfileInstallReceiver filter a7dca6c
+          Action: "androidx.profileinstaller.action.INSTALL_PROFILE"
+      android.intent.action.BATTERY_LOW:
+        2d9044b com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy filter 2b7de28
+          Action: "android.intent.action.BATTERY_OKAY"
+          Action: "android.intent.action.BATTERY_LOW"
+      android.intent.action.TIMEZONE_CHANGED:
+        91dc67d com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 5d5c972
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.BOOT_COMPLETED"
+      android.intent.action.TIME_SET:
+        91dc67d com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 5d5c972
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.BOOT_COMPLETED"
+      androidx.profileinstaller.action.SKIP_FILE:
+        8f5a71f com.indexesstore.nasqo_pro_erp/androidx.profileinstaller.ProfileInstallReceiver filter 6c44835
+          Action: "androidx.profileinstaller.action.SKIP_FILE"
+      androidx.profileinstaller.action.BENCHMARK_OPERATION:
+        8f5a71f com.indexesstore.nasqo_pro_erp/androidx.profileinstaller.ProfileInstallReceiver filter 957963b
+          Action: "androidx.profileinstaller.action.BENCHMARK_OPERATION"
+      android.intent.action.BOOT_COMPLETED:
+        91dc67d com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.RescheduleReceiver filter 5d5c972
+          Action: "android.intent.action.TIMEZONE_CHANGED"
+          Action: "android.intent.action.TIME_SET"
+          Action: "android.intent.action.BOOT_COMPLETED"
+      android.intent.action.ACTION_POWER_CONNECTED:
+        949e3c5 com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy filter 73a311a
+          Action: "android.intent.action.ACTION_POWER_DISCONNECTED"
+          Action: "android.intent.action.ACTION_POWER_CONNECTED"
+      androidx.work.diagnostics.REQUEST_DIAGNOSTICS:
+        3c54d79 com.indexesstore.nasqo_pro_erp/androidx.work.impl.diagnostics.DiagnosticsReceiver filter d330abe
+          Action: "androidx.work.diagnostics.REQUEST_DIAGNOSTICS"
+      androidx.work.impl.background.systemalarm.UpdateProxies:
+        f93b1c3 com.indexesstore.nasqo_pro_erp/androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver filter 1de4a40
+          Action: "androidx.work.impl.background.systemalarm.UpdateProxies"
+
+Domain verification status:
+
+Permissions:
+  Permission [com.indexesstore.nasqo_pro_erp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION] (b1aefe0):
+    sourcePackage=com.indexesstore.nasqo_pro_erp
+    uid=10209 gids=[] type=0 prot=signature
+    perm=PermissionInfo{6ce9299 com.indexesstore.nasqo_pro_erp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION}
+    flags=0x0
+
+Registered ContentProviders:
+  com.indexesstore.nasqo_pro_erp/com.google.firebase.provider.FirebaseInitProvider:
+    Provider{1f5395e com.indexesstore.nasqo_pro_erp/com.google.firebase.provider.FirebaseInitProvider}
+  com.indexesstore.nasqo_pro_erp/androidx.startup.InitializationProvider:
+    Provider{998413f com.indexesstore.nasqo_pro_erp/androidx.startup.InitializationProvider}
+  com.indexesstore.nasqo_pro_erp/androidx.core.content.FileProvider:
+    Provider{f6f2a0c com.indexesstore.nasqo_pro_erp/androidx.core.content.FileProvider}
+
+ContentProvider Authorities:
+  [com.indexesstore.nasqo_pro_erp.documents]:
+    Provider{f6f2a0c com.indexesstore.nasqo_pro_erp/androidx.core.content.FileProvider}
+      applicationInfo=ApplicationInfo{26cbf55 com.indexesstore.nasqo_pro_erp}
+  [com.indexesstore.nasqo_pro_erp.firebaseinitprovider]:
+    Provider{1f5395e com.indexesstore.nasqo_pro_erp/com.google.firebase.provider.FirebaseInitProvider}
+      applicationInfo=ApplicationInfo{b578d6a com.indexesstore.nasqo_pro_erp}
+  [com.indexesstore.nasqo_pro_erp.androidx-startup]:
+    Provider{998413f com.indexesstore.nasqo_pro_erp/androidx.startup.InitializationProvider}
+      applicationInfo=ApplicationInfo{b59b25b com.indexesstore.nasqo_pro_erp}
+
+Key Set Manager:
+  [com.indexesstore.nasqo_pro_erp]
+      Signing KeySets: 59
+
+Packages:
+  Package [com.indexesstore.nasqo_pro_erp] (66088d3):
+    appId=10209
+    pkg=Package{6eadaf8 com.indexesstore.nasqo_pro_erp}
+    codePath=/data/app/~~HtHUexFqWVSXQbTn8g0aQA==/com.indexesstore.nasqo_pro_erp-fdE4NKJrtstfxe-FAqhWWg==
+    resourcePath=/data/app/~~HtHUexFqWVSXQbTn8g0aQA==/com.indexesstore.nasqo_pro_erp-fdE4NKJrtstfxe-FAqhWWg==
+    legacyNativeLibraryDir=/data/app/~~HtHUexFqWVSXQbTn8g0aQA==/com.indexesstore.nasqo_pro_erp-fdE4NKJrtstfxe-FAqhWWg==/lib
+    extractNativeLibs=false
+    primaryCpuAbi=x86_64
+    secondaryCpuAbi=null
+    cpuAbiOverride=null
+    versionCode=1123 minSdk=23 targetSdk=35
+    minExtensionVersions=[]
+    versionName=1.0.123
+    hiddenApiEnforcementPolicy=2
+    usesNonSdkApi=false
+    splits=[base]
+    apkSigningVersion=2
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    forceQueryable=false
+    queriesIntents=[Intent { act=android.intent.action.PROCESS_TEXT dat=content://*/... typ=text/plain }]
+    scannedAsStoppedSystemApp=false
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    usesOptionalLibraries:
+      androidx.window.extensions
+      androidx.window.sidecar
+    usesLibraryFiles:
+      /system_ext/framework/androidx.window.extensions.jar
+      /system_ext/framework/androidx.window.sidecar.jar
+    timeStamp=2026-11-25 19:24:24
+    lastUpdateTime=2026-11-25 19:24:25
+    installerPackageName=null
+    installerPackageUid=-1
+    initiatingPackageName=com.android.shell
+    originatingPackageName=null
+    packageSource=1
+    appMetadataFilePath=null
+    appMetadataSource=0
+    signatures=PackageSignatures{28abe27 version:2, signatures:[9202d7a7], past signatures:[]}
+    installPermissionsFixed=false
+    pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privatePkgFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PARTIALLY_DIRECT_BOOT_AWARE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    apexModuleName=null
+    declared permissions:
+      com.indexesstore.nasqo_pro_erp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION: prot=signature
+    requested permissions:
+      android.permission.POST_NOTIFICATIONS
+      com.google.android.providers.gsf.permission.READ_GSERVICES
+      android.permission.FOREGROUND_SERVICE
+      android.permission.RECEIVE_BOOT_COMPLETED
+      android.permission.INTERNET
+      android.permission.ACCESS_NETWORK_STATE
+      android.permission.CAMERA
+      com.indexesstore.nasqo_pro_erp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+      android.permission.WAKE_LOCK
+    install permissions:
+      com.google.android.providers.gsf.permission.READ_GSERVICES: granted=true
+      android.permission.FOREGROUND_SERVICE: granted=true
+      android.permission.RECEIVE_BOOT_COMPLETED: granted=true
+      android.permission.INTERNET: granted=true
+      android.permission.ACCESS_NETWORK_STATE: granted=true
+      com.indexesstore.nasqo_pro_erp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION: granted=true
+      android.permission.WAKE_LOCK: granted=true
+    User 0: ceDataInode=352546 deDataInode=65651 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false quarantined=false
+      installReason=0
+      dataDir=/data/user/0/com.indexesstore.nasqo_pro_erp
+      firstInstallTime=2026-11-25 19:24:25
+      uninstallReason=0
+      overlay paths:
+        /product/overlay/EmulationPixel5/EmulationPixel5Overlay.apk
+        /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk
+      legacy overlay paths:
+        /product/overlay/EmulationPixel5/EmulationPixel5Overlay.apk
+        /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk
+      gids=[3003]
+      runtime permissions:
+        android.permission.POST_NOTIFICATIONS: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+        android.permission.CAMERA: granted=false, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+      enabledComponents:
+        androidx.work.impl.background.systemjob.SystemJobService
+
+Queries:
+  system apps queryable: false
+  queries via forceQueryable:
+  queries via package name:
+  queries via component:
+    com.google.android.apps.messaging:
+      com.indexesstore.nasqo_pro_erp
+    com.google.android.settings.intelligence:
+      com.indexesstore.nasqo_pro_erp
+  queryable via interaction:
+    User 0:
+      [com.android.emulator.multidisplay,android,com.android.settings,com.android.DeviceAsWebcam,com.android.dynsystem,com.android.inputdevices,com.android.keychain,com.android.localtransport,com.android.location.fused,com.android.providers.settings,com.android.server.telecom]:
+        com.indexesstore.nasqo_pro_erp
+      [com.google.android.gsf,com.google.android.gms]:
+        com.indexesstore.nasqo_pro_erp
+      com.google.android.webview:
+        com.indexesstore.nasqo_pro_erp
+      com.google.android.inputmethod.latin:
+        com.indexesstore.nasqo_pro_erp
+      com.indexesstore.nasqo_pro_erp:
+        com.google.android.webview
+  queryable via uses-library:
+
+Dexopt state:
+  [com.indexesstore.nasqo_pro_erp]
+    path: /data/app/~~HtHUexFqWVSXQbTn8g0aQA==/com.indexesstore.nasqo_pro_erp-fdE4NKJrtstfxe-FAqhWWg==/base.apk
+      x86_64: [status=verify] [reason=install] [primary-abi]
+        [location is /data/app/~~HtHUexFqWVSXQbTn8g0aQA==/com.indexesstore.nasqo_pro_erp-fdE4NKJrtstfxe-FAqhWWg==/oat/x86_64/base.odex]
+
+Compiler stats:
+  [com.indexesstore.nasqo_pro_erp]
+     base.apk - 1103

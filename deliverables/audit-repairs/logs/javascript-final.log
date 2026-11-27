@@ -1,0 +1,99 @@
+✔ 165 USD and 21 SAR remain separate, selected currency/date/search and empty result affect exact rows (49.247735ms)
+✔ XLSX has numeric amount/balance and currency column, genuine OOXML container (103.810156ms)
+✔ ERP diff sends only changed records, preserves revision, rejects whole-store deletion/financial markers (1.207694ms)
+✔ conversion without an approved rate source is refused, not silently 1:1 (0.321438ms)
+✔ formatNasqoBackupFilename matches backup_YYYY.MM.DD_HH.MM.SS.back convention (1.913348ms)
+✔ buildLocalBackupDownloadName preserves .back or .json and appends .back when missing (0.432514ms)
+✔ inspectBackupBytes detects valid JSON .back files, SQLite .back files, and ZIP .back files, and rejects invalid/empty JSON objects (1.377886ms)
+✔ normalizeExtendedSettings clamps numeric bounds and guards invalid enum values (1.896144ms)
+✔ resolveHomeAppearanceTokens uses Modern Indigo (نيلي حديث) as default cleanly (1.047395ms)
+✔ resolveHomeAppearanceTokens resolves presets and adapts banner ink contrast (0.587955ms)
+✔ resolveHomeAppearanceTokens allows custom hex overrides and ignores malformed hex values (0.225141ms)
+✔ isDarkHexColor handles 3-digit and 6-digit hex colors (0.270653ms)
+✔ font family and main screen font size normalize and resolve cleanly (0.610389ms)
+✔ home tile layout normalizes invalid entries, deduplicates ids, and protects settings (0.643587ms)
+✔ home tile pin, reorder, step, hide, and tone helpers behave predictably (2.221889ms)
+✔ default theme mode is light (فاتح) (0.314472ms)
+✔ a recreated store retains a pending ID without storing financial payload (14.545753ms)
+✔ lost acknowledgement, recreated bridge and explicit Save recover by reads only (17.314657ms)
+✔ an absent receipt after timeout blocks resending but not an unrelated document (3.283627ms)
+✔ storage quota denial prevents sending a financial request (2.438808ms)
+✔ a different workspace cannot confirm a saved document with the same ID (1.781857ms)
+✔ a malformed success acknowledgement preserves the pending marker (2.571077ms)
+✔ acknowledged validation rejection permits correcting the same draft (2.657523ms)
+✔ fresh reads recover search, filters, scroll and draft identity without a memory cache (3.231423ms)
+✔ a missing/deleted record truncates restoration before its dependent routes (1.999942ms)
+✔ corrupt/version-mismatched or cross-workspace envelopes fall back safely (0.951971ms)
+✔ schema checks reject malformed UI fields and storage failure never claims success (8.363961ms)
+✔ discard removes only the selected UI draft, without touching records or other workspaces (0.637707ms)
+▶ Hybrid Bridge Contracts & Security Validation
+  ✔ accepts all 12 core commands plus domain commands in strict allowlist (1.360521ms)
+  ✔ rejects unauthorized actions and raw SQL/shell injection keys (0.723814ms)
+  ✔ enforces mandatory idempotencyKey on financial mutations (0.628642ms)
+  ✔ validates inbound responses and rejects malformed or unknown host events (0.486543ms)
+✔ Hybrid Bridge Contracts & Security Validation (4.966852ms)
+▶ NasqoHybridBridge Runtime & Duplicate Prevention
+  ✔ blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST (2.556301ms)
+  ✔ propagates Flutter service errors and timeouts without faking success (40.452899ms)
+  ✔ rejects with SERVICE_UNAVAILABLE when no Flutter transport is attached (0.604461ms)
+✔ NasqoHybridBridge Runtime & Duplicate Prevention (44.568666ms)
+▶ Hybrid Service Adapter Simulated Flutter Host Round-Trip
+  ✔ hydrates workspace, creates accounts/ledger entries, and queries reports exclusively via bridge (5.559476ms)
+✔ Hybrid Service Adapter Simulated Flutter Host Round-Trip (5.729751ms)
+▶ Hybrid Routes Canonical Mapping
+  ✔ normalizes FlowStack screen IDs to canonical hybrid routes across all 5 batches (0.481661ms)
+✔ Hybrid Routes Canonical Mapping (0.563429ms)
+▶ Offline Hybrid Build Output Integrity (dist/hybrid)
+  ✔ produces self-contained dist/hybrid bundle with CSP, manifest, zero external URLs, and zero mock/fixture code (27.158309ms)
+  ✔ prioritizes existing Android WebViewCompat window.NasqoHome channel over NasqoFlutterBridge (1.225931ms)
+✔ Offline Hybrid Build Output Integrity (dist/hybrid) (28.767437ms)
+▶ Stage 2 Home Screen Batch 1 Requirements
+  ✔ validates Flutter Home snapshot and rejects malformed or unsafe snapshot payloads (0.816175ms)
+  ✔ computes signed multi-currency group balances accurately without mixing currencies (1.402851ms)
+  ✔ blocks JS financial writes in Batch 1 read-only mode while allowing navigation, currency, and UI preferences (0.600519ms)
+  ✔ supports Home tile drag reorder, pin, color toggle, hide/show, and reset to default layout (0.932958ms)
+✔ Stage 2 Home Screen Batch 1 Requirements (4.061655ms)
+✔ uses explicit journal legs for stock cost, tax and account reports (2.604496ms)
+▶ Legacy register restoration parity
+  ✔ preserves both original sides in account, statement and group reports, without fictitious counterpart (0.616293ms)
+✔ Legacy register restoration parity (0.694684ms)
+✔ cashbox metadata needs catalog capability and an idempotency key in read-only financial mode (0.421703ms)
+✔ buildInvoicePdfSummaryData parses structured item lines and VAT (40.72498ms)
+✔ buildInvoicePdfSummaryData handles plain single-line and cancelled invoices (1.173725ms)
+✔ free invoice PDF uses saved descriptive lines, quantities and prices (2.161668ms)
+✔ invoice PDF keeps thousandths in quantities (1.165901ms)
+✔ catalog includes unverified and other-warehouse products without changing stock (2.451499ms)
+✔ explicit imported family selects the existing approved selected-warehouse clone once (1.984916ms)
+✔ same warehouse unverified source stays selectable when no approved clone exists (0.449491ms)
+✔ identical names and SKUs do not collapse unrelated catalog records (0.637644ms)
+✔ stepInvoiceQuantity increments and decrements Arabic/English quantities cleanly with min clamp 1 (0.974445ms)
+✔ computeInvoiceLineNet computes rounded net total and never goes negative (0.816896ms)
+✔ buildInvoiceWhatsAppMessage formats professional Arabic ERP invoice with items, discounts, and balance (16.609726ms)
+✔ buildInvoiceWhatsAppMessage handles free-form invoices without lines cleanly (0.498276ms)
+✔ legacy preview and PDF carry source metadata without subtracting discounts twice (25.726508ms)
+✔ complete PDF detail layout paginates long notes and references without dropping characters (7.505397ms)
+✔ reference-style invoice summary computes 53 pieces and 348,100 in original line totals (1.903468ms)
+✔ source-derived invoice fields resolve customer, store, group, original time and amount without inventing payment (3.575744ms)
+✔ unknown original quantities/totals stay unknown rather than becoming zero (0.240194ms)
+✔ legacy products never receive an inferred selling price or approved stock (0.992657ms)
+✔ stocktake and explicitly approved retail price unlock only the reconciled item (0.327278ms)
+✔ explicit quote copy preserves notes and fields without mutating source and uses a stable draft identity (3.780969ms)
+✔ copy keeps deleted original deleted and preserves valid cashbox while rejecting unsupported values (1.213626ms)
+✔ invoice index joins real headers, lines, customer, product and barcode without guessing role (2.5965ms)
+✔ historical archive remains visible only to its bound workspace and source reference (18.222335ms)
+✔ an archive copy stays bound to its source even when replacement reuses all record IDs (1.818118ms)
+✔ missing, truncated or inconsistent provenance cannot bypass archive-copy scope (0.307433ms)
+✔ stock displays all three supported fractional digits without money rounding (20.171981ms)
+ℹ tests 72
+ℹ suites 7
+ℹ pass 72
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1668.856587
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

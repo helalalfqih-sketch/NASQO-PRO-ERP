@@ -1,0 +1,7 @@
+Analyzing 2 items...
+
+   info • The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart' • lib/hybrid/hybrid_react_preview_screen.dart:4:8 • unnecessary_import
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_react_preview_screen.dart:406:7 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/hybrid/hybrid_react_preview_screen.dart:442:50 • prefer_interpolation_to_compose_strings
+
+3 issues found. (ran in 14.0s)

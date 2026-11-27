@@ -1,0 +1,72 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "supplier"
+    }
+  },
+  {
+    "action": "openInvoice",
+    "payload": {
+      "intent": "invoice",
+      "accountId": "acc_sup_1",
+      "kindOverride": "purchase"
+    }
+  },
+  {
+    "action": "getProductPriceStats",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "itemId": "synthetic-approved"
+    }
+  },
+  {
+    "action": "createLedgerEntry",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "id": "inv_1795613519437_mfejle7",
+        "accountId": "acc_sup_1",
+        "accountName": "حساب اصطناعي 1",
+        "kind": "invoice",
+        "typeLabel": "فاتورة شراء آجلة",
+        "payment": "credit",
+        "direction": "credit",
+        "amount": 10,
+        "taxAmount": 0,
+        "settledOnReceipt": false,
+        "currency": "ريال",
+        "exchangeRate": 1,
+        "details": "[ صنف معتمد اصطناعي (1 حبة) ]",
+        "documentNumber": "1001",
+        "warehouseId": "wh_main",
+        "warehouseName": "المخزن الرئيسي",
+        "invoiceContent": "items",
+        "entryNumber": 1001,
+        "deleted": false,
+        "entryDate": "2026-11-25",
+        "lines": [
+          {
+            "inventoryItemId": "synthetic-approved",
+            "warehouseId": "wh_main",
+            "itemName": "صنف معتمد اصطناعي",
+            "unit": "حبة",
+            "unitNum": 1,
+            "quantity": 1,
+            "price": 10,
+            "discount": 0,
+            "total": 10
+          }
+        ]
+      }
+    },
+    "idempotencyKey": "document_inv_1795613519437_mfejle7"
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-25",
+  "environment": "Cloud browser, synthetic built hybrid preview; NOT Android",
+  "observer": "Primary agent using CUA",
+  "data": "Wholly synthetic fixture",
+  "checks": {
+    "matchingCatalogItems": 41,
+    "page": 3,
+    "pageCount": 3,
+    "visibleRowsFrom": 31,
+    "visibleRowsThrough": 41,
+    "nextPageDisabled": true,
+    "previousPageVisible": true,
+    "showAllVisible": true,
+    "referenceCostLabelVisible": true
+  },
+  "androidDeviceTested": false,
+  "financialMutationPerformed": false
+}

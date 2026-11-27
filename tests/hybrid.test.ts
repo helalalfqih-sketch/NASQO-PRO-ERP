@@ -27,7 +27,7 @@ import {
   LOCAL_WORKSPACE_UID,
   refreshWorkspaceFromServer,
 } from "../src/hybrid/serviceAdapter";
-import { computeAccountGroupsSummary } from "../src/accounting";
+import { computeAccountGroupsSummary, computeAccountSummary, computeCategoryTotals, computeStatementRows, computeTrialBalanceReport } from "../src/accounting";
 import {
   DEFAULT_HOME_TILE_LAYOUT,
   isDefaultHomeTileLayout,
@@ -421,6 +421,13 @@ describe("Hybrid Service Adapter Simulated Flutter Host Round-Trip", () => {
               },
             });
           } else if (req.action === "getInventoryMovementsReport") {
+            assert.deepEqual(req.payload, {
+              workspaceId: LOCAL_WORKSPACE_UID,
+              options: {
+                warehouseId: "wh_main", itemId: "item_1", fromDate: "2026-01-01", toDate: "2026-12-31",
+                movementOffset: 100, movementLimit: 100,
+              },
+            });
             hybridBridge.handleInbound({
               protocolVersion: HYBRID_PROTOCOL_VERSION,
               kind: "response",
@@ -439,6 +446,7 @@ describe("Hybrid Service Adapter Simulated Flutter Host Round-Trip", () => {
                   profitBasis: "avg",
                 },
                 movements: [],
+                movementPage: { offset: 100, limit: 100, totalCount: 516, nextOffset: 200, hasMore: true },
                 anomalies: {
                   unverifiedItemsCount: 0,
                   unresolvedTransfersCount: 0,
@@ -496,8 +504,14 @@ describe("Hybrid Service Adapter Simulated Flutter Host Round-Trip", () => {
 
     const invReport = await fetchInventoryMovementsReport(LOCAL_WORKSPACE_UID, {
       warehouseId: "wh_main",
+      itemId: "item_1",
+      fromDate: "2026-01-01",
+      toDate: "2026-12-31",
+      movementOffset: 100,
+      movementLimit: 100,
     });
     assert.equal(invReport.totals.totalRemainingValue, 504000);
+    assert.deepEqual(invReport.movementPage, { offset: 100, limit: 100, totalCount: 516, nextOffset: 200, hasMore: true });
 
     const cbReport = await fetchCashboxesReport(LOCAL_WORKSPACE_UID, { currency: "ريال" });
     assert.equal(cbReport.cashboxes[0].netBalance, 7500);
@@ -789,3 +803,72 @@ describe("Stage 2 Home Screen Batch 1 Requirements", () => {
   });
 });
 
+
+it("uses explicit journal legs for stock cost, tax and account reports",()=>{
+  const fixture=createSampleSnapshot();
+  const customer={...fixture.accounts[1],openingBalance:0};
+  const revenue={...fixture.accounts[0],id:"revenue",category:"sales" as const};
+  const tax={...revenue,id:"tax",category:"shop" as const};
+  const inventory={...revenue,id:"inventory",category:"shop" as const};
+  const cost={...revenue,id:"cost",category:"shop" as const};
+  const e={...fixture.ledger[0],id:"stock-sale",kind:"invoice" as const,
+    accountId:customer.id,counterpartAccountId:revenue.id,amount:31,direction:"debit" as const,
+    payment:"credit" as const,settledOnReceipt:false,deleted:false,stockPosting:true,stockSale:true,
+    netBeforeTax:28,stockCostMinor:1200,journalLines:[
+      {accountId:customer.id,debitMinor:3100,creditMinor:0},
+      {accountId:revenue.id,debitMinor:0,creditMinor:2800},
+      {accountId:tax.id,debitMinor:0,creditMinor:300},
+      {accountId:cost.id,debitMinor:1200,creditMinor:0},
+      {accountId:inventory.id,debitMinor:0,creditMinor:1200},
+    ]};
+  const accounts=[customer,revenue,tax,inventory,cost];
+  assert.equal(computeAccountSummary(revenue,[e]).creditTotal,28);
+  assert.equal(computeAccountSummary(tax,[e]).creditTotal,3);
+  assert.equal(computeStatementRows(cost,[e]).debitTotal,12);
+  assert.equal(computeCategoryTotals(accounts,[e]).shop.creditTotal,15);
+  const trial=computeTrialBalanceReport(accounts,[e],[]);
+  assert.equal(trial.netBalance,0);
+  assert.equal(trial.salesTotal,28);
+  assert.equal(trial.netProfit,16);
+});
+
+describe("Legacy register restoration parity", () => {
+  it("preserves both original sides in account, statement and group reports, without fictitious counterpart", () => {
+    const snap = createHybridHomeFixtureSnapshot();
+    const original = snap.accounts.find(a => a.groupId != null)!;
+    const account = {...original, openingBalance:0, currency:"ريال"};
+    const template = snap.ledger[0];
+    const legacy = {...template, id:"legacy-test", accountId:account.id, accountName:account.name, counterpartAccountId:"",
+      counterpartAccountName:"", currency:"ريال", rawDain:18, rawMadin:7, amount:18, direction:"debit" as const,
+      sourceOrigin:"legacy_sqlite" as const, postingStatus:"posted" as const, settledOnReceipt:false, deleted:false, kind:"voucher" as const,
+      payment:"credit" as const, journalLines:undefined, exchangeRate:1};
+    const excluded = {...legacy,id:"legacy-unknown",postingStatus:"historical_unposted" as const,rawDain:999,rawMadin:0,currency:"unknown"};
+    const entries = [legacy,excluded];
+    const summary=computeAccountSummary(account,entries,"ريال");
+    assert.equal(summary.debitTotal,18);
+    assert.equal(summary.creditTotal,7);
+    const statement=computeStatementRows(account,entries,{currency:"ريال"});
+    assert.equal(statement.debitTotal,18);
+    assert.equal(statement.creditTotal,7);
+    const groups=computeAccountGroupsSummary(snap.accountGroups,[account],entries,{[account.groupId!]: "ريال"});
+    assert.equal(groups.find(g=>g.id===account.groupId)?.netDebitMinusCredit,11);
+    const category=computeCategoryTotals([account],entries,"ريال")[account.category];
+    assert.equal(category.debitTotal,18);
+    assert.equal(category.creditTotal,7);
+    const trial=computeTrialBalanceReport([account],entries,[],[],{currency:"ريال"});
+    assert.equal(trial.totalDebitAccounts,11);
+  });
+});
+
+it('cashbox metadata needs catalog capability and an idempotency key in read-only financial mode', async () => {
+  const bridge=new NasqoHybridBridge();const sent:HybridRequestEnvelope[]=[];
+  bridge.setReadOnlyFinancialMode(true);
+  bridge.setTransportForTesting({postMessage(raw){const req=JSON.parse(raw) as HybridRequestEnvelope;sent.push(req);queueMicrotask(()=>bridge.handleInbound({protocolVersion:HYBRID_PROTOCOL_VERSION,kind:'response',requestId:req.requestId,action:req.action,ok:true,data:{cashbox:{id:9}}}));}});
+  const payload={workspaceId:LOCAL_WORKSPACE_UID,payload:{name:'صندوق اصطناعي',currencyCode:'ريال',accountId:'cash',isActive:true}};
+  await assert.rejects(()=>bridge.invoke('saveCashbox',payload,{idempotencyKey:'cashbox-attempt'}),(e:unknown)=>e instanceof HybridBridgeError&&e.code==='UNAUTHORIZED_ACTION');
+  assert.equal(sent.length,0);
+  bridge.setLocalCatalogEditing(true);
+  await bridge.invoke('saveCashbox',payload,{idempotencyKey:'cashbox-attempt'});
+  assert.equal(sent.length,1);assert.equal(sent[0].action,'saveCashbox');assert.equal(sent[0].idempotencyKey,'cashbox-attempt');
+  assert.equal(validateHybridRequestEnvelope({...sent[0],idempotencyKey:undefined}).valid,false);
+});

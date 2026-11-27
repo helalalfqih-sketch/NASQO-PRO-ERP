@@ -41,10 +41,22 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "openAccountStatement",
   "printDocument",
   "exportPdf",
+  "beginDocumentExport",
+  "appendDocumentExport",
+  "finishDocumentExport",
+  "abortDocumentExport",
+  "shareText",
   "pickFile",
+  "restoreLocalBackup",
+  "openInvoiceRoles",
+  "openStockReconciliation",
   "showMessage",
   // Accounting, accounts, inventory, and reports (persisted exclusively by Dart/SQLite)
   "saveWorkspaceSettings",
+  "saveCashbox",
+  "deleteCashbox",
+  "deleteAccountGroup",
+  "deleteWarehouse",
   "saveAccountGroup",
   "saveCurrency",
   "deleteCurrency",
@@ -58,6 +70,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "createInventoryItem",
   "updateInventoryItem",
   "deleteInventoryItem",
+  "importAccountCards",
   "importInventoryItems",
   "batchUpdateInventoryItems",
   "getInventoryMovementsReport",
@@ -65,10 +78,14 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "getInvoiceDetail",
   "getProductPriceStats",
   "saveErpData",
+  "saveErpRecords",
   "backupWorkspace",
   "restoreWorkspace",
   "resetWorkspace",
   "googleDriveAction",
+  "cloudIdentityAction",
+  "localToolsAction",
+  "legacyArchiveAction",
 ] as const;
 
 export type HybridCommandAction = (typeof HYBRID_ALLOWED_COMMANDS)[number];
@@ -86,6 +103,10 @@ export const FINANCIAL_MUTATION_COMMANDS: ReadonlySet<HybridCommandAction> = new
   "permanentlyDeleteLedger",
   "saveAccount",
   "deleteAccount",
+  "saveCashbox",
+  "deleteCashbox",
+  "deleteAccountGroup",
+  "deleteWarehouse",
   "saveAccountGroup",
   "saveCurrency",
   "deleteCurrency",
@@ -93,6 +114,7 @@ export const FINANCIAL_MUTATION_COMMANDS: ReadonlySet<HybridCommandAction> = new
   "createInventoryItem",
   "updateInventoryItem",
   "deleteInventoryItem",
+  "importAccountCards",
   "importInventoryItems",
   "batchUpdateInventoryItems",
   "restoreWorkspace",
@@ -155,6 +177,10 @@ export interface HybridCapabilities {
   whatsappShareSupported: boolean;
   /** When true (Batch 1 Home delivery), financial write commands from JS are blocked. */
   readOnlyFinancial?: boolean;
+  localAccountCreation?: boolean;
+  localDocumentPosting?: boolean;
+  localStockPosting?: boolean;
+  localCatalogEditing?: boolean;
 }
 
 export interface HybridWorkspaceSnapshot {
@@ -202,6 +228,7 @@ export interface HybridPickFileRequest {
 
 export interface HybridPickFileResult {
   cancelled?: boolean;
+  nativeRestored?: boolean;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -210,7 +237,7 @@ export interface HybridPickFileResult {
 
 export interface HybridCommandPayloadMap {
   navigate: { route: string; params?: Record<string, string | number | boolean | undefined> };
-  goBack: { currentRoute?: string; stackDepth?: number };
+  goBack: { currentRoute?: string; stackDepth?: number; requestId?: string; outcome?: "handled" | "home" | "blocked" };
   getSnapshot: { workspaceId?: string; forceRefresh?: boolean };
   changeCurrency: { scope: "dashboard" | "category" | "statement" | "report"; targetId?: string; currency: string };
   saveUiPreferences: { preferences: HybridUiPreferences };
@@ -224,9 +251,18 @@ export interface HybridCommandPayloadMap {
   openAccountStatement: { accountId: string; currency?: string };
   printDocument: HybridPrintPayload;
   exportPdf: HybridExportPdfPayload;
+  beginDocumentExport: { workspaceId: string; fileName: string; mimeType: string; sizeBytes: number; mode: 'save' | 'share' | 'print' };
+  appendDocumentExport: { workspaceId: string; exportId: string; offset: number; base64: string };
+  finishDocumentExport: { workspaceId: string; exportId: string };
+  abortDocumentExport: { workspaceId: string; exportId: string };
+  shareText: { workspaceId: string; title: string; text: string; phone?: string };
   pickFile: HybridPickFileRequest;
+  restoreLocalBackup: { workspaceId: string };
+  openInvoiceRoles: { workspaceId: string };
+  openStockReconciliation: { workspaceId: string; warehouseId?: string; productId?: string };
   showMessage: { message: string; level?: "info" | "success" | "warning" | "error" };
   saveWorkspaceSettings: { workspaceId: string; updates: Partial<WorkspaceSettings> };
+  saveCashbox: {workspaceId:string;payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}};
   saveAccountGroup: { workspaceId: string; payload: Partial<AccountGroupRecord> & { name: string } };
   saveCurrency: { workspaceId: string; payload: Partial<CurrencyRecord> & { name: string } };
   deleteCurrency: { workspaceId: string; currencyId: number };
@@ -251,6 +287,7 @@ export interface HybridCommandPayloadMap {
   createInventoryItem: { workspaceId: string; payload: Partial<InventoryItemRecord> & { name: string } };
   updateInventoryItem: { workspaceId: string; itemId: string; updates: Partial<InventoryItemRecord> };
   deleteInventoryItem: { workspaceId: string; itemId: string };
+  importAccountCards: { workspaceId: string; accounts: Array<Partial<AccountRecord> & { name: string }> };
   importInventoryItems: {
     workspaceId: string;
     items: Array<Partial<InventoryItemRecord> & { name: string }>;
@@ -270,6 +307,8 @@ export interface HybridCommandPayloadMap {
       toDate?: string;
       profitBasis?: "avg" | "cost" | "last";
       itemId?: string;
+      movementOffset?: number;
+      movementLimit?: number;
     };
   };
   getCashboxesReport: {
@@ -278,11 +317,18 @@ export interface HybridCommandPayloadMap {
   };
   getInvoiceDetail: { workspaceId: string; entryId: string };
   getProductPriceStats: { workspaceId: string; itemId: string };
+  deleteCashbox: {workspaceId:string;cashboxId:number};
+  deleteAccountGroup: {workspaceId:string;groupId:number};
+  deleteWarehouse: {workspaceId:string;warehouseId:string};
+  saveErpRecords: { workspaceId: string; changes: import("../erpRecordRules").ErpRecordChange[] };
   saveErpData: { workspaceId: string; data: ErpWorkspaceData };
   backupWorkspace: { workspaceId: string; backupName?: string; target: "local" | "cloud" };
   restoreWorkspace: { workspaceId: string; fileName: string; format: "json" | "sqlite" | "sql"; base64Content: string };
   resetWorkspace: { workspaceId: string; mode: "empty" | "demo" };
   googleDriveAction: { operation: string; args?: Record<string, unknown> };
+  cloudIdentityAction: { operation: string; args?: Record<string, unknown> };
+  localToolsAction: { workspaceId: string; operation: "status"|"history"|"readiness"|"activate"|"leaveReview" };
+  legacyArchiveAction: { workspaceId: string; operation: "list" | "detail" | "alertState"; recordKind: "offers" | "trash" | "alerts"; recordId?: string; sourceSha?: string; offset?: number; limit?: number; query?: string; read?: boolean; dismissed?: boolean };
 }
 
 export interface HybridRequestEnvelope<A extends HybridCommandAction = HybridCommandAction> {
@@ -304,6 +350,19 @@ export interface HybridErrorPayload {
     | "NOT_FOUND"
     | "SERVICE_UNAVAILABLE"
     | "TIMEOUT"
+    | "GOOGLE_CONFIG_MISSING"
+    | "GOOGLE_PROVIDER_CONFIG"
+    | "GOOGLE_AUTH_CANCELLED"
+    | "GOOGLE_SCOPE_DENIED"
+    | "GOOGLE_ACCOUNT_MISMATCH"
+    | "GOOGLE_NETWORK_ERROR"
+    | "GOOGLE_AUTH_EXPIRED"
+    | "GOOGLE_AUTH_FAILED"
+    | "GOOGLE_TIMEOUT"
+    | "GOOGLE_CONNECTION_INCOMPLETE"
+    | "DRIVE_API_DISABLED"
+    | "DRIVE_PERMISSION_DENIED"
+    | "DRIVE_RATE_LIMITED"
     | "INTERNAL_ERROR";
   message: string;
   retryable?: boolean;

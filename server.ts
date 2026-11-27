@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mountSyncApi } from "./server/syncApi.ts";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { mountSmartProApi } from "./server/smartpro.ts";
 import { requireSqliteAccess } from "./server/sqliteAccess.ts";
@@ -55,6 +56,7 @@ async function createApp() {
   });
 
   // Single unified SQLite database API (has its own scoped 32mb JSON limit for imports).
+  mountSyncApi(app);
   mountSqliteApi(app);
 
   app.use(express.json({ limit: "64kb" }));

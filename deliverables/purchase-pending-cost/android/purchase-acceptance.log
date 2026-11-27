@@ -1,0 +1,20 @@
+2026-11-26T23:09:09.9825608Z Purchase stage: before-fixture
+2026-11-26T23:09:14.6845421Z restarting adbd as root
+2026-11-26T23:09:16.3184311Z Purchase stage: seeded-home
+2026-11-26T23:09:30.1739681Z Tap: فاتورة جديدة
+2026-11-26T23:09:32.2581246Z Purchase stage: invoice-open
+2026-11-26T23:09:35.7083067Z Tap: فاتورة شراء
+2026-11-26T23:09:37.8156823Z Tap: نقدي
+2026-11-26T23:09:40.6317933Z Purchase stage: purchase-cash
+2026-11-26T23:09:43.1990897Z Tap: بحث عن صنف أو باركود
+2026-11-26T23:09:53.8125144Z Tap: QA Pending A
+2026-11-26T23:09:56.4463500Z Purchase stage: selected-A
+2026-11-26T23:09:59.6864443Z Tap: بحث عن صنف أو باركود
+2026-11-26T23:10:05.0463507Z Tap: QA Pending B
+2026-11-26T23:10:07.7844172Z Purchase stage: selected-B
+2026-11-26T23:10:11.0054637Z Tap: سعر السطر 2
+2026-11-26T23:10:13.0802411Z Purchase stage: priced
+2026-11-26T23:10:15.4209254Z Tap: عمل فاتورة
+2026-11-26T23:10:17.5332794Z Purchase stage: saved
+2026-11-26T23:10:30.7421411Z Purchase stage: reopened
+2026-11-26T23:10:42.4236335Z {"result": "PASS", "sdk": 36, "fixtureSha256": "40a37da58d7a503880d72d17371337e8f1e7d1489f794128b5aed4206332ff2a", "amount": 10000, "payment": "cash", "prices": [5000, 5000], "quantitiesBefore": [3, 5], "quantitiesAfter": [4, 6], "approvedNewPurchaseValue": 10000, "oldCostStillPending": true, "oldArchiveUnchanged": true, "journalBalanced": true, "stockMovements": 2, "newInvoicesAfterRestart": 1, "historicalInvoicesPreserved": 2, "scope": "Signed Android 16 release, UI entry and posting, SQLite checked after process restart. Synthetic DB seeded before UI test; not a restore-picker or private-data test."}

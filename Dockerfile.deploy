@@ -5,6 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY server.ts ./
 COPY server ./server
+# Shared validation and accounting helpers are also used by the web SQLite API.
+COPY src ./src
 COPY scripts/backup-sqlite.mjs ./scripts/backup-sqlite.mjs
 COPY dist/client ./dist/client
 EXPOSE 3000

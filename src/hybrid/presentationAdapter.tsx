@@ -30,6 +30,7 @@ export interface HybridPresentationAdapterValue {
   notifyOpenAccountStatement: (accountId: string, currency?: string) => void;
   printDocument: (payload: HybridPrintPayload) => Promise<boolean>;
   exportPdf: (payload: HybridExportPdfPayload) => Promise<boolean>;
+  exportLocalBackup: (name: string) => Promise<boolean>;
   pickFile: (request: HybridPickFileRequest) => Promise<HybridPickFileResult | null>;
   showMessage: (message: string, level?: "info" | "success" | "warning" | "error") => void;
 }
@@ -53,6 +54,7 @@ const DEFAULT_WEB_ADAPTER: HybridPresentationAdapterValue = {
   notifyOpenAccountStatement: () => {},
   printDocument: async () => false,
   exportPdf: async () => false,
+  exportLocalBackup: async () => false,
   pickFile: async () => null,
   showMessage: () => {},
 };
@@ -98,19 +100,25 @@ export function createFlutterPresentationAdapter(
     },
     printDocument: async (payload) => {
       if (!hybridBridge.hasNativeTransport()) return false;
-      await hybridBridge.invoke("printDocument", payload);
-      return true;
+      const result=await hybridBridge.invoke<"printDocument",{opened:boolean}>("printDocument", payload);
+      return result.opened===true;
     },
     exportPdf: async (payload) => {
       if (!hybridBridge.hasNativeTransport()) return false;
-      await hybridBridge.invoke("exportPdf", payload);
-      return true;
+      const result=await hybridBridge.invoke<"exportPdf",{opened:boolean}>("exportPdf", payload);
+      return result.opened===true;
+    },
+    exportLocalBackup: async (name) => {
+      const result=await hybridBridge.invoke<"backupWorkspace",{saved:boolean}>("backupWorkspace",
+        {workspaceId:"local-erp-workspace",backupName:name,target:"local"},{timeoutMs:300_000});
+      return result.saved===true;
     },
     pickFile: async (request) => {
       if (!hybridBridge.hasNativeTransport()) return null;
       const result = await hybridBridge.invoke<"pickFile", HybridPickFileResult | null>(
         "pickFile",
         request,
+        {timeoutMs:300_000},
       );
       if (!result || result.cancelled) return null;
       return result;

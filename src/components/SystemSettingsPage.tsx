@@ -1,4 +1,7 @@
+import { hybridBridge } from "../hybrid/bridge";
+import { usesNativeDocumentOutput } from "../hybrid/documentOutput";
 import { useRef, useState, type ChangeEvent } from "react";
+import { HybridCloudAccount, HybridLocalTools } from "./HybridCloudAccount";
 import {
   FilePlusIcon,
   FileTextIcon,
@@ -32,6 +35,8 @@ import { triggerHaptic } from "../utils/haptics";
 import type { ThemeMode } from "../utils/theme";
 
 interface SystemSettingsPageProps {
+  onOpenReferenceDefaults?: () => void;
+  onOpenCashierSettings?: () => void;
   uid: string;
   userEmail: string;
   workspace: WorkspaceSettings | null;
@@ -54,6 +59,8 @@ interface SystemSettingsPageProps {
   onOpenGoogleDrive?: () => void;
   onOpenFullSqliteImport?: () => void;
   onRestoreJson: () => void;
+  onOpenInvoiceRoles?: () => void;
+  onOpenStockReconciliation?: () => void;
   onOpenTrash?: () => void;
   onSignOut: () => void;
   onNotify: (msg: string) => void;
@@ -62,6 +69,8 @@ interface SystemSettingsPageProps {
 }
 
 export function SystemSettingsPage({
+  onOpenReferenceDefaults,
+  onOpenCashierSettings,
   uid,
   userEmail,
   workspace,
@@ -84,6 +93,8 @@ export function SystemSettingsPage({
   onOpenGoogleDrive,
   onOpenFullSqliteImport,
   onRestoreJson,
+  onOpenInvoiceRoles,
+  onOpenStockReconciliation,
   onSignOut,
   onNotify,
   onBack,
@@ -181,17 +192,16 @@ export function SystemSettingsPage({
     reader.readAsDataURL(file);
   };
 
+  const saveGate = useRef(false);
   const handleSaveAll = async () => {
+    if(saveGate.current)return;
+    saveGate.current=true;
     keyboard.hide();
-    if (!workspace) {
-      onChangeExtended(draft);
-      triggerHaptic("success");
-      onNotify("تم حفظ الإعدادات");
-      return;
-    }
     setSaving(true);
     try {
+      if(usesNativeDocumentOutput())await hybridBridge.invoke("saveUiPreferences",{preferences:{extendedSettings:draft}});
       onChangeExtended(draft);
+      if(!workspace){onNotify("تم حفظ الإعدادات");return;}
       const nextWorkspace: WorkspaceSettings = {
         ...workspace,
         companyName: companyName.trim() || workspace.companyName,
@@ -211,6 +221,7 @@ export function SystemSettingsPage({
       triggerHaptic("warning");
       onNotify(err instanceof Error ? err.message : "تعذر حفظ الإعدادات في قاعدة البيانات.");
     } finally {
+      saveGate.current=false;
       setSaving(false);
     }
   };
@@ -218,6 +229,8 @@ export function SystemSettingsPage({
   return (
     <MobileScroll className="app-screen sys-settings-scroll">
       <main className="sys-settings-page page-with-footer" data-testid="system-settings-screen">
+        {onOpenReferenceDefaults ? <button className="ref-btn blue" onClick={onOpenReferenceDefaults}>مراجع المستندات الافتراضية</button> : null}
+      {onOpenCashierSettings ? <button className="ref-btn blue" onClick={onOpenCashierSettings} data-testid="settings-cashier">إعدادات الكاشير</button> : null}
         {/* Top Real Backup Status Card */}
         <section
           className={`sys-top-backup-card ${backupStatus.overdue ? "overdue" : "healthy"}`}
@@ -241,7 +254,7 @@ export function SystemSettingsPage({
                   </span>
                 </>
               ) : null}
-              {userEmail ? (
+              {userEmail && !(import.meta.env.VITE_NASQO_HYBRID === "1" && userEmail === "offline@nasqo.local") ? (
                 <>
                   <span aria-hidden="true">·</span>
                   <bdi>{userEmail}</bdi>
@@ -503,11 +516,13 @@ export function SystemSettingsPage({
                   <span>بيع بدون رصيد</span>
                   <input
                     type="checkbox"
-                    checked={draft.sellWithoutBalance}
+                    checked={usesNativeDocumentOutput()?false:draft.sellWithoutBalance}
+                    disabled={usesNativeDocumentOutput()}
                     onChange={(e) => updateField("sellWithoutBalance", e.target.checked)}
                   />
                 </label>
               </div>
+              {usesNativeDocumentOutput()?<p role="note">البيع دون رصيد غير مدعوم في المحرك المحلي: يجب اعتماد الكمية والتكلفة وتوفر رصيد كافٍ. التفضيل القديم لا يتجاوز هذا الشرط.</p>:null}
               {(
                 [
                   ["useWeightedAverage", "استخدام المتوسط المرجح للتكلفة"],
@@ -1693,6 +1708,16 @@ export function SystemSettingsPage({
                 >
                   استعادة نسخة من ملف
                 </button>
+                {onOpenStockReconciliation ? (
+                  <button type="button" className="ref-btn" onClick={onOpenStockReconciliation} data-testid="settings-stock-reconciliation-btn">
+                    مطابقة مخزون النسخة المستوردة
+                  </button>
+                ) : null}
+                {onOpenInvoiceRoles ? (
+                  <button type="button" className="ref-btn" onClick={onOpenInvoiceRoles} data-testid="settings-invoice-roles-btn">
+                    حسابات الترحيل التلقائي
+                  </button>
+                ) : null}
                 {onSyncDatabase ? (
                   <button
                     type="button"
@@ -1736,26 +1761,28 @@ export function SystemSettingsPage({
               </div>
 
               <label className="sys-row sys-check-row" style={{ marginTop: 10 }}>
-                <span>التذكير بالنسخ الاحتياطي عند الإغلاق</span>
+                <span>التذكير عند الإغلاق — غير متاح؛ احفظ نسخة يدويًا</span>
                 <input
                   type="checkbox"
-                  checked={draft.backupReminderOnExit}
+                  disabled checked={false} aria-describedby="unavailable-security-note"
                   onChange={(e) => updateField("backupReminderOnExit", e.target.checked)}
                 />
               </label>
 
               <label className="sys-row sys-check-row">
-                <span>الحماية بكلمة مرور</span>
+                <span>الحماية بكلمة مرور — غير متاحة في هذه النسخة</span>
                 <input
                   type="checkbox"
                   className="account-form-switch"
                   role="switch"
-                  checked={draft.passwordLock}
+                  disabled checked={false} aria-describedby="unavailable-security-note"
                   onChange={(e) => updateField("passwordLock", e.target.checked)}
                 />
               </label>
             </section>
 
+            <p id="unavailable-security-note" role="note">{draft.passwordLock?"سبق حفظ تفضيل الحماية، لكنه لم ينفذ قفلًا فعليًا. ":""}التطبيق لا يطلب كلمة مرور عند الفتح. إعداد التذكير عند الإغلاق غير مطبق؛ استخدم النسخ اليدوي. هذه رسالة حالة وليست تفعيلًا للحماية.</p>
+            {usesNativeDocumentOutput()?<p role="note">تفريغ البيانات وتحميل بيانات تجريبية غير متاحين في Android لحماية قاعدة العمل.</p>:null}
             {onSeedDemoData || onResetDatabase ? (
               <section className="sys-card sys-danger-card">
                 <div className="sys-card-heading">صيانة وتهيئة قاعدة البيانات</div>
@@ -1791,6 +1818,10 @@ export function SystemSettingsPage({
               </section>
             ) : null}
 
+            {import.meta.env.VITE_NASQO_HYBRID === "1" ? <>
+              <HybridCloudAccount onNotify={onNotify} onOpenGoogleDrive={onOpenGoogleDrive}/>
+              <HybridLocalTools uid={uid} onNotify={onNotify}/>
+            </> : null}
             <section className="sys-card">
               <div className="sys-card-heading">الجلسة والإرشادات</div>
               <div className="sys-faq-row" style={{ justifyContent: "space-between", display: "flex", alignItems: "center" }}>
@@ -1801,7 +1832,7 @@ export function SystemSettingsPage({
                 >
                   {faqOpen ? "إخفاء الإرشادات" : "إرشادات النسخ الاحتياطي والحفظ"}
                 </button>
-                <button
+                {import.meta.env.VITE_NASQO_HYBRID !== "1" ? <button
                   type="button"
                   className="sys-signout-btn"
                   onClick={() => {
@@ -1810,7 +1841,7 @@ export function SystemSettingsPage({
                   }}
                 >
                   تسجيل الخروج
-                </button>
+                </button> : null}
               </div>
               {faqOpen ? (
                 <div className="sys-faq-card">

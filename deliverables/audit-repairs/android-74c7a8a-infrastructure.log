@@ -1,0 +1,9 @@
+2026-11-25T18:46:52.5089624Z Artifact nasqo-audit-debug-apk.zip successfully finalized. Artifact ID 15053705414
+2026-11-25T18:46:52.5090821Z Artifact nasqo-audit-debug-apk has been successfully uploaded! Final size is 89430922 bytes. Artifact ID is 15053705414
+adb shell am instrument -w -r com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
+2026-11-25T18:46:52.7563867Z adb shell am instrument -w -r com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
+2026-11-25T18:48:39.5062383Z [command]/usr/bin/sh -c adb shell am instrument -w -r com.indexesstore.nasqo_pro_erp.test/com.nasqo.audit.DocumentInstrumentation > qa/android-results/instrumentation.txt
+2026-11-25T18:50:32.7529033Z ##[error]The process '/usr/bin/sh' failed with exit code 255
+2026-11-25T18:50:32.7594226Z error: could not connect to TCP port 5554: Connection refused
+2026-11-25T18:50:34.3222415Z Artifact nasqo-audit-android-evidence.zip successfully finalized. Artifact ID 15052494257
+2026-11-25T18:50:34.3224385Z Artifact nasqo-audit-android-evidence has been successfully uploaded! Final size is 154 bytes. Artifact ID is 15052494257

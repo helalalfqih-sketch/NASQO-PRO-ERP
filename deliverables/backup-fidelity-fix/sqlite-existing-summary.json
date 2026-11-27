@@ -1,0 +1,19 @@
+{
+  "ledgerRows": 8703,
+  "recoveredLongNotes": 3,
+  "nonemptySourceReferences": 864,
+  "nonzeroHeaderDiscounts": 2,
+  "fieldMismatches": 0,
+  "transferEvents": 2274,
+  "transferDateMismatches": 0,
+  "largestItemMovementsLoaded": 516,
+  "pages": 6,
+  "duplicateMovements": 0,
+  "normalDestinationArchiveCounts": {
+    "offers": 4,
+    "trash": 172,
+    "alerts": 2
+  },
+  "nativeTablesUnchanged": true,
+  "originalUnchanged": true
+}

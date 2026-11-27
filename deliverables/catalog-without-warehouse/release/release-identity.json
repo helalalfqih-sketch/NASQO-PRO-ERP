@@ -1,0 +1,27 @@
+{
+  "versionName": "1.0.153",
+  "versionCode": 1153,
+  "sourceSha": "f2b2d8a6ea7a04f2203d200e0af924430745b75f",
+  "runUrl": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/actions/runs/45891984649",
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "certificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "sha256": {
+    "NASQO-PRO-ERP.apk": "676ded3c2ac1ef6a762218f61f23b0b11db1230752e739e876377ba069a31389",
+    "NASQO-PRO-ERP.aab": "f583595f2030e8cc6d7cd2185678a0a7e0eeacd70da947369178ea9a623637ba"
+  },
+  "verification": {
+    "downloadedHashesMatchCI": true,
+    "localApkSignatureVerified": true,
+    "aabJarSignatureVerifiedInCI": true,
+    "localAabCertificateMatches": true,
+    "minSdk": 24,
+    "targetSdk": 36
+  },
+  "uploadedToPlay": false,
+  "androidAcceptance": {
+    "result": "PASS",
+    "runId": 45893650334,
+    "sdk": 36,
+    "sameApkNoRebuild": true
+  }
+}

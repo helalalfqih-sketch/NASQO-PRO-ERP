@@ -1,0 +1,58 @@
+--------- beginning of main
+11-27 14:04:38.000  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-created savedState=false
+11-27 14:04:38.004  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:04:42.780  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=webview-created 
+11-27 14:04:45.410  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=page-finished loads=1
+11-27 14:04:51.508  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:04:51.860  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:04:57.210  3673  3742 I NASQO_ACCEPTANCE: receiver pdf bytes/name/MIME/readability PASS
+11-27 14:04:57.403  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:00.609  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:05:00.629  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-resumed loads=1
+11-27 14:05:00.756  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:03.930  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:03.933  3673  3742 I NASQO_ACCEPTANCE: receiver xlsx bytes/name/MIME/readability PASS
+11-27 14:05:04.724  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-resumed loads=1
+11-27 14:05:05.400  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:05:05.548  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:10.446  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:10.454  3673  3742 I NASQO_ACCEPTANCE: receiver png bytes/name/MIME/readability PASS
+11-27 14:05:11.709  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-resumed loads=1
+11-27 14:05:12.725  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:05:12.885  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:15.741  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-hidden loads=1
+11-27 14:05:15.747  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-paused loads=1
+11-27 14:05:16.288  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:16.289  3673  3742 I NASQO_ACCEPTANCE: system save picker cancellation PASS
+11-27 14:05:16.296  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-hidden loads=1
+11-27 14:05:16.298  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:16.755  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:05:20.207  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:20.359  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-resumed loads=1
+11-27 14:05:20.639  3673  3742 I NASQO_ACCEPTANCE: share chooser canceled, no receiver delivery PASS
+11-27 14:05:25.649  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:05:25.662  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:28.042  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-hidden loads=1
+11-27 14:05:28.065  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-paused loads=1
+11-27 14:05:28.833  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:28.837  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-hidden loads=1
+11-27 14:05:29.063  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:30.035  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-resumed loads=1
+11-27 14:05:38.996  3673  3742 I NASQO_ACCEPTANCE: UI catalog import picker -> preview -> SQLite: zero stock, unassigned, reference price, barcode PASS
+11-27 14:05:40.879  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:05:40.892  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:42.420  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-hidden loads=1
+11-27 14:05:42.422  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-paused loads=1
+11-27 14:05:43.657  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-resumed 
+11-27 14:05:43.658  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-hidden loads=1
+11-27 14:05:43.840  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:05:44.544  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-resumed loads=1
+11-27 14:05:49.332  3673  3742 I NASQO_ACCEPTANCE: UI account CSV picker -> preview -> SQLite: quotes, phone, category, no financial postings PASS
+11-27 14:05:56.510  3673  3742 I NASQO_ACCEPTANCE: UI employee click -> React -> bridge -> SQLite exactly once PASS
+11-27 14:06:03.346  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=220b0330-ff21-4b9d-8780-7e928543328d event=activity-paused 
+11-27 14:06:03.616  3673  3673 I NASQO_LIFECYCLE: process=1e97bfcf-c751-49e4-97f6-05a1ded34c81 instance=9754aa3d-9358-4dc8-9c8c-59cf4344423a event=flutter-inactive loads=1
+11-27 14:06:05.863  3673  3742 I NASQO_ACCEPTANCE: UI inventory report click -> PDF attachment -> independent receiver PASS
+11-27 14:06:12.313  4545  4545 I NASQO_LIFECYCLE: process=19f6151e-9ab6-4ca8-8792-e2bb9774bef7 instance=e9f83302-5afb-4935-8ac6-136446df0b4e event=activity-created savedState=false
+11-27 14:06:12.336  4545  4545 I NASQO_LIFECYCLE: process=19f6151e-9ab6-4ca8-8792-e2bb9774bef7 instance=e9f83302-5afb-4935-8ac6-136446df0b4e event=activity-resumed 
+11-27 14:06:14.101  4545  4545 I NASQO_LIFECYCLE: process=19f6151e-9ab6-4ca8-8792-e2bb9774bef7 instance=c63e1a78-b3ca-4148-a78a-af649203e0d9 event=webview-created 
+11-27 14:06:15.397  4545  4545 I NASQO_LIFECYCLE: process=19f6151e-9ab6-4ca8-8792-e2bb9774bef7 instance=c63e1a78-b3ca-4148-a78a-af649203e0d9 event=page-finished loads=1

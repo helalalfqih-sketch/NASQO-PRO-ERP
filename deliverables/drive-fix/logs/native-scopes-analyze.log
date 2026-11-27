@@ -1,0 +1,26 @@
+Analyzing 6 items...
+
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:42:42 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:49:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:56:7 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:153:62 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:156:56 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:157:64 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:170:49 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:170:69 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:189:42 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:189:64 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:190:15 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:190:89 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:199:52 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:219:13 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:232:49 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:232:70 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:276:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:279:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:283:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:291:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:376:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:392:7 • curly_braces_in_flow_control_structures
+
+22 issues found. (ran in 1.6s)

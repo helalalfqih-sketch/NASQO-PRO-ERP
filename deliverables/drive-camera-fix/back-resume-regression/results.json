@@ -1,0 +1,70 @@
+{
+  "environment": "Chromium production hybrid bundle; synthetic bridge; NOT Android",
+  "results": [
+    {
+      "name": "supplier-menu-consumes-back-before-screen",
+      "passed": true
+    },
+    {
+      "name": "supplier-route-restores-after-new-document",
+      "passed": true
+    },
+    {
+      "name": "supplier-search-filter-scroll-restores-after-new-document",
+      "passed": true
+    },
+    {
+      "name": "missing-account-cold-restore-falls-back-safely",
+      "passed": true
+    },
+    {
+      "name": "invoice-back-protects-draft-and-restores-after-reload",
+      "passed": true
+    },
+    {
+      "name": "invoice-account-picker-back-closes-only-picker",
+      "passed": true
+    },
+    {
+      "name": "invoice-discard-clears-only-local-draft",
+      "passed": true
+    },
+    {
+      "name": "rapid-two-backs-close-one-layer-without-exit",
+      "passed": true
+    },
+    {
+      "name": "synthetic-lifecycle-events-preserve-page-and-draft-without-bootstrap",
+      "passed": true
+    },
+    {
+      "name": "simple-entry-unsaved-draft-restores-without-posting",
+      "passed": true
+    },
+    {
+      "name": "currency-unsaved-draft-restores-without-posting",
+      "passed": true
+    },
+    {
+      "name": "voucher-unsaved-draft-restores-without-posting",
+      "passed": true
+    },
+    {
+      "name": "sales-account-unsaved-draft-retains-category-after-reload",
+      "passed": true
+    },
+    {
+      "name": "missing-account-draft-is-preserved-until-explicit-discard",
+      "passed": true
+    },
+    {
+      "name": "simple-explicit-synthetic-save-closes-form-and-does-not-replay",
+      "passed": true
+    },
+    {
+      "name": "currency-explicit-synthetic-save-closes-form-and-does-not-replay",
+      "passed": true
+    }
+  ],
+  "browserErrors": []
+}

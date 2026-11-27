@@ -1,0 +1,121 @@
+00:00 +0: loading /workspace/NASQO-play-internal/flutter_app/test/accounting_engine_test.dart
+00:00 +0: /workspace/NASQO-play-internal/flutter_app/test/accounting_engine_test.dart: new local workspace has no fabricated accounts, stock, or ledger
+00:00 +1: /workspace/NASQO-play-internal/flutter_app/test/accounting_engine_test.dart: parses Arabic-Indic digits and formats amounts
+00:00 +2: /workspace/NASQO-play-internal/flutter_app/test/accounting_engine_test.dart: weighted average cost updates accurately
+00:00 +3: /workspace/NASQO-play-internal/flutter_app/test/accounting_engine_test.dart: submitting sales invoice updates ledger and deducts inventory
+00:00 +4: /workspace/NASQO-play-internal/flutter_app/test/android_update_notice_test.dart: selects highest newer preview build with uploaded APK
+00:00 +5: /workspace/NASQO-play-internal/flutter_app/test/android_update_notice_test.dart: no downgrade or reinstall of current version
+00:00 +6: /workspace/NASQO-play-internal/flutter_app/test/android_update_notice_test.dart: stable release wins over its legacy compatibility alias in either order
+00:00 +7: /workspace/NASQO-play-internal/flutter_app/test/android_update_notice_test.dart: rejects mismatched channels and incomplete stable assets
+00:00 +8: /workspace/NASQO-play-internal/flutter_app/test/backup_encryption_test.dart: encrypted backup can be recovered using an exported synthetic key
+00:00 +9: /workspace/NASQO-play-internal/flutter_app/test/backup_encryption_test.dart: cloud transport only receives ciphertext and authenticates before restore or overwrite
+00:01 +10: /workspace/NASQO-play-internal/flutter_app/test/cashbox_reference_test.dart: cashbox reference save, edit, archive and replay never post parent; reject foreign/immutable binding
+00:02 +11: /workspace/NASQO-play-internal/flutter_app/test/cashier_settings_test.dart: cashier preferences survive native backup and clearing never posts or deletes
+00:02 +12: /workspace/NASQO-play-internal/flutter_app/test/document_references_test.dart: document references validate all hierarchy levels and survive native backup without posting
+00:03 +13: /workspace/NASQO-play-internal/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:04 +14: /workspace/NASQO-play-internal/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:04 +15: /workspace/NASQO-play-internal/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:04 +16: /workspace/NASQO-play-internal/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:04 +17: /workspace/NASQO-play-internal/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:04 +18: /workspace/NASQO-play-internal/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:04 +19: /workspace/NASQO-play-internal/flutter_app/test/hybrid_back_coordinator_test.dart: late reply from expired request cannot satisfy subsequent request
+00:04 +20: /workspace/NASQO-play-internal/flutter_app/test/hybrid_back_coordinator_test.dart: uncorrelated legacy message is acknowledged without exiting
+00:04 +21: /workspace/NASQO-play-internal/flutter_app/test/hybrid_back_coordinator_test.dart: unrelated/malformed messages remain in normal protocol path
+00:04 +22: /workspace/NASQO-play-internal/flutter_app/test/hybrid_back_coordinator_test.dart: dispose interrupts back and stale callbacks cannot exit a new view
+00:04 +23: /workspace/NASQO-play-internal/flutter_app/test/hybrid_back_coordinator_test.dart: opening an external picker or pausing cancels pending exit permission
+00:05 +24: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: native cloud bridge restricts identity, Drive actions and local tools
+00:05 +25: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: native print and share commands reject HTML, arbitrary URLs and foreign workspace
+00:05 +26: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: stock reconciliation opens only scoped local product and warehouse references
+00:05 +27: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: native restore action accepts only workspace, no SQL or base64
+00:05 +28: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: returns valid local snapshot without calling any network service
+00:05 +29: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects financial writes and never invokes the database callback
+00:05 +30: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: persists only whitelisted non-financial UI preferences
+00:05 +31: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects unknown preference fields and never calls persistence
+00:05 +32: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects malformed JSON and oversized requests
+00:05 +33: /workspace/NASQO-play-internal/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects missing arrays instead of claiming success
+00:05 +34: /workspace/NASQO-play-internal/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:05 +35: /workspace/NASQO-play-internal/flutter_app/test/legacy_archive_records_test.dart: normal destinations read all archive records and persist only explicit reminder state
+00:06 +36: /workspace/NASQO-play-internal/flutter_app/test/legacy_details_fidelity_test.dart: full source metadata survives fresh inspection, old review/live imports, edits and native roundtrip without posting
+00:06 +37: /workspace/NASQO-play-internal/flutter_app/test/legacy_details_fidelity_test.dart: full source metadata survives fresh inspection, old review/live imports, edits and native roundtrip without posting
+00:07 +38: /workspace/NASQO-play-internal/flutter_app/test/legacy_history_reports_test.dart: resolved transfers conserve stock and unresolved transfers are explicit
+00:07 +39: /workspace/NASQO-play-internal/flutter_app/test/legacy_history_reports_test.dart: cash report preserves cashbox direction, scope, currencies and date filters
+00:07 +40: /workspace/NASQO-play-internal/flutter_app/test/legacy_operational_restore_test.dart: legacy account migration preserves raw history, accepts new balanced journal, protects stock and round-trips archive
+00:09 +41: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_screen_test.dart: quantity review requires selection, acknowledgement and final confirmation; cancel never writes
+00:09 +42: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_screen_test.dart: stale review keeps error visible and requires a fresh acknowledgement
+00:10 +43: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:10 +44: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:11 +45: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:11 +46: /workspace/NASQO-play-internal/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:12 +47: /workspace/NASQO-play-internal/flutter_app/test/local_backup_restore_test.dart: native restore, legacy SQLite review, exact archive export and rollback preserve live data
+00:13 +48: /workspace/NASQO-play-internal/flutter_app/test/local_cashbox_workflow_test.dart: original cashbox form settles customer, stock return and voucher without repeated role fields
+00:13 +49: /workspace/NASQO-play-internal/flutter_app/test/local_catalog_parity_test.dart: local master settings and stock catalog edits keep accounting values and rollback batches
+00:14 +50: /workspace/NASQO-play-internal/flutter_app/test/local_document_lifecycle_test.dart: draft lifecycle and descriptive edits preserve stock and balanced journals
+00:14 +51: /workspace/NASQO-play-internal/flutter_app/test/local_document_output_test.dart: document output transfers exact bytes, rejects invalid chunks and removes temporary files
+00:15 +52: /workspace/NASQO-play-internal/flutter_app/test/local_document_output_test.dart: XLSX and PDF print use bounded native output with truthful cancellation
+00:15 +53: /workspace/NASQO-play-internal/flutter_app/test/local_erp_records_test.dart: bounded ERP records confirm native commit, survive independent restore, reject conflict/foreign writes
+ERP ACCEPTANCE: employee create/edit/replay/rejection; CRM/PO/cost-center/VAT each saved; independent SQLite restore all rows equal; original backup preserved. Android not tested.
+00:15 +54: /workspace/NASQO-play-internal/flutter_app/test/local_hybrid_commands_test.dart: account create and edit, canonical sync, voucher and credit invoice are atomic
+00:16 +55: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: legacy dates use valid stored calendar fields without overflowing or inventing dates
+00:16 +56: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports existing transfer headers retain dates inside period filters and unresolved transfers remain excluded
+00:16 +57: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:16 +58: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:16 +59: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:17 +60: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports valuation estimates retain signed warehouse quantities and never mix currencies or approved totals
+00:17 +61: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports report rejects invalid paging without broadening the requested result
+00:17 +62: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports posted lines for the same item keep separate identities across pages
+00:17 +63: /workspace/NASQO-play-internal/flutter_app/test/local_inventory_history_pagination_test.dart: inventory bridge accepts bounded numeric pages and rejects malformed paging before reading
+00:17 +64: /workspace/NASQO-play-internal/flutter_app/test/native_cloud_errors_test.dart: native provider errors keep useful codes without provider details
+00:17 +65: /workspace/NASQO-play-internal/flutter_app/test/native_cloud_errors_test.dart: 403 reason distinguishes API disabled, scope, quota and unknown refusal
+00:17 +66: /workspace/NASQO-play-internal/flutter_app/test/native_cloud_errors_test.dart: missing build configuration fails before chooser, file or accounting actions
+00:17 +67: /workspace/NASQO-play-internal/flutter_app/test/native_cloud_errors_test.dart: cloud bridge preserves structured diagnostics and never serializes provider text
+00:17 +68: /workspace/NASQO-play-internal/flutter_app/test/native_cloud_session_test.dart: cloud input validation rejects malformed and oversized identifiers
+00:17 +69: /workspace/NASQO-play-internal/flutter_app/test/native_cloud_session_test.dart: native Drive sessions fail closed without user authorization
+00:18 +70: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: regression: permission grant alone leaves old Android token email-only
+00:18 +71: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: identity sign-in initializes only email and never asks Drive consent
+00:18 +72: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: explicit Drive connect initializes exactly email and drive.file before any token
+00:18 +73: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: same-mode reconnect refreshes the cached Android login ID token
+00:18 +74: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: identity and Drive transitions reinitialize singleton and reject retired accounts
+00:18 +75: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: cancelled selection and denied consent never verify identity or fetch a token
+00:18 +76: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: failed Firebase identity verification never authorizes Drive headers
+00:18 +77: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: pending token retrieval serializes mode switch and signout on the active client
+00:18 +78: /workspace/NASQO-play-internal/flutter_app/test/native_google_account_session_test.dart: empty token cannot produce an authenticated Drive header
+00:18 +79: /workspace/NASQO-play-internal/flutter_app/test/offline_transaction_test.dart: atomic operation replay, rollback and acknowledgement
+00:19 +80: /workspace/NASQO-play-internal/flutter_app/test/pending_cost_purchase_test.dart: priced purchases and linked returns preserve unvalued opening, backup and later valuation
+00:20 +80: /workspace/NASQO-play-internal/flutter_app/test/owner_acceptance_test.dart: owner acceptance: money, stock, rollback, catalogs, backup and disk reopen
+ACCEPTANCE G01-cash-sale {"initialQty":10,"cost":5,"soldQty":2,"price":8,"remainingQty":8.0,"cashIncrease":16,"cogs":10,"journalDebitMinor":4200,"journalCreditMinor":4200,"saveMs":74.401}
+ACCEPTANCE G02-report-trace {"inventoryQuantity":8,"cashboxBalance":16,"snapshotLedgerCount":1}
+ACCEPTANCE G03-duplicate-ack-loss {"documentCount":1,"movementCount":1,"remainingQty":8,"note":"replay after committed result ignored + concurrent repeats; native SQLite only"}
+ACCEPTANCE SET-sellWithoutBalance {"storedFalseAndTrue":"both reject oversell with Insufficient stock","exportUnchangedAfterEachFailure":true}
+ACCEPTANCE G04-mid-save-rollback {"nativeExportByteEqualBeforeAfter":true,"remainingQty":8}
+ACCEPTANCE G05-partial-return {"quantity":9,"cashNet":8,"cogsNet":5,"lateReturnScenario":"ERP-001-RET-LATE deferred, no replenishment tested here"}
+ACCEPTANCE G06-credit-sale {"quantity":7,"cashNet":8,"customerDebit":16}
+ACCEPTANCE G07-purchase {"quantity":9,"supplierCredit":10}
+ACCEPTANCE G08-receipt-payment {"cashNet":10,"customerDebit":14}
+ACCEPTANCE G09-linked-delete-guard {"customerAndCashAccountsAndItemBlocked":true,"unchangedNativeExport":true,"cashboxRegistryDelete":"no dedicated delete command certified"}
+ACCEPTANCE M-purchases {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-sales {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-clients {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-employees {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-transfers {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-shop {"createEditReadDeleteUnused":true}
+ACCEPTANCE M-currencies-setting {"currencies":["ريال","دولار","يورو"],"defaultChangePersisted":true,"oldInvoiceCurrencyUnchanged":true,"defaultDeleteBlocked":true}
+ACCEPTANCE G10-native-backup-restore {"allTableRowsAndValuesEqual":true,"serializedOrderChanged":"stock_posting_documents places originals before returns","foreignKeysClean":true,"quantity":9.0,"cashNet":10.0}
+ACCEPTANCE G11-disk-reopen-offline {"quantity":9,"documents":6,"stockDocuments":4,"cashNet":10,"network":"HttpClient disabled","scope":"new SQLite connection; not Android process kill"}
+00:21 +81: /workspace/NASQO-play-internal/flutter_app/test/pending_cost_purchase_test.dart: priced purchases and linked returns preserve unvalued opening, backup and later valuation
+00:22 +82: /workspace/NASQO-play-internal/flutter_app/test/posting_ack_recovery_test.dart: lost posting acknowledgement survives fresh Dart state without duplicate journal or stock
+00:23 +83: /workspace/NASQO-play-internal/flutter_app/test/remote_account_applier_test.dart: remote account rejects cross-workspace and rolls back duplicate page
+00:23 +84: /workspace/NASQO-play-internal/flutter_app/test/settings_persistence_test.dart: each extended setting persists independently to a fresh SQLite reader
+00:24 +85: /workspace/NASQO-play-internal/flutter_app/test/settings_persistence_test.dart: each extended setting persists independently to a fresh SQLite reader
+SETTINGS 77 persisted separately; no UI-effect claim
+00:24 +86: /workspace/NASQO-play-internal/flutter_app/test/stock_catalog_validation_test.dart: catalog validation gives accurate reasons, keeps all units and never posts stock
+00:25 +87: /workspace/NASQO-play-internal/flutter_app/test/stock_quantity_test.dart: exact thousandths and half-up cents
+00:25 +88: /workspace/NASQO-play-internal/flutter_app/test/sync_page_validation_test.dart: sync revisions must be contiguous, scoped and match next cursor
+00:26 +89: /workspace/NASQO-play-internal/flutter_app/test/sync_recovery_integration_test.dart: (setUpAll)
+00:26 +89: /workspace/NASQO-play-internal/flutter_app/test/sync_recovery_integration_test.dart: lost acknowledgement is retried, remote echo deduplicated, failed page rolled back
+00:26 +90: /workspace/NASQO-play-internal/flutter_app/test/sync_recovery_integration_test.dart: a synchronization cycle drains more than one server page
+00:26 +91: /workspace/NASQO-play-internal/flutter_app/test/sync_two_instances_test.dart: two isolated SQLite instances converge once after lost acknowledgment; foreign workspace page rolls back
+00:26 +92: /workspace/NASQO-play-internal/flutter_app/test/sync_two_instances_test.dart: two isolated SQLite instances converge once after lost acknowledgment; foreign workspace page rolls back
+00:27 +93: /workspace/NASQO-play-internal/flutter_app/test/unassigned_catalog_test.dart: warehouse-free card round-trips, then first purchase binds atomically exactly once
+00:28 +94: /workspace/NASQO-play-internal/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:29 +95: /workspace/NASQO-play-internal/flutter_app/test/widget_test.dart: a clean offline dashboard renders without sample data
+00:29 +96: All tests passed!

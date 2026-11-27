@@ -1,0 +1,7 @@
+11-25 19:00:33.801  3415  3533 I NASQO_ACCEPTANCE: receiver pdf bytes/name/MIME/readability PASS
+11-25 19:00:41.567  3415  3533 I NASQO_ACCEPTANCE: receiver xlsx bytes/name/MIME/readability PASS
+11-25 19:00:48.163  3415  3533 I NASQO_ACCEPTANCE: receiver png bytes/name/MIME/readability PASS
+11-25 19:00:53.164  3415  3533 I NASQO_ACCEPTANCE: system save picker cancellation PASS
+11-25 19:00:57.459  3415  3533 I NASQO_ACCEPTANCE: share chooser canceled, no receiver delivery PASS
+11-25 19:01:08.046  3415  3533 I NASQO_ACCEPTANCE: UI employee click -> React -> bridge -> SQLite exactly once PASS
+11-25 19:01:25.489  3415  3533 I NASQO_ACCEPTANCE: UI inventory report click -> PDF attachment -> independent receiver PASS

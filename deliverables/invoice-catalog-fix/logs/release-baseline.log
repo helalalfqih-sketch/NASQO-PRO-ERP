@@ -1,0 +1,16 @@
+REPRODUCED: released 1.0.121 requests native reconciliation and leaves invoice line empty; no Android UI was opened by this synthetic host.
+PASS baseline-release-imported-item-incorrectly-opens-native-reconciliation
+{
+  "environment": "Chromium full built hybrid UI; synthetic host, NOT Android or accounting engine",
+  "baseline": true,
+  "bundle": "/tmp/nasqo-invoice-release-b1682",
+  "manifestSha256": "a253455133c10813451865dd5516f65a89885dcad27604015ace381456d9b00b",
+  "results": [
+    {
+      "name": "baseline-release-imported-item-incorrectly-opens-native-reconciliation",
+      "passed": true
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": []
+}

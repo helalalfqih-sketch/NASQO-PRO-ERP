@@ -1,0 +1,41 @@
+name: ERP P0 tests only
+on:
+  push:
+    branches: [agent/cloud-session-hardening-v1118]
+  workflow_dispatch:
+concurrency:
+  group: erp-p0-tests-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.3"
+          channel: stable
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.12.0"
+      - name: Run hybrid bridge regression tests
+        run: |
+          npm install --no-audit --no-fund
+          npm run sync:flutter-hybrid
+          npx tsx --test tests/hybrid.test.ts
+
+      - name: Prepare test assets and dependencies
+        working-directory: flutter_app
+        run: |
+          mkdir -p assets/web/assets
+          flutter pub get
+      - name: Run Dart analysis (errors are fatal)
+        working-directory: flutter_app
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Run synthetic Flutter regression (explicit deferred exclusions)
+        working-directory: flutter_app
+        run: bash ../scripts/test-flutter-audit.sh

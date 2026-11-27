@@ -17,6 +17,7 @@ import {
 } from "../accounting";
 import { createInventoryItem, updateInventoryItem } from "../firebase";
 import { triggerHaptic } from "../utils/haptics";
+import { describeQrCameraError, stopQrCameraStream } from "../utils/qrCamera";
 import type { InventoryItemRecord, WarehouseRecord } from "../types";
 
 interface QrScannerModalProps {
@@ -55,8 +56,14 @@ export function QrScannerModal({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraSessionRef = useRef(0);
+  const cameraStartingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const openRef = useRef(open);
+  openRef.current = open;
 
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [scannedRaw, setScannedRaw] = useState("");
@@ -74,19 +81,53 @@ export function QrScannerModal({
     warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id ?? "",
   );
 
-  const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
+  const releaseCamera = useCallback(() => {
+    // getUserMedia cannot be cancelled. Invalidate its eventual result instead.
+    cameraSessionRef.current += 1;
+    cameraStartingRef.current = false;
+    stopQrCameraStream(streamRef.current);
+    streamRef.current = null;
     if (videoRef.current) {
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
-    setCameraActive(false);
   }, []);
+
+  const stopCamera = useCallback(() => {
+    releaseCamera();
+    setCameraActive(false);
+    setCameraStarting(false);
+  }, [releaseCamera]);
+
+  const closeScanner = () => {
+    stopCamera();
+    onClose();
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; releaseCamera(); };
+  }, [releaseCamera]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") stopCamera();
+    };
+    // Native emits this when the activity is actually hidden/paused, not when
+    // the Android permission dialog temporarily makes Flutter inactive.
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", stopCamera);
+    window.addEventListener("nasqo:camera-stop", stopCamera);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", stopCamera);
+      window.removeEventListener("nasqo:camera-stop", stopCamera);
+    };
+  }, [stopCamera]);
 
   const applyScannedValue = useCallback(
     (raw: string) => {
+      if (!mountedRef.current || !openRef.current) return;
       const trimmed = raw.trim();
       if (!trimmed) return;
       setScannedRaw(trimmed);
@@ -120,16 +161,19 @@ export function QrScannerModal({
     if (!open || !cameraActive) return;
 
     let cancelled = false;
+    const session = cameraSessionRef.current;
     let rafId = 0;
     let lastTick = 0;
 
     const DetectorCtor = (
       window as unknown as { BarcodeDetector?: new (opts?: { formats?: string[] }) => BarcodeDetectorLike }
     ).BarcodeDetector;
-    const detector = DetectorCtor ? new DetectorCtor({ formats: ["qr_code"] }) : null;
+    let detector: BarcodeDetectorLike | null = null;
+    try { detector = DetectorCtor ? new DetectorCtor({ formats: ["qr_code"] }) : null; }
+    catch { /* A partial BarcodeDetector implementation still supports jsQR below. */ }
 
     const scanFrame = async (timestamp: number) => {
-      if (cancelled) return;
+      if (cancelled || session !== cameraSessionRef.current) return;
       if (timestamp - lastTick >= 180) {
         lastTick = timestamp;
         const video = videoRef.current;
@@ -143,6 +187,7 @@ export function QrScannerModal({
             if (detector) {
               try {
                 const hits = await detector.detect(canvas);
+                if (cancelled || session !== cameraSessionRef.current) return;
                 const hit = hits.find((h) => h.rawValue);
                 if (hit?.rawValue) {
                   applyScannedValue(hit.rawValue);
@@ -156,14 +201,14 @@ export function QrScannerModal({
             const code = jsQR(imgData.data, imgData.width, imgData.height, {
               inversionAttempts: "dontInvert",
             });
-            if (code?.data) {
+            if (code?.data && !cancelled && session === cameraSessionRef.current) {
               applyScannedValue(code.data);
               return;
             }
           }
         }
       }
-      rafId = window.requestAnimationFrame(scanFrame);
+      if (!cancelled && session === cameraSessionRef.current) rafId = window.requestAnimationFrame(scanFrame);
     };
 
     rafId = window.requestAnimationFrame(scanFrame);
@@ -174,25 +219,44 @@ export function QrScannerModal({
   }, [applyScannedValue, cameraActive, open]);
 
   const startCamera = async () => {
+    // Called only by the user's button, never by mounting, restoring or resuming.
+    if (!openRef.current || cameraStartingRef.current || document.visibilityState === "hidden") return;
+    releaseCamera();
+    const session = cameraSessionRef.current;
     setCameraError("");
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setCameraError("المتصفح لا يدعم الوصول إلى الكاميرا — يمكنك رفع صورة QR أو إدخال الكود يدويًا.");
       return;
     }
+    cameraStartingRef.current = true;
+    setCameraStarting(true);
+    const isCurrent = () => mountedRef.current && openRef.current &&
+      cameraSessionRef.current === session && document.visibilityState !== "hidden";
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: "environment" } },
         audio: false,
       });
+      if (!isCurrent()) { stopQrCameraStream(stream); return; }
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      // The video is mounted whenever the scanner is open, before permission
+      // resolves. Toggling cameraActive must not be required to obtain this ref.
+      const video = videoRef.current;
+      if (!video) { stopCamera(); return; }
+      video.srcObject = stream;
+      await video.play();
+      if (!isCurrent()) { stopQrCameraStream(stream); return; }
       setCameraActive(true);
-    } catch {
-      setCameraError("تعذر تشغيل الكاميرا أو تم رفض الإذن — استخدم رفع صورة QR أو الإدخال اليدوي.");
-      stopCamera();
+    } catch (error) {
+      if (isCurrent()) {
+        setCameraError(describeQrCameraError(error));
+        stopCamera();
+      }
+    } finally {
+      if (session === cameraSessionRef.current) {
+        cameraStartingRef.current = false;
+        setCameraStarting(false);
+      }
     }
   };
 
@@ -200,8 +264,12 @@ export function QrScannerModal({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    stopCamera();
+    const session = cameraSessionRef.current;
+    let bitmap: ImageBitmap | null = null;
     try {
-      const bitmap = await createImageBitmap(file);
+      bitmap = await createImageBitmap(file);
+      if (!mountedRef.current || !openRef.current || session !== cameraSessionRef.current) return;
       const canvas = canvasRef.current ?? document.createElement("canvas");
       canvas.width = bitmap.width;
       canvas.height = bitmap.height;
@@ -216,7 +284,9 @@ export function QrScannerModal({
         onNotify("لم يتم العثور على رمز QR صالح داخل الصورة");
       }
     } catch {
-      onNotify("تعذر قراءة الصورة المختارة");
+      if (mountedRef.current && openRef.current && session === cameraSessionRef.current) onNotify("تعذر قراءة الصورة المختارة");
+    } finally {
+      bitmap?.close();
     }
   };
 
@@ -311,7 +381,7 @@ export function QrScannerModal({
 
   return (
     <div className="center-modal-layer" data-testid="qr-scanner-modal">
-      <button className="center-modal-backdrop" aria-label="إغلاق ماسح QR" onClick={onClose} />
+      <button className="center-modal-backdrop" aria-label="إغلاق ماسح QR" onClick={closeScanner} />
       <section
         className="exec-modal exec-qr-modal"
         role="dialog"
@@ -326,41 +396,42 @@ export function QrScannerModal({
               <p>استعلم عن تفاصيل الصنف أو أضف كمية للمخزون بالكاميرا أو بالكود</p>
             </div>
           </div>
-          <button type="button" className="exec-icon-close" aria-label="إغلاق" onClick={onClose}>
+          <button type="button" className="exec-icon-close" aria-label="إغلاق" onClick={closeScanner}>
             <Cross2Icon />
           </button>
         </header>
 
         <div className="exec-qr-body">
           <div className="exec-qr-camera-box">
-            {cameraActive ? (
-              <div className="exec-qr-video-wrap">
-                <video ref={videoRef} playsInline muted className="exec-qr-video" />
-                <button type="button" className="exec-action-secondary" onClick={stopCamera}>
-                  إيقاف الكاميرا
+              <div className="exec-qr-video-wrap" hidden={!cameraActive && !cameraStarting}
+                style={!cameraActive && !cameraStarting ? { display: "none" } : undefined}>
+                <video ref={videoRef} playsInline muted className="exec-qr-video" data-testid="qr-camera-video" />
+                <button type="button" className="exec-action-secondary" onClick={stopCamera} data-testid="qr-stop-camera-btn">
+                  {cameraStarting ? "إلغاء تشغيل الكاميرا" : "إيقاف الكاميرا"}
                 </button>
               </div>
-            ) : (
+            {!cameraActive ? (
               <div className="exec-qr-camera-actions">
                 <button
                   type="button"
                   className="exec-action-primary"
                   onClick={startCamera}
+                  disabled={cameraStarting}
                   data-testid="qr-start-camera-btn"
                 >
                   <CameraIcon />
-                  <span>تشغيل الكاميرا للمسح</span>
+                  <span>{cameraStarting ? "بانتظار إذن الكاميرا..." : "تشغيل الكاميرا للمسح"}</span>
                 </button>
                 <button
                   type="button"
                   className="exec-action-secondary"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => { stopCamera(); fileInputRef.current?.click(); }}
                 >
                   <UploadIcon />
                   <span>رفع صورة QR</span>
                 </button>
               </div>
-            )}
+            ) : null}
             {cameraError ? (
               <p className="form-error" role="status">
                 {cameraError}

@@ -1,0 +1,11 @@
+{
+  "sha256": "686e8773a0ddde213910fc82a4d27c05cb12bf3e2ca44ae21cc35a54c73496ea",
+  "certificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "recipientSpkiSha256": "d014d7e738a9dccab59a1ad118825fb8f55797f3bec3e079358b5bcc382c4fb8",
+  "pepkSha256": "aaccc0774b240aa5304bdad2a49865e92f229ca73209ecb6eaafe75dc858e24e",
+  "contents": [
+    "certificate.pem",
+    "encryptedPrivateKey"
+  ],
+  "scope": "Encrypted export only; Google Play import and upgrade still require verification"
+}

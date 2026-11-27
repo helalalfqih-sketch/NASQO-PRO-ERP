@@ -14,6 +14,7 @@ import {
   type HybridRequestEnvelope,
   type HybridResponseEnvelope,
 } from "./contracts";
+import { hybridRequestLengthLimit } from "./messageLimits";
 
 export class HybridBridgeError extends Error {
   readonly code: HybridErrorPayload["code"];
@@ -69,6 +70,8 @@ export interface InvokeOptions {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const HEAVY_OPERATION_TIMEOUT_MS = 35_000;
+// Large atomic card imports include SQLite validation and a refreshed snapshot.
+const TABULAR_IMPORT_TIMEOUT_MS = 120_000;
 
 export class NasqoHybridBridge {
   private seq = 0;
@@ -79,6 +82,10 @@ export class NasqoHybridBridge {
   private boundToWindow = false;
   private boundNasqoHomeRef: Window["NasqoHome"] | null = null;
   private readOnlyFinancialMode = false;
+  private localAccountCreation = false;
+  private localDocumentPosting = false;
+  private localStockPosting = false;
+  private localCatalogEditing = false;
 
   constructor() {
     this.bindGlobalReceiver();
@@ -111,6 +118,22 @@ export class NasqoHybridBridge {
    */
   setReadOnlyFinancialMode(enabled: boolean): void {
     this.readOnlyFinancialMode = enabled;
+  }
+
+  setLocalAccountCreation(enabled: boolean): void {
+    this.localAccountCreation = enabled;
+  }
+
+  setLocalDocumentPosting(enabled: boolean): void {
+    this.localDocumentPosting = enabled;
+  }
+
+  setLocalStockPosting(enabled: boolean): void {
+    this.localStockPosting = enabled;
+  }
+
+  setLocalCatalogEditing(enabled: boolean): void {
+    this.localCatalogEditing = enabled;
   }
 
   isReadOnlyFinancialMode(): boolean {
@@ -182,7 +205,9 @@ export class NasqoHybridBridge {
     }
 
     const isFinancial = isFinancialMutationCommand(action);
-    if (isFinancial && this.readOnlyFinancialMode) {
+    const catalogAction = this.localCatalogEditing && ["deleteCashbox","deleteAccountGroup","deleteWarehouse","saveCashbox","saveAccountGroup","saveCurrency","deleteCurrency","deleteAccount",
+      "updateInventoryItem","deleteInventoryItem","importAccountCards","importInventoryItems","batchUpdateInventoryItems","saveWarehouse"].includes(action);
+    if (isFinancial && this.readOnlyFinancialMode && !catalogAction && !(action === "saveAccount" && this.localAccountCreation) && !((action === "createLedgerEntry" || action === "updateLedgerEntry" || action === "setLedgerDeleted" || action === "permanentlyDeleteLedger") && this.localDocumentPosting) && !((action === "saveWarehouse" || action === "createInventoryItem") && this.localStockPosting)) {
       throw new HybridBridgeError(
         "UNAUTHORIZED_ACTION",
         "في هذه الدفعة تبقى العمليات المالية للقراءة والعرض فقط؛ الترحيل يتم حصريًا عبر Flutter وSQLite.",
@@ -217,6 +242,10 @@ export class NasqoHybridBridge {
     if (!validation.valid) {
       throw new HybridBridgeError("VALIDATION_ERROR", validation.reason, false);
     }
+    const serialized = JSON.stringify(envelope);
+    if (serialized.length > hybridRequestLengthLimit(action)) {
+      throw new HybridBridgeError("VALIDATION_ERROR", "حجم بيانات العملية يتجاوز الحد المسموح. قلّل عدد السجلات أو طول النصوص ثم أعد المحاولة.");
+    }
 
     const transport = this.resolveTransport();
     if (!transport) {
@@ -229,9 +258,10 @@ export class NasqoHybridBridge {
 
     const timeoutMs =
       options.timeoutMs ??
-      (action === "restoreWorkspace" || action === "backupWorkspace" || action === "pickFile" || action === "importInventoryItems"
+      (action === "importInventoryItems" || action === "importAccountCards" ? TABULAR_IMPORT_TIMEOUT_MS :
+      (action === "restoreWorkspace" || action === "restoreLocalBackup" || action === "openInvoiceRoles" || action === "openStockReconciliation" || action === "backupWorkspace" || action === "pickFile"
         ? HEAVY_OPERATION_TIMEOUT_MS
-        : DEFAULT_TIMEOUT_MS);
+        : DEFAULT_TIMEOUT_MS));
 
     if (lockKey) {
       this.activeFinancialLocks.add(lockKey);
@@ -261,7 +291,7 @@ export class NasqoHybridBridge {
       });
 
       try {
-        transport.postMessage(JSON.stringify(envelope));
+        transport.postMessage(serialized);
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(requestId);
@@ -354,6 +384,10 @@ export class NasqoHybridBridge {
     this.eventListeners.clear();
     this.customTransport = null;
     this.readOnlyFinancialMode = false;
+    this.localAccountCreation = false;
+    this.localDocumentPosting = false;
+    this.localStockPosting = false;
+    this.localCatalogEditing = false;
   }
 }
 

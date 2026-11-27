@@ -31,8 +31,10 @@ import { useThemeMode } from "../utils/theme";
 import type { ErpWorkspaceData } from "../erp";
 
 import { hybridBridge } from "./bridge";
+import { observeHybridLifecycle } from "./lifecycleDiagnostics";
 import {
   validateHybridSnapshot,
+  createIdempotencyKey,
   type HybridCapabilities,
   type HybridUiPreferences,
   type HybridWorkspaceSnapshot,
@@ -73,11 +75,13 @@ function hydrateUiPreferencesFromHost(prefs?: HybridUiPreferences) {
 }
 
 function HybridRootApp() {
+  useEffect(observeHybridLifecycle, []);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const { brandColor, setBrandColor, resetBrandColor } = useBrandColor();
 
   const [bootState, setBootState] = useState<"loading" | "ready" | "error">("loading");
   const [bootError, setBootError] = useState<string>("");
+  const [review,setReview]=useState(false);
   const [capabilities, setCapabilities] = useState<Partial<HybridCapabilities> | undefined>(
     undefined,
   );
@@ -126,7 +130,18 @@ function HybridRootApp() {
       throw new Error(checked.reason);
     }
     const snap: HybridWorkspaceSnapshot = checked.value;
+    // The Android runtime owns one local workspace. Never hydrate UI recovery
+    // against a mismatched snapshot (including a stale/foreign workspace).
+    if (snap.workspaceId !== LOCAL_WORKSPACE_UID ||
+        (snap.workspace && (snap.workspace.id !== LOCAL_WORKSPACE_UID || snap.workspace.ownerId !== LOCAL_WORKSPACE_UID))) {
+      throw new Error("تعذر التحقق من مساحة العمل المحلية. لم تُستعد حالة سابقة.");
+    }
+    setReview((snap as HybridWorkspaceSnapshot & {backupReview?:boolean}).backupReview===true);
     hybridBridge.setReadOnlyFinancialMode(Boolean(snap.capabilities?.readOnlyFinancial));
+    hybridBridge.setLocalAccountCreation(snap.capabilities?.localAccountCreation === true);
+    hybridBridge.setLocalDocumentPosting(snap.capabilities?.localDocumentPosting === true);
+    hybridBridge.setLocalStockPosting(snap.capabilities?.localStockPosting === true);
+    hybridBridge.setLocalCatalogEditing(snap.capabilities?.localCatalogEditing === true);
     if (snap.uiPreferences) {
       hydrateUiPreferencesFromHost(snap.uiPreferences);
       if (snap.uiPreferences.themeMode) {
@@ -152,7 +167,7 @@ function HybridRootApp() {
       const rawSnap = await hybridBridge.invoke<"getSnapshot", unknown>(
         "getSnapshot",
         { workspaceId: LOCAL_WORKSPACE_UID, forceRefresh: true },
-        { timeoutMs: 12_000 },
+        { timeoutMs: 120_000 },
       );
       applyValidatedSnapshot(rawSnap);
       setBootState("ready");
@@ -169,13 +184,17 @@ function HybridRootApp() {
   useEffect(() => {
     const win = window as unknown as {
       __nasqoHybridReady?: boolean;
-      __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => void;
+      __nasqoHybridSaveErpRecords?: (workspaceId: string, changes: import("../erpRecordRules").ErpRecordChange[]) => Promise<ErpWorkspaceData>;
     };
     win.__nasqoHybridReady = true;
-    win.__nasqoHybridSaveErp = (workspaceId, erpData) => {
-      void hybridBridge.invoke("saveErpData", { workspaceId, data: erpData }).catch(() => {
-        // Error surfaced through bridge or host event
-      });
+    const pendingErpKeys=new Map<string,string>();
+    win.__nasqoHybridSaveErpRecords = async (workspaceId, changes) => {
+      const fingerprint=JSON.stringify({workspaceId,changes});
+      const key=pendingErpKeys.get(fingerprint)??createIdempotencyKey("saveErpRecords");
+      pendingErpKeys.set(fingerprint,key);
+      const result = await hybridBridge.invoke<"saveErpRecords", {erpData: ErpWorkspaceData}>("saveErpRecords", {workspaceId,changes},{idempotencyKey:key});
+      pendingErpKeys.delete(fingerprint);
+      return result.erpData;
     };
 
     const unsubSnapshot = hybridBridge.onHostEvent<unknown>("snapshotUpdated", (rawSnap) => {
@@ -231,6 +250,7 @@ function HybridRootApp() {
   return (
     <HybridPresentationProvider adapter={adapter}>
       <PhoneFrame>
+        {review?<div className="hybrid-review-notice" role="status">مراجعة نسخة تاريخية — القراءة فقط. أدوات الاستعادة في إعدادات قاعدة البيانات.</div>:null}
         <KeyboardProvider>
           <AuthenticatedWorkspace
             user={hybridUser}

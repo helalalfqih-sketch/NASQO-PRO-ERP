@@ -19,9 +19,12 @@ import type {
 import { hybridBridge, HybridBridgeError } from "./bridge";
 import {
   createIdempotencyKey,
+  validateHybridSnapshot,
   type HybridWorkspaceSnapshot,
 } from "./contracts";
 import type { User } from "./firebaseAuthStub";
+import { PendingSubmissionStore } from "./pendingSubmission";
+import { nativeDriveMarker, nativeDriveProfile, clearNativeDriveMarker, subscribeNativeDrive, connectNativeDrive, nativeIdentity } from "./cloudSession";
 
 export const LOCAL_WORKSPACE_UID = "local-erp-workspace";
 
@@ -76,87 +79,28 @@ export const auth = {
   },
 };
 
-let cachedGoogleAccessToken: string | null = null;
-const googleTokenListeners = new Set<(token: string | null) => void>();
-
-function notifyGoogleTokenListeners() {
-  for (const listener of googleTokenListeners) {
-    listener(cachedGoogleAccessToken);
-  }
+export const getGoogleAccessToken = nativeDriveMarker;
+export function hasGoogleAccessToken(): boolean { return nativeDriveMarker() !== null; }
+export const clearGoogleAccessToken = clearNativeDriveMarker;
+export const subscribeGoogleAccessToken = subscribeNativeDrive;
+export function getConnectedGoogleAccountInfo() {
+  const p=nativeDriveProfile();
+  return {email:p.email??null,displayName:p.displayName??null,photoURL:null};
 }
-
-export function getGoogleAccessToken(): string | null {
-  return cachedGoogleAccessToken;
-}
-
-export function hasGoogleAccessToken(): boolean {
-  return Boolean(cachedGoogleAccessToken);
-}
-
-export function clearGoogleAccessToken(): void {
-  if (cachedGoogleAccessToken !== null) {
-    cachedGoogleAccessToken = null;
-    notifyGoogleTokenListeners();
-  }
-}
-
-export function subscribeGoogleAccessToken(
-  listener: (token: string | null) => void,
-): () => void {
-  googleTokenListeners.add(listener);
-  listener(cachedGoogleAccessToken);
-  return () => {
-    googleTokenListeners.delete(listener);
-  };
-}
-
-export function getConnectedGoogleAccountInfo(): {
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-} {
-  return {
-    email: cachedHybridUser.email ?? null,
-    displayName: cachedHybridUser.displayName ?? null,
-    photoURL: cachedHybridUser.photoURL ?? null,
-  };
-}
-
 export async function signInWithGoogle(): Promise<User> {
-  return cachedHybridUser;
+  const result=await nativeIdentity("signIn");
+  if(result.cancelled||!result.signedIn)throw new Error("لم يكتمل تسجيل الدخول.");
+  // Never change the local workspace identifier to the Firebase UID.
+  return {...cachedHybridUser,email:result.email??null,displayName:result.displayName??null};
 }
-
-export async function connectGoogleDrive(): Promise<{ user: User; accessToken: string }> {
-  return runWithBrandLoader("جاري الاتصال بخدمة Google Drive عبر Flutter...", async () => {
-    const res = await hybridBridge.invoke<
-      "googleDriveAction",
-      { connected?: boolean; email?: string; displayName?: string; accessToken?: string }
-    >("googleDriveAction", { operation: "connect" });
-
-    if (res?.email) {
-      cachedHybridUser = {
-        ...cachedHybridUser,
-        email: res.email,
-        displayName: res.displayName ?? cachedHybridUser.displayName,
-      };
-    }
-    const token = res?.accessToken || (res?.connected ? "flutter-managed-drive-session" : "");
-    if (!token) {
-      throw new Error("خدمة Google Drive غير مفعّلة في تطبيق Flutter حاليًا.");
-    }
-    cachedGoogleAccessToken = token;
-    notifyGoogleTokenListeners();
-    return { user: cachedHybridUser, accessToken: token };
+export async function connectGoogleDrive(): Promise<{user:User;accessToken:string}> {
+  return runWithBrandLoader("جاري ربط Google Drive...",async()=>{
+    const profile=await connectNativeDrive();
+    return {user:{...cachedHybridUser,email:profile.email??null,displayName:profile.displayName??null},accessToken:nativeDriveMarker()!};
   });
 }
-
 export async function signOutUser(): Promise<void> {
-  clearGoogleAccessToken();
-  if (hybridBridge.hasNativeTransport()) {
-    await hybridBridge
-      .invoke("googleDriveAction", { operation: "disconnect" })
-      .catch(() => undefined);
-  }
+  await nativeIdentity("signOut");
 }
 
 export function isLocalWorkspaceSession(): boolean {
@@ -267,6 +211,7 @@ export type InventoryMovementItemRow = {
   sellingPrice?: number;
   catalogQuantity: number;
   quantityUnverified: boolean;
+  costUnverified?: boolean;
   hasMovement: boolean;
 };
 
@@ -322,7 +267,7 @@ function buildStatsFromSnapshot(snap: HybridWorkspaceSnapshot): UnifiedDbStats {
     fileSizeBytes: 0,
     accountsCount: snap.accounts.length,
     ledgerCount: snap.ledger.length,
-    invoiceLinesCount: snap.ledger.reduce((acc, e) => acc + (e.lines?.length ?? 0), 0),
+    invoiceLinesCount: snap.ledger.reduce((acc, e) => acc + (e.lineCount ?? e.lines?.length ?? 0), 0),
     warehousesCount: snap.warehouses.length,
     inventoryCount: snap.inventory.length,
     archivedCount: 0,
@@ -418,7 +363,7 @@ function mapBridgeError(err: unknown): Error {
 export async function refreshWorkspaceFromServer(
   uid: string = LOCAL_WORKSPACE_UID,
   _displayName?: string | null,
-  timeoutMs = 15_000,
+  timeoutMs = 120_000,
 ): Promise<WorkspaceBundle> {
   ensureHostSnapshotSubscription();
   try {
@@ -492,10 +437,11 @@ export async function saveWorkspaceSettings(
 ): Promise<void> {
   return runWithBrandLoader("جاري حفظ إعدادات النظام...", async () => {
     try {
+      const { legacySourceSha: _sourceIdentity, ...mutableUpdates } = updates;
       const res = await hybridBridge.invoke<
         "saveWorkspaceSettings",
         { workspace?: WorkspaceSettings; snapshot?: HybridWorkspaceSnapshot }
-      >("saveWorkspaceSettings", { workspaceId: uid || LOCAL_WORKSPACE_UID, updates });
+      >("saveWorkspaceSettings", { workspaceId: uid || LOCAL_WORKSPACE_UID, updates: mutableUpdates });
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else if (activeBundle && res?.workspace) {
@@ -682,11 +628,11 @@ export async function deleteAccount(uid: string, accountId: string): Promise<voi
 export async function fetchProductPriceStats(
   uid: string,
   itemId: string,
-): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }> {
+): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }> {
   try {
     return await hybridBridge.invoke<
       "getProductPriceStats",
-      { minPrice: number; maxPrice: number; lastPrice: number; txCount: number }
+      { minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }
     >("getProductPriceStats", { workspaceId: uid || LOCAL_WORKSPACE_UID, itemId });
   } catch (err) {
     throw mapBridgeError(err);
@@ -698,6 +644,46 @@ export async function createLedgerEntry(
   entry: Partial<LedgerEntryRecord> & { accountId: string; accountName: string },
 ): Promise<string> {
   return runWithBrandLoader("جاري ترحيل العملية المالية...", async () => {
+    const workspaceId = uid || LOCAL_WORKSPACE_UID;
+    const documentId = entry.id;
+    let receipt: PendingSubmissionStore | undefined;
+    if (documentId) {
+      try {
+        receipt = new PendingSubmissionStore();
+        if (receipt.has(workspaceId, documentId)) {
+          // A previous send may have committed before its acknowledgement was
+          // lost. A fresh, read-only snapshot is the only recovery performed.
+          const raw = await hybridBridge.invoke("getSnapshot", { workspaceId, forceRefresh: true });
+          const checked = validateHybridSnapshot(raw);
+          if (!checked.valid || checked.value.workspaceId !== workspaceId ||
+              (checked.value.workspace && checked.value.workspace.id !== workspaceId)) {
+            throw new UncertainWriteError("تعذر مطابقة مساحة العمل عند التحقق من الحفظ.", "unreachable");
+          }
+          const verified = applyHybridSnapshot(checked.value);
+          if (verified.ledger.some((item) => item.id === documentId)) {
+            receipt.confirm(workspaceId, documentId);
+            return documentId;
+          }
+          throw new UncertainWriteError(
+            "لم يتأكد حفظ العملية السابقة. راجع السجل قبل المحاولة؛ لم يُعَد إرسال أي عملية مالية.",
+            "synced",
+          );
+        }
+        // Bootstrap may already contain the committed document even if the
+        // process died between receiving success and closing its draft.
+        if (activeBundle?.workspace?.id === workspaceId &&
+            activeBundle.ledger.some((item) => item.id === documentId)) {
+          return documentId;
+        }
+        receipt.mark(workspaceId, documentId);
+      } catch (err) {
+        if (err instanceof UncertainWriteError) throw err;
+        throw new UncertainWriteError(
+          "تعذر التحقق المحلي من تأكيد الحفظ. بقيت المسودة ولم تُرسل عملية مالية أخرى.",
+          "unreachable",
+        );
+      }
+    }
     const fingerprint = [
       entry.kind ?? "voucher",
       entry.accountId,
@@ -718,16 +704,19 @@ export async function createLedgerEntry(
         }
       >(
         "createLedgerEntry",
-        { workspaceId: uid || LOCAL_WORKSPACE_UID, payload: entry },
+        { workspaceId, payload: entry },
         {
-          idempotencyKey: createIdempotencyKey("createLedgerEntry", entry.accountId),
+          idempotencyKey: entry.id ? `document_${entry.id}` : createIdempotencyKey("createLedgerEntry", entry.accountId),
           dedupeKey: `createLedgerEntry:${fingerprint}`,
         },
       );
+      if (!res?.entry?.id || (documentId && res.entry.id !== documentId)) {
+        throw new UncertainWriteError("تأكيد الحفظ غير مكتمل. تحقق من السجل قبل المحاولة.", "unreachable");
+      }
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else if (activeBundle && res?.entry) {
-        const next = [...activeBundle.ledger, res.entry];
+        const next = [...activeBundle.ledger.filter((item) => item.id !== res.entry.id), res.entry];
         activeBundle = {
           ...activeBundle,
           ledger: next,
@@ -741,8 +730,22 @@ export async function createLedgerEntry(
         };
         notifyAllListeners(activeBundle);
       }
+      if (documentId) receipt?.confirm(workspaceId, documentId);
       return res.entry.id;
     } catch (err) {
+      if (documentId && receipt) {
+        if (err instanceof HybridBridgeError &&
+            ["INVALID_REQUEST", "UNAUTHORIZED_ACTION", "VALIDATION_ERROR", "DUPLICATE_REQUEST"].includes(err.code)) {
+          // These acknowledgements reject the request before a financial
+          // transaction commits. Timeout/service failure is never a rejection.
+          receipt.confirm(workspaceId, documentId);
+        } else {
+          throw err instanceof UncertainWriteError ? err : new UncertainWriteError(
+            "لم يصل تأكيد الحفظ. احتُفظ بمعرف العملية؛ راجع السجل قبل المحاولة ولن تُرسل العملية تلقائيًا.",
+            "unreachable",
+          );
+        }
+      }
       throw mapBridgeError(err);
     }
   });
@@ -869,6 +872,8 @@ export async function fetchInventoryMovementsReport(
     toDate?: string;
     currency?: string;
     profitBasis?: "avg" | "cost" | "last";
+    movementOffset?: number;
+    movementLimit?: number;
   },
 ) {
   try {
@@ -906,7 +911,15 @@ export async function fetchInventoryMovementsReport(
           totalRemainingQty: number;
           activeItemsCount: number;
         }>;
+        movementPage?: {
+          offset: number;
+          limit: number;
+          totalCount: number;
+          nextOffset: number | null;
+          hasMore: boolean;
+        };
         movements: Array<{
+          movementId?: string;
           source: "invoice" | "transfer";
           refId: string;
           entryNumber?: number;
@@ -963,6 +976,7 @@ export async function fetchCashboxesReport(
     return await hybridBridge.invoke<
       "getCashboxesReport",
       {
+        historicalRegisterOnly?: boolean;
         cashboxes: Array<{
           id: number;
           name: string;
@@ -1078,6 +1092,14 @@ export async function createInventoryItem(
       throw mapBridgeError(err);
     }
   });
+}
+
+export async function importAccountCardsBatch(uid: string, accounts: import("../utils/accountCsvImport").AccountCardImport[]) {
+  const result = await hybridBridge.invoke<"importAccountCards", {inserted:number;skipped:number;total:number;snapshot:HybridWorkspaceSnapshot}>(
+    "importAccountCards", {workspaceId:uid||LOCAL_WORKSPACE_UID,accounts},
+    {idempotencyKey:createIdempotencyKey("importAccountCards",String(accounts.length))});
+  if(result.snapshot) applyHybridSnapshot(result.snapshot);
+  return result;
 }
 
 export async function importInventoryItemsBatch(
@@ -1488,6 +1510,7 @@ export async function importSqliteLegacyIntoServer(
 export async function restoreJsonBackupIntoServer(
   uid: string,
   payload: Record<string, unknown>,
+  _fileName?: string,
 ) {
   return runWithBrandLoader("جاري استعادة النسخة الاحتياطية عبر Flutter...", async () => {
     try {
@@ -1545,14 +1568,15 @@ export async function rollbackLegacyLivePrefix(
   throw new Error("التراجع عن الدفعات التراثية يتم من خلال خدمة الاستعادة في Flutter.");
 }
 
-export async function downloadUnifiedSqliteFile(uid = LOCAL_WORKSPACE_UID): Promise<void> {
+export async function downloadUnifiedSqliteFile(uid = LOCAL_WORKSPACE_UID): Promise<boolean> {
   return runWithBrandLoader("جاري تصدير النسخة الاحتياطية المحلية عبر Flutter...", async () => {
     try {
-      await hybridBridge.invoke("backupWorkspace", {
+      const result=await hybridBridge.invoke<"backupWorkspace",{saved:boolean}>("backupWorkspace", {
         workspaceId: uid || LOCAL_WORKSPACE_UID,
         backupName: `nasqo-unified-${new Date().toISOString().slice(0, 10)}.sqlite`,
         target: "local",
       });
+      return result.saved === true;
     } catch (err) {
       throw mapBridgeError(err);
     }
@@ -1590,3 +1614,18 @@ export async function queryUnifiedSqliteTable(
 ): Promise<{ table: string; columns: string[]; total: number; rows: Record<string, unknown>[] }> {
   return { table, columns: [], total: 0, rows: [] };
 }
+
+export async function saveCashboxRecord(uid:string,payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}):Promise<CashboxRecord>{
+ const result=await hybridBridge.invoke<'saveCashbox',{cashbox:CashboxRecord;snapshot:HybridWorkspaceSnapshot}>('saveCashbox',{workspaceId:uid||LOCAL_WORKSPACE_UID,payload},{idempotencyKey:createIdempotencyKey('saveCashbox')});applyHybridSnapshot(result.snapshot);return result.cashbox;
+}
+export async function deleteCashboxRecord(uid:string,cashboxId:number):Promise<void>{
+ const result=await hybridBridge.invoke<'deleteCashbox',{snapshot:HybridWorkspaceSnapshot}>('deleteCashbox',{workspaceId:uid||LOCAL_WORKSPACE_UID,cashboxId},{idempotencyKey:createIdempotencyKey('deleteCashbox')});applyHybridSnapshot(result.snapshot);
+}
+export async function deleteAccountGroup(uid:string,groupId:number):Promise<void>{
+ const result=await hybridBridge.invoke<'deleteAccountGroup',{snapshot:HybridWorkspaceSnapshot}>('deleteAccountGroup',{workspaceId:uid||LOCAL_WORKSPACE_UID,groupId},{idempotencyKey:createIdempotencyKey('deleteAccountGroup')});applyHybridSnapshot(result.snapshot);
+}
+export async function deleteWarehouse(uid:string,warehouseId:string):Promise<void>{
+ const result=await hybridBridge.invoke<'deleteWarehouse',{snapshot:HybridWorkspaceSnapshot}>('deleteWarehouse',{workspaceId:uid||LOCAL_WORKSPACE_UID,warehouseId},{idempotencyKey:createIdempotencyKey('deleteWarehouse')});applyHybridSnapshot(result.snapshot);
+}
+
+export async function executeErpAction(_uid:string,_payload:{action:string;id?:string;expectedRevision?:string|number;currency?:string;month?:string}):Promise<void>{throw new Error('استخدم شاشة المستند الأصلية لترحيل هذه العملية.');}

@@ -1,0 +1,6 @@
+# Local document lifecycle
+
+- The original React quote/order form now creates and edits local draft documents via Dart. Draft details and invoice-line references live in SQLite and participate in native backup and restore. Amounts, discounts, quantities and optional tax are checked before the transaction commits.
+- Drafts do not move inventory, reserve stock, create journal entries or settle cashboxes. Locally created drafts may be moved to trash, restored or permanently removed from trash. Each mutation is idempotent and atomic. Archived imported documents are not rewritten.
+- Posted native invoices and vouchers with an existing journal may amend descriptive fields only (description and, for invoices, reference). No financial fields, journal entries or stock movements are rewritten. The form labels the limited save action explicitly. Posted or imported financial deletion is rejected rather than breaking accounting consistency.
+- Draft-to-posted conversion, posting with non-base exchange rates, posted financial edits/reversals beyond the existing linked return path, ERP domain actions and end-to-end device acceptance remain separate work. No production data or cloud deployment is involved.

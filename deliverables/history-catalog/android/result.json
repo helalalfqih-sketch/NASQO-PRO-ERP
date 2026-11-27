@@ -1,0 +1,9 @@
+{
+  "result": "PASS",
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "oldCode": 1132,
+  "newCode": 1134,
+  "uidRetained": true,
+  "method": "adb install -r; no uninstall or clear",
+  "scope": "Fresh synthetic empty workspace. Install/launch smoke only; not a test of all existing records or every UI flow."
+}

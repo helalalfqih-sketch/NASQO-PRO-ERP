@@ -1,0 +1,4 @@
+11-26 21:02:47.490 25279 25279 I NASQO_LIFECYCLE: process=018dbb07-c1ca-4987-a2e4-65e4b3d0d68f instance=5db65c29-6dc6-4a55-9ec9-fabd77c791a9 event=activity-created savedState=false
+11-26 21:02:47.563 25279 25279 I NASQO_LIFECYCLE: process=018dbb07-c1ca-4987-a2e4-65e4b3d0d68f instance=5db65c29-6dc6-4a55-9ec9-fabd77c791a9 event=activity-resumed 
+11-26 21:02:58.958 25279 25279 I NASQO_LIFECYCLE: process=018dbb07-c1ca-4987-a2e4-65e4b3d0d68f instance=f2011240-5fbe-48fc-8e81-bf6f25810ddd event=webview-created 
+11-26 21:04:00.568 25279 25279 I NASQO_LIFECYCLE: process=018dbb07-c1ca-4987-a2e4-65e4b3d0d68f instance=f2011240-5fbe-48fc-8e81-bf6f25810ddd event=page-finished loads=1

@@ -1,0 +1,144 @@
+Analyzing flutter_app...
+
+   info • The import of 'dart:typed_data' is unnecessary because all of the used elements are also provided by the import of 'package:flutter/services.dart' • lib/hybrid/hybrid_react_preview_screen.dart:5:8 • unnecessary_import
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_react_preview_screen.dart:410:7 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/hybrid/hybrid_react_preview_screen.dart:446:50 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:94:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:100:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:103:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:119:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:129:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:150:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:163:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:174:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:184:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:201:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:210:13 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:213:64 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:264:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:351:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:364:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/hybrid/hybrid_read_only_protocol.dart:415:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/screens/cloud_identity_screen.dart:77:20 • curly_braces_in_flow_control_structures
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/dashboard_screen.dart:47:75 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/erp_hub_screen.dart:97:40 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/screens/invoice_form_sheet.dart:379:24 • deprecated_member_use
+   info • Statements in an if should be enclosed in a block • lib/screens/legacy_stock_batch_screen.dart:136:32 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/android_update_notice.dart:31:56 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/android_update_notice.dart:93:39 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/http_sync_transport.dart:29:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/http_sync_transport.dart:36:51 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_archive_records.dart:37:66 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_history_reports.dart:72:112 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:26:65 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:29:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:46:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:66:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:82:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:100:65 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:105:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:125:15 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_operational_restore.dart:136:17 • curly_braces_in_flow_control_structures
+   info • Statements in a while should be enclosed in a block • lib/services/legacy_sql_dump.dart:45:50 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_sql_dump.dart:128:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_sql_dump.dart:148:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_sql_dump.dart:150:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_sql_dump.dart:158:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_sql_dump.dart:175:11 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/legacy_sql_dump.dart:175:33 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_stock_opening.dart:74:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_stock_opening.dart:112:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_stock_opening.dart:119:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/legacy_stock_opening.dart:124:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:100:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:130:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:136:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:172:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:356:39 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:389:52 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:686:65 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:693:64 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:703:75 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:709:66 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_backup_restore.dart:844:67 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/local_database.dart:249:35 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/local_database.dart:373:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_database.dart:383:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_commands.dart:102:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_commands.dart:104:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:53:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:61:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:73:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:84:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:87:65 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:106:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:141:35 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_lifecycle.dart:152:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_output.dart:56:46 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_output.dart:88:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_output.dart:91:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_output.dart:104:13 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_document_output.dart:106:13 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/local_inventory_reports.dart:324:16 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:42:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:51:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:75:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:80:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:120:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:155:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:158:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_invoice_roles.dart:162:9 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:55:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:62:67 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:72:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:92:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:126:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:129:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:162:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:200:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_master_catalog.dart:203:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_stock_catalog.dart:79:60 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_stock_catalog.dart:89:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_stock_catalog.dart:118:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_stock_catalog.dart:151:11 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_stock_catalog.dart:196:13 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_workspace_settings.dart:21:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/local_workspace_settings.dart:23:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:42:42 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:49:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:56:7 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:153:62 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:156:56 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:157:64 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:170:49 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:170:69 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:189:42 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:189:64 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:190:15 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:190:89 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:199:52 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:219:13 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:232:49 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values • lib/services/native_cloud_session.dart:232:70 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:276:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:279:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:283:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:291:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:376:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/native_cloud_session.dart:392:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/stock_invoice_commands.dart:49:54 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/stock_invoice_commands.dart:134:46 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/stock_quantity.dart:10:7 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • lib/services/sync_runtime.dart:29:11 • curly_braces_in_flow_control_structures
+   info • Use 'const' with the constructor to improve performance • lib/state/erp_controller.dart:145:7 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/state/erp_controller.dart:159:7 • prefer_const_constructors
+   info • Use 'const' with the constructor to improve performance • lib/state/erp_controller.dart:173:7 • prefer_const_constructors
+   info • Use interpolation to compose strings and values • test/backup_encryption_test.dart:82:88 • prefer_interpolation_to_compose_strings
+   info • Statements in an if should be enclosed in a block • test/legacy_actual_file_acceptance_test.dart:48:71 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • test/legacy_actual_file_acceptance_test.dart:68:51 • curly_braces_in_flow_control_structures
+   info • Statements in an if should be enclosed in a block • test/legacy_existing_file_fidelity_test.dart:110:23 • curly_braces_in_flow_control_structures
+   info • Use 'const' for final variables initialized to a constant value • test/legacy_sql_dump_test.dart:6:5 • prefer_const_declarations
+   info • Can't use a relative path to import a library in 'lib' • test/remote_account_applier_test.dart:3:8 • avoid_relative_lib_imports
+   info • Use 'const' with the constructor to improve performance • test/remote_change_store_test.dart:35:11 • prefer_const_constructors
+
+140 issues found. (ran in 8.0s)

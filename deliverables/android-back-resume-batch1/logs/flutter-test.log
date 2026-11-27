@@ -1,0 +1,62 @@
+00:00 +0: loading /workspace/NASQO-PRO-ERP/flutter_app/test/android_update_notice_test.dart
+00:00 +0: /workspace/NASQO-PRO-ERP/flutter_app/test/android_update_notice_test.dart: selects highest newer preview build with uploaded APK
+00:00 +1: /workspace/NASQO-PRO-ERP/flutter_app/test/android_update_notice_test.dart: no downgrade or reinstall of current version
+00:00 +2: /workspace/NASQO-PRO-ERP/flutter_app/test/posting_ack_recovery_test.dart: lost posting acknowledgement survives fresh Dart state without duplicate journal or stock
+00:00 +3: /workspace/NASQO-PRO-ERP/flutter_app/test/remote_account_applier_test.dart: remote account rejects cross-workspace and rolls back duplicate page
+00:01 +4: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: native cloud bridge restricts identity, Drive actions and local tools
+00:01 +5: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: native print and share commands reject HTML, arbitrary URLs and foreign workspace
+00:01 +6: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: stock reconciliation opens only scoped local product and warehouse references
+00:01 +7: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: native restore action accepts only workspace, no SQL or base64
+00:01 +8: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: returns valid local snapshot without calling any network service
+00:01 +9: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects financial writes and never invokes the database callback
+00:01 +10: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: persists only whitelisted non-financial UI preferences
+00:01 +11: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects unknown preference fields and never calls persistence
+00:01 +12: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects malformed JSON and oversized requests
+00:01 +13: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects missing arrays instead of claiming success
+00:02 +14: /workspace/NASQO-PRO-ERP/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +15: /workspace/NASQO-PRO-ERP/flutter_app/test/local_document_lifecycle_test.dart: draft lifecycle and descriptive edits preserve stock and balanced journals
+00:03 +16: /workspace/NASQO-PRO-ERP/flutter_app/test/local_backup_restore_test.dart: native restore, legacy SQLite review, exact archive export and rollback preserve live data
+00:04 +17: /workspace/NASQO-PRO-ERP/flutter_app/test/local_backup_restore_test.dart: native restore, legacy SQLite review, exact archive export and rollback preserve live data
+00:04 +18: /workspace/NASQO-PRO-ERP/flutter_app/test/sync_recovery_integration_test.dart: a synchronization cycle drains more than one server page
+00:04 +19: /workspace/NASQO-PRO-ERP/flutter_app/test/sync_recovery_integration_test.dart: local sale replay does not reduce stock twice; insufficient second line rolls back all effects
+00:04 +20: /workspace/NASQO-PRO-ERP/flutter_app/test/sync_recovery_integration_test.dart: (tearDownAll)
+00:04 +20: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_sql_dump_test.dart: SmartPro SQL preserves quoted delimiters, Arabic and fractional lines
+00:04 +21: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_sql_dump_test.dart: SQL parser fails closed for nonliteral data and incomplete records
+00:05 +22: /workspace/NASQO-PRO-ERP/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:05 +23: /workspace/NASQO-PRO-ERP/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:05 +24: /workspace/NASQO-PRO-ERP/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:06 +25: /workspace/NASQO-PRO-ERP/flutter_app/test/sync_page_validation_test.dart: sync revisions must be contiguous, scoped and match next cursor
+00:06 +26: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_history_reports_test.dart: resolved transfers conserve stock and unresolved transfers are explicit
+00:06 +27: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_history_reports_test.dart: cash report preserves cashbox direction, scope, currencies and date filters
+00:07 +28: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_operational_restore_test.dart: legacy account migration preserves raw history, accepts new balanced journal, protects stock and round-trips archive
+00:08 +29: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_operational_restore_test.dart: legacy account migration preserves raw history, accepts new balanced journal, protects stock and round-trips archive
+00:09 +30: /workspace/NASQO-PRO-ERP/flutter_app/test/local_cashbox_workflow_test.dart: original cashbox form settles customer, stock return and voucher without repeated role fields
+00:09 +31: /workspace/NASQO-PRO-ERP/flutter_app/test/local_cashbox_workflow_test.dart: original cashbox form settles customer, stock return and voucher without repeated role fields
+00:10 +32: /workspace/NASQO-PRO-ERP/flutter_app/test/stock_quantity_test.dart: exact thousandths and half-up cents
+00:10 +33: /workspace/NASQO-PRO-ERP/flutter_app/test/accounting_engine_test.dart: new local workspace has no fabricated accounts, stock, or ledger
+00:10 +34: /workspace/NASQO-PRO-ERP/flutter_app/test/accounting_engine_test.dart: parses Arabic-Indic digits and formats amounts
+00:10 +35: /workspace/NASQO-PRO-ERP/flutter_app/test/accounting_engine_test.dart: weighted average cost updates accurately
+00:10 +36: /workspace/NASQO-PRO-ERP/flutter_app/test/accounting_engine_test.dart: submitting sales invoice updates ledger and deducts inventory
+00:11 +37: /workspace/NASQO-PRO-ERP/flutter_app/test/widget_test.dart: a clean offline dashboard renders without sample data
+00:11 +38: /workspace/NASQO-PRO-ERP/flutter_app/test/stock_invoice_commands_test.dart: stock purchase, sale, discount, tax and full linked reversal are atomic
+00:12 +39: /workspace/NASQO-PRO-ERP/flutter_app/test/offline_transaction_test.dart: atomic operation replay, rollback and acknowledgement
+00:13 +40: /workspace/NASQO-PRO-ERP/flutter_app/test/backup_encryption_test.dart: encrypted backup can be recovered using an exported synthetic key
+00:13 +41: /workspace/NASQO-PRO-ERP/flutter_app/test/backup_encryption_test.dart: cloud transport only receives ciphertext and authenticates before restore or overwrite
+00:13 +42: /workspace/NASQO-PRO-ERP/flutter_app/test/legacy_actual_file_acceptance_test.dart: real private legacy backup restores record identities and exact source without replay
+  Skip: Set NASQO_PRIVATE_LEGACY_BACKUP to a local SQLite backup; no private file is committed.
+00:13 +42 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/local_hybrid_commands_test.dart: account create and edit, canonical sync, voucher and credit invoice are atomic
+00:14 +43 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/local_document_output_test.dart: document output transfers exact bytes, rejects invalid chunks and removes temporary files
+00:14 +44 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/native_cloud_session_test.dart: cloud input validation rejects malformed and oversized identifiers
+00:14 +45 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/native_cloud_session_test.dart: native Drive sessions fail closed without user authorization
+00:14 +46 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/remote_change_store_test.dart: remote pages are atomic and replay safe
+00:15 +47 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: one correlated consumed reply cannot authorize exit
+00:15 +48 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: IME consumption completes without requiring a React reply
+00:15 +49 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: home exit requires a current correlated reply and exact root
+00:15 +50 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: rapid double back shares no request and applies no second result
+00:15 +51 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: missing, unavailable and throwing bridge never exit
+00:15 +52 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: late reply from expired request cannot satisfy subsequent request
+00:15 +53 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: uncorrelated legacy message is acknowledged without exiting
+00:15 +54 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: unrelated/malformed messages remain in normal protocol path
+00:15 +55 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: dispose interrupts back and stale callbacks cannot exit a new view
+00:15 +56 ~1: /workspace/NASQO-PRO-ERP/flutter_app/test/hybrid_back_coordinator_test.dart: opening an external picker or pausing cancels pending exit permission
+00:15 +57 ~1: All tests passed!

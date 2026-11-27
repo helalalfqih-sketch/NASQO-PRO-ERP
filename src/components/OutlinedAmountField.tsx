@@ -1,6 +1,6 @@
 import { type ReactNode, type Ref } from "react";
 import { Cross2Icon } from "@radix-ui/react-icons";
-import { KeyboardInput } from "../mobile/Keyboard";
+import { KeyboardInput } from "../mobile";
 import { amountToArabicWords, parseArabicNumber } from "../accounting";
 
 export interface OutlinedAmountFieldProps {

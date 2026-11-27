@@ -268,6 +268,8 @@ export type InvoiceLine = {
   quantity: number | null;
   unitPrice: number | null;
   discount: number | null;
+  bonus?: number | null;
+  expiryDate?: string;
   total: number | null;
   storeId: number | null;
   kind: "priced" | "free";
@@ -300,6 +302,7 @@ export type LegacyInvoice = {
   warehouseNames: string[];
   sourceTime: string | null;
   headerDiscount: number | null;
+  sourceReference?: string;
 };
 
 export type DocumentContext = {
@@ -347,6 +350,8 @@ export function composeInvoice(
       quantity: num(r.amount),
       unitPrice: num(r.price),
       discount: num(r.discount),
+      bonus: num(r.bonus),
+      expiryDate: text(r.exdate),
       total: num(r.total),
       storeId: r.store_id === null || r.store_id === undefined ? null : Number(r.store_id),
       kind: "priced",
@@ -364,6 +369,7 @@ export function composeInvoice(
       quantity: num(r.amount),
       unitPrice: num(r.price),
       discount: num(r.discount),
+      bonus: num(r.bonus),
       total: num(r.total),
       storeId: null,
       kind: "free",
@@ -420,6 +426,7 @@ export function composeInvoice(
     warehouseNames,
     sourceTime,
     headerDiscount,
+    sourceReference: text(move.ref),
   };
 }
 

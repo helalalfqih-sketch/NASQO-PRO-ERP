@@ -1,0 +1,60 @@
+{
+  "assets": [
+    {
+      "apiUrl": "https://api.github.com/repos/helalalfqih-sketch/NASQO-PRO-ERP/releases/assets/795987489",
+      "contentType": "image/png",
+      "createdAt": "2026-11-26T13:18:22Z",
+      "downloadCount": 0,
+      "id": "RA_kwDOVzcFrc4vcc4h",
+      "label": "",
+      "name": "launcher.png",
+      "size": 324339,
+      "state": "uploaded",
+      "updatedAt": "2026-11-26T13:18:22Z",
+      "url": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1141/launcher.png"
+    },
+    {
+      "apiUrl": "https://api.github.com/repos/helalalfqih-sketch/NASQO-PRO-ERP/releases/assets/795987491",
+      "contentType": "application/vnd.android.package-archive",
+      "createdAt": "2026-11-26T13:18:22Z",
+      "downloadCount": 0,
+      "id": "RA_kwDOVzcFrc4vcc4j",
+      "label": "",
+      "name": "NASQO-PRO-ERP.apk",
+      "size": 59664817,
+      "state": "uploaded",
+      "updatedAt": "2026-11-26T13:18:23Z",
+      "url": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1141/NASQO-PRO-ERP.apk"
+    },
+    {
+      "apiUrl": "https://api.github.com/repos/helalalfqih-sketch/NASQO-PRO-ERP/releases/assets/795987490",
+      "contentType": "application/octet-stream",
+      "createdAt": "2026-11-26T13:18:22Z",
+      "downloadCount": 0,
+      "id": "RA_kwDOVzcFrc4vcc4i",
+      "label": "",
+      "name": "NASQO-PRO-ERP.apk.sha256",
+      "size": 84,
+      "state": "uploaded",
+      "updatedAt": "2026-11-26T13:18:22Z",
+      "url": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1141/NASQO-PRO-ERP.apk.sha256"
+    },
+    {
+      "apiUrl": "https://api.github.com/repos/helalalfqih-sketch/NASQO-PRO-ERP/releases/assets/795987487",
+      "contentType": "image/png",
+      "createdAt": "2026-11-26T13:18:22Z",
+      "downloadCount": 0,
+      "id": "RA_kwDOVzcFrc4vcc4f",
+      "label": "",
+      "name": "reference-defaults-settings.png",
+      "size": 54568,
+      "state": "uploaded",
+      "updatedAt": "2026-11-26T13:18:22Z",
+      "url": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/download/android-v1141/reference-defaults-settings.png"
+    }
+  ],
+  "isDraft": false,
+  "isPrerelease": false,
+  "targetCommitish": "b597afed1cd9d3a07e7d2483d214c5519830eadc",
+  "url": "https://github.com/helalalfqih-sketch/NASQO-PRO-ERP/releases/tag/android-v1141"
+}

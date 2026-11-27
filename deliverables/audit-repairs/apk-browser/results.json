@@ -1,0 +1,216 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "voucher-new-cashbox-return",
+      "execution": "observed",
+      "correct": true,
+      "parentAmountPreserved": true,
+      "parentNotPosted": true
+    },
+    {
+      "id": "settings-legacy-on",
+      "execution": "observed",
+      "correct": true,
+      "storedPreference": "on",
+      "actualProtection": false,
+      "negativeStockSupported": false
+    },
+    {
+      "id": "settings-legacy-off",
+      "execution": "observed",
+      "correct": true,
+      "storedPreference": "off",
+      "actualProtection": false,
+      "negativeStockSupported": false
+    },
+    {
+      "id": "settings-save-failure-no-success",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "currency-route-current-no-provider-crash",
+      "execution": "observed",
+      "correct": true,
+      "alreadyFixedInCurrentBranch": true,
+      "postingNotTested": true
+    },
+    {
+      "id": "baseline-catalog-empty",
+      "execution": "observed",
+      "captured": true
+    },
+    {
+      "id": "baseline-catalog-edit-textscale",
+      "execution": "observed",
+      "captured": true
+    },
+    {
+      "id": "crm-confirmed-record",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "procurement-confirmed-record",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "costcenter-confirmed-record",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "finance-vat-confirmed-record",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "finance-native-xlsx",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "native-print-pdf",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "catalog-cancel-preserves-unsaved",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "employee-confirmed-create-edit-reject-double-click",
+      "execution": "observed",
+      "correct": true,
+      "scope": "Chromium persisted mock; independent real SQLite test separately"
+    },
+    {
+      "id": "attachment-PDF",
+      "execution": "observed",
+      "correct": true,
+      "mime": "application/pdf",
+      "file": "nasqo-statement-2026-11-25.pdf",
+      "bytes": 104209,
+      "scope": "actual generated file and bridge handoff; no Android receiver"
+    },
+    {
+      "id": "attachment-Excel",
+      "execution": "observed",
+      "correct": true,
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "file": "nasqo-statement-2026-11-25.xlsx",
+      "bytes": 11642,
+      "scope": "actual generated file and bridge handoff; no Android receiver"
+    },
+    {
+      "id": "attachment-صورة",
+      "execution": "observed",
+      "correct": true,
+      "mime": "image/png",
+      "file": "nasqo-statement-2026-11-25-1-of-1.png",
+      "bytes": 157569,
+      "scope": "actual generated file and bridge handoff; no Android receiver"
+    },
+    {
+      "id": "statement-currencies-scope",
+      "execution": "observed",
+      "correct": true,
+      "rows": 11
+    },
+    {
+      "id": "inventory-search-single-and-context",
+      "execution": "observed",
+      "correct": true,
+      "rows": [
+        [
+          "الرقم",
+          "الصنف",
+          "الوحدة",
+          "المتوفر",
+          "الشراء",
+          "البيع",
+          "قيمة المتبقي",
+          "الربح",
+          "العملة"
+        ],
+        [
+          "item-11",
+          "صنف اصطناعي 12",
+          "حبة",
+          12,
+          2,
+          3,
+          24,
+          1,
+          "ريال"
+        ]
+      ]
+    },
+    {
+      "id": "inventory-empty-export",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "sales-exports-own-category",
+      "execution": "observed",
+      "correct": true,
+      "rows": [
+        [
+          "الرقم",
+          "الحساب",
+          "الهاتف",
+          "عليه",
+          "له",
+          "الرصيد",
+          "العملة"
+        ]
+      ]
+    },
+    {
+      "id": "large-516-image-pages",
+      "execution": "observed",
+      "correct": true,
+      "pages": 15,
+      "lastRow": true,
+      "all516DrawnOnce": true
+    },
+    {
+      "id": "balance-confirmation-template",
+      "execution": "observed",
+      "correct": true,
+      "bytes": 48360
+    },
+    {
+      "id": "backup-cancel-honest",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "settings-no-false-lock-or-reset",
+      "execution": "observed",
+      "correct": true,
+      "actualLockImplemented": false
+    },
+    {
+      "id": "catalog-empty-touch",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "catalog-touch-edit-delete-name-textscale",
+      "execution": "observed",
+      "correct": true
+    },
+    {
+      "id": "native-template-csv-cancel",
+      "execution": "observed",
+      "correct": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}

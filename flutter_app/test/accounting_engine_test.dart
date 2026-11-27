@@ -4,6 +4,19 @@ import 'package:nasqo_pro_erp/services/accounting_engine.dart';
 import 'package:nasqo_pro_erp/state/erp_controller.dart';
 
 void main() {
+  test('new local workspace has no fabricated accounts, stock, or ledger', () {
+    final controller = ErpController(autoInitDb: false);
+    expect(controller.accounts, isEmpty);
+    expect(controller.ledger, isEmpty);
+    expect(controller.warehouses, isEmpty);
+    expect(controller.inventory, isEmpty);
+    expect(controller.employees, isEmpty);
+    expect(controller.deals, isEmpty);
+    expect(controller.purchaseOrders, isEmpty);
+    expect(controller.productionOrders, isEmpty);
+    controller.dispose();
+  });
+
   test('parses Arabic-Indic digits and formats amounts', () {
     expect(AccountingEngine.parseArabicNumber('١٢٥٠٫٥'), 1250.5);
     expect(AccountingEngine.formatAmount(12500.5), '12,500.5');
@@ -15,7 +28,7 @@ void main() {
   });
 
   test('submitting sales invoice updates ledger and deducts inventory', () {
-    final controller = ErpController();
+    final controller = ErpController(autoInitDb: false, demoData: true);
     final initialLedgerCount = controller.ledger.length;
     final item = controller.inventory.first;
     final initialQty = item.quantity;

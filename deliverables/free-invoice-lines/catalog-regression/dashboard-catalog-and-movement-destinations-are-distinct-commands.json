@@ -1,0 +1,45 @@
+[
+  {
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "items"
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "dashboard"
+    }
+  },
+  {
+    "action": "goBack",
+    "payload": {
+      "requestId": "catalog-back-1",
+      "outcome": "handled",
+      "currentRoute": "dashboard",
+      "stackDepth": 1
+    }
+  },
+  {
+    "action": "navigate",
+    "payload": {
+      "route": "inventory-report"
+    }
+  },
+  {
+    "action": "getInventoryMovementsReport",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "options": {
+        "profitBasis": "avg"
+      }
+    }
+  }
+]

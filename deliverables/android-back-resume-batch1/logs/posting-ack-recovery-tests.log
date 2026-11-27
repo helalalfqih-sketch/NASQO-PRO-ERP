@@ -1,0 +1,3 @@
+00:00 +0: loading /workspace/NASQO-PRO-ERP/flutter_app/test/posting_ack_recovery_test.dart
+00:00 +0: lost posting acknowledgement survives fresh Dart state without duplicate journal or stock
+00:00 +1: All tests passed!

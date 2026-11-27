@@ -1,3 +1,4 @@
+import { requestRestoreApproval } from "./utils/restoreApproval";
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -694,8 +695,8 @@ export async function createOrUpdateAccount(
 export async function fetchProductPriceStats(
   uid: string,
   itemId: string,
-): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }> {
-  return dbFetch<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number }>(
+): Promise<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }> {
+  return dbFetch<{ minPrice: number; maxPrice: number; lastPrice: number; txCount: number; lastPurchasePrice?: number }>(
     `/workspace/${encodeURIComponent(effectiveUid(uid))}/products/${encodeURIComponent(itemId)}/prices`,
   );
 }
@@ -808,11 +809,14 @@ export type InventoryMovementItemRow = {
   availableQty: number;
   unitCost: number;
   remainingValue: number;
+  /** Display-only estimate; never included in approved inventory valuation. */
+  estimatedRemainingValue?: number;
   profit: number;
   avgCost: number;
   sellingPrice?: number;
   catalogQuantity: number;
   quantityUnverified: boolean;
+  costUnverified?: boolean;
   hasMovement: boolean;
 };
 
@@ -825,6 +829,8 @@ export async function fetchInventoryMovementsReport(
     toDate?: string;
     currency?: string;
     profitBasis?: "avg" | "cost" | "last";
+    movementOffset?: number;
+    movementLimit?: number;
   },
 ): Promise<{
   warehouses: Array<{ id: string; name: string }>;
@@ -858,7 +864,15 @@ export async function fetchInventoryMovementsReport(
     totalRemainingQty: number;
     activeItemsCount: number;
   }>;
+  movementPage?: {
+    offset: number;
+    limit: number;
+    totalCount: number;
+    nextOffset: number | null;
+    hasMore: boolean;
+  };
   movements: Array<{
+    movementId?: string;
     source: "invoice" | "transfer";
     refId: string;
     entryNumber?: number;
@@ -905,6 +919,8 @@ export async function fetchInventoryMovementsReport(
   if (params?.toDate) qs.set("toDate", params.toDate);
   if (params?.currency) qs.set("currency", params.currency);
   if (params?.profitBasis) qs.set("profitBasis", params.profitBasis);
+  if (params?.movementOffset !== undefined) qs.set("movementOffset", String(params.movementOffset));
+  if (params?.movementLimit !== undefined) qs.set("movementLimit", String(params.movementLimit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/report${suffix}`);
 }
@@ -1044,6 +1060,12 @@ export async function createInventoryItem(
     }
     return saved.id;
   });
+}
+
+export async function importAccountCardsBatch(uid: string, accounts: import("./utils/accountCsvImport").AccountCardImport[]) {
+  const res = await dbFetch<{inserted:number;skipped:number;total:number;bundle:WorkspaceBundle}>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/accounts/import`, {method:"POST",body:JSON.stringify({accounts})},60_000);
+  applyBundle(res.bundle,true); return res;
 }
 
 export async function importInventoryItemsBatch(
@@ -1315,12 +1337,29 @@ async function uploadRestoreBytesChunked<T>(
   );
 }
 
+async function approveWebRestore(uid: string, fileName: string): Promise<string> {
+  const review = await dbFetch<{ token: string; backupFileName: string; counts: Record<string, number> }>(
+    `/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/prepare`, { method: "POST" }, 30_000, { mutating: false });
+  const downloadBackup = async () => {
+    const payload = await dbFetch<unknown>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/restore/safety/${encodeURIComponent(review.token)}`);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = review.backupFileName; document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  };
+  if (!await requestRestoreApproval({ fileName, backupFileName: review.backupFileName, counts: review.counts, downloadBackup })) {
+    throw new Error("أُلغيت الاستعادة؛ لم تتغير بيانات العمل.");
+  }
+  return review.token;
+}
+
 export async function importSmartProSqlIntoServer(
   uid: string,
   sqlText: string,
   fileName: string,
   replaceExisting = true,
 ) {
+  const restoreToken = replaceExisting ? await approveWebRestore(uid, fileName) : undefined;
   return runWithBrandLoader(`جاري استيراد ${fileName}...`, async () => {
     const utf8Bytes = new TextEncoder().encode(sqlText);
     const res =
@@ -1328,14 +1367,14 @@ export async function importSmartProSqlIntoServer(
         ? await uploadRestoreBytesChunked<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
             uid,
             utf8Bytes,
-            { kind: "sql", fileName, replaceExisting },
+            { kind: "sql", fileName, replaceExisting, restoreToken },
             true,
           )
         : await dbFetch<{ report: Record<string, unknown>; bundle: WorkspaceBundle }>(
             `/workspace/${encodeURIComponent(effectiveUid(uid))}/import/smartpro-sql`,
             {
               method: "POST",
-              body: JSON.stringify({ sqlText, fileName, replaceExisting }),
+              body: JSON.stringify({ sqlText, fileName, replaceExisting, restoreToken }),
             },
             120_000,
           );
@@ -1358,13 +1397,14 @@ export async function importSqliteBytesIntoServer(
       : mode === "restore"
         ? `جاري استعادة ${fileName}...`
         : `جاري استيراد ودمج ${fileName}...`;
+  const restoreToken = mode !== "inspect" && (replaceExisting ?? mode === "restore") ? await approveWebRestore(uid, fileName) : undefined;
   return runWithBrandLoader(label, async () => {
     if (bytes.byteLength > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
       const res = await uploadRestoreBytesChunked<Record<string, unknown>>(
         uid,
         bytes,
         {
-          kind: "sqlite",
+          kind: "sqlite", restoreToken,
           fileName,
           mode,
           groupCategories,
@@ -1383,7 +1423,7 @@ export async function importSqliteBytesIntoServer(
     for (let i = 0; i < bytes.length; i += step) {
       binary += String.fromCharCode(...bytes.subarray(i, i + step));
     }
-    return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting);
+    return importSqliteLegacyIntoServer(uid, btoa(binary), fileName, mode, groupCategories, replaceExisting, restoreToken);
   });
 }
 
@@ -1394,6 +1434,7 @@ export async function importSqliteLegacyIntoServer(
   mode: "inspect" | "import" | "restore",
   groupCategories?: Record<string, AccountCategory>,
   replaceExisting?: boolean,
+  approvedToken?: string,
 ) {
   const label =
     mode === "inspect"
@@ -1401,6 +1442,7 @@ export async function importSqliteLegacyIntoServer(
       : mode === "restore"
         ? `جاري استعادة ${fileName}...`
         : `جاري استيراد ${fileName}...`;
+  const restoreToken = approvedToken ?? (mode !== "inspect" && (replaceExisting ?? mode === "restore") ? await approveWebRestore(uid, fileName) : undefined);
   return runWithBrandLoader(label, async () => {
     const res =
       base64.length > Math.ceil((CHUNKED_UPLOAD_THRESHOLD_BYTES * 4) / 3)
@@ -1408,7 +1450,7 @@ export async function importSqliteLegacyIntoServer(
             uid,
             decodeBase64ToBytes(base64),
             {
-              kind: "sqlite",
+              kind: "sqlite", restoreToken,
               fileName,
               mode,
               groupCategories,
@@ -1421,7 +1463,7 @@ export async function importSqliteLegacyIntoServer(
             {
               method: "POST",
               body: JSON.stringify({
-                base64,
+                base64, restoreToken,
                 fileName,
                 mode,
                 groupCategories,
@@ -1441,15 +1483,17 @@ export async function importSqliteLegacyIntoServer(
 export async function restoreJsonBackupIntoServer(
   uid: string,
   payload: Record<string, unknown>,
+  fileName = "نسخة JSON",
 ) {
+  const restoreToken = await approveWebRestore(uid, fileName);
   return runWithBrandLoader("جاري استعادة النسخة الاحتياطية...", async () => {
-    const bodyStr = JSON.stringify({ payload });
+    const bodyStr = JSON.stringify({ payload, restoreToken });
     const res =
       bodyStr.length > CHUNKED_UPLOAD_THRESHOLD_BYTES
         ? await uploadRestoreBytesChunked<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
             uid,
             new TextEncoder().encode(JSON.stringify(payload)),
-            { kind: "json", fileName: "backup.json" },
+            { kind: "json", fileName, restoreToken },
             true,
           )
         : await dbFetch<{ restored: Record<string, number>; bundle: WorkspaceBundle }>(
@@ -1520,7 +1564,7 @@ export async function rollbackLegacyLivePrefix(
 export async function downloadUnifiedSqliteFile(
   uid = LOCAL_WORKSPACE_UID,
   timeoutMs = 15_000,
-): Promise<void> {
+): Promise<boolean> {
   return runWithBrandLoader("جاري تصدير النسخة الاحتياطية الكاملة...", async () => {
     const controller = new AbortController();
     const timer = globalThis.setTimeout(() => controller.abort(), timeoutMs);
@@ -1539,6 +1583,7 @@ export async function downloadUnifiedSqliteFile(
       link.click();
       document.body.removeChild(link);
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         throw new Error("انتهت مهلة تحميل النسخة الاحتياطية. يرجى إعادة المحاولة.");
@@ -1572,3 +1617,15 @@ export async function queryUnifiedSqliteTable(
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/tables/${encodeURIComponent(table)}?${params.toString()}`);
 }
+
+export async function saveCashboxRecord(uid:string,payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}):Promise<CashboxRecord>{
+ const result=await dbFetch<{cashbox:CashboxRecord;bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/cashboxes`,{method:'POST',body:JSON.stringify({payload})});applyBundle(result.bundle);return result.cashbox;
+}
+async function deleteMasterRecord(uid:string,path:string,id:string|number):Promise<void>{
+ const result=await dbFetch<{bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/${path}/${encodeURIComponent(id)}`,{method:'DELETE'});applyBundle(result.bundle);
+}
+export async function deleteCashboxRecord(uid:string,id:number){await deleteMasterRecord(uid,'cashboxes',id);}
+export async function deleteAccountGroup(uid:string,id:number){await deleteMasterRecord(uid,'groups',id);}
+export async function deleteWarehouse(uid:string,id:string){await deleteMasterRecord(uid,'warehouses',id);}
+
+export async function executeErpAction(uid:string,payload:{action:string;id?:string;expectedRevision?:string|number;currency?:string;month?:string}){const result=await dbFetch<{bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/erp/actions`,{method:'POST',body:JSON.stringify(payload)});applyBundle(result.bundle);}

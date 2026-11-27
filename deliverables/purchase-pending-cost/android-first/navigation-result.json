@@ -1,0 +1,13 @@
+{
+  "result": "PASS",
+  "sdk": "36",
+  "checks": [
+    "rendered home accessibility",
+    "settings",
+    "Home/resume settings",
+    "system Back returns home",
+    "home exit confirmation",
+    "cancel exit"
+  ],
+  "scope": "Synthetic empty workspace; no financial action, private restore or gesture test. Screenshots require separate visual review."
+}

@@ -16,6 +16,7 @@ import {
   PlusIcon,
 } from "@radix-ui/react-icons";
 import { KeyboardInput, useKeyboard } from "../mobile";
+import { useBackLayer } from "../hybrid/backCoordinator";
 import type { AccountCategory, AccountRecord } from "../types";
 import {
   filterComboboxAccounts,
@@ -83,6 +84,13 @@ export function AccountSelectCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
+  useBackLayer(open, () => {
+    keyboard.hide();
+    setOpen(false);
+    setQuery("");
+    setShowAll(false);
+    return true;
+  }, 200);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listId = useId();

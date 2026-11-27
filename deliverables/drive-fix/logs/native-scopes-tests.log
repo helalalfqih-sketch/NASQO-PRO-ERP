@@ -1,0 +1,27 @@
+00:00 +0: loading /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart
+00:00 +0: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: regression: permission grant alone leaves old Android token email-only
+00:00 +1: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: identity sign-in initializes only email and never asks Drive consent
+00:00 +2: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: explicit Drive connect initializes exactly email and drive.file before any token
+00:00 +3: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: same-mode reconnect refreshes the cached Android login ID token
+00:00 +4: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: identity and Drive transitions reinitialize singleton and reject retired accounts
+00:00 +5: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: cancelled selection and denied consent never verify identity or fetch a token
+00:00 +6: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: failed Firebase identity verification never authorizes Drive headers
+00:00 +7: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: pending token retrieval serializes mode switch and signout on the active client
+00:00 +8: /workspace/NASQO-drive-fix/flutter_app/test/native_google_account_session_test.dart: empty token cannot produce an authenticated Drive header
+00:00 +9: /workspace/NASQO-drive-fix/flutter_app/test/native_cloud_errors_test.dart: native provider errors keep useful codes without provider details
+00:00 +10: /workspace/NASQO-drive-fix/flutter_app/test/native_cloud_errors_test.dart: 403 reason distinguishes API disabled, scope, quota and unknown refusal
+00:00 +11: /workspace/NASQO-drive-fix/flutter_app/test/native_cloud_errors_test.dart: missing build configuration fails before chooser, file or accounting actions
+00:00 +12: /workspace/NASQO-drive-fix/flutter_app/test/native_cloud_errors_test.dart: cloud bridge preserves structured diagnostics and never serializes provider text
+00:00 +13: /workspace/NASQO-drive-fix/flutter_app/test/native_cloud_session_test.dart: cloud input validation rejects malformed and oversized identifiers
+00:00 +14: /workspace/NASQO-drive-fix/flutter_app/test/native_cloud_session_test.dart: native Drive sessions fail closed without user authorization
+00:01 +15: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: native cloud bridge restricts identity, Drive actions and local tools
+00:01 +16: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: native print and share commands reject HTML, arbitrary URLs and foreign workspace
+00:01 +17: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: stock reconciliation opens only scoped local product and warehouse references
+00:01 +18: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: native restore action accepts only workspace, no SQL or base64
+00:01 +19: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: returns valid local snapshot without calling any network service
+00:01 +20: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects financial writes and never invokes the database callback
+00:01 +21: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: persists only whitelisted non-financial UI preferences
+00:01 +22: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects unknown preference fields and never calls persistence
+00:01 +23: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects malformed JSON and oversized requests
+00:01 +24: /workspace/NASQO-drive-fix/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects missing arrays instead of claiming success
+00:01 +25: All tests passed!

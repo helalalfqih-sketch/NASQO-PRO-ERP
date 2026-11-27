@@ -1,5 +1,30 @@
 # Mobile Prototype Agent Guide
 
+## Complete data management (user direction, 2026-11-27)
+
+- Complete missing create/read/search/filter/update/delete paths in the existing modules, using their actual web SQLite API and Android SQLite bridge. Reuse existing operations and screens; reports are derived views, not independently editable financial records.
+- Validate on the service boundary, enforce workspace access, reject stale edits, and protect references and posted financial history. Confirm deletion in the UI and retain entered data on a failed save.
+- Verify each operation on isolated synthetic databases and the rendered UI. Never delete or modify production records to test CRUD. Preserve original imported archives and use the existing reversal/archive mechanisms for posted documents.
+
+## Active screen accessibility (CRUD integration, 2026-11-27)
+
+- Keep parked and exiting FlowStack screens inert and hidden from accessibility while retaining their state for Back. Only the active screen may expose controls; verify focus, Back, and nested navigation before updating its runtime lock hash.
+- Android acceptance must return through visible Back after process restart because navigation state is restored; hidden dashboard nodes cannot prove that Home is active.
+
+## Excel export/import compatibility (reported defect, 2026-11-27)
+
+- The app's own inventory exports must be readable in card import above 2000 rows. Keep the shared 10000-row bound across the reader, server and native atomic commands; retain file-size and populated-column guards.
+- Export a dedicated item-card sheet with string barcodes, reference prices, unit conversions, currency and status. Prefer it automatically on import. Report purchase/sale totals and quantities are not item prices or opening balances.
+- Recognize older NASQO inventory reports explicitly and preview only their card metadata. Reimport skips existing cards without changing stock, valuation or history. Blank formatting must not be treated as populated rows or columns.
+
+## Immediate operation after setup or restore (user direction, 2026-11-27)
+
+- The user explicitly requires a new business and a restored supported backup to work immediately, without manual posting-account setup or a mandatory quantity/cost approval workflow. This supersedes earlier requirements below that made those steps mandatory for routine use.
+- Prepare dedicated system posting accounts and ordinary workspace defaults automatically. Preserve valid explicit mappings; never repurpose a customer/supplier account by guessing its name or silently change its historical balance.
+- Initialize imported stock once from the supported source by product, warehouse and currency. Preserve existing confirmed quantities and subsequent local purchases, original documents and source bytes. Record the valuation basis and a balanced opening separately; do not replay old invoices/transfers or add their quantities twice.
+- Keep migration provenance and exceptional source references available in an optional diagnostic view, not as a large technical warning or repeated “unapproved” badges throughout normal reports and invoices. Real validation failures must remain actionable in the affected document.
+- Test first use, imported use, upgrade of an already quantity-approved workspace, repeated initialization and native backup round trips. Private source validation stays outside the repository. Do not change package/signing identity or publish a release without successful checks.
+
 ## Prototype Instructions
 
 In ChatGPT Work Mode, run `sites-preview start "$PWD"`, open `http://terminal.local:4173/` in the cloud browser, and verify the rendered app and its primary interactions. Keep that preview open and tell the user to inspect it in the cloud browser; do not present the local URL as a user-facing chat link. In Codex Desktop, run the local server yourself, open the preview in the in-app browser, and provide the clickable local URL. Do not deploy to Sites unless the user explicitly asks to share, publish, or deploy. Do not give the user server-start instructions when you can run it.
@@ -49,6 +74,23 @@ When implementing from a selected generated mock, treat that image as the source
   remote access. Never commit secrets, the database file or source backups.
 - Preserve the existing published deployment. Review and test the independent
   SQLite deployment before switching any public traffic to it.
+
+## Invoice item selection and inventory destinations (user direction, 2026-11-25)
+
+- Keep **ملف الأصناف** (item master/catalog) and **حركة المخزون** (inventory movements) as distinct destinations.
+- Selecting an item while editing an invoice adds or updates the invoice line in place. It must never automatically open native stock reconciliation, stock-count filters, or an inventory-movement screen.
+- Unverified imported stock may be selected and retained in a local UI draft. This is not approval of its quantities or valuation. Preserve the native posting guards; explain any blocked posting inside the same invoice.
+- Stock reconciliation remains a separate, explicit settings action only. Do not inject a reconciliation screen or a reconciliation action into invoice item selection.
+
+## Legacy backup fidelity (user direction, 2026-11-25)
+
+- Preserve full imported notes, source references and recorded header/line discounts. Display recorded metadata without recalculating historical ledger amounts or subtracting an already included discount again.
+- Repairs must also work for previously activated legacy archives, using the verified embedded source where needed; do not require a destructive re-import or overwrite later local edits.
+- Inventory transfer dates must be read from the original supported date fields. Item history must be fully reachable through pagination; search results must keep their paging controls.
+- Show a saved legacy catalog cost as a reference price, separately from approved operational stock cost. Never approve quantities or valuation by displaying that price.
+- Make historical offers, deleted documents and alerts accessible from their corresponding normal destinations. Preserve original deleted/inactive status; creating a local draft or changing a reminder's local read state requires an explicit action. Opening these screens must not post financial entries, restore deleted entries to balances or schedule notifications.
+- Bind a draft copied from a legacy record to the verified source SHA as well as the workspace. Reused account/item IDs after backup replacement must not allow that draft to be submitted to another business.
+- Never commit a private source backup, restored database, private snapshot, customer data or monetary values in test artifacts. Use synthetic data for visual evidence.
 
 ## Editing Boundary
 
@@ -109,3 +151,76 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Fixed phone chrome should not animate with pushed screens. Screen content can animate; the status bar, camera cutout, and preview chrome should stay put.
 - Keep the keyboard below the home indicator/safe area layer in z-index, and above ordinary app UI while visible.
 - Keep the home indicator as the topmost safe-area layer in the z-index above everything else in the prototype.
+
+## Free invoice lines (user direction, 2026-11-25)
+
+- A free invoice supports manually named lines with quantity, price and a calculated total. These are descriptive lines, with no inventory item or warehouse linkage and no stock movement.
+- Persist free lines atomically with the local invoice, include them in native backups, and read them for preview/PDF. Repeating a confirmed operation must not post twice.
+- Keep existing amount-only free invoices readable. Switching between stock and free modes must preserve separate unsent rows; it must not convert unverified imported quantities into approved stock.
+
+## Separate quantity approval (user direction, 2026-11-25)
+
+- Allow the user to review and explicitly confirm the displayed current quantities for a selected warehouse, independently of cost approval. Keep this action in settings, not invoice item selection.
+- Freeze the reviewed all-time warehouse quantities once. Bind the review to the source SHA, workspace, selected rows and current review hash. A stale review must fail without partial writes. Repeated confirmation must be idempotent.
+- Quantity-only approval must not replay historical movements, create stock movements or financial entries, or approve reference prices. Keep cost-pending quantities out of inventory valuation and preserve costing guards for invoice posting.
+- A later explicit valuation must retain the approved quantity without another quantity movement. Display quantity and cost approval states separately, including in reports, catalog and invoice validation.
+- Display stock quantities to three decimal places so review values match persisted quantities; money remains two decimal places.
+
+## Android brand artwork (user direction, 2026-11-25)
+
+- Use the supplied complete NASQO calculator/cube/Arabic wordmark image for the launcher icon and startup screen. The matching source is `public/assets/aistudio/NASQO_PRO_ERP_800_022d325f.png`. Preserve its artwork and transparency.
+- Keep it inside adaptive-icon safe margins. Configure native resources after `flutter create` so Flutter's default icon cannot return. Preserve package/signing identity.
+- The Android display name under the launcher icon and in system app information must be «نسقو برو» in Arabic. Keep the applicationId unchanged.
+
+## Imported inventory display estimates (user direction, 2026-11-25)
+
+- Android inventory reports must show the available estimated remaining value explicitly, separately from approved valuation. Never label an excluded, unapproved valuation as an ordinary zero stock value.
+- Use the selected price basis for comparison estimates, retaining signed quantities and separate currencies. A displayed estimate must not approve quantities/costs, post entries, or unlock invoice posting. Keep financial consumers on approved `remainingValue` only.
+- Keep estimate and approval status distinct in report exports as well as the on-screen footer. Private backup comparisons stay outside the repository.
+
+## Integrated reference management (user direction, 2026-11-25)
+
+- Cashbox/account reference editors must use the NASQO header, field, action and scrolling patterns. Do not ship raw browser buttons or visibly stacked management forms.
+- Keep the originating invoice/voucher mounted with its inputs intact, but hide/inert covered dialogs. Only the current management step is visible and interactive.
+- System Back closes the account combobox before the cashbox editor, a confirmation before its editor, and reference management before the originating document. Management save/select/cancel must never post that document.
+- Verify rendered narrow/landscape/dark layouts and reachable list/footer actions with synthetic data; a passing bridge test alone is not mobile visual acceptance.
+
+## Item history scope and catalog validation (user screenshots, 2026-11-25)
+
+- Item history must show its warehouse/currency/date scope. Provide an explicit full-history choice without changing the parent inventory report filters; reset paging and discard stale responses when switching scope. Label movement price currency when showing multiple currencies.
+- Never replace a missing/zero optional-unit factor with 1 silently. Unit 2 is a whole positive count of base units; unit 3 is a whole positive count of unit 2. Keep supported multi-unit fields operational and disable selecting an undefined default unit.
+- Catalog validation must explain the actual rejected field, retain the form, and avoid a green success-style error toast. Catalog creation does not establish stock/cost; unchanged precise average costs must survive metadata edits without rounding.
+- Keep the default-unit and expiry controls in separate usable rows on narrow screens and with enlarged text.
+
+## Cashier defaults and shortcuts (user direction, 2026-11-25)
+
+- Provide integrated cashier settings for warehouse, cashbox, customer account, currency and quick item shortcuts. Store these in workspace SQLite settings and preserve them through native backup/restore.
+- Defaults initialize a new cashier invoice only. Reuse the existing invoice posting path; never alter old invoices or stock when saving settings. Missing defaults remain explicit, without selecting an arbitrary account/cashbox.
+- Clear shortcuts only after confirmation, and persist on Save; never delete products or stock. All shortcut selections and cashier buttons remain reachable by paging.
+- Changing currency clears incompatible customer/cashbox choices. Preserve edits on failed settings save; header/system Back must handle unsaved changes. Keep the NASQO visual style and narrow/dark layouts.
+
+## Document reference defaults (user direction, 2026-11-26)
+
+- Continue the current worktree when adding catalog features. Batch one shares workspace references (warehouse, account, cashbox, currency), not a separate app/database.
+- Resolve a new document's cashbox by account, then account group, then system, always matching its currency and active status. Cashier-specific cashbox is a fallback before system. Explicit manual selection takes priority; changing currency must not silently substitute another box.
+- Save defaults in workspace SQLite settings and round-trip backups, remapping web IDs. Defaults never change a saved document or an open/restored draft, post entries, replay history, or approve stock/cost.
+- Keep missing defaults explicit. Saving or cancelling reference management never submits its originating invoice/voucher. Existing native posting restrictions still apply.
+
+## Catalog creation independent of warehouses (user direction, 2026-11-26)
+
+- Adding a product card must work before any warehouse exists. Do not require a warehouse field, assign a hidden default warehouse, or create a placeholder warehouse.
+- New cards have zero stock and cost, with no journal or stock movement. Keep native backup/restore and metadata editing operational for unassigned cards.
+- In the current per-warehouse stock model, the first explicitly posted purchase assigns a pristine local card to the invoice warehouse atomically. A failed/repeated posting must not leave a binding or duplicate movement; existing or imported stock must never be rebound or approved through this path.
+
+## Purchases while old inventory cost is pending (reported invoice defect, 2026-11-26)
+
+- Quantity-approved imported stock may receive a new purchase at its explicit invoice price. Keep the old opening quantity and its unapproved cost separate from the recorded value of new purchases; never average the unknown opening cost as zero or approve it implicitly.
+- Apply the same rule in invoice UI, posting-account resolution, native posting, linked purchase returns, reports and native backup validation. A later opening-cost approval posts only the old value and preserves subsequent purchase quantities/value.
+- Purchase price suggestions use recorded purchase prices in the correct base unit/currency, with the catalog reference as a fallback. Show that the suggestion is editable; delayed statistics must never overwrite manual prices or a different invoice context.
+- Acceptance must exercise the posted purchase and its persisted stock/journal on an isolated Android emulator, not just saving an empty product card. Keep private user data out of fixtures and artifacts.
+
+## Cost review after quantity approval (user direction, 2026-11-26)
+
+- Use the saved purchase price as the catalog cost suggestion; selling prices remain independent. A suggestion is still a review, not automatic financial approval.
+- Batch cost review must read the warehouse's existing quantity approval. Lock that old baseline in editing and paste flows; never substitute historical projections or the current quantity including later purchases.
+- Preserve subsequent purchases and their recorded value, source history and repeated-operation protection when approving the old cost. Account roles must come from explicit workspace setup or the user's selections, not account-name guesses.

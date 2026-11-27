@@ -1,0 +1,10 @@
+OBSERVED voucher-new-cashbox-return
+OBSERVED reference-account-cancel-and-system-back
+OBSERVED reference-account-select-and-delete-rejection
+OBSERVED reference-edit-and-archive-cancel
+OBSERVED reference-long-list-scroll
+OBSERVED reference-from-cashboxes-report
+OBSERVED reference-from-invoice-preserves-note
+OBSERVED reference-layout-narrow
+OBSERVED reference-layout-landscape
+OBSERVED reference-layout-dark

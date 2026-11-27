@@ -1,0 +1,6 @@
+OBSERVED catalog-cancel-preserves-unsaved
+OBSERVED catalog-create-validation-empty
+OBSERVED catalog-precise-cost-metadata-edit
+OBSERVED catalog-unit-layout-empty
+OBSERVED catalog-create-rejection-empty
+OBSERVED catalog-touch-edit-delete-name-textscale

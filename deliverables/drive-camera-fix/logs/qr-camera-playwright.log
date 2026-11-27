@@ -1,0 +1,31 @@
+[WebServer] (node:17486) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:17499) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 15 tests using 1 worker
+
+(node:17523) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/qr-camera.spec.ts:16:1 › stop and close release the stream; reopening does not start automatically (1.5s)
+  ✓   2 tests/qr-camera.spec.ts:29:1 › one pending prompt cannot create multiple streams; cancellation stops a late grant (784ms)
+  ✓   3 tests/qr-camera.spec.ts:42:1 › closing during a permission prompt stops its later granted stream (658ms)
+  ✓   4 tests/qr-camera.spec.ts:52:1 › unmount releases an active stream and rejects a later permission grant (677ms)
+  ✓   5 tests/qr-camera.spec.ts:67:3 › visibilitychange releases camera and never automatically restarts (550ms)
+  ✓   6 tests/qr-camera.spec.ts:67:3 › pagehide releases camera and never automatically restarts (477ms)
+  ✓   7 tests/qr-camera.spec.ts:67:3 › nasqo:camera-stop releases camera and never automatically restarts (462ms)
+  ✓   8 tests/qr-camera.spec.ts:91:3 › NotAllowedError explains an actionable recovery and allows explicit retry (556ms)
+  ✓   9 tests/qr-camera.spec.ts:91:3 › NotFoundError explains an actionable recovery and allows explicit retry (521ms)
+  ✓  10 tests/qr-camera.spec.ts:91:3 › NotReadableError explains an actionable recovery and allows explicit retry (523ms)
+  ✓  11 tests/qr-camera.spec.ts:103:1 › video playback failure releases permission-granted tracks (459ms)
+  ✓  12 tests/qr-camera.spec.ts:111:1 › manual QR lookup stops the camera and does not write inventory (503ms)
+  ✓  13 tests/qr-camera.spec.ts:120:1 › a granted camera attaches to the mounted video and plays after an explicit click (545ms)
+  ✓  14 tests/qr-camera.spec.ts:129:1 › closing during pending video playback cannot reactivate the camera (486ms)
+  ✓  15 tests/qr-camera.spec.ts:142:1 › a camera QR decode stops scanning without automatically writing inventory (408ms)
+
+  15 passed (13.4s)
+npm notice
+npm notice New major version of npm available! 11.19.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

@@ -1,0 +1,44 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "catalog-create-no-warehouse-empty",
+      "execution": "observed",
+      "correct": true,
+      "warehouseNotRequired": true,
+      "noDefaultWarehouseAssignment": true,
+      "noStockPosting": true
+    },
+    {
+      "id": "catalog-create-default-warehouse-empty",
+      "execution": "observed",
+      "correct": true,
+      "warehouseNotRequired": true,
+      "noDefaultWarehouseAssignment": true,
+      "noStockPosting": true
+    },
+    {
+      "id": "catalog-create-validation-empty",
+      "execution": "observed",
+      "correct": true,
+      "noImplicitFactorOne": true,
+      "allUnitFieldsSent": true
+    },
+    {
+      "id": "catalog-precise-cost-metadata-edit",
+      "execution": "observed",
+      "correct": true,
+      "unchangedAverageCostPrecisionPreserved": true
+    },
+    {
+      "id": "catalog-create-rejection-empty",
+      "execution": "observed",
+      "correct": true,
+      "errorInline": true,
+      "draftRetained": true,
+      "noSuccessToast": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}

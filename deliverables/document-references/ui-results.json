@@ -1,0 +1,102 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "voucher-new-cashbox-return",
+      "execution": "observed",
+      "correct": true,
+      "parentAmountPreserved": true,
+      "parentNotPosted": true
+    },
+    {
+      "id": "reference-defaults-settings",
+      "execution": "observed",
+      "correct": true,
+      "persisted": true,
+      "failedSaveRetains": true,
+      "discardKeepsSaved": true,
+      "darkNarrow": true
+    },
+    {
+      "id": "reference-defaults-invoice-account",
+      "execution": "observed",
+      "correct": true,
+      "priority": "account",
+      "manualPreserved": true,
+      "incompatibleCleared": true
+    },
+    {
+      "id": "reference-defaults-invoice-group",
+      "execution": "observed",
+      "correct": true,
+      "priority": "group",
+      "manualPreserved": true,
+      "incompatibleCleared": true
+    },
+    {
+      "id": "reference-defaults-invoice-system",
+      "execution": "observed",
+      "correct": true,
+      "priority": "system",
+      "manualPreserved": true,
+      "incompatibleCleared": true
+    },
+    {
+      "id": "reference-defaults-invoice-none",
+      "execution": "observed",
+      "correct": true,
+      "priority": "none",
+      "manualPreserved": true,
+      "incompatibleCleared": true
+    },
+    {
+      "id": "reference-defaults-draft",
+      "execution": "observed",
+      "correct": true,
+      "restoredDraftIgnoresNewDefaults": true,
+      "noReplay": true
+    },
+    {
+      "id": "reference-defaults-cashier",
+      "execution": "observed",
+      "correct": true,
+      "inheritsSystemWhenUnconfigured": true
+    },
+    {
+      "id": "reference-defaults-currency",
+      "execution": "observed",
+      "correct": true,
+      "currencyReferenceOnly": true,
+      "postingNotTested": true
+    },
+    {
+      "id": "reference-defaults-voucher",
+      "execution": "observed",
+      "correct": true,
+      "parentPreserved": true
+    },
+    {
+      "id": "reference-defaults-transfer",
+      "execution": "observed",
+      "correct": true,
+      "transferHierarchy": true
+    },
+    {
+      "id": "cashier-missing-defaults-explicit",
+      "execution": "observed",
+      "correct": true,
+      "noArbitraryReference": true
+    },
+    {
+      "id": "cashier-settings-persist-and-invoice",
+      "execution": "observed",
+      "correct": true,
+      "defaults": true,
+      "reload": true,
+      "quickItems": true,
+      "noPosting": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}

@@ -1,0 +1,25 @@
+PASS approved-quantity-remains-visible-while-cost-blocks-posting
+PASS movement-report-separates-quantity-and-valuation
+PASS catalog-keeps-reference-cost-separate-after-quantity-approval
+{
+  "environment": "Chromium full built hybrid UI; synthetic host, NOT Android or accounting engine",
+  "baseline": false,
+  "bundle": "/workspace/NASQO-stock-quantity/dist/hybrid",
+  "manifestSha256": "47f26d2d6de65ec9536ebeb201d5b2f7e00496eb85bdd36bef9f621328a9cb6d",
+  "results": [
+    {
+      "name": "approved-quantity-remains-visible-while-cost-blocks-posting",
+      "passed": true
+    },
+    {
+      "name": "movement-report-separates-quantity-and-valuation",
+      "passed": true
+    },
+    {
+      "name": "catalog-keeps-reference-cost-separate-after-quantity-approval",
+      "passed": true
+    }
+  ],
+  "browserErrors": [],
+  "externalRequests": []
+}

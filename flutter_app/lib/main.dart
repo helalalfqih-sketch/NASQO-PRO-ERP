@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'services/android_update_notice.dart';
+import 'package:flutter/foundation.dart';
+import 'hybrid/hybrid_react_preview_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/erp_hub_screen.dart';
@@ -60,10 +63,12 @@ class _NasqoProErpAppState extends State<NasqoProErpApp> {
               centerTitle: false,
             ),
           ),
-          home: Directionality(
+          home: AndroidUpdateNotice(child: Directionality(
             textDirection: TextDirection.rtl,
-            child: NasqoMainShell(controller: _controller),
-          ),
+            child: defaultTargetPlatform == TargetPlatform.android && !kIsWeb
+                ? const HybridReactPreviewScreen()
+                : NasqoMainShell(controller: _controller),
+          )),
         );
       },
     );
@@ -148,6 +153,16 @@ class _NasqoMainShellState extends State<NasqoMainShell> {
       appBar: AppBar(
         title: const Text('نسقو برو ERP — Flutter'),
         actions: [
+          if ((kDebugMode || androidPreviewChannel) && defaultTargetPlatform == TargetPlatform.android)
+            IconButton(
+              tooltip: 'معاينة واجهة React محليًا (قراءة فقط)',
+              icon: const Icon(Icons.web_asset_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const HybridReactPreviewScreen(),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: 'تبديل المظهر',
             onPressed: widget.controller.toggleTheme,

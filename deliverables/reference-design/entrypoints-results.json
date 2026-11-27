@@ -1,0 +1,20 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "reference-from-cashboxes-report",
+      "execution": "observed",
+      "correct": true,
+      "reportRestored": true,
+      "noMisleadingRowClose": true
+    },
+    {
+      "id": "reference-from-invoice-preserves-note",
+      "execution": "observed",
+      "correct": true,
+      "invoiceNotePreserved": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}

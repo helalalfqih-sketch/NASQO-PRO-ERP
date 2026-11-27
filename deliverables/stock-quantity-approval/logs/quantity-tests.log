@@ -1,0 +1,6 @@
+00:00 +0: loading /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart
+00:00 +0: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:01 +1: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_screen_test.dart: quantity review requires selection, acknowledgement and final confirmation; cancel never writes
+00:02 +2: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_operational_restore_test.dart: legacy account migration preserves raw history, accepts new balanced journal, protects stock and round-trips archive
+00:03 +3: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_operational_restore_test.dart: legacy account migration preserves raw history, accepts new balanced journal, protects stock and round-trips archive
+00:04 +4: All tests passed!

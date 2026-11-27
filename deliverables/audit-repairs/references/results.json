@@ -1,0 +1,35 @@
+{
+  "environment": "Chromium built hybrid + synthetic bridge, NOT Android",
+  "results": [
+    {
+      "id": "voucher-new-cashbox-return",
+      "execution": "observed",
+      "correct": true,
+      "parentAmountPreserved": true,
+      "parentNotPosted": true
+    },
+    {
+      "id": "settings-legacy-on",
+      "execution": "observed",
+      "correct": true,
+      "storedPreference": "on",
+      "actualProtection": false,
+      "negativeStockSupported": false
+    },
+    {
+      "id": "settings-legacy-off",
+      "execution": "observed",
+      "correct": true,
+      "storedPreference": "off",
+      "actualProtection": false,
+      "negativeStockSupported": false
+    },
+    {
+      "id": "settings-save-failure-no-success",
+      "execution": "observed",
+      "correct": true
+    }
+  ],
+  "errors": [],
+  "external": []
+}

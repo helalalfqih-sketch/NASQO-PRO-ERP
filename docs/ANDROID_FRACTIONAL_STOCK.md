@@ -1,0 +1,7 @@
+# Fractional stock (schema 10)
+
+Operational stock, invoice quantities, partial returns, warehouse opening counts and bulk reconciliation now accept up to three decimal places. The limit remains 10,000,000 actual base units. Quantities are internally converted to integer thousandths before addition, subtraction, stock validation and cost allocation. Monetary values are still integer minor units, using half-up rounding for gross line amounts and cumulative allocation for linked returns. A return that has no positive refundable amount must be handled with a larger return; a purchase return that would strand value or create negative inventory value remains blocked.
+
+Existing whole-unit payloads retain their integer JSON representation so retry identities are compatible. Unit conversion factors remain positive whole numbers; fractional selected-unit amounts are multiplied by these factors. SQLite schema 10 explicitly uses REAL affinity for quantity columns in stock posting details and imported opening counts. Migration retains existing rows, constraints and foreign keys. Native JSON backups from versions 7, 8 and 9 remain readable.
+
+Historical quantities are still evidence for review, not approved balances. No historical records or source data are uploaded. SQL text restore is covered by synthetic fixtures; a real SQL dump produced by the original system is still required for full dialect acceptance. Cloud replacement and historical replay remain blocked.

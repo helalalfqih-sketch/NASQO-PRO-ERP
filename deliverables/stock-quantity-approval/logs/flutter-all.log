@@ -1,0 +1,91 @@
+00:00 +0: loading /workspace/NASQO-stock-quantity/flutter_app/test/android_update_notice_test.dart
+00:00 +0: /workspace/NASQO-stock-quantity/flutter_app/test/android_update_notice_test.dart: selects highest newer preview build with uploaded APK
+00:00 +1: /workspace/NASQO-stock-quantity/flutter_app/test/android_update_notice_test.dart: no downgrade or reinstall of current version
+00:00 +2: /workspace/NASQO-stock-quantity/flutter_app/test/posting_ack_recovery_test.dart: lost posting acknowledgement survives fresh Dart state without duplicate journal or stock
+00:01 +3: /workspace/NASQO-stock-quantity/flutter_app/test/remote_account_applier_test.dart: remote account rejects cross-workspace and rolls back duplicate page
+00:01 +4: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: native cloud bridge restricts identity, Drive actions and local tools
+00:01 +5: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: native print and share commands reject HTML, arbitrary URLs and foreign workspace
+00:01 +6: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: stock reconciliation opens only scoped local product and warehouse references
+00:01 +7: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: native restore action accepts only workspace, no SQL or base64
+00:01 +8: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: returns valid local snapshot without calling any network service
+00:01 +9: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects financial writes and never invokes the database callback
+00:01 +10: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: persists only whitelisted non-financial UI preferences
+00:02 +11: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects unknown preference fields and never calls persistence
+00:02 +12: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects malformed JSON and oversized requests
+00:02 +13: /workspace/NASQO-stock-quantity/flutter_app/test/hybrid_read_only_protocol_test.dart: rejects missing arrays instead of claiming success
+00:02 +14: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +15: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +16: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +17: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +18: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +19: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +20: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +21: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +22: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:02 +23: /workspace/NASQO-stock-quantity/flutter_app/test/journal_posting_test.dart: balanced journal and outbox commit together; invalid journals leave no effects
+00:03 +24: /workspace/NASQO-stock-quantity/flutter_app/test/local_document_lifecycle_test.dart: draft lifecycle and descriptive edits preserve stock and balanced journals
+00:04 +25: /workspace/NASQO-stock-quantity/flutter_app/test/local_backup_restore_test.dart: native restore, legacy SQLite review, exact archive export and rollback preserve live data
+00:04 +26: /workspace/NASQO-stock-quantity/flutter_app/test/sync_recovery_integration_test.dart: (setUpAll)
+00:04 +26: /workspace/NASQO-stock-quantity/flutter_app/test/sync_recovery_integration_test.dart: lost acknowledgement is retried, remote echo deduplicated, failed page rolled back
+00:05 +27: /workspace/NASQO-stock-quantity/flutter_app/test/sync_recovery_integration_test.dart: a synchronization cycle drains more than one server page
+00:05 +28: /workspace/NASQO-stock-quantity/flutter_app/test/sync_recovery_integration_test.dart: local sale replay does not reduce stock twice; insufficient second line rolls back all effects
+00:05 +29: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_sql_dump_test.dart: SmartPro SQL preserves quoted delimiters, Arabic and fractional lines
+00:05 +30: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_sql_dump_test.dart: SQL parser fails closed for nonliteral data and incomplete records
+00:06 +31: /workspace/NASQO-stock-quantity/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:06 +32: /workspace/NASQO-stock-quantity/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:06 +33: /workspace/NASQO-stock-quantity/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:06 +34: /workspace/NASQO-stock-quantity/flutter_app/test/unified_workspace_restore_test.dart: unified JSON restores core records, explicit journal and stock evidence without replay
+00:07 +35: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_history_reports_test.dart: resolved transfers conserve stock and unresolved transfers are explicit
+00:07 +36: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_history_reports_test.dart: cash report preserves cashbox direction, scope, currencies and date filters
+00:07 +37: /workspace/NASQO-stock-quantity/flutter_app/test/free_invoice_lines_test.dart: free lines: cash/credit sale/purchase, retry, disk read and backup preserve lines without stock
+00:08 +38: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_operational_restore_test.dart: legacy account migration preserves raw history, accepts new balanced journal, protects stock and round-trips archive
+00:10 +39: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_screen_test.dart: quantity review requires selection, acknowledgement and final confirmation; cancel never writes
+00:11 +40: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_screen_test.dart: quantity review requires selection, acknowledgement and final confirmation; cancel never writes
+00:11 +41: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_screen_test.dart: stale review keeps error visible and requires a fresh acknowledgement
+00:12 +42: /workspace/NASQO-stock-quantity/flutter_app/test/local_cashbox_workflow_test.dart: original cashbox form settles customer, stock return and voucher without repeated role fields
+00:12 +43: /workspace/NASQO-stock-quantity/flutter_app/test/local_cashbox_workflow_test.dart: original cashbox form settles customer, stock return and voucher without repeated role fields
+00:13 +44: /workspace/NASQO-stock-quantity/flutter_app/test/stock_quantity_test.dart: exact thousandths and half-up cents
+00:13 +45: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:14 +46: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:14 +47: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:14 +48: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:14 +49: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_quantity_approval_test.dart: warehouse quantity approval, retry, backup, separate valuation and later sale never replay historical stock
+00:16 +50: /workspace/NASQO-stock-quantity/flutter_app/test/widget_test.dart: a clean offline dashboard renders without sample data
+00:17 +51: /workspace/NASQO-stock-quantity/flutter_app/test/stock_invoice_commands_test.dart: stock purchase, sale, discount, tax and full linked reversal are atomic
+00:17 +52: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_details_fidelity_test.dart: full source metadata survives fresh inspection, old review/live imports, edits and native roundtrip without posting
+00:18 +52: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_existing_file_fidelity_test.dart: existing private archive recovers display fidelity without reimport or posting
+  Skip: Set NASQO_PRIVATE_EXISTING_DB to a private old native SQLite copy.
+00:18 +52 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_details_fidelity_test.dart: full source metadata survives fresh inspection, old review/live imports, edits and native roundtrip without posting
+00:19 +53 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/offline_transaction_test.dart: atomic operation replay, rollback and acknowledgement
+00:19 +54 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/backup_encryption_test.dart: encrypted backup can be recovered using an exported synthetic key
+00:19 +55 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/backup_encryption_test.dart: cloud transport only receives ciphertext and authenticates before restore or overwrite
+00:19 +56 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/native_cloud_errors_test.dart: native provider errors keep useful codes without provider details
+00:19 +57 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/native_cloud_errors_test.dart: 403 reason distinguishes API disabled, scope, quota and unknown refusal
+00:19 +58 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/native_cloud_errors_test.dart: missing build configuration fails before chooser, file or accounting actions
+00:19 +59 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/native_cloud_errors_test.dart: cloud bridge preserves structured diagnostics and never serializes provider text
+00:20 +60 ~1: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_actual_file_acceptance_test.dart: real private legacy backup restores record identities and exact source without replay
+  Skip: Set NASQO_PRIVATE_LEGACY_BACKUP to a local SQLite backup; no private file is committed.
+00:20 +60 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_hybrid_commands_test.dart: account create and edit, canonical sync, voucher and credit invoice are atomic
+00:20 +61 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_hybrid_commands_test.dart: account create and edit, canonical sync, voucher and credit invoice are atomic
+00:21 +62 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/native_cloud_session_test.dart: cloud input validation rejects malformed and oversized identifiers
+00:21 +63 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/native_cloud_session_test.dart: native Drive sessions fail closed without user authorization
+00:21 +64 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/remote_change_store_test.dart: remote pages are atomic and replay safe
+00:22 +65 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: legacy dates use valid stored calendar fields without overflowing or inventing dates
+00:22 +66 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports existing transfer headers retain dates inside period filters and unresolved transfers remain excluded
+00:22 +67 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +68 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +69 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +70 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +71 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +72 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +73 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:22 +74 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:23 +75 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:23 +76 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:23 +77 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports all 516 same-date movements can be paged exactly once and totals ignore paging
+00:23 +78 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports report rejects invalid paging without broadening the requested result
+00:23 +79 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: read-only existing archive reports posted lines for the same item keep separate identities across pages
+00:23 +80 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/local_inventory_history_pagination_test.dart: inventory bridge accepts bounded numeric pages and rejects malformed paging before reading
+00:23 +81 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_archive_records_test.dart: normal destinations read all archive records and persist only explicit reminder state
+00:24 +82 ~2: /workspace/NASQO-stock-quantity/flutter_app/test/legacy_archive_records_test.dart: archive dates reject invalid or fractional calendar components
+00:24 +83 ~2: All tests passed!

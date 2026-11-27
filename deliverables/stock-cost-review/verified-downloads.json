@@ -1,0 +1,31 @@
+{
+  "sourceSha": "e111f1f17d5f606414a2f4882383d139d79fefa0",
+  "runId": 45913497989,
+  "runNumber": 161,
+  "version": "1.0.161",
+  "versionCode": 1161,
+  "package": "com.indexesstore.nasqo_pro_erp",
+  "minSdk": 24,
+  "targetSdk": 36,
+  "signingCertificateSha256": "649b56061f950867ad562402367787e18a76fa5a5961ad45285f384ebcc79197",
+  "files": {
+    "NASQO-PRO-ERP.apk": {
+      "sha256": "37aa2bbdc23e7ff1691a733fcc782db2be6e35e1c23e72a2128f384a09539475",
+      "bytes": 59667985
+    },
+    "NASQO-PRO-ERP.aab": {
+      "sha256": "44d967eb37daca500d8bbea7a6bc17d7e7b87cbc4cad188807cba77237d5f6e2",
+      "bytes": 30112651
+    }
+  },
+  "googlePlayUploadCompleted": false,
+  "liveCustomerValuationApplied": false,
+  "android16Validation": "passed",
+  "ciFlutterTestsPassed": 99,
+  "nativeScope": [
+    "signature-preserving update with UID retained",
+    "launch and six navigation checks",
+    "catalog creation without warehouse and persistence after process restart"
+  ],
+  "nativeValuationPostingTestedInThisRun": false
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_getSnapshot_1795724777759_1_r4zbe",
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    },
+    "timestampMs": 1795724777759
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_navigate_1795724777916_2_kpu1y",
+    "action": "navigate",
+    "payload": {
+      "route": "items"
+    },
+    "timestampMs": 1795724777916
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_createInventoryItem_1795724778420_3_rs2gt",
+    "action": "createInventoryItem",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "name": "صنف وحدات اصطناعي",
+        "sku": "",
+        "unit": "حبة",
+        "quantity": 0,
+        "avgCost": 0,
+        "unit2": "دُرزن",
+        "count2": 12,
+        "unit3": "كرتون",
+        "count3": 6,
+        "defaultUnit": 3,
+        "currencyCode": "ريال",
+        "isActive": true,
+        "expiryDate": "2027-01-31",
+        "quantityUnverified": false
+      }
+    },
+    "timestampMs": 1795724778420,
+    "idempotencyKey": "idem_createInventoryItem_1795724778420_1_25dczs"
+  }
+]

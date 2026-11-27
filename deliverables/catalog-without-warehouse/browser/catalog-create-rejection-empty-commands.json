@@ -1,0 +1,45 @@
+[
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_getSnapshot_1795724780964_1_cl0p0",
+    "action": "getSnapshot",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "forceRefresh": true
+    },
+    "timestampMs": 1795724780964
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_navigate_1795724781094_2_ab45c",
+    "action": "navigate",
+    "payload": {
+      "route": "items"
+    },
+    "timestampMs": 1795724781094
+  },
+  {
+    "protocolVersion": "1.0.0",
+    "kind": "request",
+    "requestId": "req_createInventoryItem_1795724781260_3_pvvyu",
+    "action": "createInventoryItem",
+    "payload": {
+      "workspaceId": "local-erp-workspace",
+      "payload": {
+        "name": "صنف اصطناعي مكرر",
+        "sku": "",
+        "unit": "حبة",
+        "quantity": 0,
+        "avgCost": 0,
+        "defaultUnit": 1,
+        "currencyCode": "ريال",
+        "isActive": true,
+        "quantityUnverified": false
+      }
+    },
+    "timestampMs": 1795724781260,
+    "idempotencyKey": "idem_createInventoryItem_1795724781260_1_m41ulm"
+  }
+]

@@ -1,3 +1,8 @@
+import { executeErpAction } from "./erpActions.ts";
+import { deleteMasterRecord, saveCashboxRecord } from "./masterCrud.ts";
+import { saveErpRecords } from "./erpRecords.ts";
+import { ErpValidationError } from "../src/erpRecordRules.ts";
+import { prepareWorkspaceRestore, withApprovedRestore, readRestoreSafetyBackup } from "./restoreSafety.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -42,6 +47,7 @@ import {
   getProductPriceStats,
   getSqliteDb,
   importInventoryCatalogRows,
+  importAccountCardsRows,
   insertCashTransferAtomic,
   insertInventoryItemRow,
   insertJournalEntryRow,
@@ -99,7 +105,7 @@ function route(fn: (req: Request, res: Response, db: DatabaseSync) => Promise<vo
       const db = getSqliteDb();
       await fn(req, res, db);
     } catch (error) {
-      if (error instanceof HttpError) {
+      if (error instanceof HttpError || error instanceof ErpValidationError) {
         res.status(error.status).json({ error: error.message });
         return;
       }
@@ -659,14 +665,28 @@ export function mountSqliteApi(app: Express): void {
     }),
   );
 
+  router.post('/workspace/:uid/erp/actions',route((req,res,db)=>{
+    const uid=validWsId(paramStr(req,'uid'));res.json({bundle:executeErpAction(db,uid,req.body)});
+  }));
+  router.post('/workspace/:uid/cashboxes',route((req,res,db)=>{
+    const uid=validWsId(paramStr(req,'uid'));
+    const cashbox=saveCashboxRecord(db,uid,req.body?.payload);
+    res.json({cashbox,bundle:getFullWorkspaceBundle(db,uid)});
+  }));
+  for (const [path,kind] of [['groups','group'],['warehouses','warehouse'],['cashboxes','cashbox']] as const) {
+    router.delete(`/workspace/:uid/${path}/:id`,route((req,res,db)=>{
+      const uid=validWsId(paramStr(req,'uid')),raw=paramStr(req,'id'),id=kind==='warehouse'?raw:Number(raw);
+      if(!raw||(typeof id==='number'&&(!Number.isSafeInteger(id)||id<=0)))throw new HttpError(400,'معرف غير صالح.');
+      deleteMasterRecord(db,uid,kind,id);res.json({ok:true,bundle:getFullWorkspaceBundle(db,uid)});
+    }));
+  }
+
   router.put(
     "/workspace/:uid/erp",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      ensureEmptyWorkspace(db, uid);
-      const data = req.body as ErpWorkspaceData;
-      withTransaction(db, () => saveErpDataRows(db, uid, data));
-      res.json({ ok: true });
+      if (!Array.isArray(req.body?.changes)) throw new HttpError(400, "استخدم تعديل السجلات المحددة؛ استبدال القوائم بالكامل غير مسموح.");
+      res.json({ ok: true, erpData: saveErpRecords(db, uid, req.body.changes) });
     }),
   );
 
@@ -724,6 +744,19 @@ export function mountSqliteApi(app: Express): void {
     }),
   );
 
+  router.post("/workspace/:uid/restore/prepare", route((req, res, db) => {
+    res.json(prepareWorkspaceRestore(db, validWsId(paramStr(req, "uid"))));
+  }));
+  router.get("/workspace/:uid/restore/safety/:token", route((req, res) => {
+    res.type("application/json").send(readRestoreSafetyBackup(validWsId(paramStr(req, "uid")), paramStr(req, "token")));
+  }));
+
+  router.post("/workspace/:uid/accounts/import", route((req,res,db) => {
+    const uid=validWsId(paramStr(req,"uid"));
+    const result=importAccountCardsRows(db,uid,req.body?.accounts);
+    res.json({...result,bundle:getFullWorkspaceBundle(db,uid)});
+  }));
+
   router.post(
     "/workspace/:uid/restore/json",
     route((req, res, db) => {
@@ -733,7 +766,7 @@ export function mountSqliteApi(app: Express): void {
         rawBody && typeof rawBody === "object" && !Array.isArray(rawBody) && "payload" in rawBody
           ? (rawBody as { payload: unknown }).payload
           : rawBody;
-      const restored = restoreUnifiedJsonBundle(db, uid, payload);
+      const restored = withApprovedRestore(db, uid, req.body?.restoreToken, () => restoreUnifiedJsonBundle(db, uid, payload));
       res.json({ restored, bundle: getFullWorkspaceBundle(db, uid) });
     }),
   );
@@ -745,11 +778,12 @@ export function mountSqliteApi(app: Express): void {
       const sqlText = typeof req.body?.sqlText === "string" ? req.body.sqlText : "";
       const sourceName = typeof req.body?.fileName === "string" ? req.body.fileName.slice(0, 120) : "smartprodb.sql";
       if (!sqlText || sqlText.length < 50) throw new HttpError(400, "محتوى ملف SQL فارغ أو غير صالح.");
-      const report = importSmartProSqlDump(db, sqlText, {
+      const runImport = () => importSmartProSqlDump(db, sqlText, {
         workspaceId: uid,
         sourceName,
         replaceExisting: Boolean(req.body?.replaceExisting ?? true),
       });
+      const report = Boolean(req.body?.replaceExisting ?? true) ? withApprovedRestore(db, uid, req.body?.restoreToken, runImport) : runImport();
       res.json({ report, bundle: getFullWorkspaceBundle(db, uid) });
     }),
   );
@@ -784,12 +818,13 @@ export function mountSqliteApi(app: Express): void {
         req.body?.replaceExisting !== undefined
           ? req.body.replaceExisting === true
           : mode === "restore";
-      const result = importLegacySqliteIntoUnifiedDb(db, bytes, {
+      const runImport = () => importLegacySqliteIntoUnifiedDb(db, bytes, {
         workspaceId: uid,
         fileName,
         groupCategories,
         replaceExisting,
       });
+      const result = replaceExisting ? withApprovedRestore(db, uid, req.body?.restoreToken, runImport) : runImport();
       res.json({ result, bundle: getFullWorkspaceBundle(db, uid) });
     }),
   );
@@ -1063,11 +1098,12 @@ export function mountSqliteApi(app: Express): void {
           if (!sqlText || sqlText.length < 50) {
             throw new HttpError(400, "محتوى ملف SQL فارغ أو غير صالح.");
           }
-          const report = importSmartProSqlDump(db, sqlText, {
+          const runImport = () => importSmartProSqlDump(db, sqlText, {
             workspaceId: uid,
             sourceName: fileName,
             replaceExisting: Boolean(req.body?.replaceExisting ?? true),
           });
+          const report = Boolean(req.body?.replaceExisting ?? true) ? withApprovedRestore(db, uid, req.body?.restoreToken, runImport) : runImport();
           res.json({ report, bundle: getFullWorkspaceBundle(db, uid) });
           return;
         }
@@ -1083,7 +1119,7 @@ export function mountSqliteApi(app: Express): void {
             parsed && typeof parsed === "object" && !Array.isArray(parsed) && "payload" in parsed
               ? (parsed as { payload: unknown }).payload
               : parsed;
-          const restored = restoreUnifiedJsonBundle(db, uid, payload);
+          const restored = withApprovedRestore(db, uid, req.body?.restoreToken, () => restoreUnifiedJsonBundle(db, uid, payload));
           res.json({ restored, bundle: getFullWorkspaceBundle(db, uid) });
           return;
         }
@@ -1111,12 +1147,13 @@ export function mountSqliteApi(app: Express): void {
           req.body?.replaceExisting !== undefined
             ? req.body.replaceExisting === true
             : mode === "restore";
-        const result = importLegacySqliteIntoUnifiedDb(db, bytes, {
+        const runImport = () => importLegacySqliteIntoUnifiedDb(db, bytes, {
           workspaceId: uid,
           fileName,
           groupCategories,
           replaceExisting,
         });
+        const result = replaceExisting ? withApprovedRestore(db, uid, req.body?.restoreToken, runImport) : runImport();
         res.json({ result, bundle: getFullWorkspaceBundle(db, uid) });
       } finally {
         fs.rmSync(entry.dir, { recursive: true, force: true });

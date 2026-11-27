@@ -1,0 +1,222 @@
+{
+  "baseSha": "0fde85f8d74c819ff34259d3536a38cc9d563b0f",
+  "branch": "repair/backup-display-fidelity",
+  "androidDeviceTested": false,
+  "published": false,
+  "data": "Synthetic browser artifacts; aggregate SQLite summary only; logs contain no source rows or private balances",
+  "validations": {
+    "flutter": {
+      "passed": 81,
+      "skipped": 0
+    },
+    "javascript": {
+      "passed": 32
+    },
+    "sites": {
+      "passed": 4
+    },
+    "hybridUi": {
+      "passed": 14,
+      "browserErrors": 0,
+      "externalRequests": 0,
+      "manifestSha256": "b486af03e00d4614d07064e990f727bc648cabf3dbcb309d9000b06266934536"
+    },
+    "backResumeRegression": {
+      "passed": 16,
+      "browserErrors": 0
+    },
+    "invoiceCatalogRegression": {
+      "passed": 8,
+      "browserErrors": 0,
+      "externalRequests": 0
+    },
+    "flutterAnalyze": {
+      "errors": 0,
+      "warnings": 0,
+      "info": 140
+    },
+    "manualBrowserReview": "manual-browser-review.json"
+  },
+  "files": {
+    "browser/all-516-item-movements-without-duplicates-commands.json": {
+      "bytes": 2075,
+      "sha256": "0c8a178ebd2691d9e7bde9a52ff7e565415e2701a30b194f6d877be2b2ba26dd"
+    },
+    "browser/catalog-reference-cost-does-not-approve-stock-commands.json": {
+      "bytes": 215,
+      "sha256": "23593d29a8fdbadc0172c19a136717e951be435d9774b7f21dc66ced3759f75c"
+    },
+    "browser/catalog-reference-cost.png": {
+      "bytes": 65674,
+      "sha256": "f9e0d3c5b467f74aa9e830feb086fa7d5d82660ee69e2d94b07efb27899cfa98"
+    },
+    "browser/catalog-search-all.png": {
+      "bytes": 66420,
+      "sha256": "bb3deb405a22d2c609e810c482aa0dbc83751e28dbc963756819f4497f44a468"
+    },
+    "browser/catalog-search-pages-and-reset-commands.json": {
+      "bytes": 215,
+      "sha256": "23593d29a8fdbadc0172c19a136717e951be435d9774b7f21dc66ced3759f75c"
+    },
+    "browser/closed-item-late-response-cannot-replace-new-item-commands.json": {
+      "bytes": 957,
+      "sha256": "f622f649db560fbefeb157481742cd975d1303fe678715429c63b33a8c505c19"
+    },
+    "browser/copied-draft-bound-to-source-sha-through-backup-aba-replacement-commands.json": {
+      "bytes": 134,
+      "sha256": "734ed10c266aee16d00ed7022336e876abc60380a259ba7a1a7a4169bf891ad6"
+    },
+    "browser/copied-draft-different-backup-blocked.png": {
+      "bytes": 81960,
+      "sha256": "edc255bc049e8c710777f5b78c29ff0a3018e5ebb997beceb2ca95dd2c1c8f34"
+    },
+    "browser/imported-alert-in-notifications-read-hide-and-show-again-commands.json": {
+      "bytes": 1914,
+      "sha256": "b89a4d576694bb0fb53ed68e1877e8e15aa4ccd0a905c6751376b08baefe88cb"
+    },
+    "browser/imported-alert-managed.png": {
+      "bytes": 83095,
+      "sha256": "847cd1586e80506de258ee5618cb7fecd1264446766e0f034ead6c64c145ada5"
+    },
+    "browser/imported-quote-detail.png": {
+      "bytes": 68302,
+      "sha256": "44f072dad68f8d0815df12cd733a4c4eda0da7bdbb23ad1fef1b86762845c1c5"
+    },
+    "browser/imported-quote-local-draft.png": {
+      "bytes": 128298,
+      "sha256": "acc8bbb0904c6fcbee2188c7041d9a086aba4f7bc0b6d1933ba1c83d59d03083"
+    },
+    "browser/imported-quotes-in-normal-destination-page-and-durable-draft-commands.json": {
+      "bytes": 134,
+      "sha256": "734ed10c266aee16d00ed7022336e876abc60380a259ba7a1a7a4169bf891ad6"
+    },
+    "browser/imported-trash-keeps-original-deleted-when-copying-draft-commands.json": {
+      "bytes": 639,
+      "sha256": "930589615037273b874db523fec2292b135726984dcbaaaf596aa2e34966a8cd"
+    },
+    "browser/imported-trash-local-draft.png": {
+      "bytes": 138300,
+      "sha256": "49d5bb265ea898876dd3ea2738251b331788f811ce93c9f0bf31bef0bf5a8539"
+    },
+    "browser/invoice-full-note-reference-and-source-discounts-commands.json": {
+      "bytes": 466,
+      "sha256": "397967cedcb6daefaa5abc1fd2c146625b42e52735b71f17255457ba0c628a89"
+    },
+    "browser/invoice-full-source-details.png": {
+      "bytes": 49115,
+      "sha256": "8fd89c8a48a932620ce055fd044c3faa70bce1f47be5248e2f59eef1fec18224"
+    },
+    "browser/invoice-pdf-contains-multiple-pages-for-full-source-details-commands.json": {
+      "bytes": 6072,
+      "sha256": "e121da63a69b277b639f1c54b071cc2bed14b9293657adaeaee7b4529fba2d93"
+    },
+    "browser/invoice-pdf-refuses-missing-line-details-commands.json": {
+      "bytes": 618,
+      "sha256": "c3b2cd23912a0c3547086311feba7bb7f216c16b61cd5017b930563253924f52"
+    },
+    "browser/item-movement-filter-reset.png": {
+      "bytes": 125965,
+      "sha256": "ca40af1435d414cb207b373acb9c32b5da95c2153ebb22de887d5905757b954a"
+    },
+    "browser/item-movements-516.png": {
+      "bytes": 67107,
+      "sha256": "c9fbb359ded896ac51f5700b3560d5975af0ccbedc230bb545f436a57359121f"
+    },
+    "browser/movement-date-filter-includes-dated-transfer-and-resets-page-commands.json": {
+      "bytes": 1654,
+      "sha256": "069306c289705d33508acdf67fad55fff4a7f1290bb04c90aa8303c465bf4e37"
+    },
+    "browser/movement-read-errors-retain-rows-and-retry-correct-offset-commands.json": {
+      "bytes": 1515,
+      "sha256": "3f240a450ddc03167b245a37c54dc9a49eb912badab45ff8def81bcdc7f99d48"
+    },
+    "browser/pdf-details-page-2.png": {
+      "bytes": 159231,
+      "sha256": "73fc6abbf41f0a14a0b08c15d6f4755aef2343dbbe59952c0bc2ed2d6d2e68ab"
+    },
+    "browser/pdf-details-page-3.png": {
+      "bytes": 21457,
+      "sha256": "4708fade644fcd25b448a7382e61384ef91bd8b2d7b645615e6abd3958bf1b70"
+    },
+    "browser/pdf-result.json": {
+      "bytes": 91,
+      "sha256": "cd1ec2c41cd53986123b2788a4b48c9829a8108fd59d71fdace417e7f701e95b"
+    },
+    "browser/rapid-load-more-sends-one-page-request-commands.json": {
+      "bytes": 959,
+      "sha256": "beed39e1ed1db95ea0521a4bc4e2b830c188a49defd540b193b996cbfdc74230"
+    },
+    "browser/results.json": {
+      "bytes": 1727,
+      "sha256": "ff276f1b76cdc14fd4b22a5e7c21ed9cff4b35ee8c86f77c971e3b24030aa73c"
+    },
+    "browser/synthetic-source-invoice.pdf": {
+      "bytes": 395900,
+      "sha256": "b735480f6885968fb36475503c0d55884a1005b7a6147006208b97092e329f8e"
+    },
+    "logs/back-resume-regression.log": {
+      "bytes": 977,
+      "sha256": "2e112f0e9ade03300bf43d9dcfd465deda18257a896c30be03ec1f9aff577017"
+    },
+    "logs/baseline-build-hybrid.log": {
+      "bytes": 7163,
+      "sha256": "d2b07005b51a94b6c4c0e24e84e726f3f3c9645f86c22bb0d5ffd72420b44d23"
+    },
+    "logs/baseline-build.log": {
+      "bytes": 3423,
+      "sha256": "417563a91c59db90d203cd7dc062d2650ba819d1deec6b3381f0b28fe426ab18"
+    },
+    "logs/browser-verified.log": {
+      "bytes": 995,
+      "sha256": "8d3f466e4b73317088f3529951ff2551a9814f81dab5c570867758ab86bd54fc"
+    },
+    "logs/build-full-final.log": {
+      "bytes": 3423,
+      "sha256": "492ae4b72000af77cc613948263e51528163e08a01a9f9f7b16e15ea682a0969"
+    },
+    "logs/build-hybrid-final.log": {
+      "bytes": 7163,
+      "sha256": "bdc37726946c186017da06dacdf59e378884dce91837eac36bc2f27c812ec947"
+    },
+    "logs/flutter-analyze-final.log": {
+      "bytes": 21932,
+      "sha256": "1b9e50e7350759713edb271d1e004dc28ff2bf00d6e867c4e58380a82b85e289"
+    },
+    "logs/flutter-full-final.log": {
+      "bytes": 13881,
+      "sha256": "9610fa3ee06910146ececd7342874eb761bed3753db5d34139bd9551c52a2c17"
+    },
+    "logs/invoice-catalog-regression.log": {
+      "bytes": 1773,
+      "sha256": "5a7d281892b5c3b93d9cbe5c39ce0f136859620a83c9f41fce7727e499486465"
+    },
+    "logs/js-focused-final.log": {
+      "bytes": 4084,
+      "sha256": "21c747deda155fc7ce6b2cb7c6ff85e94ed736e6a7f7c16eb51ff2e11e808cd3"
+    },
+    "logs/sites-final.log": {
+      "bytes": 679,
+      "sha256": "798427da96ac611ef07aa238bfec0685c5c776b64d7c76fc098ca02ad0f0294a"
+    },
+    "logs/source-refs.txt": {
+      "bytes": 215,
+      "sha256": "17ca0393da7999f479c4629c7060623577a3deaa165bddc55d36083dfebae895"
+    },
+    "manual-browser-review.json": {
+      "bytes": 528,
+      "sha256": "b9e3aab51a7c1d1dedd5bd554290044c50bc4b684f6f9ab3a226b73e077b89f1"
+    },
+    "regressions/back-resume-regression/results.json": {
+      "bytes": 1781,
+      "sha256": "0f12e81756481e17272391e1398f86511b3fbd4bd6fb17b51b2ae367199a6150"
+    },
+    "regressions/invoice-catalog-regression/results.json": {
+      "bytes": 1237,
+      "sha256": "283c41c6d7c0978d230c5a44fca0ed1ab0b4b76e5d507247552ac8775db62949"
+    },
+    "sqlite-existing-summary.json": {
+      "bytes": 433,
+      "sha256": "924080578afc4a9671c7619ba6892e1ad5e8bc4487d7d081b5ba2f51b21d724c"
+    }
+  }
+}

@@ -151,36 +151,36 @@ test("font family and main screen font size normalize and resolve cleanly", () =
 
 test("home tile layout normalizes invalid entries, deduplicates ids, and protects settings", () => {
   const normalized = normalizeHomeTileLayout({
-    order: ["new-invoice", "new-invoice", "invalid-id" as unknown as "settings", "reports"],
-    pinned: ["reports", "settings", "unknown" as unknown as "reports"],
-    hidden: ["settings", "reports", "orders" as unknown as "new-order"],
+    order: ["new-invoice", "new-invoice", "invalid-id" as unknown as "settings", "trial-balance"],
+    pinned: ["trial-balance", "settings" as never, "unknown" as unknown as "trial-balance"],
+    hidden: ["settings" as never, "trial-balance", "orders" as unknown as "new-order"],
     toneOverrides: {
-      reports: "blue",
+      "trial-balance": "blue",
       "new-order": "invalid" as unknown as "amber",
     },
   });
 
   assert.equal(normalized.order.length, DEFAULT_HOME_TILE_ORDER.length);
   assert.equal(normalized.order[0], "new-invoice");
-  assert.equal(normalized.order[1], "reports");
-  // settings cannot be hidden; hidden tile ("reports") is stripped from pinned
-  assert.equal(normalized.hidden.includes("settings"), false);
-  assert.equal(normalized.hidden.includes("reports"), true);
-  assert.equal(normalized.pinned.includes("reports"), false);
-  assert.equal(normalized.pinned.includes("settings"), true);
-  assert.equal(normalized.toneOverrides.reports, "blue");
+  assert.equal(normalized.order[1], "trial-balance");
+  // settings cannot be hidden; hidden tile ("trial-balance") is stripped from pinned
+  assert.equal(normalized.hidden.includes("settings" as never), false);
+  assert.equal(normalized.hidden.includes("trial-balance"), true);
+  assert.equal(normalized.pinned.includes("trial-balance"), false);
+  assert.equal(normalized.pinned.includes("settings" as never), false);
+  assert.equal(normalized.toneOverrides["trial-balance"], "blue");
   assert.equal(normalized.toneOverrides["new-order"], undefined);
 });
 
 test("home tile pin, reorder, step, hide, and tone helpers behave predictably", () => {
   assert.equal(isDefaultHomeTileLayout(DEFAULT_HOME_TILE_LAYOUT), true);
 
-  const pinned = togglePinHomeTile(DEFAULT_HOME_TILE_LAYOUT, "reports");
+  const pinned = togglePinHomeTile(DEFAULT_HOME_TILE_LAYOUT, "trial-balance");
   assert.equal(isDefaultHomeTileLayout(pinned), false);
-  assert.deepEqual(pinned.pinned, ["reports"]);
+  assert.deepEqual(pinned.pinned, ["trial-balance"]);
   const visibleWithPin = getVisibleOrderedHomeTiles(pinned);
-  assert.equal(visibleWithPin.pinnedIds[0], "reports");
-  assert.equal(visibleWithPin.allVisibleIds[0], "reports");
+  assert.equal(visibleWithPin.pinnedIds[0], "trial-balance");
+  assert.equal(visibleWithPin.allVisibleIds[0], "trial-balance");
 
   // Reorder within unpinned tiles
   const moved = moveHomeTile(pinned, "new-invoice", "new-voucher");
@@ -192,19 +192,19 @@ test("home tile pin, reorder, step, hide, and tone helpers behave predictably", 
   assert.equal(stepped.order[1], "new-voucher");
 
   // Hide and restore; settings remains protected
-  const hiddenReports = toggleHideHomeTile(DEFAULT_HOME_TILE_LAYOUT, "reports");
-  assert.equal(hiddenReports.hidden.includes("reports"), true);
-  assert.equal(getVisibleOrderedHomeTiles(hiddenReports).allVisibleIds.includes("reports"), false);
-  const stillHasSettings = toggleHideHomeTile(hiddenReports, "settings");
-  assert.equal(stillHasSettings.hidden.includes("settings"), false);
-  const restoredReports = toggleHideHomeTile(hiddenReports, "reports");
-  assert.equal(restoredReports.hidden.includes("reports"), false);
+  const hiddenReports = toggleHideHomeTile(DEFAULT_HOME_TILE_LAYOUT, "trial-balance");
+  assert.equal(hiddenReports.hidden.includes("trial-balance"), true);
+  assert.equal(getVisibleOrderedHomeTiles(hiddenReports).allVisibleIds.includes("trial-balance"), false);
+  const stillHasSettings = toggleHideHomeTile(hiddenReports, "settings" as never);
+  assert.equal(stillHasSettings.hidden.includes("settings" as never), false);
+  const restoredReports = toggleHideHomeTile(hiddenReports, "trial-balance");
+  assert.equal(restoredReports.hidden.includes("trial-balance"), false);
 
   // Toggle tone overrides default, second toggle clears override back to default
-  const blueReports = toggleToneHomeTile(DEFAULT_HOME_TILE_LAYOUT, "reports", "amber");
-  assert.equal(blueReports.toneOverrides.reports, "blue");
-  const resetReportsTone = toggleToneHomeTile(blueReports, "reports", "amber");
-  assert.equal(resetReportsTone.toneOverrides.reports, undefined);
+  const blueReports = toggleToneHomeTile(DEFAULT_HOME_TILE_LAYOUT, "trial-balance", "amber");
+  assert.equal(blueReports.toneOverrides["trial-balance"], "blue");
+  const resetReportsTone = toggleToneHomeTile(blueReports, "trial-balance", "amber");
+  assert.equal(resetReportsTone.toneOverrides["trial-balance"], undefined);
   assert.equal(isDefaultHomeTileLayout(resetReportsTone), true);
 });
 

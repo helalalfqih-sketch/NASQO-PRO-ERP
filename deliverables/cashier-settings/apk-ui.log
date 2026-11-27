@@ -1,0 +1,5 @@
+OBSERVED cashier-missing-defaults-explicit
+OBSERVED cashier-covered-settings-back
+OBSERVED cashier-pages-back-dark
+OBSERVED cashier-settings-persist-and-invoice
+OBSERVED cashier-clear-cancel-currency-and-failure

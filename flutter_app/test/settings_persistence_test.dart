@@ -1,0 +1,8 @@
+import 'dart:convert';import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:nasqo_pro_erp/services/local_database.dart';
+void main(){test('each extended setting persists independently to a fresh SQLite reader',()async{
+ sqfliteFfiInit();databaseFactory=databaseFactoryFfi;final dir=await Directory.systemTemp.createTemp('nasqo-settings-');await databaseFactory.setDatabasesPath(dir.path);final local=LocalDatabase.instance,db=await local.database;
+ final base=jsonDecode(await File('test/fixtures/extended-settings-defaults.json').readAsString()) as Map<String,dynamic>;final cases=jsonDecode(await File('test/fixtures/extended-settings-cases.json').readAsString()) as List;final results=[];
+ try{for(final c in cases){final next={...base,c['key'] as String:c['value']};await local.saveUiPreferences({'extendedSettings':next});final reader=await databaseFactoryFfi.openDatabase(db.path,options:OpenDatabaseOptions(readOnly:true,singleInstance:false));final stored=jsonDecode((await reader.query('erp_state',where:'stateKey = ?',whereArgs:['hybridUiPreferences'])).single['payloadJson'] as String);expect(stored['extendedSettings'],next);expect(await reader.query('ledger_entries'),isEmpty);expect(await reader.query('journal_lines'),isEmpty);expect(await reader.query('stock_movements'),isEmpty);await reader.close();results.add({'key':c['key'],'value':c['value'],'storagePassed':true,'independentReader':true,'financialWrites':0,'effectTested':false,'scope':'native persistence only'});}print('SETTINGS ${results.length} persisted separately; no UI-effect claim');}finally{await db.close();await dir.delete(recursive:true);}
+});}

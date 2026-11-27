@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useIsPresent, type HTMLMotionProps } from "motion/react";
 import { useDrag } from "@use-gesture/react";
 import { useKeyboard, useKeyboardDismissDrag, useKeyboardInsets } from "./Keyboard";
 
@@ -53,6 +53,17 @@ export function useFlow() {
 
 function FlowProvider({ value, children }: PropsWithChildren<{ value: FlowControls }>) {
   return <FlowContext.Provider value={value}>{children}</FlowContext.Provider>;
+}
+
+// Keep parked screens mounted for back navigation, but do not expose their
+// controls to keyboard users or Android accessibility. Exiting screens must
+// become inert immediately, before the slide animation removes their DOM.
+function FlowScene({ active, ...props }: HTMLMotionProps<"div"> & { active: boolean }) {
+  const present = useIsPresent();
+  const interactive = active && present;
+  return <motion.div {...props} inert={!interactive} aria-hidden={!interactive}
+    data-flow-current={interactive ? "true" : "false"}
+    data-testid={interactive ? "flow-current" : undefined} />;
 }
 
 function shouldIgnoreEdgeSwipe(target: EventTarget | null, boundary: HTMLElement | null) {
@@ -303,11 +314,10 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
               const isVisible = index >= topIndex - 1;
 
               return (
-                <motion.div
+                <FlowScene
                   key={entry.key}
                   className="flow-screen"
-                  data-flow-current={isTop ? "true" : "false"}
-                  data-testid={isTop ? "flow-current" : undefined}
+                  active={isTop}
                   custom={direction}
                   variants={screenVariants}
                   initial={isTop ? "enter" : false}
@@ -329,7 +339,7 @@ export function FlowStack({ initial, onSystemBack }: { initial: FlowScreen; onSy
                   }}
                 >
                   {entry.render(controls)}
-                </motion.div>
+                </FlowScene>
               );
             })}
           </AnimatePresence>

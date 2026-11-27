@@ -1,3 +1,8 @@
+import { assertMasterNotReferenced } from "./masterCrud.ts";
+import { revisionedErpData } from "./erpRecordRevisions.ts";
+import { MAX_IMPORT_ROWS } from "../src/utils/tabularImportLimits.ts";
+import { captureWorkspaceSnapshot, restoreWorkspaceSnapshot } from "./workspaceSnapshot.ts";
+import { validateReferenceDefaultsShape } from "../src/utils/documentReferences.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -113,10 +118,13 @@ function openAndInit(filePath: string): DatabaseSync {
   if (!wsCols.some((c) => c.name === "closed_until_date")) {
     db.exec("ALTER TABLE workspaces ADD COLUMN closed_until_date TEXT;");
   }
+  if (!wsCols.some(c => c.name === "reference_defaults_json")) db.exec("ALTER TABLE workspaces ADD COLUMN reference_defaults_json TEXT;");
+  if (!wsCols.some(c => c.name === "cashier_settings_json")) db.exec("ALTER TABLE workspaces ADD COLUMN cashier_settings_json TEXT;");
   const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
   if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
     db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
   }
+  if (!(db.prepare("PRAGMA table_info(cashboxes)").all() as {name:string}[]).some(c=>c.name==='account_id')) db.exec('ALTER TABLE cashboxes ADD COLUMN account_id TEXT REFERENCES accounts(id);');
   const ledgerCols = db.prepare("PRAGMA table_info(ledger_entries)").all() as { name: string }[];
   if (!ledgerCols.some((c) => c.name === "tax_amount")) {
     db.exec("ALTER TABLE ledger_entries ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0;");
@@ -199,6 +207,9 @@ function openAndInit(filePath: string): DatabaseSync {
     } finally {
       db.exec("PRAGMA foreign_keys = ON;");
     }
+  }
+  if (!(db.prepare("PRAGMA table_info(inventory_items)").all() as {name:string}[]).some(c=>c.name==="catalog_reference_cost")) {
+    db.exec("ALTER TABLE inventory_items ADD COLUMN catalog_reference_cost REAL");
   }
   const verRow = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
   if (Number(verRow?.user_version ?? 0) < SQLITE_SCHEMA_V3) {
@@ -577,7 +588,7 @@ export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorks
     }
   }
 
-  return {
+  return revisionedErpData({
     employees,
     leaveRequests,
     deals,
@@ -587,7 +598,7 @@ export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorks
     costCenters,
     ...(meta.last_payroll_run_month ? { lastPayrollRunMonth: String(meta.last_payroll_run_month) } : {}),
     ...(parsedVatConfig ? { vatConfig: parsedVatConfig } : {}),
-  };
+  });
 }
 
 function ensureDefaultAccountGroups(db: DatabaseSync, workspaceId: string) {
@@ -790,6 +801,8 @@ function mapWorkspaceRow(r: Record<string, unknown>): WorkspaceSettings {
     whatsappProvider: r.whatsapp_provider === "external" ? "external" : "nasqo",
     whatsappInstantEnabled: Boolean(r.whatsapp_instant_enabled),
     whatsappPhone: String(r.whatsapp_phone ?? ""),
+    ...(r.reference_defaults_json ? { referenceDefaults: JSON.parse(String(r.reference_defaults_json)) } : {}),
+    ...(r.cashier_settings_json ? { cashierSettings: JSON.parse(String(r.cashier_settings_json)) } : {}),
     ...(r.closed_until_date ? { closedUntilDate: String(r.closed_until_date) } : {}),
   };
 }
@@ -845,6 +858,7 @@ function mapInventoryRow(r: Record<string, unknown>): InventoryItemRecord {
     unit: String(r.unit ?? "حبة"),
     quantity: Number(r.quantity ?? 0),
     avgCost: Number(r.avg_cost ?? 0),
+    ...(r.catalog_reference_cost !== null && r.catalog_reference_cost !== undefined ? {catalogReferenceCost:Number(r.catalog_reference_cost)} : {}),
     ...(sp !== undefined && Number.isFinite(sp) && sp > 0 ? { sellingPrice: sp } : {}),
     ...(mt !== undefined && Number.isFinite(mt) ? { minThreshold: mt } : {}),
     ...(r.sku ? { sku: String(r.sku) } : {}),
@@ -1004,7 +1018,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     .prepare("SELECT * FROM ledger_entries WHERE workspace_id = ? ORDER BY created_at_ms ASC, entry_number ASC")
     .all(workspaceId) as Record<string, unknown>[];
   const cashboxRows = db
-    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? AND state = 1 ORDER BY sort_order ASC, id ASC")
+    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id, account_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
     .all(workspaceId) as Record<string, unknown>[];
   let currencyRows = db
     .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? ORDER BY id ASC")
@@ -1053,6 +1067,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     boxType: Number(c.box_type ?? 1),
     sortOrder: Number(c.sort_order ?? 0),
     isActive: Number(c.state ?? 1) === 1,
+    ...(c.account_id ? {accountId:String(c.account_id)} : {}),
     ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
   }));
 
@@ -1095,12 +1110,15 @@ export function upsertCurrencyRow(
   },
 ): CurrencyRecord {
   ensureEmptyWorkspace(db, workspaceId);
-  const name = String(input.name ?? "").trim().slice(0, 32);
-  if (!name) {
+  if (Object.keys(input).some(key => !["id", "name", "symbol", "ratePrimary", "rateSecondary", "nameSecondary"].includes(key)) ||
+      (input.id !== undefined && (!Number.isSafeInteger(input.id) || input.id <= 0))) throw new SqliteValidationError("حقول العملة غير صالحة.");
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  if (!name || name.length > 32) {
     throw new SqliteValidationError("اسم العملة مطلوب.");
   }
-  const symbol = String(input.symbol ?? "_").trim().slice(0, 16) || "_";
-  const nameSecondary = String(input.nameSecondary ?? "").trim().slice(0, 32);
+  const symbol = String(input.symbol ?? "_").trim() || "_";
+  const nameSecondary = String(input.nameSecondary ?? "").trim();
+  if (symbol.length > 16 || nameSecondary.length > 32) throw new SqliteValidationError("اختصار العملة أو تجزئتها أطول من المسموح.");
   const ratePrimary = Number(input.ratePrimary ?? 1);
   const rateSecondary = Number(input.rateSecondary ?? 1);
   if (!Number.isFinite(ratePrimary) || ratePrimary <= 0 || !Number.isFinite(rateSecondary) || rateSecondary <= 0) {
@@ -1115,6 +1133,7 @@ export function upsertCurrencyRow(
     if (!existing) {
       throw new SqliteValidationError("العملة المحددة غير موجودة.");
     }
+    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ? AND id <> ?")
       .get(workspaceId, name, targetId) as { id: number } | undefined;
@@ -1160,20 +1179,35 @@ export function upsertCurrencyRow(
 }
 
 export function deleteCurrencyRow(db: DatabaseSync, workspaceId: string, currencyId: number): void {
-  const existing = db
-    .prepare("SELECT id, name FROM currencies WHERE workspace_id = ? AND id = ?")
-    .get(workspaceId, currencyId) as { id: number; name: string } | undefined;
-  if (!existing) {
-    throw new SqliteValidationError("العملة غير موجودة في قاعدة البيانات.");
-  }
-  const totalCount = Number(
-    (db.prepare("SELECT COUNT(*) AS c FROM currencies WHERE workspace_id = ?").get(workspaceId) as { c: number }).c,
-  );
-  if (totalCount <= 1) {
-    throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية الوحيدة في النظام.");
-  }
-  db.prepare("DELETE FROM currencies WHERE workspace_id = ? AND id = ?").run(workspaceId, currencyId);
-  writeAudit(db, workspaceId, workspaceId, "currencies", String(currencyId), "delete", { name: existing.name });
+  return withTransaction(db, () => {
+    const existing = db
+      .prepare("SELECT id, name, code FROM currencies WHERE workspace_id = ? AND id = ?")
+      .get(workspaceId, currencyId) as { id: number; name: string; code: string } | undefined;
+    if (!existing) {
+      throw new SqliteValidationError("العملة غير موجودة في قاعدة البيانات.");
+    }
+    const totalCount = Number(
+      (db.prepare("SELECT COUNT(*) AS c FROM currencies WHERE workspace_id = ?").get(workspaceId) as { c: number }).c,
+    );
+    if (totalCount <= 1) {
+      throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية الوحيدة في النظام.");
+    }
+    const workspace = db.prepare("SELECT default_currency FROM workspaces WHERE id = ?").get(workspaceId);
+    for (const currency of new Set([existing.name, existing.code])) {
+      if (workspace?.default_currency === currency) throw new SqliteValidationError("لا يمكن حذف العملة الافتراضية.");
+      assertMasterNotReferenced(db, workspaceId, currency, ["currency", "currencyCode", "defaultCurrency"]);
+      const references = [
+        ["accounts", "currency"], ["account_groups", "currency_code"], ["cashboxes", "currency_code"],
+        ["inventory_items", "currency_code"], ["ledger_entries", "currency"], ["journal_entries", "currency"],
+        ["price_offers", "currency"], ["archived_documents", "currency_name"],
+      ];
+      if (references.some(([table, column]) => db.prepare(`SELECT 1 FROM ${table} WHERE workspace_id = ? AND ${column} = ? LIMIT 1`).get(workspaceId, currency))) {
+        throw new SqliteValidationError("العملة مرتبطة بسجلات أو مستندات محفوظة ولا يمكن حذفها.");
+      }
+    }
+    db.prepare("DELETE FROM currencies WHERE workspace_id = ? AND id = ?").run(workspaceId, currencyId);
+    writeAudit(db, workspaceId, workspaceId, "currencies", String(currencyId), "delete", { name: existing.name });
+  });
 }
 
 export function saveWorkspaceSettingsRow(
@@ -1183,6 +1217,30 @@ export function saveWorkspaceSettingsRow(
 ): WorkspaceSettings {
   ensureEmptyWorkspace(db, workspaceId);
   const current = mapWorkspaceRow(db.prepare("SELECT * FROM workspaces WHERE id = ?").get(workspaceId) as Record<string, unknown>);
+  const references = updates.referenceDefaults ?? current.referenceDefaults;
+  if (updates.referenceDefaults !== undefined) {
+    try { validateReferenceDefaultsShape(updates.referenceDefaults); } catch (e) { throw new SqliteValidationError((e as Error).message); }
+    const r = updates.referenceDefaults;
+    const record = (table: string, id: string | number) => db.prepare(`SELECT * FROM ${table} WHERE workspace_id = ? AND id = ?`).get(workspaceId, id);
+    const box = (id: number, currency: unknown) => db.prepare("SELECT id FROM cashboxes WHERE workspace_id = ? AND id = ? AND currency_code = ? AND state = 1").get(workspaceId,id,String(currency));
+    const account = r.accountId ? record("accounts",r.accountId) : undefined;
+    if ((r.warehouseId && !record("warehouses",r.warehouseId)) || (r.accountId && (!account || account.is_cash_account || account.currency !== (updates.defaultCurrency ?? current.defaultCurrency))) ||
+        Object.entries(r.systemCashboxes).some(([currency,id]) => !db.prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?").get(workspaceId,currency) || !box(id,currency)) ||
+        Object.entries(r.accountCashboxes).some(([id,b]) => { const a=record("accounts",id); return !a || !box(b,a.currency); }) ||
+        Object.entries(r.groupCashboxes).some(([id,b]) => { const g=record("account_groups",id); return !g || !box(b,g.currency_code); })) throw new SqliteValidationError("راجع مراجع المستندات والصناديق وعملاتها.");
+  }
+  const cashier = updates.cashierSettings ?? current.cashierSettings;
+  if (updates.cashierSettings !== undefined) {
+    const c = updates.cashierSettings;
+    if (!c || Object.keys(c).sort().join() !== "accountId,cashboxId,currency,quickItemIds,warehouseId" ||
+        typeof c.warehouseId !== "string" || typeof c.accountId !== "string" || typeof c.currency !== "string" ||
+        !Array.isArray(c.quickItemIds) || c.quickItemIds.length > 20000 || new Set(c.quickItemIds).size !== c.quickItemIds.length ||
+        c.quickItemIds.some(id => typeof id !== "string") || (c.cashboxId !== null && !Number.isSafeInteger(c.cashboxId))) throw new SqliteValidationError("إعدادات الكاشير غير صالحة.");
+    const exists = (table: string, id: string | number) => db.prepare(`SELECT id FROM ${table} WHERE workspace_id = ? AND id = ?`).get(workspaceId, id);
+    if ((c.warehouseId && !exists("warehouses", c.warehouseId)) || (c.accountId && !db.prepare("SELECT id FROM accounts WHERE workspace_id = ? AND id = ? AND currency = ? AND is_cash_account = 0").get(workspaceId,c.accountId,c.currency)) ||
+        (c.cashboxId !== null && !db.prepare("SELECT id FROM cashboxes WHERE workspace_id = ? AND id = ? AND currency_code = ? AND state = 1").get(workspaceId,c.cashboxId,c.currency)) ||
+        !db.prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?").get(workspaceId,c.currency) || c.quickItemIds.some(id => !exists("inventory_items",id))) throw new SqliteValidationError("راجع مراجع الكاشير والعملة والأصناف المتاحة.");
+  }
   const clean = sanitizeWorkspacePayload({ ...current, ...updates, ownerId: workspaceId });
   const rawClosedUntil =
     updates.closedUntilDate !== undefined ? String(updates.closedUntilDate ?? "").trim() : (current.closedUntilDate ?? "");
@@ -1193,7 +1251,7 @@ export function saveWorkspaceSettingsRow(
   const now = nowIso();
   db.prepare(
     `UPDATE workspaces
-     SET company_name = ?, default_currency = ?, whatsapp_provider = ?, whatsapp_instant_enabled = ?, whatsapp_phone = ?, closed_until_date = ?, updated_at = ?
+     SET company_name = ?, default_currency = ?, whatsapp_provider = ?, whatsapp_instant_enabled = ?, whatsapp_phone = ?, closed_until_date = ?, cashier_settings_json = ?, reference_defaults_json = ?, updated_at = ?
      WHERE id = ?`,
   ).run(
     clean.companyName,
@@ -1202,6 +1260,8 @@ export function saveWorkspaceSettingsRow(
     clean.whatsappInstantEnabled ? 1 : 0,
     clean.whatsappPhone,
     closedUntilDate,
+    cashier ? JSON.stringify(cashier) : null,
+    references ? JSON.stringify(references) : null,
     now,
     workspaceId,
   );
@@ -1214,6 +1274,8 @@ export function saveWorkspaceSettingsRow(
     whatsappProvider: clean.whatsappProvider,
     whatsappInstantEnabled: clean.whatsappInstantEnabled,
     whatsappPhone: clean.whatsappPhone,
+    ...(cashier ? { cashierSettings: cashier } : {}),
+    ...(references ? { referenceDefaults: references } : {}),
     ...(closedUntilDate ? { closedUntilDate } : {}),
   };
 }
@@ -1257,6 +1319,9 @@ export function upsertAccountRow(
     ? (db.prepare("SELECT code_number, group_id FROM accounts WHERE workspace_id = ? AND id = ?").get(workspaceId, id) as { code_number: number; group_id: number | null } | undefined)
     : undefined;
 
+  if(existingId&&!existing)throw new SqliteValidationError('الحساب غير موجود.');
+  if(input.groupId!=null&&!db.prepare('SELECT id FROM account_groups WHERE workspace_id=? AND id=? AND category=? AND currency_code=?').get(workspaceId,input.groupId,clean.category,clean.currency))throw new SqliteValidationError('مجموعة الحساب لا تطابق التصنيف أو العملة.');
+  if(existing&&db.prepare('SELECT 1 FROM accounts WHERE id=? AND workspace_id=? AND currency<>?').get(id,workspaceId,clean.currency))throw new SqliteValidationError('عملة الحساب هوية مالية لا تتغير.');
   let resolvedGroupId: number | null =
     typeof input.groupId === "number" && Number.isFinite(input.groupId) ? input.groupId : (existing?.group_id ?? null);
   if (!resolvedGroupId) {
@@ -1307,6 +1372,9 @@ export function upsertAccountGroupRow(
   const currencyCode = (input.currencyCode || "ريال") as CurrencyCode;
   const sortOrder = Number(input.sortOrder ?? 0) || 0;
 
+  if(!['purchases','sales','clients','employees','transfers','shop'].includes(category)||!Number.isSafeInteger(sortOrder)||sortOrder<0||!db.prepare('SELECT 1 FROM currencies WHERE workspace_id=? AND name=?').get(workspaceId,currencyCode))throw new SqliteValidationError('تصنيف المجموعة أو عملتها غير صالح.');
+  if(db.prepare('SELECT 1 FROM account_groups WHERE workspace_id=? AND name=? AND id<>?').get(workspaceId,name,input.id??0))throw new SqliteValidationError('اسم المجموعة مستخدم.');
+  if(input.id){const old=db.prepare('SELECT category,currency_code FROM account_groups WHERE workspace_id=? AND id=?').get(workspaceId,input.id);if(!old)throw new SqliteValidationError('المجموعة غير موجودة.');if(old.category!==category||old.currency_code!==currencyCode)throw new SqliteValidationError('تصنيف المجموعة وعملتها لا يتغيران بعد إنشائها.');}
   let rowId = input.id;
   if (rowId) {
     db.prepare(
@@ -2070,7 +2138,7 @@ export function reverseLedgerEntryRow(
       String(existing.account_name),
       String(existing.counterpart_account_id ?? ""),
       String(existing.counterpart_account_name ?? ""),
-      existing.cashbox_id ?? null,
+      existing.cashbox_id == null ? null : Number(existing.cashbox_id),
       origKind,
       `عكس: ${String(existing.type_label ?? "")}`.slice(0, 60),
       String(existing.payment ?? "balance"),
@@ -2090,9 +2158,9 @@ export function reverseLedgerEntryRow(
       String(existing.invoice_content ?? "none"),
       Number(existing.entry_number ?? 1),
       reversalDate,
-      existing.due_date ?? null,
-      existing.expense_category ?? null,
-      existing.delivery_days ?? null,
+      existing.due_date == null ? null : String(existing.due_date),
+      existing.expense_category == null ? null : String(existing.expense_category),
+      existing.delivery_days == null ? null : Number(existing.delivery_days),
       origDocType === 2 ? 4 : origDocType === 3 ? 5 : origDocType === 4 ? 2 : origDocType === 5 ? 3 : origDocType,
       entryId,
       createdAtMs,
@@ -2114,8 +2182,8 @@ export function reverseLedgerEntryRow(
           workspaceId,
           revId,
           String(l.line_kind ?? "item"),
-          l.inventory_item_id ?? null,
-          l.warehouse_id ?? null,
+          l.inventory_item_id == null ? null : String(l.inventory_item_id),
+          l.warehouse_id == null ? null : String(l.warehouse_id),
           String(l.item_name ?? ""),
           Number(l.price ?? 0),
           Number(l.quantity ?? 0),
@@ -3727,6 +3795,8 @@ export function upsertWarehouseRow(
   ensureEmptyWorkspace(db, workspaceId);
   const id = existingId || makeId("wh");
   const clean = sanitizeWarehousePayload({ ...warehouse, ownerId: workspaceId });
+  if(existingId&&!db.prepare('SELECT 1 FROM warehouses WHERE workspace_id=? AND id=?').get(workspaceId,existingId))throw new SqliteValidationError('المخزن غير موجود.');
+  if(db.prepare('SELECT 1 FROM warehouses WHERE workspace_id=? AND name=? AND id<>?').get(workspaceId,clean.name,id))throw new SqliteValidationError('اسم المخزن مستخدم.');
   const now = nowIso();
   return withTransaction(db, () => {
     if (clean.isDefault) {
@@ -3817,7 +3887,7 @@ export function insertInventoryItemRow(
       throw new SqliteValidationError("المخزن المحدد غير موجود في قاعدة البيانات.");
     }
     resolvedWarehouseId = whRow.id;
-  } else {
+  } else if (clean.quantity !== 0) {
     const defaultWh = db
       .prepare("SELECT id FROM warehouses WHERE workspace_id = ? ORDER BY is_default DESC, code_number ASC LIMIT 1")
       .get(workspaceId) as { id: string } | undefined;
@@ -3856,6 +3926,35 @@ export function insertInventoryItemRow(
   return mapInventoryRow(row);
 }
 
+export function importAccountCardsRows(db: DatabaseSync, workspaceId: string, accounts: (Partial<AccountRecord> & { name: string })[]) {
+  if (!Array.isArray(accounts) || !accounts.length || accounts.length > MAX_IMPORT_ROWS) throw new SqliteValidationError(`اختر من 1 إلى ${MAX_IMPORT_ROWS} بطاقة حساب.`);
+  return withTransaction(db, () => {
+    let inserted = 0, skipped = 0;
+    const seen = new Set<string>();
+    for (const row of accounts) {
+      if (!row || Object.keys(row).some(k => !["name","phone","category","currency","openingBalance","openingDirection"].includes(k)) ||
+          typeof row.name !== "string" || !row.name.trim() || row.name.length > 100 ||
+          typeof row.phone !== "string" || row.phone.length > 32 || typeof row.category !== "string" || !isValidCategory(row.category) ||
+          (row.openingBalance ?? 0) !== 0 || !["credit","debit"].includes(row.openingDirection ?? "")) {
+        throw new SqliteValidationError("حقول بطاقة الحساب غير صالحة؛ الأرصدة الافتتاحية تحتاج قيدًا منفصلًا. لم تُحفظ الدفعة.");
+      }
+      if (!db.prepare("SELECT 1 FROM currencies WHERE workspace_id = ? AND (code = ? OR name = ?)").get(workspaceId, row.currency ?? "", row.currency ?? "")) {
+        throw new SqliteValidationError("عملة الحساب غير معرّفة في المنشأة؛ لم تُحفظ الدفعة.");
+      }
+      const key = `${row.category}|${row.name.trim()}`;
+      if (seen.has(key)) throw new SqliteValidationError("حساب مكرر داخل الملف؛ لم تُحفظ الدفعة.");
+      seen.add(key);
+      const existing = db.prepare("SELECT currency FROM accounts WHERE workspace_id = ? AND name = ? AND category = ?").all(workspaceId, row.name.trim(), row.category!) as {currency:string}[];
+      if (existing.length) {
+        if (existing.some(a => a.currency !== row.currency)) throw new SqliteValidationError("حساب موجود بالاسم نفسه وعملة مختلفة؛ لم تُحفظ الدفعة.");
+        skipped++; continue;
+      }
+      upsertAccountRow(db, workspaceId, row); inserted++;
+    }
+    return { inserted, skipped, total: accounts.length };
+  });
+}
+
 export function importInventoryCatalogRows(
   db: DatabaseSync,
   workspaceId: string,
@@ -3866,8 +3965,8 @@ export function importInventoryCatalogRows(
   if (!Array.isArray(items) || items.length === 0) {
     throw new SqliteValidationError("لا توجد أصناف صالحة للاستيراد.");
   }
-  if (items.length > 10_000) {
-    throw new SqliteValidationError("الحد الأقصى للاستيراد في الدفعة الواحدة هو 10,000 صنف.");
+  if (items.length > MAX_IMPORT_ROWS) {
+    throw new SqliteValidationError(`الحد الأقصى للاستيراد في الدفعة الواحدة هو ${MAX_IMPORT_ROWS} صنف.`);
   }
 
   const mode = options.mode === "skip" ? "skip" : "upsert";
@@ -3877,12 +3976,6 @@ export function importInventoryCatalogRows(
       .prepare("SELECT id FROM warehouses WHERE workspace_id = ? AND id = ?")
       .get(workspaceId, options.warehouseId) as { id: string } | undefined;
     defaultWarehouseId = whRow?.id ?? null;
-  }
-  if (!defaultWarehouseId) {
-    const defaultWh = db
-      .prepare("SELECT id FROM warehouses WHERE workspace_id = ? ORDER BY is_default DESC, code_number ASC LIMIT 1")
-      .get(workspaceId) as { id: string } | undefined;
-    defaultWarehouseId = defaultWh?.id ?? null;
   }
 
   const normKey = (v: string) =>
@@ -3929,7 +4022,7 @@ export function importInventoryCatalogRows(
 
     const updateStmt = db.prepare(
       `UPDATE inventory_items
-       SET name = ?, unit = ?, sku = ?, avg_cost = ?, selling_price = ?,
+       SET name = ?, unit = ?, sku = ?, catalog_reference_cost = COALESCE(?, catalog_reference_cost), selling_price = ?,
            unit2 = ?, count2 = ?, sprice2 = ?, unit3 = ?, count3 = ?, sprice3 = ?, default_unit = ?,
            currency_code = ?, bstate = ?, expiry_date = ?, has_expiry = ?, updated_at = ?
        WHERE workspace_id = ? AND id = ?`,
@@ -3945,8 +4038,12 @@ export function importInventoryCatalogRows(
       }
       const cleanSku = String(rawItem.sku ?? "").trim().slice(0, 64);
       const cleanUnit = String(rawItem.unit ?? "").trim().slice(0, 32) || "حبة";
-      const avgCostRaw = Number(rawItem.avgCost ?? 0);
-      const avgCost = Number.isFinite(avgCostRaw) && avgCostRaw >= 0 ? Math.round(avgCostRaw * 100) / 100 : 0;
+      if ((rawItem.quantity ?? 0) !== 0 || (rawItem.avgCost ?? 0) !== 0 || rawItem.quantityUnverified === true) {
+        throw new SqliteValidationError("استيراد بطاقات الأصناف لا ينشئ كمية أو تكلفة مخزون؛ استخدم سعر الشراء المرجعي.");
+      }
+      const reference = rawItem.catalogReferenceCost ?? null;
+      if(reference !== null && (typeof reference !== "number" || !Number.isFinite(reference) || reference < 0)) throw new SqliteValidationError("سعر الشراء المرجعي غير صالح.");
+      const avgCost = 0;
       const sellingRaw =
         rawItem.sellingPrice !== undefined && rawItem.sellingPrice !== null && String(rawItem.sellingPrice) !== ""
           ? Number(rawItem.sellingPrice)
@@ -3969,16 +4066,9 @@ export function importInventoryCatalogRows(
           ? Math.round(Number(rawItem.sprice3) * 100) / 100
           : null;
 
-      if (unit3 && !unit2) {
-        unit2 = unit3;
-        count2 = count3;
-        sprice2 = sprice3;
-        unit3 = "";
-        count3 = null;
-        sprice3 = null;
+      if(unit3&&!unit2 || unit2&&(!Number.isInteger(count2)||!count2) || unit3&&(!Number.isInteger(count3)||!count3)) {
+        throw new SqliteValidationError("معامل كل وحدة إضافية يجب أن يكون عددًا صحيحًا موجبًا؛ لم تُحفظ الدفعة.");
       }
-      if (unit2 && !count2) count2 = 1;
-      if (unit3 && !count3) count3 = 1;
 
       const defaultUnitRaw = Number(rawItem.defaultUnit ?? 1);
       const defaultUnit = defaultUnitRaw === 2 && unit2 ? 2 : defaultUnitRaw === 3 && unit3 ? 3 : 1;
@@ -4005,7 +4095,7 @@ export function importInventoryCatalogRows(
           cleanName,
           cleanUnit,
           safeSku,
-          avgCost,
+          reference,
           sellingPrice,
           unit2,
           unit2 ? count2 : null,
@@ -4069,6 +4159,7 @@ export function importInventoryCatalogRows(
           now,
           now,
         );
+        if(reference !== null) db.prepare("UPDATE inventory_items SET catalog_reference_cost = ? WHERE id = ?").run(reference,id);
         if (skuKey) bySku.set(skuKey, id);
         byName.set(nameKey, id);
         inserted += 1;
@@ -4157,6 +4248,8 @@ export function deleteInventoryCatalogRow(
   workspaceId: string,
   itemId: string,
 ): void {
+  withTransaction(db, () => {
+  assertMasterNotReferenced(db,workspaceId,itemId,['inventoryItemId','finishedItemId','quickItemIds']);
   const existing = db
     .prepare("SELECT id, name, quantity FROM inventory_items WHERE workspace_id = ? AND id = ?")
     .get(workspaceId, itemId) as { id: string; name: string; quantity: number } | undefined;
@@ -4174,9 +4267,15 @@ export function deleteInventoryCatalogRow(
   }
   db.prepare("DELETE FROM inventory_items WHERE workspace_id = ? AND id = ?").run(workspaceId, itemId);
   writeAudit(db, workspaceId, workspaceId, "inventory_items", itemId, "delete", { name: existing.name });
+  });
 }
 
 export function deleteAccountRow(db: DatabaseSync, workspaceId: string, accountId: string): void {
+  withTransaction(db, () => {
+  assertMasterNotReferenced(db,workspaceId,accountId,['accountId','clientAccountId','supplierAccountId','counterpartAccountId']);
+  if(db.prepare('SELECT 1 FROM accounts WHERE workspace_id=? AND id=? AND (opening_balance<>0 OR legacy_ref IS NOT NULL)').get(workspaceId,accountId)||
+    db.prepare('SELECT 1 FROM journal_entry_lines WHERE workspace_id=? AND account_id=?').get(workspaceId,accountId)||
+    db.prepare('SELECT 1 FROM cashboxes WHERE workspace_id=? AND account_id=?').get(workspaceId,accountId))throw new SqliteValidationError('الحساب مرتبط برصيد أو تاريخ مالي أو صندوق.');
   const existing = db
     .prepare("SELECT id, name FROM accounts WHERE workspace_id = ? AND id = ?")
     .get(workspaceId, accountId) as { id: string; name: string } | undefined;
@@ -4189,10 +4288,11 @@ export function deleteAccountRow(db: DatabaseSync, workspaceId: string, accountI
     )
     .get(workspaceId, accountId, accountId) as { cnt: number } | undefined;
   if (Number(refs?.cnt ?? 0) > 0) {
-    throw new SqliteValidationError("لا يمكن حذف حساب مرتبط بقيود أو فواتير؛ احذف أو انقل عملياته أولًا.");
+    throw new SqliteValidationError("الحساب مرتبط بقيود أو فواتير محفوظة ولا يمكن حذفه.");
   }
   db.prepare("DELETE FROM accounts WHERE workspace_id = ? AND id = ?").run(workspaceId, accountId);
   writeAudit(db, workspaceId, workspaceId, "accounts", accountId, "delete", { name: existing.name });
+  });
 }
 
 export function revokeAuthSessionHash(db: DatabaseSync, tokenHash: string, expiresAtMs: number): void {
@@ -4227,6 +4327,7 @@ export function updateInventoryItemRow(
   itemId: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): void {
+  if(!db.prepare('SELECT id FROM inventory_items WHERE workspace_id=? AND id=?').get(workspaceId,itemId))throw new SqliteValidationError('الصنف غير موجود.');
   const clean = sanitizeInventoryPayload({ ...item, ownerId: workspaceId });
   const now = nowIso();
   db.prepare(
@@ -4342,11 +4443,22 @@ export function getProductPriceStats(db: DatabaseSync, workspaceId: string, inve
     )
     .get(workspaceId, inventoryItemId) as { last_price: number | null } | undefined;
 
+  const purchase = db.prepare(`SELECT il.price / CASE WHEN COALESCE(il.unit_num,1)=1 THEN 1.0
+      WHEN il.unit_num=2 THEN i.count2 ELSE i.count2*i.count3 END AS price
+    FROM invoice_lines il JOIN ledger_entries le ON le.id=il.entry_id
+    JOIN inventory_items i ON i.id=il.inventory_item_id AND i.workspace_id=il.workspace_id
+    WHERE il.workspace_id=? AND il.inventory_item_id=? AND il.price>0
+      AND le.kind='invoice' AND le.direction='credit' AND le.deleted=0
+      AND le.currency=COALESCE(NULLIF(i.currency_code,''),'ريال')
+      AND (COALESCE(il.unit_num,1)=1 OR (il.unit_num=2 AND i.count2>0) OR (il.unit_num=3 AND i.count2>0 AND i.count3>0))
+    ORDER BY le.entry_date DESC,le.entry_number DESC,il.id DESC LIMIT 1`).get(workspaceId,inventoryItemId) as {price:number}|undefined;
+
   return {
     minPrice: Number(agg?.min_price ?? 0),
     maxPrice: Number(agg?.max_price ?? 0),
     lastPrice: Number(latest?.last_price ?? 0),
     txCount: Number(agg?.tx_count ?? 0),
+    lastPurchasePrice: Math.round(Number(purchase?.price ?? 0)*100)/100,
   };
 }
 
@@ -4461,7 +4573,7 @@ export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string)
     .all(workspaceId) as Record<string, unknown>[];
 
   const allCashboxRows = db
-    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
+    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id, account_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
     .all(workspaceId) as Record<string, unknown>[];
 
   const inventoryExtraRows = db
@@ -4607,6 +4719,7 @@ export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string)
     priceOffers.length === 0;
 
   return {
+    sqliteSnapshot: captureWorkspaceSnapshot(db, workspaceId),
     format: "nasqo-unified-sqlite-export-v2",
     version: 2,
     exportedAt: nowIso(),
@@ -4632,6 +4745,7 @@ export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string)
       boxType: Number(c.box_type ?? 1),
       sortOrder: Number(c.sort_order ?? 0),
       isActive: Number(c.state ?? 1) === 1,
+    ...(c.account_id ? {accountId:String(c.account_id)} : {}),
       ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
     })),
     warehouses: bundle.warehouses,
@@ -4902,6 +5016,7 @@ export function restoreUnifiedJsonBundle(
   priceOffers: number;
 } {
   validateUnifiedJsonBundle(payload);
+  if (payload.sqliteSnapshot !== undefined) return restoreWorkspaceSnapshot(db, workspaceId, payload.sqliteSnapshot);
 
   const now = nowIso();
   const wsIn = (isPlainObject(payload.workspace) ? payload.workspace : {}) as Partial<WorkspaceSettings> & { baseCurrency?: string };
@@ -5274,6 +5389,30 @@ export function restoreUnifiedJsonBundle(
       productionOrders: Array.isArray(erpIn?.productionOrders) ? erpIn.productionOrders : [],
       costCenters: Array.isArray(erpIn?.costCenters) ? erpIn.costCenters : [],
     });
+
+    if (wsIn.referenceDefaults) {
+      const r=wsIn.referenceDefaults;
+      validateReferenceDefaultsShape(r);
+      const mapBoxes=(values:Record<string,number>, remap:(id:string)=>string|undefined) => Object.fromEntries(Object.entries(values).flatMap(([id,b]) => {
+        const key=remap(id), box=cashboxMap.get(b); return key && box ? [[key,box]] : [];
+      }));
+      saveWorkspaceSettingsRow(db,workspaceId,{referenceDefaults:{
+        warehouseId: whMap.get(r.warehouseId) ?? '', accountId: accMap.get(r.accountId)?.id ?? '',
+        systemCashboxes: mapBoxes(r.systemCashboxes,id=>id),
+        accountCashboxes: mapBoxes(r.accountCashboxes,id=>accMap.get(id)?.id),
+        groupCashboxes: mapBoxes(r.groupCashboxes,id=>{const g=groupIdMap.get(Number(id));return g===undefined?undefined:String(g);}),
+      }});
+    }
+    if (wsIn.cashierSettings) {
+      const c = wsIn.cashierSettings;
+      if (!Array.isArray(c.quickItemIds)) throw new SqliteValidationError("أصناف الكاشير في النسخة غير صالحة.");
+      saveWorkspaceSettingsRow(db, workspaceId, { cashierSettings: { ...c,
+        warehouseId: c.warehouseId ? whMap.get(c.warehouseId) ?? "" : "",
+        accountId: c.accountId ? accMap.get(c.accountId)?.id ?? "" : "",
+        cashboxId: c.cashboxId === null ? null : cashboxMap.get(c.cashboxId) ?? null,
+        quickItemIds: c.quickItemIds.map(id => invMap.get(id)).filter((id): id is string => Boolean(id)),
+      } });
+    }
 
     writeAudit(db, workspaceId, workspaceId, "restore_json", "bundle", "restore", {
       groupsCount,

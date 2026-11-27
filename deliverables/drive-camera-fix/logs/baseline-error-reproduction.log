@@ -1,0 +1,4 @@
+{"synthetic":true,"code":"SERVICE_UNAVAILABLE","shown":"تعذر ربط Google Drive. تحقق من نافذة التفويض وإعداد OAuth، ثم أعد المحاولة."}
+{"synthetic":true,"code":"GOOGLE_PROVIDER_CONFIG","shown":"تعذر ربط Google Drive. تحقق من نافذة التفويض وإعداد OAuth، ثم أعد المحاولة."}
+{"synthetic":true,"code":"GOOGLE_NETWORK_ERROR","shown":"تعذر ربط Google Drive. تحقق من نافذة التفويض وإعداد OAuth، ثم أعد المحاولة."}
+{"synthetic":true,"code":"GOOGLE_AUTH_CANCELLED","shown":"تعذر ربط Google Drive. تحقق من نافذة التفويض وإعداد OAuth، ثم أعد المحاولة."}

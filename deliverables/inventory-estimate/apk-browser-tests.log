@@ -1,0 +1,15 @@
+PASS catalog-search-pages-and-reset
+PASS catalog-reference-cost-does-not-approve-stock
+PASS inventory-estimate-separated-from-approved-value
+PASS all-516-item-movements-without-duplicates
+PASS movement-date-filter-includes-dated-transfer-and-resets-page
+PASS closed-item-late-response-cannot-replace-new-item
+PASS movement-read-errors-retain-rows-and-retry-correct-offset
+PASS rapid-load-more-sends-one-page-request
+PASS invoice-full-note-reference-and-source-discounts
+PASS invoice-pdf-contains-multiple-pages-for-full-source-details
+PASS invoice-pdf-refuses-missing-line-details
+PASS imported-quotes-in-normal-destination-page-and-durable-draft
+PASS copied-draft-bound-to-source-sha-through-backup-aba-replacement
+PASS imported-trash-keeps-original-deleted-when-copying-draft
+PASS imported-alert-in-notifications-read-hide-and-show-again
