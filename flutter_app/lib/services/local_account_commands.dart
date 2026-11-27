@@ -1,3 +1,4 @@
+import 'tabular_import_limits.dart';
 import 'local_database.dart';
 import 'local_master_catalog.dart';
 import '../models/erp_models.dart';
@@ -9,7 +10,7 @@ class LocalAccountCommands {
 
   /// Catalog cards only. Opening balances require their own balanced document.
   Future<Map<String,dynamic>> importCards(String workspace,String key,List<dynamic> items)async{
-    if(!_identity.hasMatch(workspace)||!_identity.hasMatch(key)||key.length>100||items.isEmpty||items.length>2000)
+    if(!_identity.hasMatch(workspace)||!_identity.hasMatch(key)||key.length>100||items.isEmpty||items.length>maxTabularImportRows)
       throw ArgumentError('Invalid account import');
     final rows=<Map<String,dynamic>>[];
     final seen=<String>{};

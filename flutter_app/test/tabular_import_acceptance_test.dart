@@ -77,6 +77,31 @@ void main() {
       }
       expect((await db.rawQuery('PRAGMA integrity_check')).single.values.single,'ok');
       expect(await db.rawQuery('PRAGMA foreign_key_check'),isEmpty);
+      // The app's own inventory report can contain more than 2000 locations.
+      // A large import is still one transaction and never changes live stock.
+      final large=List.generate(3000,(i)=><String,dynamic>{...item,'name':'Large card $i','sku':'000large$i'});
+      expect((await stock.importItems(w,'large-cards',large,'insert-only'))['inserted'],3000);
+      Map<String,dynamic> dataTables(List<int> bytes) {
+        final root=jsonDecode(utf8.decode(bytes));
+        final tables=jsonDecode(root['payload'] as String)['tables'] as Map<String,dynamic>;
+        // New import attempts have their own audit/idempotency records.
+        tables.remove('sync_outbox');tables.remove('bridge_idempotency_keys');
+        return tables;
+      }
+      final beforeRepeat=dataTables(await backup.exportNative());
+      expect((await stock.importItems(w,'large-cards-repeat',large,'insert-only'))['skipped'],3000);
+      expect(dataTables(await backup.exportNative()),beforeRepeat);
+      final beforeInvalid=await backup.exportNative();
+      expect((await db.query('inventory_items',where:'id = ?',whereArgs:[live['id']])).single,preserved.single);
+      final invalidLarge=List.generate(3000,(i)=><String,dynamic>{...item,'name':'Rollback card $i','sku':'rollback$i',if(i==2999)'count2':0});
+      await expectLater(stock.importItems(w,'large-final-invalid',invalidLarge,'insert-only'),throwsArgumentError);
+      expect(await backup.exportNative(),orderedEquals(beforeInvalid));
+      final largeAccounts=List.generate(2501,(i)=><String,dynamic>{...account,'name':'Large account $i','phone':'000$i'});
+      expect((await accounts.importCards(w,'large-accounts',largeAccounts))['inserted'],2501);
+      final accountSnapshot=dataTables(await backup.exportNative());
+      expect((await accounts.importCards(w,'large-accounts-repeat',largeAccounts))['skipped'],2501);
+      expect(dataTables(await backup.exportNative()),accountSnapshot);
+      expect(await db.query('stock_movements'),isEmpty);expect(await db.query('ledger_entries'),isEmpty);
     } finally { await db.close(); await dir.delete(recursive:true); }
   });
 }

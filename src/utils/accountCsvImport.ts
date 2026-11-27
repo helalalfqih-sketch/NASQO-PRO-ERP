@@ -33,7 +33,7 @@ export function parseAccountCards(bytes: Uint8Array, defaultCurrency: string, de
     if (seen.has(key)) throw new Error(`الصف ${i + 1}: الحساب مكرر في الملف.`);
     seen.add(key);
     result.push({ name: n, phone: phone < 0 ? "" : importText(importIdentifier(sheet, i, phone, r[phone]), "الهاتف", i + 1, 32), category: kind, currency: cur, openingBalance: balance, openingDirection: dir || "credit" });
-    if (result.length > MAX_IMPORT_ROWS) throw new Error("الحد الأقصى 2000 حساب في الدفعة.");
+    if (result.length > MAX_IMPORT_ROWS) throw new Error(`الحد الأقصى ${MAX_IMPORT_ROWS} حساب في الدفعة.`);
   }
   if (!result.length) throw new Error("ملف CSV لا يحتوي حسابات.");
   return result;

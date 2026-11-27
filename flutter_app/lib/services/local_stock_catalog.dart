@@ -1,3 +1,4 @@
+import 'tabular_import_limits.dart';
 import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
@@ -173,7 +174,7 @@ class LocalStockCatalog {
   }
 
   Future<Map<String,dynamic>> importItems(String workspace,String key,List<dynamic> items,String mode)async{
-    if(items.isEmpty||items.length>2000||!['upsert','insert-only'].contains(mode))throw ArgumentError('Invalid import batch');
+    if(items.isEmpty||items.length>maxTabularImportRows||!['upsert','insert-only'].contains(mode))throw ArgumentError('Invalid import batch');
     final rows=items.map((r)=>Map<String,dynamic>.from(r as Map)).toList();
     return local.commitOperation(workspaceId:workspace,operationId:key,operationType:'inventory.import',
       payload:{'items':rows,'mode':mode},apply:(t)async{

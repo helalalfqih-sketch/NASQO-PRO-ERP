@@ -1,3 +1,4 @@
+import { catalogCardsForReport } from "./utils/catalogWorkbook";
 import { emptyReferenceDefaults, eligibleCashbox, resolveCashbox } from "./utils/documentReferences";
 import { ReferenceManagerDialog } from "./components/ReferenceManagerDialog";
 import { CashboxReferenceManager } from "./components/CashboxReferenceManager";
@@ -4371,7 +4372,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     }
   };
 
-  useReportSource("catalog",()=>({kind:"catalog",title:"ملف الأصناف",scope:{search:searchQuery},columns:["الرقم","الصنف","الباركود","الوحدة","التكلفة المرجعية","سعر البيع","العملة"],rows:filteredItems.map(i=>({id:i.id,currency:i.currencyCode||"ريال",cells:[i.legacyId??i.id,i.name,i.sku??"",i.unit,getCatalogReferenceCost(i)??i.avgCost??0,i.sellingPrice??0,i.currencyCode||"ريال"]})),totals:[]}));
+  useReportSource("catalog",()=>({catalogCards:catalogCardsForReport(filteredItems),kind:"catalog",title:"ملف الأصناف",scope:{search:searchQuery},columns:["الرقم","الصنف","الباركود","الوحدة","التكلفة المرجعية","سعر البيع","العملة"],rows:filteredItems.map(i=>({id:i.id,currency:i.currencyCode||"ريال",cells:[i.legacyId??i.id,i.name,i.sku??"",i.unit,getCatalogReferenceCost(i)??i.avgCost??0,i.sellingPrice??0,i.currencyCode||"ريال"]})),totals:[]}));
   const catalogDraft={selectedId,name,sku,unit,avgCost,sellingPrice,unit2,count2,sprice2,unit3,count3,sprice3,defaultUnit,expiryDate,currencyCode,isActive};
   const catalogScope=ctx.workspace?.id??ctx.uid;
   const catalogGuard=useUnsavedForm({active:formOpen,dirty:Boolean(name.trim()||sku.trim()),
@@ -5111,7 +5112,7 @@ function InventoryReportPage({
     const estimates=reportRows.some(r=>r.estimatedRemainingValue!==undefined);
     const rows=reportRows.map(r=>{const currency=String((r as {currencyCode?:string}).currencyCode||inventoryById.get(r.id)?.currencyCode||ctx.workspace?.defaultCurrency||"ريال");return {id:r.id,currency,cells:[r.code??r.id,r.name,r.unit,r.availableQty,r.buyTotal,r.sellTotal,r.remainingValue,r.profit,currency,...(estimates?[r.estimatedRemainingValue??"—",r.quantityUnverified?"كمية غير معتمدة":r.costUnverified?(r.remainingValue>0?"قيمة المشتريات الجديدة فقط؛ تكلفة الرصيد القديم غير معتمدة":"تكلفة الرصيد القديم غير معتمدة"):"معتمد"]:[])]};});
     const totals=Object.values(rows.reduce((out,row)=>{const t=out[row.currency]??={currency:row.currency,debit:0,credit:0,balance:0};t.debit+=Number(row.cells[4]);t.credit+=Number(row.cells[5]);t.balance+=Number(row.cells[6]);return out;},{} as Record<string,{currency:string;debit:number;credit:number;balance:number}>));
-    return {kind:"inventory",title:"حركة المخزون",scope:{warehouse:ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name||"جميع المخازن",from:fromDate,to:toDate,currency:selectedCurrency,search:searchQuery,...(estimates?{"التقييم":"التقدير حسب أساس السعر المختار، لا يدخل القيمة المعتمدة","أساس السعر":profitBasis==="cost"?"سعر التكلفة المرجعي":profitBasis==="last"?"آخر سعر شراء":"متوسط الشراء"}:{})},columns:["الرقم","الصنف","الوحدة","المتوفر","الشراء","البيع",estimates?"قيمة المتبقي المعتمدة":"قيمة المتبقي","الربح","العملة",...(estimates?["قيمة المتبقي التقديرية","حالة الاعتماد"]:[])],rows,totals};
+    return {catalogCards:catalogCardsForReport(ctx.inventory,new Set(reportRows.map(r=>r.id))),kind:"inventory",title:"حركة المخزون",scope:{warehouse:ctx.warehouses.find(w=>w.id===selectedWarehouseId)?.name||"جميع المخازن",from:fromDate,to:toDate,currency:selectedCurrency,search:searchQuery,...(estimates?{"التقييم":"التقدير حسب أساس السعر المختار، لا يدخل القيمة المعتمدة","أساس السعر":profitBasis==="cost"?"سعر التكلفة المرجعي":profitBasis==="last"?"آخر سعر شراء":"متوسط الشراء"}:{})},columns:["الرقم","الصنف","الوحدة","المتوفر","الشراء","البيع",estimates?"قيمة المتبقي المعتمدة":"قيمة المتبقي","الربح","العملة",...(estimates?["قيمة المتبقي التقديرية","حالة الاعتماد"]:[])],rows,totals};
   });
   const showOpeningCol = useMemo(
     () => Boolean(fromDate) || reportRows.some((r) => (r.openingQty ?? 0) !== 0),

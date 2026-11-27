@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { MobileScroll } from "../mobile";
 import type { AccountCategory } from "../types";
 import { parseAccountCards, type AccountCardImport } from "../utils/accountCsvImport";
-import { parseItemsSpreadsheetBytes, type ImportedInventoryItemInput } from "../utils/importItemsFile";
+import { parseItemsWorkbook, preferredItemsSheet, type ImportedInventoryItemInput } from "../utils/importItemsFile";
 import { readImportWorkbook } from "../utils/tabularImport";
 import type { RestoreReview } from "../utils/restoreApproval";
 
@@ -12,14 +12,18 @@ export function DataImportReview({ review, busy, onCancel, onConfirm }: { review
   const [sheet, setSheet] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [submitError, setSubmitError] = useState("");
-  const names = useMemo(() => { try { return readImportWorkbook(review.bytes).SheetNames; } catch { return []; } }, [review.bytes]);
+  const workbook = useMemo(() => { try { return {book:readImportWorkbook(review.bytes),error:""}; } catch(e) { return {book:null,error:e instanceof Error?e.message:"تعذر قراءة الملف"}; } }, [review.bytes]);
+  const names = workbook.book?.SheetNames ?? [];
+  const selectedSheet = sheet || (workbook.book ? preferredItemsSheet(workbook.book) : "");
   const parsed = useMemo(() => {
     try {
-      const rows = review.kind === "accounts" ? parseAccountCards(review.bytes, review.defaultCurrency, category || undefined) : parseItemsSpreadsheetBytes(review.bytes, review.defaultCurrency, { sheetName: sheet || undefined }).items;
+      if (!workbook.book) throw new Error(workbook.error);
+      const itemResult = review.kind === "items" ? parseItemsWorkbook(workbook.book, review.defaultCurrency, {sheetName:selectedSheet}) : null;
+      const rows = itemResult ? itemResult.items : parseAccountCards(review.bytes, review.defaultCurrency, category || undefined);
       const blocked = review.kind === "accounts" && (rows as AccountCardImport[]).some(r => r.openingBalance !== 0);
-      return { rows, error: "", blocked };
-    } catch (e) { return { rows: [], error: e instanceof Error ? e.message : "تعذر قراءة الملف", blocked: false }; }
-  }, [review, category, sheet]);
+      return { rows, error: "", blocked, notices:itemResult?.notices ?? [] };
+    } catch (e) { return { rows: [], error: e instanceof Error ? e.message : "تعذر قراءة الملف", blocked: false, notices:[] }; }
+  }, [review, category, selectedSheet, workbook]);
   const labels = review.kind === "accounts" ? ["الحساب", "الهاتف", "التصنيف", "العملة", "الرصيد", "الاتجاه"] : ["الصنف", "الباركود", "الوحدة", "سعر الشراء المرجعي", "سعر البيع", "العملة"];
   return <div className="center-modal-layer data-import-review"><section className="ref-dialog-card" role="dialog" aria-modal="true" aria-label="مراجعة الاستيراد">
     <MobileScroll className="import-review-scroll"><h2>مراجعة استيراد {review.kind === "items" ? "بطاقات الأصناف" : "بطاقات الحسابات"}</h2><p>{review.fileName}</p>
@@ -27,7 +31,8 @@ export function DataImportReview({ review, busy, onCancel, onConfirm }: { review
     <p>العملة عند غيابها من الملف: <strong>{review.defaultCurrency}</strong></p>
     {review.kind === "accounts" ? <label>التصنيف عند غيابه من الملف <select aria-label="تصنيف الحسابات المستوردة" value={category} onChange={e => { setCategory(e.target.value as AccountCategory); setConfirmed(false); }}>
       <option value="">اختر التصنيف</option>{Object.entries({purchases:"المشتريات",sales:"المبيعات",clients:"العملاء",employees:"الموظفون",transfers:"الحوالات",shop:"المحل"}).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label> :
-      <label>ورقة الأصناف <select aria-label="ورقة الأصناف" value={sheet || names[0] || ""} onChange={e => { setSheet(e.target.value); setConfirmed(false); }}>{names.map(n => <option key={n}>{n}</option>)}</select></label>}
+      <label>ورقة الأصناف <select aria-label="ورقة الأصناف" value={selectedSheet} onChange={e => { setSheet(e.target.value); setConfirmed(false); }}>{names.map(n => <option key={n}>{n}</option>)}</select></label>}
+    {parsed.notices.map(message => <p key={message} role="status">{message}</p>)}
     {parsed.error ? <p role="alert" className="import-review-error">{parsed.error}</p> : <><p>عدد البطاقات: {parsed.rows.length} — المعاينة تعرض أول 50 صفًا.</p>
       <div className="import-review-table"><table><thead><tr>{labels.map(l => <th key={l}>{l}</th>)}</tr></thead><tbody>{parsed.rows.slice(0,50).map((row,i) => {
         const values = review.kind === "accounts" ? [(row as AccountCardImport).name,(row as AccountCardImport).phone,({purchases:"المشتريات",sales:"المبيعات",clients:"العملاء",employees:"الموظفون",transfers:"الحوالات",shop:"المحل"}[(row as AccountCardImport).category]),(row as AccountCardImport).currency,(row as AccountCardImport).openingBalance,((row as AccountCardImport).openingDirection === "debit" ? "مدين" : "دائن")] : [row.name,(row as ImportedInventoryItemInput).sku,(row as ImportedInventoryItemInput).unit,(row as ImportedInventoryItemInput).catalogReferenceCost ?? "—",(row as ImportedInventoryItemInput).sellingPrice ?? "—",(row as ImportedInventoryItemInput).currencyCode];

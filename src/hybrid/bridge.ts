@@ -69,6 +69,8 @@ export interface InvokeOptions {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const HEAVY_OPERATION_TIMEOUT_MS = 35_000;
+// Large atomic card imports include SQLite validation and a refreshed snapshot.
+const TABULAR_IMPORT_TIMEOUT_MS = 120_000;
 
 export class NasqoHybridBridge {
   private seq = 0;
@@ -251,9 +253,10 @@ export class NasqoHybridBridge {
 
     const timeoutMs =
       options.timeoutMs ??
-      (action === "restoreWorkspace" || action === "restoreLocalBackup" || action === "openInvoiceRoles" || action === "openStockReconciliation" || action === "backupWorkspace" || action === "pickFile" || action === "importInventoryItems" || action === "importAccountCards"
+      (action === "importInventoryItems" || action === "importAccountCards" ? TABULAR_IMPORT_TIMEOUT_MS :
+      (action === "restoreWorkspace" || action === "restoreLocalBackup" || action === "openInvoiceRoles" || action === "openStockReconciliation" || action === "backupWorkspace" || action === "pickFile"
         ? HEAVY_OPERATION_TIMEOUT_MS
-        : DEFAULT_TIMEOUT_MS);
+        : DEFAULT_TIMEOUT_MS));
 
     if (lockKey) {
       this.activeFinancialLocks.add(lockKey);

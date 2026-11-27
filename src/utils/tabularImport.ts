@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
+import { MAX_IMPORT_ROWS, MAX_IMPORT_BYTES } from "./tabularImportLimits";
+export { MAX_IMPORT_ROWS, MAX_IMPORT_BYTES } from "./tabularImportLimits";
 
-export const MAX_IMPORT_ROWS = 2000;
-export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 export function importHeader(value: unknown): string {
   return String(value ?? "").replace(/^\uFEFF/, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي")
     .replace(/[\u064B-\u065F\u0670\u0640]/g, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
@@ -48,9 +48,17 @@ export function readImportWorkbook(bytes: Uint8Array): XLSX.WorkBook {
 export function workbookRows(book: XLSX.WorkBook, sheetName = book.SheetNames[0]) {
   if (!sheetName || !book.Sheets[sheetName]) throw new Error("ورقة البيانات المحددة غير موجودة.");
   const sheet = book.Sheets[sheetName];
-  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
-  if (range.e.r > MAX_IMPORT_ROWS + 15 || range.e.c >= 100) throw new Error("الحد الأقصى 2000 صف و100 عمود في الاستيراد الواحد.");
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: true, raw: true, range: { s: { r: 0, c: 0 }, e: range.e } });
+  // Formatting can extend !ref to the last Excel row. Only populated cells
+  // define the read range; retain their original coordinates for identifiers.
+  const end = { r: 0, c: 0 };
+  for (const [address, cell] of Object.entries(sheet)) {
+    if (!/^[A-Z]+[1-9]\d*$/.test(address) || !cell || cell.v == null || String(cell.v).trim() === "") continue;
+    const position = XLSX.utils.decode_cell(address);
+    if (position.r > MAX_IMPORT_ROWS + 15) throw new Error(`الملف يتجاوز ${MAX_IMPORT_ROWS} صف بيانات؛ آخر صف مستخدم هو ${position.r + 1}.`);
+    if (position.c >= 100) throw new Error(`الملف يتجاوز 100 عمود بيانات؛ يوجد محتوى في العمود ${position.c + 1}.`);
+    end.r = Math.max(end.r, position.r); end.c = Math.max(end.c, position.c);
+  }
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", blankrows: true, raw: true, range: { s: { r: 0, c: 0 }, e: end } });
   return { rows, sheet, sheetName };
 }
 export function importIdentifier(sheet: XLSX.WorkSheet, row: number, column: number, raw: unknown): string {

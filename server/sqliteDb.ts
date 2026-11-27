@@ -1,3 +1,4 @@
+import { MAX_IMPORT_ROWS } from "../src/utils/tabularImportLimits";
 import { captureWorkspaceSnapshot, restoreWorkspaceSnapshot } from "./workspaceSnapshot.ts";
 import { validateReferenceDefaultsShape } from "../src/utils/documentReferences";
 import crypto from "node:crypto";
@@ -3895,7 +3896,7 @@ export function insertInventoryItemRow(
 }
 
 export function importAccountCardsRows(db: DatabaseSync, workspaceId: string, accounts: (Partial<AccountRecord> & { name: string })[]) {
-  if (!Array.isArray(accounts) || !accounts.length || accounts.length > 2000) throw new SqliteValidationError("اختر من 1 إلى 2000 بطاقة حساب.");
+  if (!Array.isArray(accounts) || !accounts.length || accounts.length > MAX_IMPORT_ROWS) throw new SqliteValidationError(`اختر من 1 إلى ${MAX_IMPORT_ROWS} بطاقة حساب.`);
   return withTransaction(db, () => {
     let inserted = 0, skipped = 0;
     const seen = new Set<string>();
@@ -3933,8 +3934,8 @@ export function importInventoryCatalogRows(
   if (!Array.isArray(items) || items.length === 0) {
     throw new SqliteValidationError("لا توجد أصناف صالحة للاستيراد.");
   }
-  if (items.length > 2000) {
-    throw new SqliteValidationError("الحد الأقصى للاستيراد في الدفعة الواحدة هو 2000 صنف.");
+  if (items.length > MAX_IMPORT_ROWS) {
+    throw new SqliteValidationError(`الحد الأقصى للاستيراد في الدفعة الواحدة هو ${MAX_IMPORT_ROWS} صنف.`);
   }
 
   const mode = options.mode === "skip" ? "skip" : "upsert";

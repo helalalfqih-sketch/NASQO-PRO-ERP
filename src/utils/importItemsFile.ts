@@ -1,5 +1,6 @@
 import { readImportWorkbook, workbookRows, importNumber, importText, importIdentifier, MAX_IMPORT_ROWS } from "./tabularImport";
 import type { CurrencyCode, InventoryItemRecord } from "../types";
+import type { WorkBook } from "xlsx";
 
 export type ImportedInventoryItemInput = Partial<InventoryItemRecord> & {
   name: string;
@@ -10,6 +11,7 @@ export type ParsedItemsImportResult = {
   items: ImportedInventoryItemInput[];
   skippedRows: number;
   sheetName: string;
+  notices: string[];
 };
 
 function normalizeHeaderCell(raw: unknown): string {
@@ -264,12 +266,26 @@ export function parseItemsSpreadsheetBytes(
   defaultCurrency: CurrencyCode = "ريال",
   options: { sheetName?: string } = {},
 ): ParsedItemsImportResult {
-  const book = readImportWorkbook(bytes);
-  const {rows, sheet, sheetName} = workbookRows(book, options.sheetName);
+  return parseItemsWorkbook(readImportWorkbook(bytes), defaultCurrency, options);
+}
+
+export function preferredItemsSheet(book: WorkBook): string {
+  return book.SheetNames.includes("بطاقات الأصناف") ? "بطاقات الأصناف" : book.SheetNames[0];
+}
+
+export function parseItemsWorkbook(book: WorkBook, defaultCurrency: CurrencyCode = "ريال", options: {sheetName?: string} = {}): ParsedItemsImportResult {
+  const {rows, sheet, sheetName} = workbookRows(book, options.sheetName || preferredItemsSheet(book));
   const {headerIndex, map} = findHeaderRowIndex(rows);
   if(headerIndex < 0) throw new Error("أضف صف عناوين يتضمن «اسم الصنف»؛ لم يُفترض ترتيب الأعمدة.");
+  const scope = book.Sheets["نطاق التقرير"];
+  const headers = rows[headerIndex].map(normalizeHeaderCell);
+  const reportCardsOnly = sheetName === "التقرير" && scope?.A1?.v === "التقرير" && scope?.B1?.v === "حركة المخزون" &&
+    ["الرقم", "الصنف", "الوحدة", "المتوفر", "الشراء", "البيع", "الربح", "العملة"].every(h => headers.includes(normalizeHeaderCell(h)));
+  const notices = reportCardsOnly ? ["هذا تقرير حركة مخزون: ستُقرأ أسماء الأصناف ووحداتها وعملاتها فقط. الإجماليات والكميات ليست أسعار بطاقات، ولن تُستورد كأرصدة أو حركات."] : [];
+  if (reportCardsOnly) { delete map.quantity; delete map.avgCost; delete map.sellingPrice; }
   const items: ImportedInventoryItemInput[] = [];
   const seen = new Set<string>();
+  const reportIdentities = new Set<string>();
   let skippedRows = 0;
   const labels: Record<keyof ColumnMap, string> = { legacyId:"رقم الصنف", sku:"الباركود", name:"اسم الصنف", unit:"الوحدة", avgCost:"سعر الشراء المرجعي", sellingPrice:"سعر البيع", unit2:"الوحدة الثانية", count2:"معامل الوحدة الثانية", sprice2:"سعر الوحدة الثانية", unit3:"الوحدة الثالثة", count3:"معامل الوحدة الثالثة", sprice3:"سعر الوحدة الثالثة", currencyCode:"العملة", isActive:"الحالة", defaultUnit:"الوحدة الافتراضية", quantity:"الكمية", minThreshold:"حد الطلب", expiryDate:"تاريخ الانتهاء" };
   for(let r=headerIndex+1;r<rows.length;r++) {
@@ -284,6 +300,11 @@ export function parseItemsSpreadsheetBytes(
     const name=text("name",120);
     if(!name)throw new Error(`الصف ${r+1}: اسم الصنف مطلوب.`);
     const sku=map.sku===undefined?"":importText(importIdentifier(sheet,r,map.sku,row[map.sku]),"الباركود",r+1,64);
+    if (reportCardsOnly) {
+      const reportIdentity = JSON.stringify([text("legacyId",150), name, text("unit",32), text("currencyCode",32)]);
+      if (reportIdentities.has(reportIdentity)) { skippedRows++; continue; }
+      reportIdentities.add(reportIdentity);
+    }
     const identity=sku?`sku:${sku}`:`name:${normalizeHeaderCell(name)}`;
     if(seen.has(identity))throw new Error(`الصف ${r+1}: صنف مكرر داخل الملف.`);
     seen.add(identity);
@@ -324,8 +345,8 @@ export function parseItemsSpreadsheetBytes(
       defaultUnit,currencyCode:text("currencyCode",32)||defaultCurrency,isActive:active.includes(status),
       ...(min!==undefined?{minThreshold:min}:{}),...(expiryDate?{expiryDate}:{}),
     });
-    if(items.length>MAX_IMPORT_ROWS)throw new Error("الحد الأقصى 2000 صنف في الدفعة الواحدة.");
+    if(items.length>MAX_IMPORT_ROWS)throw new Error(`الحد الأقصى ${MAX_IMPORT_ROWS} صنف في الدفعة الواحدة.`);
   }
   if(!items.length)throw new Error("الورقة لا تحتوي على أصناف.");
-  return {items,skippedRows,sheetName};
+  return {items,skippedRows,sheetName,notices};
 }

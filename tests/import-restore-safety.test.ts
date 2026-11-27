@@ -155,6 +155,26 @@ test('account cards import atomically without opening balances, preserve phone a
  assert.equal(before.tables.journal_entries.length,0);assert.equal(before.tables.ledger_entries.length,0);
 }));
 
+test('large card imports preserve existing stock and roll back the complete batch when its final row fails', async () => fixture(db=>{
+ const rows=Array.from({length:3000},(_,i)=>({name:`Large card ${i}`,sku:`000${i}`,unit:'حبة',catalogReferenceCost:17.5,sellingPrice:25,currencyCode:'ريال'}));
+ assert.equal(importInventoryCatalogRows(db,w,rows,{mode:'skip'}).inserted,3000);
+ db.prepare('UPDATE inventory_items SET quantity=5,avg_cost=11 WHERE sku=?').run('0000');
+ const unchangedTables=()=>{const {audit_log,...tables}=captureWorkspaceSnapshot(db,w).tables;return tables;};
+ const preserved=unchangedTables();
+ assert.equal(importInventoryCatalogRows(db,w,rows,{mode:'skip'}).skipped,3000);
+ assert.deepEqual(unchangedTables(),preserved);
+ const beforeInvalid=captureWorkspaceSnapshot(db,w);
+ const next=rows.map((row,i)=>({...row,name:`New large card ${i}`,sku:`999${i}`}));
+ assert.throws(()=>importInventoryCatalogRows(db,w,[...next.slice(0,-1),{...next.at(-1)!,unit2:'box',count2:0}],{mode:'skip'}));
+ assert.deepEqual(captureWorkspaceSnapshot(db,w),beforeInvalid);
+ const accounts=rows.map((r,i)=>({name:`Large account ${i}`,phone:`000${i}`,category:'clients' as const,currency:'ريال',openingBalance:0,openingDirection:'credit' as const}));
+ assert.equal(importAccountCardsRows(db,w,accounts).inserted,3000);
+ const after=unchangedTables();
+ assert.equal(importAccountCardsRows(db,w,accounts).skipped,3000);
+ assert.deepEqual(unchangedTables(),after);
+ assert.equal(after.journal_entries.length,0);assert.equal(after.ledger_entries.length,0);
+}));
+
 test('HTTP restore and chunked commit enforce confirmation; downloaded safety file matches current database', async () => fixture(async (db,dir) => {
  const previousPath=process.env.NASQO_SQLITE_PATH;
  process.env.NASQO_SQLITE_PATH=path.join(dir,'test.sqlite');

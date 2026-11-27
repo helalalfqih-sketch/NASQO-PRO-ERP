@@ -6,6 +6,7 @@ import http from 'node:http';
 import path from 'node:path';
 import {chromium,expect} from '@playwright/test';
 import {createHybridHomeFixtureSnapshot} from '../src/hybrid/homeFixture';
+import {reportXlsxBytes, type ReportDocument} from '../src/utils/reportDocument';
 const out=path.resolve(process.env.IMPORT_UI_OUTPUT||'deliverables/import-repair/ui');fs.mkdirSync(out,{recursive:true});
 const bundle=path.resolve(process.env.IMPORT_UI_BUNDLE||'dist/hybrid');
 const state=createHybridHomeFixtureSnapshot();state.capabilities={...state.capabilities,localAccountCreation:true,localCatalogEditing:true};state.workspace!.defaultCurrency='ريال';
@@ -15,7 +16,7 @@ function host(state:any){
  w.emit=(route:string)=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'event',event:'routeChanged',payload:{route},timestampMs:Date.now()});
  w.NasqoHome={postMessage(raw:string){const r=JSON.parse(raw);w.commands.push(r);let data:any={};
   if(r.action==='getSnapshot')data=state;
-  if(r.action==='pickFile')data=w.cancelPicker?{cancelled:true}: {fileName:r.payload.purpose==='import-items'?'items.csv':'accounts.csv',base64Content:btoa(Array.from(new TextEncoder().encode(w.csv),b=>String.fromCharCode(b)).join(''))};
+  if(r.action==='pickFile')data=w.cancelPicker?{cancelled:true}:w.importFile|| {fileName:r.payload.purpose==='import-items'?'items.csv':'accounts.csv',base64Content:btoa(Array.from(new TextEncoder().encode(w.csv),b=>String.fromCharCode(b)).join(''))};
   if(r.action==='importInventoryItems'||r.action==='importAccountCards')data={inserted:1,skipped:0,total:1,snapshot:state};
   if(r.action==='getInventoryMovementsReport')data={warehouses:state.warehouses,warehouseStocks:[],itemRows:[],movements:[],totals:{},issues:{}};
   if(r.action==='cloudIdentityAction')data={configured:false,signedIn:false};
@@ -55,6 +56,18 @@ try {
  await dialog().getByRole('checkbox').check();await dialog().getByRole('button',{name:'استيراد البطاقات'}).evaluate((b:HTMLButtonElement)=>{b.click();b.click();});
  await expect(dialog()).toBeHidden();const calls=await imports();assert.equal(calls.length,1);assert.equal(calls[0].payload.mode,'insert-only');
  const row=calls[0].payload.items[0];assert.equal(row.sku,'000123');assert.equal(row.catalogReferenceCost,17.5);assert.equal(row.currencyCode,'ريال');assert.equal(row.isActive,false);assert(!row.warehouseId);assert(!Object.hasOwn(row,'avgCost'));results.push('item preview, currency, barcode, reference price, explicit confirm, no warehouse, double-click once');
+ const largeReport:ReportDocument={kind:'inventory',title:'حركة المخزون',scope:{warehouse:'جميع المخازن'},columns:['الرقم','الصنف','الوحدة','المتوفر','الشراء','البيع','قيمة المتبقي','الربح','العملة'],
+   rows:Array.from({length:3000},(_,i)=>({id:`p${i}`,currency:'ريال',cells:[i+1,`صنف اختبار ${i}`,'حبة',7,5000,8000,2000,3000,'ريال']})),totals:[]};
+ const pickReport=async(report:ReportDocument)=>{const bytes=await reportXlsxBytes(report);await page.evaluate(file=>(window as any).importFile=file,{fileName:'nasqo-inventory.xlsx',base64Content:Buffer.from(bytes).toString('base64')});};
+ await fresh();await pickReport(largeReport);await openItems();await expect(dialog().getByRole('status')).toContainText('الإجماليات والكميات ليست أسعار');await expect(dialog().getByText('عدد البطاقات: 3000 — المعاينة تعرض أول 50 صفًا.')).toBeVisible();
+ await dialog().getByRole('checkbox').check();await expect(dialog().getByRole('button',{name:'استيراد البطاقات'})).toBeEnabled();await page.screenshot({path:path.join(out,'large-older-inventory-review.png')});
+ await dialog().getByRole('button',{name:'استيراد البطاقات'}).click();await expect(dialog()).toBeHidden();const largeItems=(await imports())[0].payload.items;assert.equal(largeItems.length,3000);
+ for(const item of largeItems)for(const key of ['quantity','avgCost','warehouseId','sellingPrice','catalogReferenceCost'])assert(!Object.hasOwn(item,key));results.push('older 3000-row inventory export reaches atomic card import without totals, prices or stock');
+ largeReport.catalogCards=Array.from({length:2501},(_,i)=>({id:`c${i}`,ownerId:"test",name:`بطاقة اختبار ${i}`,sku:`000${i}`,unit:'حبة',warehouseId:'',quantity:0,avgCost:0,minThreshold:0,catalogReferenceCost:17.5,sellingPrice:25,unit2:'علبة',count2:10,defaultUnit:2}));
+ await fresh();await pickReport(largeReport);await openItems();await expect(dialog().getByLabel('ورقة الأصناف')).toHaveValue('بطاقات الأصناف');await expect(dialog().getByText('عدد البطاقات: 2501 — المعاينة تعرض أول 50 صفًا.')).toBeVisible();
+ await dialog().getByRole('checkbox').check();await dialog().getByLabel('ورقة الأصناف').selectOption('الأرصدة');await expect(dialog().getByRole('alert')).toBeVisible();await expect(dialog().getByRole('button',{name:'استيراد البطاقات'})).toBeDisabled();
+ await dialog().getByLabel('ورقة الأصناف').selectOption('بطاقات الأصناف');await expect(dialog().getByRole('checkbox')).not.toBeChecked();await dialog().getByRole('checkbox').check();await page.screenshot({path:path.join(out,'large-card-sheet-review.png')});
+ await dialog().getByRole('button',{name:'استيراد البطاقات'}).click();await expect(dialog()).toBeHidden();const cardItems=(await imports())[0].payload.items;assert.equal(cardItems.length,2501);assert.equal(cardItems[0].sku,'0000');assert.equal(cardItems[0].count2,10);assert.equal(cardItems[0].defaultUnit,2);assert.equal(cardItems[0].catalogReferenceCost,17.5);results.push('new XLSX automatically selects full card sheet; invalid sheet disables import and changing sheets resets confirmation');
  await fresh();await page.evaluate(()=>(window as any).cancelPicker=true);await openItems();await expect(dialog()).toBeHidden();assert.equal((await imports()).length,0);results.push('native picker cancel does not import');
  await fresh();await page.evaluate(()=>(window as any).csv='%PDF-1.7\nname,cost\nfake,1');await openItems();await expect(dialog().getByRole('alert')).toBeVisible();await expect(dialog().getByRole('button',{name:'استيراد البطاقات'})).toBeDisabled();assert.equal((await imports()).length,0);results.push('PDF renamed CSV rejected before write');
  await fresh();await page.evaluate(()=>(window as any).csv='الاسم,الهاتف\n"شركة, فرع\nالمدينة",001234');await openAccounts();await expect(dialog().getByRole('alert')).toContainText('التصنيف');

@@ -1,5 +1,11 @@
 # Mobile Prototype Agent Guide
 
+## Excel export/import compatibility (reported defect, 2026-11-27)
+
+- The app's own inventory exports must be readable in card import above 2000 rows. Keep the shared 10000-row bound across the reader, server and native atomic commands; retain file-size and populated-column guards.
+- Export a dedicated item-card sheet with string barcodes, reference prices, unit conversions, currency and status. Prefer it automatically on import. Report purchase/sale totals and quantities are not item prices or opening balances.
+- Recognize older NASQO inventory reports explicitly and preview only their card metadata. Reimport skips existing cards without changing stock, valuation or history. Blank formatting must not be treated as populated rows or columns.
+
 ## Immediate operation after setup or restore (user direction, 2026-11-27)
 
 - The user explicitly requires a new business and a restored supported backup to work immediately, without manual posting-account setup or a mandatory quantity/cost approval workflow. This supersedes earlier requirements below that made those steps mandatory for routine use.

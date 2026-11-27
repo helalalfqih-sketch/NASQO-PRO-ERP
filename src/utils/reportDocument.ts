@@ -1,9 +1,10 @@
 import { useLayoutEffect, useEffect, useState } from 'react';
 import { computeStatementRows } from '../accounting';
-import type {AccountRecord,LedgerEntryRecord} from '../types';
+import type {AccountRecord,InventoryItemRecord,LedgerEntryRecord} from '../types';
+import { catalogCardRows } from './catalogWorkbook';
 import { outputNativeDocument, usesNativeDocumentOutput } from '../hybrid/documentOutput';
 export type ReportCell=string|number;
-export type ReportDocument={title:string;kind:string;scope:Record<string,string>;columns:string[];rows:Array<{id:string;currency:string;cells:ReportCell[]}>;totals:Array<{currency:string;debit:number;credit:number;balance:number}>;confirmation?:boolean};
+export type ReportDocument={title:string;kind:string;scope:Record<string,string>;columns:string[];rows:Array<{id:string;currency:string;cells:ReportCell[]}>;totals:Array<{currency:string;debit:number;credit:number;balance:number}>;confirmation?:boolean;catalogCards?:readonly InventoryItemRecord[]};
 export type ReportSource=(allCurrencies:boolean)=>ReportDocument|Promise<ReportDocument>;
 export const reportSources=new Map<string,ReportSource>();
 const reportListeners=new Map<string,Set<()=>void>>();
@@ -32,6 +33,7 @@ export async function reportXlsxBytes(r:ReportDocument):Promise<Uint8Array>{
  x.utils.book_append_sheet(book,sheet,'التقرير');
  x.utils.book_append_sheet(book,x.utils.aoa_to_sheet([['العملة','عليه','له','الرصيد'],...r.totals.map(t=>[t.currency,t.debit,t.credit,t.balance])]),'الأرصدة');
  x.utils.book_append_sheet(book,x.utils.aoa_to_sheet([['التقرير',r.title],...Object.entries(r.scope)]),'نطاق التقرير');
+ if(r.catalogCards) x.utils.book_append_sheet(book,x.utils.aoa_to_sheet(catalogCardRows(r.catalogCards)),'بطاقات الأصناف');
  return new Uint8Array(x.write(book,{type:'array',bookType:'xlsx',compression:true}));
 }
 function wrap(ctx:CanvasRenderingContext2D,text:string,width:number):string[]{
