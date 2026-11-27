@@ -13,6 +13,10 @@ on:
       - ".github/workflows/flutter-hybrid-preview.yml"
   workflow_dispatch:
     inputs:
+      upload_tested_release:
+        description: Upload the verified 1.0.170 APK and AAB to the prepared GitHub draft (no rebuild)
+        type: boolean
+        default: false
       publish_verified_candidate:
         description: Publish the already verified 1.0.138 artifact (no rebuild)
         type: boolean
@@ -55,6 +59,75 @@ permissions:
   contents: read
 
 jobs:
+  upload-tested-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_tested_release == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require the tested source and prepared empty draft
+        env:
+          OTHER_ACTIONS: ${{ inputs.publish_verified_candidate || inputs.signed_candidate || inputs.build_play_bundle || inputs.store_screenshots || inputs.test_pending_purchase || inputs.inspect_play_signing_tool || inputs.export_play_signing_key }}
+          VERIFY_RUN: ${{ inputs.verify_existing_run }}
+        run: |
+          set -euo pipefail
+          test "$GH_REPO" = helalalfqih-sketch/NASQO-PRO-ERP
+          test "$OTHER_ACTIONS" = false
+          test -z "$VERIFY_RUN"
+          gh api "repos/$GH_REPO/actions/runs/46040028289" > source-run.json
+          gh api "repos/$GH_REPO/actions/runs/46041883021" > verified-run.json
+          gh api "repos/$GH_REPO/releases/460913370" > release.json
+          python3 - <<'PY'
+          import json
+          for filename, sha in [('source-run.json', '98e59fd8c5f72c763d7dd40c3aa11478a4664077'), ('verified-run.json', 'd6720844a53f97615c860cedf941a712e68759ae')]:
+              run = json.load(open(filename))
+              assert run['head_sha'] == sha and run['status'] == 'completed' and run['conclusion'] == 'success'
+          release = json.load(open('release.json'))
+          assert release['tag_name'] == 'android-preview-v1170'
+          assert release['target_commitish'] == '98e59fd8c5f72c763d7dd40c3aa11478a4664077'
+          assert release['draft'] and release['prerelease'] and not release['assets']
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-signed-preview
+          path: apk
+          run-id: 46040028289
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-play-internal-bundle
+          path: bundle
+          run-id: 46040028289
+          github-token: ${{ github.token }}
+      - name: Upload only the exact verified APK and AAB
+        run: |
+          set -euo pipefail
+          mkdir release-files
+          cp apk/NASQO-PRO-ERP.apk release-files/NASQO-PRO-ERP-1.0.170.apk
+          cp bundle/NASQO-PRO-ERP.aab release-files/NASQO-PRO-ERP-1.0.170.aab
+          cd release-files
+          printf '%s  %s\n' \
+            f242cfde445e0a2406cbeba4dde4c66340340cf0031270d25f0faa236d1aea37 NASQO-PRO-ERP-1.0.170.apk \
+            8e2ba1a0560a6fe8c5093d3363a3980268053bb18ea2224d5a799e9d0918a1a6 NASQO-PRO-ERP-1.0.170.aab > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          gh release upload android-preview-v1170 NASQO-PRO-ERP-1.0.170.apk NASQO-PRO-ERP-1.0.170.aab SHA256SUMS.txt
+          gh api "repos/$GH_REPO/releases/460913370" > ../uploaded-release.json
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          release = json.load(open('../uploaded-release.json'))
+          assert release['draft'] and len(release['assets']) == 3
+          for asset in release['assets']:
+              file = Path(asset['name'])
+              assert asset['state'] == 'uploaded' and asset['size'] == file.stat().st_size
+              assert asset['digest'] == 'sha256:' + hashlib.sha256(file.read_bytes()).hexdigest()
+          PY
+
   export-play-signing-key:
     if: github.event_name == 'workflow_dispatch' && inputs.export_play_signing_key == true
     runs-on: ubuntu-latest
@@ -131,7 +204,7 @@ jobs:
           if-no-files-found: error
 
   flutter-hybrid:
-    if: inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true && inputs.export_play_signing_key != true && inputs.verify_existing_run == ''
+    if: inputs.upload_tested_release != true && inputs.publish_verified_candidate != true && inputs.inspect_play_signing_tool != true && inputs.export_play_signing_key != true && inputs.verify_existing_run == ''
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
