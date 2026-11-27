@@ -34,6 +34,7 @@ jobs:
           node --test tests/authError.test.mjs tests/googleDriveAuthError.test.mjs tests/public-backup-guard.test.mjs tests/sqlite-local-production.test.mjs
           npx tsx --test tests/unified-sqlite.test.ts
           npx tsx --test tests/erp-crud.test.ts tests/erp-input.test.ts tests/hybrid-message-limits.test.ts tests/tabular-import.test.ts tests/import-restore-safety.test.ts
+          npx tsx --test tests/invoiceCatalog.test.ts
           npm run build
           PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)" CRUD_UI_OUTPUT="$RUNNER_TEMP/crud-ui" npx tsx scripts/verify-crud-ui.ts
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
@@ -41,6 +42,10 @@ jobs:
           npx vite build --base /nsqo-app/
           node deploy/prepare-subpath.mjs
           npm run test:sites
+      - name: Verify invoice warehouse selection in the offline UI
+        run: |
+          npm run build:hybrid
+          NASQO_INVOICE_WAREHOUSE_ONLY=1 NASQO_ACCEPTANCE_OUT="$RUNNER_TEMP/invoice-warehouse" PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)" npx tsx scripts/verify-hybrid-invoice-catalog.ts
       - name: Verify Android Back navigation in Chromium
         run: |
           npx playwright install --with-deps chromium
