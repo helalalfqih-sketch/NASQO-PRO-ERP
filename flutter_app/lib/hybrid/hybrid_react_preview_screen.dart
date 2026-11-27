@@ -188,7 +188,7 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
       file=File(choice['path'] as String);
       final name=choice['fileName'] as String;
       final suffix=name.split('.').last.toLowerCase();
-      if(!(purpose=='import-items'?['xlsx','xls','csv','tsv','txt']:['csv']).contains(suffix))
+      if(!(purpose=='import-items'?['xlsx','xls','csv','tsv','txt']:['csv','txt']).contains(suffix))
         throw const FormatException('اختر Excel أو CSV للأصناف، وCSV للحسابات.');
       final size=await file.length();
       if(size<1||size>8*1024*1024)throw const FormatException('اختر ملفًا غير فارغ لا يتجاوز 8 ميجابايت.');

@@ -36,7 +36,7 @@ public class DocumentInstrumentation extends Instrumentation {
         activity.registerReceiver(receiver,new IntentFilter("com.nasqo.audit.RECEIVED"),Context.RECEIVER_EXPORTED);
         Map<String,Object> args=new HashMap<>();args.put("path",source.getPath());args.put("fileName",name);args.put("mimeType",mime);
         runOnMainSync(()->{try{output.invoke(activity,new MethodCall("shareDocument",args),callback());}catch(Exception e){throw new RuntimeException(e);}});
-        boolean selected=false;for(int i=0;i<30&&!selected;i++){Thread.sleep(500);selected=clickReceiver(getUiAutomation().getRootInActiveWindow());}
+        boolean selected=false;for(int i=0;i<30&&!selected;i++){Thread.sleep(500);dismissLauncherDialog();selected=clickReceiver(getUiAutomation().getRootInActiveWindow());if(!selected&&i%5==4)scrollForward(getUiAutomation().getRootInActiveWindow());}
         if(!selected||!received.await(15,TimeUnit.SECONDS))throw new AssertionError("receiver not reached: "+ext);
         activity.unregisterReceiver(receiver);
         Intent r=result[0];if(!r.getBooleanExtra("ok",false))throw new AssertionError(r.getStringExtra("error"));
@@ -117,7 +117,7 @@ public class DocumentInstrumentation extends Instrumentation {
       BroadcastReceiver uiReceiver=new BroadcastReceiver(){public void onReceive(Context c,Intent i){uiResult[0]=i;uiReceived.countDown();}};
       activity.registerReceiver(uiReceiver,new IntentFilter("com.nasqo.audit.RECEIVED"),Context.RECEIVER_EXPORTED);
       clickText("مشاركة");
-      boolean uiSelected=false;for(int i=0;i<30&&!uiSelected;i++){Thread.sleep(500);uiSelected=clickReceiver(getUiAutomation().getRootInActiveWindow());}
+      boolean uiSelected=false;for(int i=0;i<30&&!uiSelected;i++){Thread.sleep(500);dismissLauncherDialog();uiSelected=clickReceiver(getUiAutomation().getRootInActiveWindow());if(!uiSelected&&i%5==4)scrollForward(getUiAutomation().getRootInActiveWindow());}
       if(!uiSelected||!uiReceived.await(15,TimeUnit.SECONDS))throw new AssertionError("UI inventory PDF receiver not reached");
       activity.unregisterReceiver(uiReceiver);
       if(!uiResult[0].getBooleanExtra("ok",false)||!"application/pdf".equals(uiResult[0].getStringExtra("mime"))||!uiResult[0].getStringExtra("name").contains("inventory"))throw new AssertionError("UI inventory PDF identity/read failed");
@@ -141,6 +141,16 @@ public class DocumentInstrumentation extends Instrumentation {
     }
     clickText(name);waitNode("مراجعة استيراد "+(name.contains("items")?"بطاقات الأصناف":"بطاقات الحسابات"),false);
   }
+  // A cold CI emulator can show a launcher ANR above the share sheet. Only
+  // dismiss that known system dialog; a NASQO/app ANR must still fail the test.
+  private void dismissLauncherDialog()throws Exception{
+    AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+    if(findNode(root,"Pixel Launcher isn't responding",false)==null)return;
+    AccessibilityNodeInfo close=findNode(root,"Close app",false);
+    if(close==null||!close.performAction(AccessibilityNodeInfo.ACTION_CLICK))throw new AssertionError("cannot dismiss system launcher ANR");
+    android.util.Log.w("NASQO_ACCEPTANCE","CI system Pixel Launcher ANR dismissed; retrying real share sheet");
+    Thread.sleep(1000);
+  }
   private boolean scrollForward(AccessibilityNodeInfo n){if(n==null)return false;for(int i=0;i<n.getChildCount();i++)if(scrollForward(n.getChild(i)))return true;return n.isScrollable()&&n.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);}
   private void dumpTree(AccessibilityNodeInfo n,StringBuilder s,int depth){if(n==null||depth>25||s.length()>50000)return;s.append(n.getClassName()).append(" text=").append(n.getText()).append(" desc=").append(n.getContentDescription()).append(" hint=").append(n.getHintText()).append(" clickable=").append(n.isClickable()).append(" scroll=").append(n.isScrollable()).append("\n");for(int i=0;i<n.getChildCount();i++)dumpTree(n.getChild(i),s,depth+1);}
   private AccessibilityNodeInfo findNode(AccessibilityNodeInfo n,String label,boolean editable){
@@ -150,7 +160,7 @@ public class DocumentInstrumentation extends Instrumentation {
     for(int i=0;i<n.getChildCount();i++){AccessibilityNodeInfo found=findNode(n.getChild(i),label,editable);if(found!=null)return found;}return null;
   }
   private AccessibilityNodeInfo waitNode(String label,boolean editable)throws Exception{
-    for(int i=0;i<20;i++){AccessibilityNodeInfo n=findNode(getUiAutomation().getRootInActiveWindow(),label,editable);if(n!=null)return n;if(i%4==3)scrollForward(getUiAutomation().getRootInActiveWindow());Thread.sleep(500);}
+    for(int i=0;i<20;i++){dismissLauncherDialog();AccessibilityNodeInfo n=findNode(getUiAutomation().getRootInActiveWindow(),label,editable);if(n!=null)return n;if(i%4==3)scrollForward(getUiAutomation().getRootInActiveWindow());Thread.sleep(500);}
     throw new AssertionError("UI node missing: "+label);
   }
   private void clickText(String label)throws Exception{

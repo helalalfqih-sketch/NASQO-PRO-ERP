@@ -2016,7 +2016,7 @@ export function AuthenticatedWorkspace({
       triggerHaptic("success");
       showToast(`اكتمل الاستيراد: ${result.inserted} بطاقة جديدة • ${result.skipped} موجودة تم تجاوزها.`, 6000);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "تعذر الاستيراد؛ راجع الملف قبل إعادة المحاولة.", 6500);
+      throw err instanceof Error ? err : new Error("تعذر الاستيراد؛ راجع الملف قبل إعادة المحاولة.");
     } finally { importInFlight.current = false; setImportBusy(false); }
   };
 

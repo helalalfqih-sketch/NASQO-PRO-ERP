@@ -221,7 +221,7 @@ function detectColumnMap(headerRow: unknown[]): ColumnMap {
 
     if (
       map.quantity === undefined &&
-      (h === "الكميه" || h === "كميه" || h === "الرصيد" || h === "رصيد" || h === "المتوفر" || h === "qty" || h === "quantity")
+      (h === "الكميه" || h === "كميه" || h === "الرصيد" || h === "رصيد" || h === "المتوفر" || h === "الكميه المتوفره" || h === "كميه المتبقي" || h === "الكميه الحاليه" || h === "available qty" || h === "remaining quantity" || h === "qty" || h === "quantity")
     ) {
       map.quantity = idx;
       return;
@@ -271,13 +271,14 @@ export function parseItemsSpreadsheetBytes(
   const items: ImportedInventoryItemInput[] = [];
   const seen = new Set<string>();
   let skippedRows = 0;
+  const labels: Record<keyof ColumnMap, string> = { legacyId:"رقم الصنف", sku:"الباركود", name:"اسم الصنف", unit:"الوحدة", avgCost:"سعر الشراء المرجعي", sellingPrice:"سعر البيع", unit2:"الوحدة الثانية", count2:"معامل الوحدة الثانية", sprice2:"سعر الوحدة الثانية", unit3:"الوحدة الثالثة", count3:"معامل الوحدة الثالثة", sprice3:"سعر الوحدة الثالثة", currencyCode:"العملة", isActive:"الحالة", defaultUnit:"الوحدة الافتراضية", quantity:"الكمية", minThreshold:"حد الطلب", expiryDate:"تاريخ الانتهاء" };
   for(let r=headerIndex+1;r<rows.length;r++) {
     const row=rows[r];
     if(row.every(c=>String(c??"").trim()==="")){skippedRows++;continue;}
-    const text=(key:keyof ColumnMap,max:number)=>importText(map[key]===undefined?"":row[map[key]!],key,r+1,max);
+    const text=(key:keyof ColumnMap,max:number)=>importText(map[key]===undefined?"":row[map[key]!],labels[key],r+1,max);
     const num=(key:keyof ColumnMap)=>{
-      const n=importNumber(map[key]===undefined?undefined:row[map[key]!],key,r+1);
-      if(n!==undefined&&n<0)throw new Error(`الصف ${r+1}: ${key} لا يقبل قيمة سالبة.`);
+      const n=importNumber(map[key]===undefined?undefined:row[map[key]!],labels[key],r+1);
+      if(n!==undefined&&n<0)throw new Error(`الصف ${r+1}: ${labels[key]} لا يقبل قيمة سالبة.`);
       return n;
     };
     const name=text("name",120);

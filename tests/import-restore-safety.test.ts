@@ -82,7 +82,9 @@ test('all 31 populated tables survive JSON and SQLite restore with every value i
 }));
 
 test('bad checksum, missing tables and invalid relations roll back without touching either workspace', async () => fixture(db => {
- upsertAccountRow(db,w,{name:'Live',category:'clients',currency:'ريال'});
+ const live=upsertAccountRow(db,w,{name:'Live',category:'clients',currency:'ريال'});
+ const peer=upsertAccountRow(db,w,{name:'Peer',category:'clients',currency:'ريال'});
+ insertJournalEntryRow(db,w,{entryDate:'2026-11-27',description:'Balanced source',idempotencyKey:'rollback-journal',lines:[{accountId:live.id,debit:2},{accountId:peer.id,credit:2}]});
  ensureEmptyWorkspace(db,'other-workspace','Other');
  const other=upsertAccountRow(db,'other-workspace',{name:'Other',category:'clients',currency:'ريال'});
  const before=captureWorkspaceSnapshot(db,w), otherBefore=captureWorkspaceSnapshot(db,'other-workspace');
@@ -91,7 +93,9 @@ test('bad checksum, missing tables and invalid relations roll back without touch
   (x:any)=>{x.sqliteSnapshot.tables.accounts[0].name='Changed';},
   (x:any)=>{delete x.sqliteSnapshot.tables.journal_entries;},
   (x:any)=>{x.sqliteSnapshot.tables.accounts[0].group_id='missing-group';x.sqliteSnapshot=snapshotFromTables(x.sqliteSnapshot.tables);},
-  (x:any)=>{x.sqliteSnapshot.tables.accounts[0].id=other.id;x.sqliteSnapshot=snapshotFromTables(x.sqliteSnapshot.tables);}
+  (x:any)=>{x.sqliteSnapshot.tables.accounts[0].id=other.id;x.sqliteSnapshot=snapshotFromTables(x.sqliteSnapshot.tables);},
+  (x:any)=>{delete x.sqliteSnapshot.tables.accounts[0].id;x.sqliteSnapshot=snapshotFromTables(x.sqliteSnapshot.tables);},
+  (x:any)=>{x.sqliteSnapshot.tables.journal_entry_lines[0].debit_minor+=1;x.sqliteSnapshot=snapshotFromTables(x.sqliteSnapshot.tables);}
  ]) {
   const bad=structuredClone(json);mutate(bad);
   assert.throws(()=>restoreUnifiedJsonBundle(db,w,bad));

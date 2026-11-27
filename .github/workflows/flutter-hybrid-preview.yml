@@ -169,7 +169,7 @@ jobs:
           npm install --no-audit --no-fund
           npm run check:runtime
           npm run sync:flutter-hybrid
-          npx tsx --test tests/hybrid.test.ts
+          npx tsx --test tests/hybrid.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts
 
       - name: Generate Android scaffold (not committed)
         working-directory: flutter_app

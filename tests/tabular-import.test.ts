@@ -34,6 +34,7 @@ test("catalog rejects fake PDF/image/text, missing headers, invalid prices and i
     assert.throws(() => parseItemsSpreadsheetBytes(csv(`اسم الصنف,${header}\nصنف,${value}`)));
   }
   assert.throws(() => parseItemsSpreadsheetBytes(csv("اسم الصنف,الوحدة 2\nصنف,علبة")), /معامل/);
+  assert.throws(() => parseItemsSpreadsheetBytes(csv("اسم الصنف,الكمية المتوفرة\nصنف,35")), /كمية مخزون/);
   const [row] = parseItemsSpreadsheetBytes(csv("اسم الصنف,الوحدة 2,count2,الوحدة 3,count3\nصنف,علبة,10,كرتون,8")).items;
   assert.equal(row.count2, 10); assert.equal(row.count3, 8);
 });

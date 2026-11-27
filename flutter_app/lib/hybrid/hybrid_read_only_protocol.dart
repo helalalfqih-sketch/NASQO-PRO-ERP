@@ -405,7 +405,7 @@ class HybridReadOnlyProtocol {
         final result=await manageCatalog!(actionName!,key,p);
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
       }on ArgumentError catch(e){
-        return _error(id,actionName,'VALIDATION_ERROR',actionName=='updateInventoryItem'?catalogValidationMessage(e):'تحقق من بيانات الحساب أو العملة أو الصنف.');
+        return _error(id,actionName,'VALIDATION_ERROR',['updateInventoryItem','importInventoryItems'].contains(actionName)?catalogValidationMessage(e):'تحقق من بيانات الحساب أو العملة أو الصنف.');
       }on StateError catch(e){
         return _error(id,actionName,'VALIDATION_ERROR',e.message.toString());
       }catch(_){

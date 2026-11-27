@@ -47,12 +47,15 @@ function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
   const sourceWorkspace = workspaces[0].id;
   let total = 0;
   for (const table of UNIFIED_SQLITE_TABLES) {
-    const columns = new Set((db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[]).map(c => c.name));
+    const info = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string; pk: number }[];
+    const columns = new Set(info.map(c => c.name));
+    const primary = info.filter(c => c.pk).map(c => c.name);
     const rows = snapshot.tables[table];
     total += rows.length;
     if (total > 1_000_000) return fail("حجم الجداول يتجاوز الحد المدعوم");
     for (const row of rows) {
       if (!object(row) || Object.keys(row).length === 0 || Object.keys(row).some(k => !columns.has(k))) return fail(`أعمدة الجدول ${table} غير مدعومة`);
+      if (primary.some(key => row[key] === undefined || row[key] === null || row[key] === "")) return fail(`معرّف صف في ${table} غير مكتمل`);
       if (table !== "workspaces" && row.workspace_id !== sourceWorkspace) return fail(`منشأة الصف في ${table} لا تطابق النسخة`);
       if (Object.values(row).some(v => v !== null && typeof v !== "string" && (typeof v !== "number" || !Number.isFinite(v)))) return fail(`قيمة غير صالحة في ${table}`);
     }
@@ -71,6 +74,19 @@ function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
         }
       }
     }
+  }
+  const journalTotals = new Map<unknown, {count: number; debit: number; credit: number}>();
+  for (const line of snapshot.tables.journal_entry_lines) {
+    if (![line.debit_minor,line.credit_minor].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) return fail("مبلغ بند اليومية ليس بوحدات نقدية صحيحة");
+    const total = journalTotals.get(line.journal_id) ?? {count: 0, debit: 0, credit: 0};
+    total.count++; total.debit += Number(line.debit_minor); total.credit += Number(line.credit_minor);
+    journalTotals.set(line.journal_id,total);
+  }
+  for (const journal of snapshot.tables.journal_entries) {
+    if (journal.posting_status === "draft") continue;
+    const {count,debit,credit} = journalTotals.get(journal.id) ?? {count:0,debit:0,credit:0};
+    if (count < 2 || !Number.isSafeInteger(debit) || debit <= 0 || debit !== credit ||
+        journal.total_debit_minor !== debit || journal.total_credit_minor !== credit) return fail("قيد يومية مرحّل لا يطابق بنوده المتوازنة");
   }
   return snapshot;
 }

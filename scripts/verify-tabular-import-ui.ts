@@ -22,7 +22,7 @@ function host(state:any){
   if(r.action==='googleDriveAction')data={configured:false,connected:false,files:[]};
   if(r.action==='localToolsAction')data={review:false,imported:false};
   if(r.action==='legacyArchiveAction')data={available:false,items:[],totalCount:0};
-  setTimeout(()=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'response',requestId:r.requestId,action:r.action,ok:true,data,timestampMs:Date.now()}),0);
+  setTimeout(()=>w.__nasqoHybridReceive?.({protocolVersion:'1.0.0',kind:'response',requestId:r.requestId,action:r.action,ok:!(w.rejectImport&&r.action==='importInventoryItems'),data,...(w.rejectImport&&r.action==='importInventoryItems'?{error:{code:'VALIDATION_ERROR',message:'عملة الصنف غير مدعومة؛ لم تحفظ الدفعة.'}}:{}),timestampMs:Date.now()}),0);
  }};
 }
 const fixture=`(${host.toString()})(${JSON.stringify(state)});`;
@@ -63,6 +63,7 @@ try {
  const account=(await imports())[0].payload.accounts[0];assert.equal(account.name,'شركة, فرع\nالمدينة');assert.equal(account.phone,'001234');assert.equal(account.category,'clients');assert.equal(account.openingBalance,0);results.push('account CSV quotes, phone, explicit category and atomic batch');
  await fresh();await page.evaluate(()=>(window as any).csv='الاسم,الرصيد,الاتجاه,التصنيف\nشركة,100,مدين,العملاء');await openAccounts();await expect(dialog().getByRole('alert')).toContainText('أرصدة افتتاحية');await dialog().getByRole('checkbox').check();await expect(dialog().getByRole('button',{name:'استيراد البطاقات'})).toBeDisabled();assert.equal((await imports()).length,0);results.push('nonzero opening balances blocked before any write');
  await dialog().getByRole('button',{name:'إلغاء',exact:true}).click();await expect(dialog()).toBeHidden();assert.equal((await imports()).length,0);results.push('review cancellation writes nothing');
+ await fresh();await page.evaluate(()=>(window as any).rejectImport=true);await openItems();await dialog().getByRole('checkbox').check();await dialog().getByRole('button',{name:'استيراد البطاقات'}).click();await expect(dialog().getByRole('alert')).toContainText('عملة الصنف غير مدعومة');await expect(dialog()).toBeVisible();results.push('native validation error stays visible inside review');
  assert.deepEqual(errors,[]);
 } catch(e){await page.screenshot({path:path.join(out,'failure.png')});fs.writeFileSync(path.join(out,'failure-dom.txt'),await page.locator('body').innerText());throw e;}
 finally{fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({environment:'built hybrid UI in Chromium; synthetic host, not Android',results,errors},null,2));await browser.close();await new Promise<void>(r=>server.close(()=>r()));}

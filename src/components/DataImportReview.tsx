@@ -7,10 +7,11 @@ import { readImportWorkbook } from "../utils/tabularImport";
 import type { RestoreReview } from "../utils/restoreApproval";
 
 export type ImportReview = { kind: "accounts" | "items"; bytes: Uint8Array; fileName: string; defaultCurrency: string };
-export function DataImportReview({ review, busy, onCancel, onConfirm }: { review: ImportReview; busy: boolean; onCancel: () => void; onConfirm: (rows: AccountCardImport[] | ImportedInventoryItemInput[]) => void }) {
+export function DataImportReview({ review, busy, onCancel, onConfirm }: { review: ImportReview; busy: boolean; onCancel: () => void; onConfirm: (rows: AccountCardImport[] | ImportedInventoryItemInput[]) => void | Promise<void> }) {
   const [category, setCategory] = useState<AccountCategory | "">("");
   const [sheet, setSheet] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const names = useMemo(() => { try { return readImportWorkbook(review.bytes).SheetNames; } catch { return []; } }, [review.bytes]);
   const parsed = useMemo(() => {
     try {
@@ -34,7 +35,7 @@ export function DataImportReview({ review, busy, onCancel, onConfirm }: { review
       })}</tbody></table></div></>}
     {parsed.blocked ? <p role="alert" className="import-review-error">الملف يحتوي أرصدة افتتاحية. استيراد البطاقات لا يرحّلها؛ استعد الأرصدة من النسخة الأصلية أو سجّل قيدًا افتتاحيًا متوازنًا بحساب مقابل محدد. لم يُحفظ أي حساب.</p> : null}
     <label className="print-options-check-row"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />راجعت الصفوف والتصنيف والعملة وأوافق على إضافة البطاقات الجديدة فقط</label>
-    </MobileScroll><div className="ref-action-bar cols-2"><button className="ref-btn green" disabled={busy || !confirmed || !!parsed.error || parsed.blocked || !parsed.rows.length} onClick={() => onConfirm(parsed.rows)}>استيراد البطاقات</button><button className="ref-btn purple" disabled={busy} onClick={onCancel}>إلغاء</button></div>
+    </MobileScroll>{submitError ? <p role="alert" className="import-review-error">{submitError}</p> : null}<div className="ref-action-bar cols-2"><button className="ref-btn green" disabled={busy || !confirmed || !!parsed.error || parsed.blocked || !parsed.rows.length} onClick={() => { setSubmitError(""); void Promise.resolve().then(() => onConfirm(parsed.rows)).catch(e => setSubmitError(e instanceof Error ? e.message : "تعذر الاستيراد.")); }}>استيراد البطاقات</button><button className="ref-btn purple" disabled={busy} onClick={onCancel}>إلغاء</button></div>
   </section></div>;
 }
 
