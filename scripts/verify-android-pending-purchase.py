@@ -210,5 +210,21 @@ except Exception:
     try:
         (out/'purchase-failure.xml').write_bytes(ET.tostring(read(), encoding='utf-8'))
         (out/'purchase-failure.png').write_bytes(adb('exec-out', 'screencap', '-p'))
+        # This script requires a named synthetic fixture and an isolated CI
+        # emulator. Read durable evidence without attempting another posting.
+        adb('shell', 'am', 'force-stop', package)
+        target = out/'synthetic-purchase-failure.db'
+        adb('pull', dbpath, str(target))
+        for suffix in ['-wal', '-shm']:
+            if subprocess.run(['adb', 'shell', 'test', '-f', dbpath+suffix], capture_output=True).returncode == 0:
+                adb('pull', dbpath+suffix, str(target)+suffix)
+        with sqlite3.connect(target) as failed:
+            failed.row_factory = sqlite3.Row
+            summary = {table:records(failed, table) for table in ['inventory_items', 'ledger_entries', 'journal_entries', 'journal_lines', 'stock_posting_documents', 'stock_posting_lines', 'outbox_operations'] if failed.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()}
+            (out/'synthetic-purchase-failure.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2)+'\n')
+        (out/'purchase-logcat.txt').write_bytes(adb('logcat', '-d', '-v', 'threadtime'))
+        # The saved UI draft contains the submitted fields and operation ID.
+        # Only this synthetic CI WebView profile is copied for diagnosis.
+        subprocess.run(['adb', 'pull', '/data/user/0/'+package+'/app_webview/Default/Local Storage', str(out/'synthetic-purchase-web-storage')], check=False, capture_output=True)
     finally:
         raise

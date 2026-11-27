@@ -49,7 +49,8 @@ def capture(stage, required, absent=''):
     raise AssertionError('CRUD did not reach '+stage)
 
 def tap(value, field=False, scroll=False):
-    for _ in range(10 if scroll else 4):
+    previous = None
+    for _ in range(12 if scroll else 8):
         candidates = []
         for n in read().iter('node'):
             if (n.get('class') == 'android.widget.EditText') != field or value not in label(n):
@@ -60,8 +61,18 @@ def tap(value, field=False, scroll=False):
                 candidates.append((not exact, (b[2]-b[0])*(b[3]-b[1]), b))
         if candidates:
             b = sorted(candidates)[0][2]
+            # IME dismissal resizes the WebView asynchronously. Require two
+            # fresh matching bounds so an old Save location cannot hit salary.
+            if b != previous:
+                previous = b
+                time.sleep(0.25)
+                continue
+            if value == 'حفظ السجل':
+                print('CRUD Save bounds:', b, flush=True)
+                (out/f'crud-save-{int(time.time())}.png').write_bytes(adb('exec-out', 'screencap', '-p'))
             adb('shell', 'input', 'tap', str((b[0]+b[2])//2), str((b[1]+b[3])//2))
             return
+        previous = None
         if scroll:
             adb('shell', 'input', 'swipe', str(size[0]//2), str(size[1]*3//4), str(size[0]//2), str(size[1]//3), '400')
         else:
@@ -111,14 +122,16 @@ try:
     before = snapshot(); assert not employees(before), 'Requires synthetic empty employees'
     hr(); tap('إضافة سجل'); capture('create', 'اسم الموظف')
     tap('اسم الموظف', field=True); adb('shell','input','text','QA-CRUD-Employee')
-    adb('shell','input','keyevent','KEYCODE_BACK'); tap('حفظ السجل')
+    # Save is visible above the IME. Exercise the same direct Save gesture as
+    # the user; Back is a separate app navigation action, not a field blur.
+    tap('حفظ السجل')
     capture('created', 'QA-CRUD-Employee', 'حفظ السجل')
     created = snapshot(); assert employees(created)[0]['name'] == 'QA-CRUD-Employee'
     hr(); capture('persisted', 'QA-CRUD-Employee'); tap('عرض')
     capture('read', 'QA-CRUD-Employee'); tap('إغلاق')
     tap('تعديل'); tap('اسم الموظف', field=True)
     adb('shell','input','keyevent','KEYCODE_MOVE_END'); adb('shell','input','keyevent',*(['KEYCODE_DEL']*40))
-    adb('shell','input','text','QA-CRUD-Edited'); adb('shell','input','keyevent','KEYCODE_BACK'); tap('حفظ السجل')
+    adb('shell','input','text','QA-CRUD-Edited'); tap('حفظ السجل')
     capture('edited', 'QA-CRUD-Edited', 'حفظ السجل')
     edited = snapshot(); assert employees(edited)[0]['name'] == 'QA-CRUD-Edited'
     assert employees(edited)[0]['_revision'] == employees(created)[0]['_revision']+1

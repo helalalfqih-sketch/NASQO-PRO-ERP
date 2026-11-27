@@ -98,6 +98,7 @@ assert not re.search(r'Process: com\.indexesstore\.nasqo_pro_erp(?=[:,\s])',log)
 PY
 CHECKS_FAILED=0
 if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
+  if [[ "${NASQO_ANDROID_FOCUSED_CRUD_PURCHASE:-false}" != true ]]; then
   python3 scripts/verify-android-navigation.py || CHECKS_FAILED=1
   adb shell am force-stop "$PKG"
   adb shell am start -W -n "$PKG/.MainActivity" >/dev/null
@@ -105,6 +106,7 @@ if [[ "${NASQO_ANDROID_NAV_SMOKE:-false}" == true ]]; then
   # These checks establish their own starting state on this synthetic device.
   # Collect every result, but fail the job if any stage fails.
   python3 scripts/verify-android-large-import.py || CHECKS_FAILED=1
+  fi
   python3 scripts/verify-android-crud.py || CHECKS_FAILED=1
 fi
 if [[ "${NASQO_ANDROID_PENDING_PURCHASE:-false}" == true ]]; then
