@@ -1,3 +1,4 @@
+import 'local_reference_guards.dart';
 import 'tabular_import_limits.dart';
 import 'stock_quantity_approval_state.dart';
 import 'dart:convert';
@@ -32,6 +33,20 @@ class LocalStockCatalog {
         return {'id':id};
       });
     return id;
+  }
+  Future<void> deleteWarehouse(String workspace,String key,String id)async{
+    StockInvoiceCommands.identity(id);
+    await local.commitOperation(workspaceId:workspace,operationId:key,operationType:'warehouse.delete',payload:{'id':id},apply:(t)async{
+      await LocalMasterCatalog.requireLocal(t,workspace);
+      final rows=await t.query('warehouses',where:'id = ?',whereArgs:[id]);if(rows.isEmpty)throw StateError('المخزن غير موجود');
+      await LocalReferenceGuards.check(t,id,{'warehouseId','fromWarehouseId','toWarehouseId'});
+      for(final table in ['inventory_items','ledger_entries']){
+        if((await t.query(table,where:'warehouseId = ?',whereArgs:[id],limit:1)).isNotEmpty)throw StateError('المخزن مرتبط بأصناف أو مستندات؛ انقل المراجع قبل الحذف');
+      }
+      final archived=await t.query('legacy_operational_rows');
+      if(archived.any((r)=>LocalReferenceGuards.contains(jsonDecode(r['row_json'] as String),id,{'warehouseId','fromWarehouseId','toWarehouseId'})))throw StateError('المخزن مرتبط بتاريخ مستورد محفوظ');
+      await t.delete('warehouses',where:'id = ?',whereArgs:[id]);return {'deleted':true};
+    });
   }
   static Map<String,dynamic> unitSettings(Map<String,dynamic> input,String unit){
     final units=<String,dynamic>{};
@@ -89,7 +104,7 @@ class LocalStockCatalog {
         whereArgs:[if(wh.isNotEmpty)wh,id,name,'',sku],limit:1)).isNotEmpty)throw ArgumentError('Duplicate item or barcode');
   }
 
-  Future<void> insertItem(Transaction t,String id,Map<String,dynamic> input)async{
+  static ({Map<String,dynamic> item,Map<String,dynamic> units}) newItemValues(String id,Map<String,dynamic> input){
     final name=LocalDocumentCommands.field(input,'name',120).trim(),sku=LocalDocumentCommands.field(input,'sku',64);
     final unit=LocalDocumentCommands.field(input,'unit',32,fallback:'حبة').trim();
     final rawWarehouse=input['warehouseId'];
@@ -98,12 +113,17 @@ class LocalStockCatalog {
     if(name.isEmpty||unit.isEmpty||min is! num||!min.isFinite||min<0||
         (input['quantity']??0)!=0||(input['avgCost']??0)!=0||input['quantityUnverified']==true)
       throw ArgumentError('New item requires zero stock and cost; post purchases or an approved opening');
-    if(wh.isNotEmpty&&(await t.query('warehouses',where:'id = ?',whereArgs:[wh])).isEmpty)throw ArgumentError('Warehouse missing');
     if(wh.isEmpty)units['catalogOnly']=true;
-    await assertUnique(t,id,wh,name,sku);
-    await t.insert('inventory_items',{'id':id,'name':name,'sku':sku,'unit':unit,'warehouseId':wh,
-      'quantity':0,'avgCost':0,'minThreshold':min.toDouble()});
-    await t.insert('inventory_unit_settings',{'item_id':id,'settings_json':jsonEncode(units)});
+    return (item:{'id':id,'name':name,'sku':sku,'unit':unit,'warehouseId':wh,
+      'quantity':0,'avgCost':0,'minThreshold':min.toDouble()},units:units);
+  }
+
+  Future<void> insertItem(Transaction t,String id,Map<String,dynamic> input)async{
+    final values=newItemValues(id,input),wh=values.item['warehouseId'] as String;
+    if(wh.isNotEmpty&&(await t.query('warehouses',where:'id = ?',whereArgs:[wh])).isEmpty)throw ArgumentError('Warehouse missing');
+    await assertUnique(t,id,wh,values.item['name'] as String,values.item['sku'] as String);
+    await t.insert('inventory_items',values.item);
+    await t.insert('inventory_unit_settings',{'item_id':id,'settings_json':jsonEncode(values.units)});
   }
 
   Future<String> createItem(String workspace,String key,Map<String,dynamic> input)async{
@@ -163,6 +183,7 @@ class LocalStockCatalog {
     await local.commitOperation(workspaceId:workspace,operationId:key,operationType:'inventory.delete',payload:{'id':id},
       apply:(t)async{
         await LocalMasterCatalog.requireLocal(t,workspace);
+        await LocalReferenceGuards.check(t,id,{'inventoryItemId','finishedItemId','quickItemIds'});
         final rows=await t.query('inventory_items',where:'id = ?',whereArgs:[id]);
         if(rows.length!=1)throw StateError('Stock item missing');
         if(rows.single['quantity']!=0||rows.single['avgCost']!=0||await hasHistory(t,id))
@@ -179,6 +200,25 @@ class LocalStockCatalog {
     return local.commitOperation(workspaceId:workspace,operationId:key,operationType:'inventory.import',
       payload:{'items':rows,'mode':mode},apply:(t)async{
         await StockInvoiceCommands.workspace(t,workspace);
+        // Card imports have no warehouse or stock posting. Validate once in
+        // memory and send one SQL batch across Android's platform channel.
+        // Keep the same outer transaction/idempotency and existing-card rules.
+        if(mode=='insert-only'&&rows.every((r)=>r['warehouseId']==null||r['warehouseId']=='')){
+          final existing=await t.query('inventory_items',columns:['name','sku']);
+          final names=existing.map((r)=>r['name']).toSet();
+          final skus=existing.map((r)=>r['sku']).where((v)=>v!=null&&v!='').toSet();
+          final batch=t.batch();var inserted=0,skipped=0;
+          for(var i=0;i<rows.length;i++){
+            final row=rows[i],name=LocalDocumentCommands.field(row,'name',120).trim(),sku=LocalDocumentCommands.field(row,'sku',64);
+            if(names.contains(name)||(sku.isNotEmpty&&skus.contains(sku))){skipped++;continue;}
+            final id=StockInvoiceCommands.identity('item_${key}_$i'),values=newItemValues(id,row);
+            batch.insert('inventory_items',values.item);
+            batch.insert('inventory_unit_settings',{'item_id':id,'settings_json':jsonEncode(values.units)});
+            names.add(name);if(sku.isNotEmpty)skus.add(sku);inserted++;
+          }
+          await batch.commit(noResult:true);
+          return {'inserted':inserted,'updated':0,'skipped':skipped,'total':rows.length};
+        }
         var inserted=0,updated=0,skipped=0;
         final seen=<String>{};
         for(var i=0;i<rows.length;i++){

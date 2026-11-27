@@ -184,15 +184,11 @@ function HybridRootApp() {
   useEffect(() => {
     const win = window as unknown as {
       __nasqoHybridReady?: boolean;
-      __nasqoHybridSaveErp?: (workspaceId: string, erpData: ErpWorkspaceData) => Promise<ErpWorkspaceData>;
+      __nasqoHybridSaveErpRecords?: (workspaceId: string, changes: import("../erpRecordRules").ErpRecordChange[]) => Promise<ErpWorkspaceData>;
     };
     win.__nasqoHybridReady = true;
     const pendingErpKeys=new Map<string,string>();
-    win.__nasqoHybridSaveErp = async (workspaceId, erpData) => {
-      const { buildErpRecordChanges } = await import("./erpRecordChanges");
-      const { loadErpWorkspaceData } = await import("../erp");
-      const changes = buildErpRecordChanges(loadErpWorkspaceData(workspaceId), erpData);
-      if (!changes.length) return erpData;
+    win.__nasqoHybridSaveErpRecords = async (workspaceId, changes) => {
       const fingerprint=JSON.stringify({workspaceId,changes});
       const key=pendingErpKeys.get(fingerprint)??createIdempotencyKey("saveErpRecords");
       pendingErpKeys.set(fingerprint,key);

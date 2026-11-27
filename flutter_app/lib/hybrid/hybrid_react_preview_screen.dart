@@ -327,6 +327,12 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     final result=<String,dynamic>{};
     String? itemId,warehouseId;
     switch(action){
+      case 'deleteAccountGroup':
+        await master.deleteMaster(workspace,key,'accountGroups',p['groupId'] as int);break;
+      case 'deleteCashbox':
+        await master.deleteMaster(workspace,key,'cashboxes',p['cashboxId'] as int);break;
+      case 'deleteWarehouse':
+        await stock.deleteWarehouse(workspace,key,StockInvoiceCommands.identity(p['warehouseId']));break;
       case 'saveCashbox':
         result['cashbox']=await master.saveCashbox(workspace,key,p['payload'] as Map<String,dynamic>);
         break;

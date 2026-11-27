@@ -1617,3 +1617,15 @@ export async function queryUnifiedSqliteTable(
   const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/tables/${encodeURIComponent(table)}?${params.toString()}`);
 }
+
+export async function saveCashboxRecord(uid:string,payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}):Promise<CashboxRecord>{
+ const result=await dbFetch<{cashbox:CashboxRecord;bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/cashboxes`,{method:'POST',body:JSON.stringify({payload})});applyBundle(result.bundle);return result.cashbox;
+}
+async function deleteMasterRecord(uid:string,path:string,id:string|number):Promise<void>{
+ const result=await dbFetch<{bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/${path}/${encodeURIComponent(id)}`,{method:'DELETE'});applyBundle(result.bundle);
+}
+export async function deleteCashboxRecord(uid:string,id:number){await deleteMasterRecord(uid,'cashboxes',id);}
+export async function deleteAccountGroup(uid:string,id:number){await deleteMasterRecord(uid,'groups',id);}
+export async function deleteWarehouse(uid:string,id:string){await deleteMasterRecord(uid,'warehouses',id);}
+
+export async function executeErpAction(uid:string,payload:{action:string;id?:string;expectedRevision?:string|number;currency?:string;month?:string}){const result=await dbFetch<{bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/erp/actions`,{method:'POST',body:JSON.stringify(payload)});applyBundle(result.bundle);}

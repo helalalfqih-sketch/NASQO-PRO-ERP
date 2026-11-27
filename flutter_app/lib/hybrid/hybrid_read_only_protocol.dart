@@ -379,7 +379,7 @@ class HybridReadOnlyProtocol {
       }
     }
 
-    const catalogActions={'saveCashbox','saveAccountGroup','saveCurrency','deleteCurrency','deleteAccount',
+    const catalogActions={'deleteAccountGroup','deleteCashbox','deleteWarehouse','saveCashbox','saveAccountGroup','saveCurrency','deleteCurrency','deleteAccount',
       'updateInventoryItem','deleteInventoryItem','importAccountCards','importInventoryItems','batchUpdateInventoryItems','saveWarehouse'};
     final rawCatalog=request['payload'];
     final warehouseEdit=actionName=='saveWarehouse'&&rawCatalog is Map&&rawCatalog['warehouseId']!=null;
@@ -389,6 +389,9 @@ class HybridReadOnlyProtocol {
         return _error(id,actionName,'VALIDATION_ERROR','طلب إدارة البيانات غير صالح.');
       final fields=switch(actionName){
         'saveCashbox'||'saveAccountGroup'||'saveCurrency'=>{'workspaceId','payload'},
+        'deleteAccountGroup'=>{'workspaceId','groupId'},
+        'deleteCashbox'=>{'workspaceId','cashboxId'},
+        'deleteWarehouse'=>{'workspaceId','warehouseId'},
         'deleteCurrency'=>{'workspaceId','currencyId'},
         'deleteAccount'=>{'workspaceId','accountId'},
         'updateInventoryItem'=>{'workspaceId','itemId','updates'},

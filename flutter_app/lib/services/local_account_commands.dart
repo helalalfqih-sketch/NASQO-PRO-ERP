@@ -33,16 +33,22 @@ class LocalAccountCommands {
       if(binding.isNotEmpty&&binding.single['payloadJson']!=workspace)throw StateError('Workspace mismatch');
       var inserted=0,skipped=0;
       var code=(await txn.rawQuery('SELECT COALESCE(MAX(codeNumber),0) AS n FROM accounts')).single['n'] as int;
+      final byIdentity=<String,List<Map<String,Object?>>>{};
+      for(final row in await txn.query('accounts',columns:['name','category','currency'])){
+        byIdentity.putIfAbsent('${row['category']}|${row['name']}',()=>[]).add(row);
+      }
+      final batch=txn.batch();
       for(var i=0;i<rows.length;i++){
         final row=rows[i];
-        final existing=await txn.query('accounts',where:'name = ? AND category = ?',whereArgs:[row['name'],row['category']]);
+        final existing=byIdentity['${row['category']}|${row['name']}']??[];
         if(existing.isNotEmpty){
           if(existing.any((r)=>r['currency']!=row['currency']))throw StateError('حساب موجود بالاسم نفسه وعملة مختلفة؛ راجع الملف. لم تُحفظ الدفعة.');
           skipped++;continue;
         }
         final id='account_${key}_$i';
-        await txn.insert('accounts',{'id':id,...row,'codeNumber':++code});inserted++;
+        batch.insert('accounts',{'id':id,...row,'codeNumber':++code});inserted++;
       }
+      await batch.commit(noResult:true);
       return {'inserted':inserted,'skipped':skipped,'total':rows.length};
     });
   }

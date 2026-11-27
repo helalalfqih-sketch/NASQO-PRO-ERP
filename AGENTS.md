@@ -1,5 +1,11 @@
 # Mobile Prototype Agent Guide
 
+## Complete data management (user direction, 2026-11-27)
+
+- Complete missing create/read/search/filter/update/delete paths in the existing modules, using their actual web SQLite API and Android SQLite bridge. Reuse existing operations and screens; reports are derived views, not independently editable financial records.
+- Validate on the service boundary, enforce workspace access, reject stale edits, and protect references and posted financial history. Confirm deletion in the UI and retain entered data on a failed save.
+- Verify each operation on isolated synthetic databases and the rendered UI. Never delete or modify production records to test CRUD. Preserve original imported archives and use the existing reversal/archive mechanisms for posted documents.
+
 ## Excel export/import compatibility (reported defect, 2026-11-27)
 
 - The app's own inventory exports must be readable in card import above 2000 rows. Keep the shared 10000-row bound across the reader, server and native atomic commands; retain file-size and populated-column guards.

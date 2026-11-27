@@ -1,6 +1,7 @@
+import {createPortal} from 'react-dom';
 import {useId, type ReactNode} from 'react';
 import {Cross2Icon} from '@radix-ui/react-icons';
-import {MobileScroll, useKeyboardInsets} from '../mobile';
+import {MobileScroll, useKeyboardInsets, useScreenPortal} from '../mobile';
 
 /** Shared phone-scoped reference editor; the calling document stays mounted. */
 export function ReferenceManagerDialog({title, description, onClose, busy=false, hidden=false, testId, footer, children, alert=false}: {
@@ -9,7 +10,9 @@ export function ReferenceManagerDialog({title, description, onClose, busy=false,
 }) {
  const titleId=useId();
  const {bottomInset}=useKeyboardInsets();
- return <div className="center-modal-layer reference-manager-layer" hidden={hidden} data-testid={testId} style={{bottom:bottomInset}}>
+ const {screenRef}=useScreenPortal();
+ const target=screenRef.current?.querySelector(".nasqo-app")??screenRef.current;
+ const content=<div className="center-modal-layer reference-manager-layer" hidden={hidden} data-testid={testId} style={{bottom:bottomInset}}>
   <button className="center-modal-backdrop" disabled={busy} onClick={onClose} aria-label={`إغلاق ${title}`}/>
   <section className="reference-manager-dialog" role={alert?'alertdialog':'dialog'} aria-modal="true" aria-labelledby={titleId} dir="rtl">
    <header className="smart-modal-header">
@@ -25,4 +28,5 @@ export function ReferenceManagerDialog({title, description, onClose, busy=false,
    <footer className="reference-manager-footer">{footer}</footer>
   </section>
  </div>;
+ return target?createPortal(content,target):content;
 }

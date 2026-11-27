@@ -1,3 +1,4 @@
+import 'local_reference_guards.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
@@ -216,10 +217,34 @@ class LocalMasterCatalog {
     }
   }
 
+  Future<void> deleteMaster(String workspace,String key,String collection,int id)async{
+    if(!['accountGroups','cashboxes'].contains(collection)||id<=0)throw ArgumentError('معرف غير صالح');
+    await local.commitOperation(workspaceId:workspace,operationId:key,operationType:'$collection.delete',payload:{'id':id},apply:(t)async{
+      await requireLocal(t,workspace);final rows=await read(t,collection),index=rows.indexWhere((r)=>r['id']==id);
+      if(index<0)throw StateError('السجل غير موجود');
+      await LocalReferenceGuards.check(t,id,{collection=='accountGroups'?'groupId':'cashboxId'});
+      if(collection=='accountGroups'){
+        final accounts=await t.query('legacy_operational_rows',where:'collection = ?',whereArgs:['accounts']);
+        if(accounts.any((a)=>jsonDecode(a['row_json'] as String)['groupId']==id))throw StateError('المجموعة مرتبطة بحسابات مستوردة');
+      }else{
+        final roles=await LocalInvoiceRoles.read(t),account=rows[index]['accountId'];
+        if(account!=null&&(await t.query('journal_lines',where:'account_id = ?',whereArgs:[account],limit:1)).isNotEmpty)throw StateError('الصندوق مرتبط بحركات مالية؛ يمكن أرشفته');
+        for(final table in ['ledger_entries','legacy_operational_rows']){
+          final data=await t.query(table);
+          if(data.any((r)=>LocalReferenceGuards.contains(table=='ledger_entries'?r:jsonDecode(r['row_json'] as String),id,{'cashboxId'})))throw StateError('الصندوق مرتبط بمستندات؛ يمكن أرشفته');
+        }
+        for(final currency in roles.values){if(currency is Map)currency.remove('cashbox:$id');}
+        await t.update('erp_state',{'payloadJson':jsonEncode(roles),'updatedAt':DateTime.now().toUtc().toIso8601String()},where:'stateKey = ?',whereArgs:[LocalInvoiceRoles.stateKey]);
+      }
+      rows.removeAt(index);await write(t,collection,rows);return {'deleted':true};
+    });
+  }
+
   Future<void> deleteAccount(String workspace,String key,String id)async{
     await local.commitOperation(workspaceId:workspace,operationId:key,operationType:'account.delete',
       payload:{'id':id},apply:(t)async{
         await requireLocal(t,workspace);
+        await LocalReferenceGuards.check(t,id,{'accountId','clientAccountId','supplierAccountId','counterpartAccountId'});
         final rows=await t.query('accounts',where:'id = ?',whereArgs:[id]);
         if(rows.length!=1)throw StateError('Account missing');
         if(rows.single['openingBalance']!=0||

@@ -1,3 +1,5 @@
+import { assertMasterNotReferenced } from "./masterCrud.ts";
+import { revisionedErpData } from "./erpRecordRevisions.ts";
 import { MAX_IMPORT_ROWS } from "../src/utils/tabularImportLimits";
 import { captureWorkspaceSnapshot, restoreWorkspaceSnapshot } from "./workspaceSnapshot.ts";
 import { validateReferenceDefaultsShape } from "../src/utils/documentReferences";
@@ -122,6 +124,7 @@ function openAndInit(filePath: string): DatabaseSync {
   if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
     db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
   }
+  if (!(db.prepare("PRAGMA table_info(cashboxes)").all() as {name:string}[]).some(c=>c.name==='account_id')) db.exec('ALTER TABLE cashboxes ADD COLUMN account_id TEXT REFERENCES accounts(id);');
   const ledgerCols = db.prepare("PRAGMA table_info(ledger_entries)").all() as { name: string }[];
   if (!ledgerCols.some((c) => c.name === "tax_amount")) {
     db.exec("ALTER TABLE ledger_entries ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0;");
@@ -585,7 +588,7 @@ export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorks
     }
   }
 
-  return {
+  return revisionedErpData({
     employees,
     leaveRequests,
     deals,
@@ -595,7 +598,7 @@ export function loadErpDataRows(db: DatabaseSync, workspaceId: string): ErpWorks
     costCenters,
     ...(meta.last_payroll_run_month ? { lastPayrollRunMonth: String(meta.last_payroll_run_month) } : {}),
     ...(parsedVatConfig ? { vatConfig: parsedVatConfig } : {}),
-  };
+  });
 }
 
 function ensureDefaultAccountGroups(db: DatabaseSync, workspaceId: string) {
@@ -1015,7 +1018,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     .prepare("SELECT * FROM ledger_entries WHERE workspace_id = ? ORDER BY created_at_ms ASC, entry_number ASC")
     .all(workspaceId) as Record<string, unknown>[];
   const cashboxRows = db
-    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? AND state = 1 ORDER BY sort_order ASC, id ASC")
+    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id, account_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
     .all(workspaceId) as Record<string, unknown>[];
   let currencyRows = db
     .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? ORDER BY id ASC")
@@ -1064,6 +1067,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
     boxType: Number(c.box_type ?? 1),
     sortOrder: Number(c.sort_order ?? 0),
     isActive: Number(c.state ?? 1) === 1,
+    ...(c.account_id ? {accountId:String(c.account_id)} : {}),
     ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
   }));
 
@@ -1126,6 +1130,7 @@ export function upsertCurrencyRow(
     if (!existing) {
       throw new SqliteValidationError("العملة المحددة غير موجودة.");
     }
+    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ? AND id <> ?")
       .get(workspaceId, name, targetId) as { id: number } | undefined;
@@ -1139,6 +1144,7 @@ export function upsertCurrencyRow(
     ).run(name, name, symbol, ratePrimary, rateSecondary, nameSecondary, workspaceId, targetId);
     writeAudit(db, workspaceId, workspaceId, "currencies", String(targetId), "update", { name, ratePrimary, rateSecondary });
   } else {
+    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?")
       .get(workspaceId, name) as { id: number } | undefined;
@@ -1296,6 +1302,9 @@ export function upsertAccountRow(
     ? (db.prepare("SELECT code_number, group_id FROM accounts WHERE workspace_id = ? AND id = ?").get(workspaceId, id) as { code_number: number; group_id: number | null } | undefined)
     : undefined;
 
+  if(existingId&&!existing)throw new SqliteValidationError('الحساب غير موجود.');
+  if(input.groupId!=null&&!db.prepare('SELECT id FROM account_groups WHERE workspace_id=? AND id=? AND category=? AND currency_code=?').get(workspaceId,input.groupId,clean.category,clean.currency))throw new SqliteValidationError('مجموعة الحساب لا تطابق التصنيف أو العملة.');
+  if(existing&&db.prepare('SELECT 1 FROM accounts WHERE id=? AND workspace_id=? AND currency<>?').get(id,workspaceId,clean.currency))throw new SqliteValidationError('عملة الحساب هوية مالية لا تتغير.');
   let resolvedGroupId: number | null =
     typeof input.groupId === "number" && Number.isFinite(input.groupId) ? input.groupId : (existing?.group_id ?? null);
   if (!resolvedGroupId) {
@@ -1346,6 +1355,9 @@ export function upsertAccountGroupRow(
   const currencyCode = (input.currencyCode || "ريال") as CurrencyCode;
   const sortOrder = Number(input.sortOrder ?? 0) || 0;
 
+  if(!['purchases','sales','clients','employees','transfers','shop'].includes(category)||!Number.isSafeInteger(sortOrder)||sortOrder<0||!db.prepare('SELECT 1 FROM currencies WHERE workspace_id=? AND name=?').get(workspaceId,currencyCode))throw new SqliteValidationError('تصنيف المجموعة أو عملتها غير صالح.');
+  if(db.prepare('SELECT 1 FROM account_groups WHERE workspace_id=? AND name=? AND id<>?').get(workspaceId,name,input.id??0))throw new SqliteValidationError('اسم المجموعة مستخدم.');
+  if(input.id){const old=db.prepare('SELECT category,currency_code FROM account_groups WHERE workspace_id=? AND id=?').get(workspaceId,input.id);if(!old)throw new SqliteValidationError('المجموعة غير موجودة.');if(old.category!==category||old.currency_code!==currencyCode)throw new SqliteValidationError('تصنيف المجموعة وعملتها لا يتغيران بعد إنشائها.');}
   let rowId = input.id;
   if (rowId) {
     db.prepare(
@@ -3766,6 +3778,8 @@ export function upsertWarehouseRow(
   ensureEmptyWorkspace(db, workspaceId);
   const id = existingId || makeId("wh");
   const clean = sanitizeWarehousePayload({ ...warehouse, ownerId: workspaceId });
+  if(existingId&&!db.prepare('SELECT 1 FROM warehouses WHERE workspace_id=? AND id=?').get(workspaceId,existingId))throw new SqliteValidationError('المخزن غير موجود.');
+  if(db.prepare('SELECT 1 FROM warehouses WHERE workspace_id=? AND name=? AND id<>?').get(workspaceId,clean.name,id))throw new SqliteValidationError('اسم المخزن مستخدم.');
   const now = nowIso();
   return withTransaction(db, () => {
     if (clean.isDefault) {
@@ -4217,6 +4231,8 @@ export function deleteInventoryCatalogRow(
   workspaceId: string,
   itemId: string,
 ): void {
+  withTransaction(db, () => {
+  assertMasterNotReferenced(db,workspaceId,itemId,['inventoryItemId','finishedItemId','quickItemIds']);
   const existing = db
     .prepare("SELECT id, name, quantity FROM inventory_items WHERE workspace_id = ? AND id = ?")
     .get(workspaceId, itemId) as { id: string; name: string; quantity: number } | undefined;
@@ -4234,9 +4250,15 @@ export function deleteInventoryCatalogRow(
   }
   db.prepare("DELETE FROM inventory_items WHERE workspace_id = ? AND id = ?").run(workspaceId, itemId);
   writeAudit(db, workspaceId, workspaceId, "inventory_items", itemId, "delete", { name: existing.name });
+  });
 }
 
 export function deleteAccountRow(db: DatabaseSync, workspaceId: string, accountId: string): void {
+  withTransaction(db, () => {
+  assertMasterNotReferenced(db,workspaceId,accountId,['accountId','clientAccountId','supplierAccountId','counterpartAccountId']);
+  if(db.prepare('SELECT 1 FROM accounts WHERE workspace_id=? AND id=? AND (opening_balance<>0 OR legacy_ref IS NOT NULL)').get(workspaceId,accountId)||
+    db.prepare('SELECT 1 FROM journal_entry_lines WHERE workspace_id=? AND account_id=?').get(workspaceId,accountId)||
+    db.prepare('SELECT 1 FROM cashboxes WHERE workspace_id=? AND account_id=?').get(workspaceId,accountId))throw new SqliteValidationError('الحساب مرتبط برصيد أو تاريخ مالي أو صندوق.');
   const existing = db
     .prepare("SELECT id, name FROM accounts WHERE workspace_id = ? AND id = ?")
     .get(workspaceId, accountId) as { id: string; name: string } | undefined;
@@ -4249,10 +4271,11 @@ export function deleteAccountRow(db: DatabaseSync, workspaceId: string, accountI
     )
     .get(workspaceId, accountId, accountId) as { cnt: number } | undefined;
   if (Number(refs?.cnt ?? 0) > 0) {
-    throw new SqliteValidationError("لا يمكن حذف حساب مرتبط بقيود أو فواتير؛ احذف أو انقل عملياته أولًا.");
+    throw new SqliteValidationError("الحساب مرتبط بقيود أو فواتير محفوظة ولا يمكن حذفه.");
   }
   db.prepare("DELETE FROM accounts WHERE workspace_id = ? AND id = ?").run(workspaceId, accountId);
   writeAudit(db, workspaceId, workspaceId, "accounts", accountId, "delete", { name: existing.name });
+  });
 }
 
 export function revokeAuthSessionHash(db: DatabaseSync, tokenHash: string, expiresAtMs: number): void {
@@ -4287,6 +4310,7 @@ export function updateInventoryItemRow(
   itemId: string,
   item: Partial<InventoryItemRecord> & { name: string; warehouseId: string },
 ): void {
+  if(!db.prepare('SELECT id FROM inventory_items WHERE workspace_id=? AND id=?').get(workspaceId,itemId))throw new SqliteValidationError('الصنف غير موجود.');
   const clean = sanitizeInventoryPayload({ ...item, ownerId: workspaceId });
   const now = nowIso();
   db.prepare(
@@ -4532,7 +4556,7 @@ export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string)
     .all(workspaceId) as Record<string, unknown>[];
 
   const allCashboxRows = db
-    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
+    .prepare("SELECT id, name, details, currency_code, state, box_type, sort_order, legacy_id, account_id FROM cashboxes WHERE workspace_id = ? ORDER BY sort_order ASC, id ASC")
     .all(workspaceId) as Record<string, unknown>[];
 
   const inventoryExtraRows = db
@@ -4704,6 +4728,7 @@ export function exportWorkspaceJsonBackup(db: DatabaseSync, workspaceId: string)
       boxType: Number(c.box_type ?? 1),
       sortOrder: Number(c.sort_order ?? 0),
       isActive: Number(c.state ?? 1) === 1,
+    ...(c.account_id ? {accountId:String(c.account_id)} : {}),
       ...(c.legacy_id !== null && c.legacy_id !== undefined ? { legacyId: Number(c.legacy_id) } : {}),
     })),
     warehouses: bundle.warehouses,

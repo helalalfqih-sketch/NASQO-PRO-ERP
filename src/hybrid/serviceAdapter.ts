@@ -1614,3 +1614,18 @@ export async function queryUnifiedSqliteTable(
 ): Promise<{ table: string; columns: string[]; total: number; rows: Record<string, unknown>[] }> {
   return { table, columns: [], total: 0, rows: [] };
 }
+
+export async function saveCashboxRecord(uid:string,payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}):Promise<CashboxRecord>{
+ const result=await hybridBridge.invoke<'saveCashbox',{cashbox:CashboxRecord;snapshot:HybridWorkspaceSnapshot}>('saveCashbox',{workspaceId:uid||LOCAL_WORKSPACE_UID,payload},{idempotencyKey:createIdempotencyKey('saveCashbox')});applyHybridSnapshot(result.snapshot);return result.cashbox;
+}
+export async function deleteCashboxRecord(uid:string,cashboxId:number):Promise<void>{
+ const result=await hybridBridge.invoke<'deleteCashbox',{snapshot:HybridWorkspaceSnapshot}>('deleteCashbox',{workspaceId:uid||LOCAL_WORKSPACE_UID,cashboxId},{idempotencyKey:createIdempotencyKey('deleteCashbox')});applyHybridSnapshot(result.snapshot);
+}
+export async function deleteAccountGroup(uid:string,groupId:number):Promise<void>{
+ const result=await hybridBridge.invoke<'deleteAccountGroup',{snapshot:HybridWorkspaceSnapshot}>('deleteAccountGroup',{workspaceId:uid||LOCAL_WORKSPACE_UID,groupId},{idempotencyKey:createIdempotencyKey('deleteAccountGroup')});applyHybridSnapshot(result.snapshot);
+}
+export async function deleteWarehouse(uid:string,warehouseId:string):Promise<void>{
+ const result=await hybridBridge.invoke<'deleteWarehouse',{snapshot:HybridWorkspaceSnapshot}>('deleteWarehouse',{workspaceId:uid||LOCAL_WORKSPACE_UID,warehouseId},{idempotencyKey:createIdempotencyKey('deleteWarehouse')});applyHybridSnapshot(result.snapshot);
+}
+
+export async function executeErpAction(_uid:string,_payload:{action:string;id?:string;expectedRevision?:string|number;currency?:string;month?:string}):Promise<void>{throw new Error('استخدم شاشة المستند الأصلية لترحيل هذه العملية.');}

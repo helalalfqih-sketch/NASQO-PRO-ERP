@@ -1,14 +1,14 @@
+import { executeErpAction } from "../../firebase";
+import { ErpRecordManager } from "./ErpRecordManager";
 import { usesNativeDocumentOutput } from "../../hybrid/documentOutput";
 import { useMemo, useState } from "react";
 import { CheckCircledIcon, PlusIcon } from "@radix-ui/react-icons";
 import { formatAmount, normalizeArabicSearch } from "../../accounting";
 import {
-  parsePositiveNumber,
   type ErpDealRecord,
-  type ErpDealStage,
   type ErpWorkspaceData,
 } from "../../erp";
-import { batchUpdateInventoryItems, createLedgerEntry } from "../../firebase";
+import { createLedgerEntry } from "../../firebase";
 import { KeyboardInput, MobileScroll, useKeyboard } from "../../mobile";
 import type {
   AccountRecord,
@@ -21,20 +21,6 @@ import { InvoiceForm } from "../InvoiceForm";
 import { approvedLiveSellingPrice, canSellFromVerifiedStock } from "../../legacy/liveSafety";
 
 type CrmPosTab = "pos" | "crm";
-
-const STAGE_LABEL: Record<ErpDealStage, string> = {
-  lead: "فرصة جديدة",
-  proposal: "عرض سعر",
-  negotiation: "تفاوض",
-  won: "صفقة مغلقة (ربح)",
-  lost: "مغلقة (خسارة)",
-};
-
-const STAGE_NEXT: Partial<Record<ErpDealStage, ErpDealStage>> = {
-  lead: "proposal",
-  proposal: "negotiation",
-  negotiation: "won",
-};
 
 export function ErpCrmPosScreen({
   uid,
@@ -75,11 +61,6 @@ export function ErpCrmPosScreen({
   const [cart, setCart] = useState<Record<string, number>>({});
   const [checkingOut, setCheckingOut] = useState(false);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
-
-  const [addingDeal, setAddingDeal] = useState(false);
-  const [dealTitle, setDealTitle] = useState("");
-  const [dealValue, setDealValue] = useState("15000");
-  const [dealClientId, setDealClientId] = useState(() => salesAndClientAccounts[0]?.id ?? "");
 
   const effectiveAccountId =
     salesAndClientAccounts.find((a) => a.id === selectedAccountId)?.id ??
@@ -150,15 +131,9 @@ export function ErpCrmPosScreen({
       return;
     }
     const targetWh = warehouses.find((w) => w.id === effectiveWhId) ?? warehouses[0];
+    if(!targetWh){onToast("اختر مخزنًا موجودًا لإتمام البيع.");return;}
     setCheckingOut(true);
     try {
-      await batchUpdateInventoryItems(
-        uid,
-        cartLines.map((line) => ({
-          item: line.item,
-          quantity: Math.max(0, line.item.quantity - line.qty),
-        })),
-      );
       const detailsText =
         cartLines
           .map((l) => `${l.item.name} | ${l.qty} ${l.item.unit} × ${formatAmount(l.unitSellPrice)}`)
@@ -172,6 +147,8 @@ export function ErpCrmPosScreen({
         payment,
         direction: "debit",
         amount: grandTotal,
+        taxAmount: vatAmount,
+        lines: cartLines.map(l=>({inventoryItemId:l.item.id,itemName:l.item.name,unit:l.item.unit,warehouseId:targetWh!.id,quantity:l.qty,price:l.unitSellPrice,total:l.lineTotal})),
         currency,
         exchangeRate: 1,
         details: detailsText,
@@ -191,56 +168,6 @@ export function ErpCrmPosScreen({
     }
   };
 
-  const handleCreateDeal = async () => {
-    keyboard.hide();
-    if (!dealTitle.trim()) {
-      onToast("أدخل عنوان الصفقة أولًا");
-      return;
-    }
-    const client =
-      salesAndClientAccounts.find((a) => a.id === dealClientId) ?? salesAndClientAccounts[0];
-    const newDeal: ErpDealRecord = {
-      id: `deal_${Date.now()}`,
-      title: dealTitle.trim(),
-      clientAccountId: client?.id ?? "acc_sales_1",
-      clientName: client?.name ?? "المبيعات العامة",
-      value: parsePositiveNumber(dealValue),
-      currency,
-      stage: "lead",
-      probability: 25,
-      expectedCloseDate: new Date().toISOString().slice(0, 10),
-      assignedTo: erpData.employees[0]?.name ?? "فريق المبيعات",
-    };
-    if (!await onUpdateErpData({
-      ...erpData,
-      deals: [newDeal, ...erpData.deals],
-    })) return;
-    setDealTitle("");
-    setAddingDeal(false);
-    triggerHaptic("success");
-    onToast("تمت إضافة الفرصة البيعية إلى خط المبيعات");
-  };
-
-  const handleAdvanceDeal = async (dealId: string) => {
-    triggerHaptic("light");
-    if (!await onUpdateErpData({
-      ...erpData,
-      deals: erpData.deals.map((d) => {
-        if (d.id !== dealId) return d;
-        const nextStage = STAGE_NEXT[d.stage];
-        if (!nextStage) return d;
-        const probMap: Record<ErpDealStage, number> = {
-          lead: 25,
-          proposal: 50,
-          negotiation: 75,
-          won: 100,
-          lost: 0,
-        };
-        return { ...d, stage: nextStage, probability: probMap[nextStage] };
-      }),
-    })) return;
-  };
-
   const handleConvertDealToInvoice = async (deal: ErpDealRecord) => {
     if(usesNativeDocumentOutput()){onToast("هذا الترحيل المتقدم غير مدعوم محليًا بعد؛ استخدم شاشة المستند الأصلية. لم يُرحّل أي أثر.");return;}
     keyboard.hide();
@@ -253,36 +180,12 @@ export function ErpCrmPosScreen({
       onToast("لا يوجد حساب عميل مرتبط بالصفقة");
       return;
     }
-    const defaultWh = warehouses.find((w) => w.isDefault) ?? warehouses[0];
     try {
-      const entryId = await createLedgerEntry(uid, {
-        accountId: acc.id,
-        accountName: acc.name,
-        kind: "invoice",
-        typeLabel: "فاتورة مبيعات",
-        payment: "credit",
-        direction: "debit",
-        amount: deal.value,
-        currency: deal.currency,
-        exchangeRate: 1,
-        details: `تحويل صفقة: ${deal.title}`,
-        warehouseId: defaultWh?.id ?? "wh_1",
-        warehouseName: defaultWh?.name ?? "المخزن الرئيسي",
-        invoiceContent: "free",
-        entryDate: new Date().toISOString().slice(0, 10),
-      });
-      if (!await onUpdateErpData({
-        ...erpData,
-        deals: erpData.deals.map((d) =>
-          d.id === deal.id
-            ? { ...d, stage: "won", probability: 100, convertedInvoiceEntryId: entryId }
-            : d,
-        ),
-      })) return;
+      await executeErpAction(uid,{action:'convertDeal',id:deal.id,expectedRevision:(deal as unknown as {_revision:string})._revision});
       triggerHaptic("success");
       onToast(`تم تحويل الصفقة إلى فاتورة مبيعات بقيمة ${formatAmount(deal.value)} ${deal.currency}`);
-    } catch {
-      onToast("تعذر تحويل الصفقة إلى فاتورة");
+    } catch(e) {
+      onToast(e instanceof Error?e.message:"تعذر تحويل الصفقة إلى فاتورة");
     }
   };
 
@@ -493,113 +396,8 @@ export function ErpCrmPosScreen({
               </button>
             </section>
           </>
-        ) : (
-          <>
-            <section className="erp-summary-strip">
-              <div>
-                <small>إجمالي قيمة الصفقات</small>
-                <strong className="pos"><bdi>{formatAmount(activePipelineTotal)} {currency}</bdi></strong>
-              </div>
-              <div>
-                <small>الصفقات المفتوحة</small>
-                <strong>{erpData.deals.filter((d) => d.stage !== "won" && d.stage !== "lost").length}</strong>
-              </div>
-            </section>
-
-            <section className="erp-card">
-              <div className="erp-card-head">
-                <h3>متابعة صفقات المبيعات</h3>
-                <button
-                  type="button"
-                  className="erp-chip-btn"
-                  onClick={() => {
-                    keyboard.hide();
-                    setAddingDeal((v) => !v);
-                  }}
-                >
-                  <PlusIcon />
-                  <span>{addingDeal ? "إغلاق" : "صفقة جديدة"}</span>
-                </button>
-              </div>
-
-              {addingDeal ? (
-                <div className="erp-inline-form">
-                  <KeyboardInput
-                    placeholder="عنوان الفرصة البيعية أو المشروع"
-                    value={dealTitle}
-                    onChange={(e) => setDealTitle(e.target.value)}
-                  />
-                  <div className="erp-form-row-2">
-                    <KeyboardInput
-                      inputMode="decimal"
-                      placeholder="القيمة المتوقعة"
-                      value={dealValue}
-                      onChange={(e) => setDealValue(e.target.value)}
-                    />
-                    <select
-                      aria-label="العميل"
-                      value={dealClientId}
-                      onChange={(e) => setDealClientId(e.target.value)}
-                    >
-                      {salesAndClientAccounts.map((acc) => (
-                        <option key={acc.id} value={acc.id}>
-                          {acc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button type="button" className="erp-primary-btn full" onClick={handleCreateDeal}>
-                    حفظ الفرصة البيعية
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="erp-list">
-                {erpData.deals.map((deal) => (
-                  <article key={deal.id} className="erp-row-card">
-                    <div className="erp-row-main">
-                      <div>
-                        <strong>{deal.title}</strong>
-                        <small>{deal.clientName} · {deal.assignedTo}</small>
-                      </div>
-                      <div className="erp-row-value">
-                        <strong className="pos"><bdi>{formatAmount(deal.value)}</bdi></strong>
-                        <small>{deal.currency}</small>
-                      </div>
-                    </div>
-                    <div className="erp-row-meta">
-                      <span>المرحلة: {STAGE_LABEL[deal.stage]}</span>
-                      <span>احتمال الإغلاق: <bdi>{deal.probability}%</bdi></span>
-                    </div>
-                    <div className="erp-inline-actions">
-                      {STAGE_NEXT[deal.stage] ? (
-                        <button
-                          type="button"
-                          className="erp-secondary-btn"
-                          onClick={() => handleAdvanceDeal(deal.id)}
-                        >
-                          ترقية المرحلة
-                        </button>
-                      ) : null}
-                      {!deal.convertedInvoiceEntryId && deal.stage !== "lost" ? (
-                        <button
-                          type="button"
-                          className="erp-primary-btn"
-                          disabled={usesNativeDocumentOutput()} onClick={() => handleConvertDealToInvoice(deal)}
-                        >
-                          تحويل إلى فاتورة مبيعات
-                        </button>
-                      ) : null}
-                      {deal.convertedInvoiceEntryId ? (
-                        <span className="erp-status-text status-approved">تم الترحيل لفاتورة مبيعات</span>
-                      ) : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
+        ) : <ErpRecordManager uid={uid} collection="deals" erpData={erpData} currency={currency} accounts={accounts} onToast={onToast}
+          extraActions={row=>row.stage==="won"&&!row.convertedInvoiceEntryId?<button className="erp-chip-btn" disabled={usesNativeDocumentOutput()} onClick={()=>void handleConvertDealToInvoice(row as ErpDealRecord)}>تحويل إلى فاتورة مبيعات</button>:null}/>}
       </main>
       <InvoiceForm
         open={showInvoiceForm}

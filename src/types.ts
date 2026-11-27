@@ -126,6 +126,7 @@ export type AccountRecord = {
 };
 
 export type CashboxRecord = {
+  accountId?: string;
   id: number;
   name: string;
   details: string;

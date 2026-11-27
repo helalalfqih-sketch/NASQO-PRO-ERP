@@ -54,6 +54,9 @@ export const HYBRID_ALLOWED_COMMANDS = [
   // Accounting, accounts, inventory, and reports (persisted exclusively by Dart/SQLite)
   "saveWorkspaceSettings",
   "saveCashbox",
+  "deleteCashbox",
+  "deleteAccountGroup",
+  "deleteWarehouse",
   "saveAccountGroup",
   "saveCurrency",
   "deleteCurrency",
@@ -101,6 +104,9 @@ export const FINANCIAL_MUTATION_COMMANDS: ReadonlySet<HybridCommandAction> = new
   "saveAccount",
   "deleteAccount",
   "saveCashbox",
+  "deleteCashbox",
+  "deleteAccountGroup",
+  "deleteWarehouse",
   "saveAccountGroup",
   "saveCurrency",
   "deleteCurrency",
@@ -311,7 +317,10 @@ export interface HybridCommandPayloadMap {
   };
   getInvoiceDetail: { workspaceId: string; entryId: string };
   getProductPriceStats: { workspaceId: string; itemId: string };
-  saveErpRecords: { workspaceId: string; changes: Array<{collection: string; record: Record<string, unknown>; expectedRevision: number}> };
+  deleteCashbox: {workspaceId:string;cashboxId:number};
+  deleteAccountGroup: {workspaceId:string;groupId:number};
+  deleteWarehouse: {workspaceId:string;warehouseId:string};
+  saveErpRecords: { workspaceId: string; changes: import("../erpRecordRules").ErpRecordChange[] };
   saveErpData: { workspaceId: string; data: ErpWorkspaceData };
   backupWorkspace: { workspaceId: string; backupName?: string; target: "local" | "cloud" };
   restoreWorkspace: { workspaceId: string; fileName: string; format: "json" | "sqlite" | "sql"; base64Content: string };

@@ -1212,7 +1212,9 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
       ...loadErpDataRows(db, DEFAULT_WORKSPACE_ID),
       vatConfig: { jurisdiction: "sa_15", ratePercent: 15, basis: "estimated_gross" },
     });
-    assert.deepEqual(loadErpDataRows(db, DEFAULT_WORKSPACE_ID).vatConfig, {
+    const {_revision, ...vatFields} = loadErpDataRows(db, DEFAULT_WORKSPACE_ID).vatConfig as unknown as Record<string,unknown>;
+    assert.equal(typeof _revision, "string");
+    assert.deepEqual(vatFields, {
       jurisdiction: "sa_15",
       ratePercent: 15,
       basis: "estimated_gross",
@@ -1241,10 +1243,11 @@ test("8. full JSON export/restore roundtrip preserves invoice lines & ERP entiti
       .run(DEFAULT_WORKSPACE_ID);
     const cbId = Number(cbRes.lastInsertRowid);
 
+    const supplierGroup = upsertAccountGroupRow(db, DEFAULT_WORKSPACE_ID, {name:"الموردون",category:"purchases",currencyCode:"ريال"});
     const accSupp = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, {
       name: "مورد التصدير",
       category: "purchases",
-      groupId: grp.id,
+      groupId: supplierGroup.id,
       currency: "ريال",
       openingBalance: 1000,
       openingDirection: "credit",
@@ -1368,7 +1371,7 @@ test("8. full JSON export/restore roundtrip preserves invoice lines & ERP entiti
 
     // C) Mid-restore failure trigger proves full atomic transaction ROLLBACK (zero data loss)
     db.exec(`CREATE TRIGGER test_fail_mid_restore BEFORE INSERT ON invoice_lines BEGIN SELECT RAISE(ABORT, 'simulated-mid-restore-failure'); END;`);
-    assert.throws(() => restoreUnifiedJsonBundle(db, DEFAULT_WORKSPACE_ID, JSON.parse(JSON.stringify(exported))), /simulated-mid-restore-failure/);
+    assert.throws(() => restoreUnifiedJsonBundle(db, DEFAULT_WORKSPACE_ID, JSON.parse(JSON.stringify(exported))), /invoice_lines/);
     db.exec(`DROP TRIGGER test_fail_mid_restore;`);
     assert.equal(getFullWorkspaceBundle(db, DEFAULT_WORKSPACE_ID).accounts.length, 2);
     assert.equal(fetchInvoiceDetail(db, DEFAULT_WORKSPACE_ID, inv1.id)!.lines.length, 1);
@@ -1397,7 +1400,7 @@ test("8. full JSON export/restore roundtrip preserves invoice lines & ERP entiti
     assert.deepEqual(afterExport.ledger.find((e) => e.id === inv1.id)!.lines, exportedInv.lines);
     assert.deepEqual(afterExport.ledger.find((e) => e.id === ret1.id)!.lines, exported.ledger.find((e) => e.id === ret1.id)!.lines);
     assert.equal(afterExport.ledger.find((e) => e.id === inv1.id)!.taxAmount, 50);
-    assert.deepEqual(afterExport.erpData.vatConfig, { jurisdiction: "sa_15", ratePercent: 15, basis: "estimated_gross" });
+    assert.deepEqual(afterExport.erpData.vatConfig, exported.erpData.vatConfig);
 
     // E) Export native SQLite snapshot -> setup a workspace with an existing account -> import with replaceExisting: false MUST reject without wiping!
     const nativeBytes = await exportCleanSqliteSnapshotBytes(db, snapPath);

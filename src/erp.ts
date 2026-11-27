@@ -1239,18 +1239,25 @@ export function loadErpWorkspaceData(uid: string): ErpWorkspaceData {
 }
 
 export async function saveErpWorkspaceData(uid: string, data: ErpWorkspaceData): Promise<void> {
-  const key = uid || "local-erp-workspace";
-  if (typeof window === "undefined") throw new Error("خدمة حفظ السجلات غير متاحة");
-  const win = window as unknown as {__nasqoHybridReady?:boolean; __nasqoHybridSaveErp?:(uid:string,data:ErpWorkspaceData)=>Promise<ErpWorkspaceData>};
-  if (win.__nasqoHybridReady || (import.meta as {env?:{VITE_NASQO_HYBRID?:string}}).env?.VITE_NASQO_HYBRID === "1") {
-    if (!win.__nasqoHybridSaveErp) throw new Error("خدمة الحفظ الأصلية غير متاحة؛ لم يُحفظ السجل");
-    hydrateErpWorkspaceCache(key, await win.__nasqoHybridSaveErp(key,data));
+  const { buildErpRecordChanges } = await import('./hybrid/erpRecordChanges');
+  await saveErpRecordCommands(uid,buildErpRecordChanges(loadErpWorkspaceData(uid),data));
+}
+
+export async function saveErpRecordCommands(uid: string, changes: import('./erpRecordRules').ErpRecordChange[]): Promise<void> {
+  if (!changes.length) return;
+  const key = uid || 'local-erp-workspace';
+  if (typeof window === 'undefined') throw new Error('خدمة حفظ السجلات غير متاحة');
+  const win = window as unknown as {__nasqoHybridReady?:boolean; __nasqoHybridSaveErpRecords?:(uid:string,changes:import('./erpRecordRules').ErpRecordChange[])=>Promise<ErpWorkspaceData>};
+  if (win.__nasqoHybridReady || (import.meta as {env?:{VITE_NASQO_HYBRID?:string}}).env?.VITE_NASQO_HYBRID === '1') {
+    if (!win.__nasqoHybridSaveErpRecords) throw new Error('خدمة الحفظ الأصلية غير متاحة؛ لم يُحفظ السجل');
+    hydrateErpWorkspaceCache(key, await win.__nasqoHybridSaveErpRecords(key,changes));
     return;
   }
-  const base = new URL("api/db/workspace/",new URL((import.meta as {env?:{BASE_URL?:string}}).env?.BASE_URL || "/",window.location.origin)).pathname;
-  const response = await fetch(`${base}${encodeURIComponent(key)}/erp`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-  if (!response.ok) throw new Error("تعذر حفظ السجل؛ بقيت المدخلات لإعادة المحاولة");
-  hydrateErpWorkspaceCache(key,data);
+  const base = new URL('api/db/workspace/',new URL((import.meta as {env?:{BASE_URL?:string}}).env?.BASE_URL || '/',window.location.origin)).pathname;
+  const response = await fetch(`${base}${encodeURIComponent(key)}/erp`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({changes})});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'تعذر حفظ السجل؛ بقيت المدخلات لإعادة المحاولة');
+  hydrateErpWorkspaceCache(key,result.erpData);
 }
 
 export function formatErpCurrency(amount: number, currency: CurrencyCode | string = "ريال"): string {

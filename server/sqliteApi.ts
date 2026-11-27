@@ -1,3 +1,7 @@
+import { executeErpAction } from "./erpActions.ts";
+import { deleteMasterRecord, saveCashboxRecord } from "./masterCrud.ts";
+import { saveErpRecords } from "./erpRecords.ts";
+import { ErpValidationError } from "../src/erpRecordRules.ts";
 import { prepareWorkspaceRestore, withApprovedRestore, readRestoreSafetyBackup } from "./restoreSafety.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -101,7 +105,7 @@ function route(fn: (req: Request, res: Response, db: DatabaseSync) => Promise<vo
       const db = getSqliteDb();
       await fn(req, res, db);
     } catch (error) {
-      if (error instanceof HttpError) {
+      if (error instanceof HttpError || error instanceof ErpValidationError) {
         res.status(error.status).json({ error: error.message });
         return;
       }
@@ -661,14 +665,28 @@ export function mountSqliteApi(app: Express): void {
     }),
   );
 
+  router.post('/workspace/:uid/erp/actions',route((req,res,db)=>{
+    const uid=validWsId(paramStr(req,'uid'));res.json({bundle:executeErpAction(db,uid,req.body)});
+  }));
+  router.post('/workspace/:uid/cashboxes',route((req,res,db)=>{
+    const uid=validWsId(paramStr(req,'uid'));
+    const cashbox=saveCashboxRecord(db,uid,req.body?.payload);
+    res.json({cashbox,bundle:getFullWorkspaceBundle(db,uid)});
+  }));
+  for (const [path,kind] of [['groups','group'],['warehouses','warehouse'],['cashboxes','cashbox']] as const) {
+    router.delete(`/workspace/:uid/${path}/:id`,route((req,res,db)=>{
+      const uid=validWsId(paramStr(req,'uid')),raw=paramStr(req,'id'),id=kind==='warehouse'?raw:Number(raw);
+      if(!raw||(typeof id==='number'&&(!Number.isSafeInteger(id)||id<=0)))throw new HttpError(400,'معرف غير صالح.');
+      deleteMasterRecord(db,uid,kind,id);res.json({ok:true,bundle:getFullWorkspaceBundle(db,uid)});
+    }));
+  }
+
   router.put(
     "/workspace/:uid/erp",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      ensureEmptyWorkspace(db, uid);
-      const data = req.body as ErpWorkspaceData;
-      withTransaction(db, () => saveErpDataRows(db, uid, data));
-      res.json({ ok: true });
+      if (!Array.isArray(req.body?.changes)) throw new HttpError(400, "استخدم تعديل السجلات المحددة؛ استبدال القوائم بالكامل غير مسموح.");
+      res.json({ ok: true, erpData: saveErpRecords(db, uid, req.body.changes) });
     }),
   );
 

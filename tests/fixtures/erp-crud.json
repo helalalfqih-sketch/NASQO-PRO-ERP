@@ -1,0 +1,9 @@
+{
+ "employees":{"id":"crud-employee","name":"موظف اختبار","roleTitle":"بائع","department":"المحل","basicSalary":1000,"allowances":50,"deductions":0,"status":"active","hireDate":"2026-11-27","leaveBalanceDays":21,"attendanceToday":"present"},
+ "leaveRequests":{"id":"crud-leave","employeeId":"crud-employee","employeeName":"موظف اختبار","leaveType":"سنوية","startDate":"2026-11-27","days":2,"status":"pending","note":"طلب اصطناعي"},
+ "deals":{"id":"crud-deal","title":"صفقة اختبار","clientAccountId":"crud-account","clientName":"حساب اختبار","value":500,"currency":"ريال","stage":"lead","probability":30,"expectedCloseDate":"2026-11-28","assignedTo":"فريق الاختبار"},
+ "purchaseOrders":{"id":"crud-po","poNumber":"PO-TEST","supplierAccountId":"crud-account","supplierName":"حساب اختبار","warehouseId":"crud-wh","warehouseName":"مخزن اختبار","currency":"ريال","orderDate":"2026-11-27","expectedDate":"2026-11-28","status":"draft","lines":[{"inventoryItemId":"crud-raw","itemName":"مادة اختبار","unit":"حبة","quantity":2,"unitCost":4}],"notes":"أمر اصطناعي"},
+ "boms":{"id":"crud-bom","name":"قائمة مواد اختبار","finishedItemId":"crud-finished","finishedItemName":"منتج اختبار","finishedUnit":"حبة","components":[{"inventoryItemId":"crud-raw","itemName":"مادة اختبار","unit":"حبة","quantityPerUnit":2}]},
+ "costCenters":{"id":"crud-center","code":"CC-TEST","name":"مركز اختبار","managerName":"الإدارة","budget":1000,"extraPostedSpend":0,"linkedCategories":["مصروفات تشغيلية"],"status":"active"},
+ "productionOrders":{"id":"crud-production","orderNumber":"MO-TEST","bomId":"crud-bom","bomName":"قائمة مواد اختبار","finishedItemId":"crud-finished","finishedItemName":"منتج اختبار","quantityToProduce":2,"warehouseId":"crud-wh","status":"planned","createdDate":"2026-11-27","costCenterId":"crud-center"}
+}

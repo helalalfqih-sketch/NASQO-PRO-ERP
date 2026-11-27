@@ -1,3 +1,4 @@
+import { DeleteRecordDialog } from "./components/DeleteRecordDialog";
 import { catalogCardsForReport } from "./utils/catalogWorkbook";
 import { emptyReferenceDefaults, eligibleCashbox, resolveCashbox } from "./utils/documentReferences";
 import { ReferenceManagerDialog } from "./components/ReferenceManagerDialog";
@@ -194,6 +195,8 @@ import {
   resetLocalWorkspaceDatabase,
   restoreJsonBackupIntoServer,
   saveAccountGroup,
+  deleteAccountGroup,
+  deleteWarehouse,
   saveCurrencyRecord,
   saveWarehouse,
   saveWorkspaceSettings,
@@ -3822,6 +3825,7 @@ function WarehousesPage({
   ctx.flowRef.current = flow;
   const [editing, setEditing] = useState<WarehouseRecord | "new" | null>(null);
   const keyboard = useKeyboard();
+  const [deleting,setDeleting]=useState<WarehouseRecord|null>(null);
   const [searchOpen, setSearchOpen] = useState(true);
   const [searchState, setSearchState] = useState(() => createInitialSearchState());
   const search = searchState.query;
@@ -3900,6 +3904,7 @@ function WarehousesPage({
               </strong>
               <b>{warehouse.codeNumber}</b>
               <div className="warehouse-card-actions">
+                <button aria-label={`حذف ${warehouse.name}`} onClick={()=>{keyboard.hide();setDeleting(warehouse);}}><TrashIcon/></button>
                 <button aria-label={`تعديل ${warehouse.name}`} onClick={() => open(warehouse)}>
                   <Pencil1Icon />
                 </button>
@@ -3917,6 +3922,7 @@ function WarehousesPage({
       <button className="fab warehouse-fab" aria-label="إضافة مخزن" onClick={() => open("new")}>
         <PlusIcon />
       </button>
+      {deleting&&<DeleteRecordDialog name={deleting.name} onDelete={()=>deleteWarehouse(ctx.uid,deleting.id)} onClose={()=>setDeleting(null)} onDeleted={()=>{setDeleting(null);ctx.showToast("تم حذف المخزن");}}/>}
       {editing !== null ? (
         <WarehouseModal
           key={editing === "new" ? "new" : editing.id}
@@ -3958,18 +3964,20 @@ function WarehouseModal({
   const [details, setDetails] = useState(warehouse?.details ?? "");
   const [isDefault, setIsDefault] = useState(warehouse?.isDefault ?? false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const target = screenRef.current?.querySelector(".nasqo-app");
   if (!target) return null;
 
   const submit = async () => {
     if (!name.trim()) {
-      setError(true);
+      setError("أدخل اسم المخزن أولًا");
       return;
     }
     setSaving(true);
     try {
       await onSave({ name: name.trim(), details, isDefault });
+    } catch(e) {
+      setError(e instanceof Error?e.message:"تعذر حفظ المخزن. بقيت المدخلات لإعادة المحاولة.");
     } finally {
       setSaving(false);
     }
@@ -3986,9 +3994,9 @@ function WarehouseModal({
           value={name}
           onChange={(event) => {
             setName(event.target.value);
-            setError(false);
+            setError("");
           }}
-          aria-invalid={error}
+          aria-invalid={!!error}
         />
         <KeyboardInput
           aria-label="تفاصيل المخزن"
@@ -4008,7 +4016,7 @@ function WarehouseModal({
         </label>
         {error ? (
           <p className="form-error" role="alert">
-            أدخل اسم المخزن أولًا
+            {error}
           </p>
         ) : null}
         <div className="form-modal-actions">
@@ -11671,7 +11679,7 @@ function TransactionModal({
           compact
         />
         <div className="transaction-cashbox-row">
-          {hybridLocal?<button type="button" aria-label="إدارة صندوق السند" onClick={()=>{keyboard.hide();ctx.openCashboxReference(chooseCashbox,currency);}}>+ صندوق</button>:null}
+          <button type="button" aria-label="إدارة صندوق السند" onClick={()=>{keyboard.hide();ctx.openCashboxReference(chooseCashbox,currency);}}>+ صندوق</button>
           {payment==="cash" || editingEntry?.cashboxId ? (
             <select
               className="transaction-fund"
@@ -12546,6 +12554,8 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>("ريال");
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting,setDeleting]=useState<AccountGroupRecord|null>(null);
+  const keyboard=useKeyboard();
 
   const resetForm = () => {
     setEditingGroup(null);
@@ -12598,9 +12608,9 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
   };
 
   return (
-    <div className="center-modal-layer" data-testid="account-groups-modal">
+    <><div className="center-modal-layer" data-testid="account-groups-modal">
       <button className="center-modal-backdrop" onClick={onClose} aria-label="إغلاق دليل الحسابات" />
-      <section className="account-groups-modal" role="dialog" aria-modal="true" aria-labelledby="account-groups-title">
+      <section className="account-groups-modal" hidden={!!deleting} role="dialog" aria-modal="true" aria-labelledby="account-groups-title">
         <header className="smart-modal-header">
           <button type="button" className="smart-modal-close" onClick={onClose} aria-label="إغلاق">
             <Cross2Icon />
@@ -12681,6 +12691,7 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
             >
               تعديل
             </button>
+            <button type="button" className="ag-btn cancel" disabled={saving||!editingGroup} onClick={()=>{keyboard.hide();setDeleting(editingGroup);}}>حذف المجموعة</button>
             <button type="button" className="ag-btn cancel" onClick={resetForm}>
               إلغاء الأمر
             </button>
@@ -12737,7 +12748,7 @@ function AccountGroupsModal({ open, onClose }: { open: boolean; onClose: () => v
           </button>
         </footer>
       </section>
-    </div>
+    </div>{deleting&&<DeleteRecordDialog name={deleting.name} onDelete={()=>deleteAccountGroup(ctx.uid,deleting.id)} onClose={()=>setDeleting(null)} onDeleted={()=>{setDeleting(null);resetForm();ctx.showToast("تم حذف المجموعة");}}/>}</>
   );
 }
 
@@ -13082,7 +13093,7 @@ function CashboxesReportModal({ open, onClose }: { open: boolean; onClose: () =>
             <Cross2Icon />
           </button>
           <h2 id="cashboxes-report-title">صناديق النقدية والتدفق النقدي</h2>
-          {usesNativeDocumentOutput()?<button className="reference-header-action" onClick={()=>ctx.openCashboxReference(undefined,currencyFilter==="الكل"?defaultCurrency:currencyFilter)}>إدارة الصناديق</button>:null}
+          <button className="reference-header-action" onClick={()=>ctx.openCashboxReference(undefined,currencyFilter==="الكل"?defaultCurrency:currencyFilter)}>إدارة الصناديق</button>
           <span className="smart-modal-spacer" aria-hidden="true" />
         </header>
 

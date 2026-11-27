@@ -246,7 +246,19 @@ jobs:
           npm install --no-audit --no-fund
           npm run check:runtime
           npm run sync:flutter-hybrid
-          npx tsx --test tests/hybrid.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts
+          npx tsx --test tests/hybrid.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts tests/erp-crud.test.ts tests/erp-input.test.ts
+
+      - name: Verify rendered CRUD against isolated SQLite
+        run: |
+          npm run build
+          export PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)"
+          export CRUD_UI_OUTPUT="$RUNNER_TEMP/nasqo-crud-ui"
+          npx tsx scripts/verify-crud-ui.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-crud-browser-evidence
+          path: ${{ runner.temp }}/nasqo-crud-ui/
 
       - name: Generate Android scaffold (not committed)
         working-directory: flutter_app
