@@ -66,6 +66,26 @@ def selected_line_ready(root, name):
     line = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and n.get('text') == name and n.get('hint', '').startswith('اسم الصنف للسطر')]
     return len(search) == 1 and not search[0].get('text') and len(line) == 1
 
+def confirm_saved():
+    """Exercise the visible receipt check once if SQLite's acknowledgement was lost.
+
+    This control reads the original document ID; it must never resend a posting.
+    Durable assertions below still require exactly one invoice and two movements.
+    """
+    for _ in range(20):
+        root = read()
+        labels = [text(n) for n in root.iter('node')]
+        if any('فاتورة جديدة' in value for value in labels) and not any('فاتورة شراء جديدة' in value for value in labels):
+            capture('saved', 'فاتورة جديدة', 'فاتورة شراء جديدة')
+            return False
+        if any('التحقق من نتيجة الحفظ' in value for value in labels):
+            capture('acknowledgement-pending', 'التحقق من نتيجة الحفظ')
+            tap('التحقق من نتيجة الحفظ')
+            capture('saved', 'فاتورة جديدة', 'فاتورة شراء جديدة')
+            return True
+        time.sleep(1)
+    raise AssertionError('Purchase save was not acknowledged or available for receipt verification')
+
 def tap(label, field=False, scroll=False, max_y=None, activate=True):
     print('Tap:', label, flush=True)
     for _ in range(10 if scroll else 3):
@@ -147,7 +167,7 @@ try:
     prices = [n for n in root.iter('node') if n.get('class') == 'android.widget.EditText' and 'سعر السطر' in text(n)]
     assert len(prices) == 2 and all(n.get('text') == '5000' for n in prices), 'Both purchase prices must be populated'
     tap('عمل فاتورة')
-    capture('saved', 'فاتورة جديدة', 'فاتورة شراء جديدة')
+    acknowledgement_recovered = confirm_saved()
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'am', 'start', '-W', '-n', package+'/.MainActivity')
     capture('reopened', 'اختبار شراء اصطناعي')
@@ -196,6 +216,7 @@ try:
         assert len(baselines) == 2
         assert not list(db.execute('PRAGMA foreign_key_check'))
         result = {'result': 'PASS', 'sdk': 36, 'fixtureSha256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
+                  'acknowledgementRecoveryUsed': acknowledgement_recovered,
                   'amount': 10000, 'payment': 'cash', 'prices': [5000, 5000], 'quantitiesBefore': [3, 5], 'quantitiesAfter': [4, 6],
                   'approvedNewPurchaseValue': 10000, 'oldCostStillPending': False, 'openingCostPreparedAutomatically': True, 'oldArchiveUnchanged': True,
                   'journalBalanced': True, 'stockMovements': 2, 'newInvoicesAfterRestart': 1,
