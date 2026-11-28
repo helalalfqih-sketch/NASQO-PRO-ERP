@@ -56,6 +56,12 @@ void main(){
           {'id':21,'lineKind':'item','inventoryItemId':'verified','quantity':1,'price':3,'total':3}]}],
         'erpData':{'unsupportedExample':[{'id':'retained-in-source'}]},
       };
+      final setup=jsonDecode(await File('../tests/fixtures/business-setup.json').readAsString()) as Map<String,dynamic>;
+      final savedProfile={...setup['profile'] as Map<String,dynamic>,'completedAt':'2026-01-01T00:00:00.000Z'};
+      final savedPreferences={...setup['preferences'] as Map<String,dynamic>,
+        'defaultWarehouseId':'wh-b','defaultCashboxId':1,'theme':'dark','recentActions':['sale']};
+      (bundle['workspace'] as Map)['businessProfile']=savedProfile;
+      (bundle['workspace'] as Map)['userPreferences']=savedPreferences;
       final file=await File('${dir.path}/web.json').writeAsString(jsonEncode(bundle));
       final candidate=await backup.inspect(file,'web.json');
       expect(candidate.unified,true);expect(candidate.operational,true);
@@ -72,6 +78,8 @@ void main(){
       expect(snapshot['workspace']['companyName'],'Unified fixture');
       expect(snapshot['workspace']['referenceDefaults'],(bundle['workspace'] as Map)['referenceDefaults']);
       expect(snapshot['workspace']['cashierSettings'],(bundle['workspace'] as Map)['cashierSettings']);
+      expect(snapshot['workspace']['businessProfile'],savedProfile);
+      expect(snapshot['workspace']['userPreferences'],savedPreferences);
       final ledger=(snapshot['ledger'] as List).cast<Map<String,dynamic>>();
       expect(ledger.firstWhere((e)=>e['id']=='legacy')['rawMadin'],3);
       expect(ledger.firstWhere((e)=>e['id']=='draft')['postingStatus'],'draft');
@@ -134,6 +142,9 @@ void main(){
       await restore.activate(candidate,replacementSha:sha256.convert(saved).toString());
       final current=await backup.exportNative();
       await backup.restoreNative(native,replacementSha:sha256.convert(current).toString());
+      final restoredSettings=(await HybridLocalSnapshotAdapter.readFromDevice())['workspace'];
+      expect(restoredSettings['businessProfile'],savedProfile);
+      expect(restoredSettings['userPreferences'],savedPreferences);
       expect(await LegacyOperationalRestore.original(db),orderedEquals(await file.readAsBytes()));
       expect((await db.query('inventory_items',where:'id = ?',whereArgs:['verified'])).single['quantity'],6.5);
       expect(await db.query('journal_entries'),hasLength(2));

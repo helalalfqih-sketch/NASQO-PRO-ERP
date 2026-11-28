@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths:
       - "flutter_app/**"
-      - "src/hybrid/**"
+      - "src/**"
       - "scripts/build-hybrid.mjs"
       - "scripts/sync-hybrid-to-flutter.mjs"
       - ".github/workflows/flutter-hybrid-preview.yml"
@@ -316,6 +316,73 @@ jobs:
           name: nasqo-hybrid-debug-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Build ARM64 APK for isolated device acceptance
+        if: inputs.signed_candidate != true
+        working-directory: flutter_app
+        env:
+          NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
+          NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
+        run: |
+          bash ../scripts/build-android-with-retry.sh flutter build apk --debug --split-per-abi --target-platform android-arm64 \
+            --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
+            --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
+
+      - name: Upload ARM64 device acceptance artifact
+        if: inputs.signed_candidate != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-hybrid-arm64-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      # Bounded pieces let device tooling transfer a debug APK through clients
+      # with a 32 MiB per-file limit. Reassembly must verify the manifest hash.
+      - name: Package bounded device transfers
+        if: inputs.signed_candidate != true
+        id: device-parts
+        run: |
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          data=Path('flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk').read_bytes()
+          out=Path('device-transfer'); out.mkdir()
+          chunks=[data[i:i+25_000_000] for i in range(0,len(data),25_000_000)]
+          assert 1 <= len(chunks) <= 4
+          for i,chunk in enumerate(chunks): (out/f'apk.part{i}').write_bytes(chunk)
+          (out/'manifest.json').write_text(json.dumps({'size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'parts':len(chunks)}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: inputs.signed_candidate != true
+        with:
+          name: nasqo-device-part0
+          path: |
+            device-transfer/apk.part0
+            device-transfer/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: inputs.signed_candidate != true
+        with:
+          name: nasqo-device-part1
+          path: device-transfer/apk.part1
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: inputs.signed_candidate != true
+        with:
+          name: nasqo-device-part2
+          path: device-transfer/apk.part2
+          if-no-files-found: ignore
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: inputs.signed_candidate != true
+        with:
+          name: nasqo-device-part3
+          path: device-transfer/apk.part3
+          if-no-files-found: ignore
           retention-days: 7
 
       - name: Build signed versioned APK

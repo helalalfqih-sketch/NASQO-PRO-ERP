@@ -15,6 +15,9 @@ test("local SQLite ERP starts empty, reaches dashboard and opens options without
   const status = await (await page.request.get("/api/db/status")).json();
   expect(status.accountsCount).toBe(0);
   expect(status.inventoryCount).toBe(0);
+  // First-run setup is explicit and creates nothing until confirmed.
+  await expect(page.getByTestId('business-setup-modal')).toBeVisible();
+  await page.getByRole('button',{name:'إغلاق التهيئة',exact:true}).click();
   await page.getByTestId("home-nav-profile").click();
   await page.getByTestId("settings-tab-database").click();
   await expect(page.getByTestId("settings-restore-backup-btn")).toBeVisible();

@@ -52,6 +52,8 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "openStockReconciliation",
   "showMessage",
   // Accounting, accounts, inventory, and reports (persisted exclusively by Dart/SQLite)
+  "recordRecentAction",
+  "completeBusinessSetup",
   "saveWorkspaceSettings",
   "saveCashbox",
   "deleteCashbox",
@@ -97,6 +99,7 @@ const ALLOWED_COMMAND_SET = new Set<string>(HYBRID_ALLOWED_COMMANDS);
  * plus duplicate in-flight submission protection.
  */
 export const FINANCIAL_MUTATION_COMMANDS: ReadonlySet<HybridCommandAction> = new Set([
+  "completeBusinessSetup",
   "createLedgerEntry",
   "updateLedgerEntry",
   "setLedgerDeleted",
@@ -261,6 +264,8 @@ export interface HybridCommandPayloadMap {
   openInvoiceRoles: { workspaceId: string };
   openStockReconciliation: { workspaceId: string; warehouseId?: string; productId?: string };
   showMessage: { message: string; level?: "info" | "success" | "warning" | "error" };
+  recordRecentAction: {workspaceId:string;action:import("../utils/businessSetup").QuickAction};
+  completeBusinessSetup: { workspaceId: string; input: import("../utils/businessSetup").BusinessSetupInput };
   saveWorkspaceSettings: { workspaceId: string; updates: Partial<WorkspaceSettings> };
   saveCashbox: {workspaceId:string;payload:{id?:number;name:string;currencyCode:string;accountId:string;isActive:boolean}};
   saveAccountGroup: { workspaceId: string; payload: Partial<AccountGroupRecord> & { name: string } };

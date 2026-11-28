@@ -10,9 +10,9 @@ export function containsReference(value:unknown,id:string|number,keys:string[]):
 export function assertMasterNotReferenced(db:DatabaseSync,workspace:string,id:string|number,keys:string[]){
  const erp=loadErpDataRows(db,workspace);
  for(const c of ERP_COLLECTIONS) if(erpRows(erp,c).some(r=>containsReference(r,id,keys)))throw new ErpValidationError('السجل مرتبط ببيانات إدارية؛ عدّل المرجع أولًا.');
- const ws=db.prepare('SELECT reference_defaults_json,cashier_settings_json FROM workspaces WHERE id=?').get(workspace) as Record<string,unknown>|undefined;
+ const ws=db.prepare('SELECT reference_defaults_json,cashier_settings_json,user_preferences_json FROM workspaces WHERE id=?').get(workspace) as Record<string,unknown>|undefined;
  for(const value of Object.values(ws??{})) if(value){const cfg=JSON.parse(String(value));
-  if(containsReference(cfg,id,keys))throw new ErpValidationError('السجل مستخدم في الإعدادات الافتراضية.');
+  if(containsReference(cfg,id,[...keys,...keys.map(k => `default${k[0].toUpperCase()}${k.slice(1)}`)]))throw new ErpValidationError('السجل مستخدم في الإعدادات الافتراضية.');
   if(keys.includes('currency')&&String(id) in (cfg.systemCashboxes??{}))throw new ErpValidationError('العملة مستخدمة في الإعدادات الافتراضية.');
   if(keys.includes('cashboxId')&&['systemCashboxes','accountCashboxes','groupCashboxes'].some(k=>Object.values(cfg[k]??{}).includes(id)))throw new ErpValidationError('الصندوق مستخدم في الإعدادات الافتراضية.');
   if((keys.includes('groupId')&&String(id) in (cfg.groupCashboxes??{}))||(keys.includes('accountId')&&String(id) in (cfg.accountCashboxes??{})))throw new ErpValidationError('السجل مستخدم في الإعدادات الافتراضية.');

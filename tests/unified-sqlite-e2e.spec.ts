@@ -75,6 +75,9 @@ test("unified single SQLite backend persists data, imports SQLite, opens invoice
   // Empty initial workspace: no hardcoded accounts/groups until user restores backup
   await expect(page.getByTestId("empty-workspace-banner")).toHaveCount(0);
   await expect(page.getByTestId("account-groups-table")).toHaveCount(0);
+  await expect(page.getByTestId('business-setup-modal')).toBeVisible();
+  await page.getByRole('button',{name:'إغلاق التهيئة',exact:true}).click();
+  expect((await (await page.request.get('/api/db/status')).json()).accountsCount).toBe(0);
 
   const dbs = await page.evaluate(async () => {
     if (!("databases" in indexedDB)) return [];

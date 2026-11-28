@@ -97,10 +97,12 @@ test('opening a schema v3 database upgrades additively without replacing busines
   const {journal} = setup(db);
   const saved = insertJournalEntryRow(db, w, {...journal, idempotencyKey: 'migration-request'});
   const before = db.prepare('SELECT * FROM journal_entry_lines').all();
-  db.exec('ALTER TABLE ledger_entries DROP COLUMN request_fingerprint; ALTER TABLE journal_entries DROP COLUMN request_fingerprint; PRAGMA user_version=3;');
+  db.exec('ALTER TABLE ledger_entries DROP COLUMN request_fingerprint; ALTER TABLE journal_entries DROP COLUMN request_fingerprint; ALTER TABLE workspaces DROP COLUMN business_profile_json; ALTER TABLE workspaces DROP COLUMN user_preferences_json; ALTER TABLE workspaces DROP COLUMN setup_fingerprint; PRAGMA user_version=3;');
   closeSqliteDb();
   const upgraded = getSqliteDb();
-  assert.equal(upgraded.prepare('PRAGMA user_version').get()?.user_version, 4);
+  assert.equal(upgraded.prepare('PRAGMA user_version').get()?.user_version, 5);
+  const columns=upgraded.prepare('PRAGMA table_info(workspaces)').all().map(row=>row.name);
+  for(const column of ['business_profile_json','user_preferences_json','setup_fingerprint']) assert(columns.includes(column));
   assert.deepEqual(upgraded.prepare('SELECT * FROM journal_entry_lines').all(), before);
   assert.equal(insertJournalEntryRow(upgraded, w, {...journal, idempotencyKey: 'migration-request'}).id, saved.id);
 }));

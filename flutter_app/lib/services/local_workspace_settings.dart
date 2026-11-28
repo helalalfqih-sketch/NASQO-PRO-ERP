@@ -1,3 +1,4 @@
+import 'local_business_setup.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'local_database.dart';
@@ -8,7 +9,7 @@ class LocalWorkspaceSettings {
   LocalWorkspaceSettings(this.local);
   final LocalDatabase local;
   static const stateKey='workspace_settings_v1';
-  static const fields={'companyName','defaultCurrency','whatsappProvider','whatsappInstantEnabled','whatsappPhone','cashierSettings','referenceDefaults'};
+  static const fields={'businessProfile','userPreferences','companyName','defaultCurrency','whatsappProvider','whatsappInstantEnabled','whatsappPhone','cashierSettings','referenceDefaults'};
   static Future<Map<String,dynamic>> read(DatabaseExecutor db)async{
     final rows=await db.query('erp_state',where:'stateKey = ?',whereArgs:[stateKey]);
     if(rows.isEmpty)return {};
@@ -30,7 +31,12 @@ class LocalWorkspaceSettings {
       for(final k in fields){
         if(!input.containsKey(k))continue;
         final value=input[k];
-        if(k=='referenceDefaults'){
+        if(k=='businessProfile'){
+          LocalBusinessSetup.profile(value);
+          if(next[k]==null || value['completedAt']!=next[k]['completedAt']) throw ArgumentError('Complete setup first');
+        }else if(k=='userPreferences'){
+          await LocalBusinessSetup.preferences(t,value);
+        }else if(k=='referenceDefaults'){
           await validateReferences(t,value,input['defaultCurrency']??next['defaultCurrency']);
         }else if(k=='cashierSettings'){
           await validateCashier(t,value);

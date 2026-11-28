@@ -1,5 +1,13 @@
 # Mobile Prototype Agent Guide
 
+## Invoice interaction and first-run setup (user direction, 2026-11-28)
+
+- Keep the invoice's existing colors, card radius/padding, row and control heights. Adapt the available modal height for the keyboard, with fixed header/footer, a scrolling body and no horizontal overflow. Keep light/dark contrast and RTL.
+- Catalog lookup must debounce, yield during large searches and cancel stale results. Loading/empty/error states must not replace typed input or move the item table. Selection never posts an invoice.
+- Autosave invoice drafts on web and Android, recover after reload/restart, preserve separate item/free rows and explicit discard. Persistence failures must be visible; successful posting removes the draft, never replays it.
+- First-run setup and user preferences must persist in the actual workspace database, preserve existing records and valid defaults, and be repeatable without duplicate accounts, cashboxes or warehouses. Restore remains explicit; opening the wizard never imports data or posts balances.
+- Validate setup and preferences at the server/native boundary and test against synthetic data. Default choices must correspond to implemented behavior; do not expose a pretend feature merely to fill a setup screen.
+
 ## Complete data management (user direction, 2026-11-27)
 
 - Complete missing create/read/search/filter/update/delete paths in the existing modules, using their actual web SQLite API and Android SQLite bridge. Reuse existing operations and screens; reports are derived views, not independently editable financial records.

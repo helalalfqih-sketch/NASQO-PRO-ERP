@@ -1,3 +1,4 @@
+import '../services/local_business_setup.dart';
 import 'dart:async';
 import 'dart:convert';
 import '../services/local_workspace_readiness.dart';
@@ -243,6 +244,14 @@ class _HybridReactPreviewScreenState extends State<HybridReactPreviewScreen>
     legacyArchiveAction: LegacyArchiveRecords(LocalDatabase.instance).handle,
     saveUiPreferences: LocalDatabase.instance.saveUiPreferences,
     saveWorkspaceSettings: _saveWorkspaceSettings,
+    recordRecentAction: (action) async {
+      await LocalBusinessSetup.recent(LocalDatabase.instance, action);
+      return {'snapshot':await HybridLocalSnapshotAdapter.readFromDevice()};
+    },
+    completeBusinessSetup: (input) async {
+      await LocalBusinessSetup.complete(LocalDatabase.instance, HybridLocalSnapshotAdapter.workspaceId, input);
+      return {'snapshot': await HybridLocalSnapshotAdapter.readFromDevice(prepareForUse:true)};
+    },
     createAccount: (key,payload) => _saveAccount(key,payload),
     updateAccount: (key,id,payload) => _saveAccount(key,payload,accountId:id),
     postDocument: _postDocument,

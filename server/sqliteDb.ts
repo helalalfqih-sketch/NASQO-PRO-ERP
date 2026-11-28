@@ -1,3 +1,4 @@
+import { validateBusinessProfile, validatePreferenceReferences, validateUserPreferences } from "../src/utils/businessSetup.ts";
 import { assertMasterNotReferenced } from "./masterCrud.ts";
 import { requireStockPostingLocations } from "./stockPostingGuards.ts";
 import { ledgerPostingFingerprint, storedLedgerFingerprint, journalPostingFingerprint, postingOperationKey } from "./postingIdentity.ts";
@@ -124,6 +125,7 @@ function openAndInit(filePath: string): DatabaseSync {
   }
   if (!wsCols.some(c => c.name === "reference_defaults_json")) db.exec("ALTER TABLE workspaces ADD COLUMN reference_defaults_json TEXT;");
   if (!wsCols.some(c => c.name === "cashier_settings_json")) db.exec("ALTER TABLE workspaces ADD COLUMN cashier_settings_json TEXT;");
+  for (const name of ["business_profile_json", "user_preferences_json", "setup_fingerprint"]) if (!wsCols.some(c => c.name === name)) db.exec(`ALTER TABLE workspaces ADD COLUMN ${name} TEXT;`);
   const erpMetaCols = db.prepare("PRAGMA table_info(erp_meta)").all() as { name: string }[];
   if (!erpMetaCols.some((c) => c.name === "vat_config_json")) {
     db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
@@ -807,6 +809,8 @@ function mapWorkspaceRow(r: Record<string, unknown>): WorkspaceSettings {
     whatsappProvider: r.whatsapp_provider === "external" ? "external" : "nasqo",
     whatsappInstantEnabled: Boolean(r.whatsapp_instant_enabled),
     whatsappPhone: String(r.whatsapp_phone ?? ""),
+    ...(r.business_profile_json ? { businessProfile: JSON.parse(String(r.business_profile_json)) } : {}),
+    ...(r.user_preferences_json ? { userPreferences: JSON.parse(String(r.user_preferences_json)) } : {}),
     ...(r.reference_defaults_json ? { referenceDefaults: JSON.parse(String(r.reference_defaults_json)) } : {}),
     ...(r.cashier_settings_json ? { cashierSettings: JSON.parse(String(r.cashier_settings_json)) } : {}),
     ...(r.closed_until_date ? { closedUntilDate: String(r.closed_until_date) } : {}),
@@ -1223,6 +1227,18 @@ export function saveWorkspaceSettingsRow(
 ): WorkspaceSettings {
   ensureEmptyWorkspace(db, workspaceId);
   const current = mapWorkspaceRow(db.prepare("SELECT * FROM workspaces WHERE id = ?").get(workspaceId) as Record<string, unknown>);
+  const businessProfile = updates.businessProfile ?? current.businessProfile;
+  const userPreferences = updates.userPreferences ?? current.userPreferences;
+  try {
+    if (updates.businessProfile !== undefined) {
+      validateBusinessProfile(updates.businessProfile);
+      if (!current.businessProfile || updates.businessProfile.completedAt !== current.businessProfile.completedAt) throw new Error("إكمال التهيئة من المعالج أولًا.");
+    }
+    if (updates.userPreferences !== undefined) validatePreferenceReferences(updates.userPreferences,
+      db.prepare("SELECT name FROM currencies WHERE workspace_id=?").all(workspaceId).map(r => String(r.name)),
+      db.prepare("SELECT id FROM warehouses WHERE workspace_id=?").all(workspaceId) as {id:string}[],
+      db.prepare("SELECT id,currency_code AS currencyCode,state FROM cashboxes WHERE workspace_id=?").all(workspaceId) as {id:number,currencyCode:string,state:number}[]);
+  } catch (e) { throw new SqliteValidationError((e as Error).message); }
   const references = updates.referenceDefaults ?? current.referenceDefaults;
   if (updates.referenceDefaults !== undefined) {
     try { validateReferenceDefaultsShape(updates.referenceDefaults); } catch (e) { throw new SqliteValidationError((e as Error).message); }
@@ -1257,7 +1273,7 @@ export function saveWorkspaceSettingsRow(
   const now = nowIso();
   db.prepare(
     `UPDATE workspaces
-     SET company_name = ?, default_currency = ?, whatsapp_provider = ?, whatsapp_instant_enabled = ?, whatsapp_phone = ?, closed_until_date = ?, cashier_settings_json = ?, reference_defaults_json = ?, updated_at = ?
+     SET company_name = ?, default_currency = ?, whatsapp_provider = ?, whatsapp_instant_enabled = ?, whatsapp_phone = ?, closed_until_date = ?, cashier_settings_json = ?, reference_defaults_json = ?, business_profile_json = ?, user_preferences_json = ?, updated_at = ?
      WHERE id = ?`,
   ).run(
     clean.companyName,
@@ -1268,6 +1284,8 @@ export function saveWorkspaceSettingsRow(
     closedUntilDate,
     cashier ? JSON.stringify(cashier) : null,
     references ? JSON.stringify(references) : null,
+    businessProfile ? JSON.stringify(businessProfile) : null,
+    userPreferences ? JSON.stringify(userPreferences) : null,
     now,
     workspaceId,
   );
@@ -1282,6 +1300,8 @@ export function saveWorkspaceSettingsRow(
     whatsappPhone: clean.whatsappPhone,
     ...(cashier ? { cashierSettings: cashier } : {}),
     ...(references ? { referenceDefaults: references } : {}),
+    ...(businessProfile ? { businessProfile } : {}),
+    ...(userPreferences ? { userPreferences } : {}),
     ...(closedUntilDate ? { closedUntilDate } : {}),
   };
 }
@@ -5437,6 +5457,20 @@ export function restoreUnifiedJsonBundle(
         accountCashboxes: mapBoxes(r.accountCashboxes,id=>accMap.get(id)?.id),
         groupCashboxes: mapBoxes(r.groupCashboxes,id=>{const g=groupIdMap.get(Number(id));return g===undefined?undefined:String(g);}),
       }});
+    }
+    if (wsIn.businessProfile) {
+      validateBusinessProfile(wsIn.businessProfile);
+      db.prepare('UPDATE workspaces SET business_profile_json=? WHERE id=?').run(JSON.stringify(wsIn.businessProfile), workspaceId);
+    }
+    if (wsIn.userPreferences) {
+      const p=wsIn.userPreferences;
+      validateUserPreferences(p);
+      if ((p.defaultWarehouseId && !whMap.has(p.defaultWarehouseId)) ||
+          (p.defaultCashboxId !== null && !cashboxMap.has(p.defaultCashboxId))) {
+        throw new SqliteValidationError("مراجع التفضيلات لا تطابق سجلات النسخة؛ لم تتغير بيانات العمل.");
+      }
+      saveWorkspaceSettingsRow(db,workspaceId,{userPreferences:{...p,defaultWarehouseId:whMap.get(p.defaultWarehouseId)??'',
+        defaultCashboxId:p.defaultCashboxId===null?null:cashboxMap.get(p.defaultCashboxId)??null}});
     }
     if (wsIn.cashierSettings) {
       const c = wsIn.cashierSettings;

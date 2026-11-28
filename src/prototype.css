@@ -6469,6 +6469,27 @@ select.select-box.currency-select {
   border-radius: 16px;
 }
 
+/* The invoice keeps its existing control dimensions and light/dark palette.
+   Only its available viewport changes when the keyboard or orientation changes. */
+.invoice-adaptive-layer .invoice-modal-pro {
+  --nasqo-blue: #4338ca;
+  --nasqo-blue-deep: #3730a3;
+  top: calc(var(--invoice-available-height, 100%) / 2);
+  max-height: min(780px, calc(var(--invoice-available-height, 90dvh) - 16px));
+}
+.invoice-draft-status { min-height: 18px; font-size: 10px; line-height: 18px; color: #64748b; overflow-wrap: anywhere; }
+.invoice-draft-status.error { color: #be123c; }
+.invoice-draft-status button { border: 0; background: transparent; color: inherit; text-decoration: underline; font: inherit; }
+.invoice-search-panel { position: relative; min-width: 0; }
+.invoice-search-panel .invoice-item-suggestions {
+  position: absolute; inset-inline: 0; top: 100%; z-index: 8;
+  max-height: min(224px, calc(var(--invoice-available-height, 600px) * .4));
+  overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+  box-shadow: 0 8px 18px #0f172a22;
+}
+.invoice-search-panel .invoice-item-suggestions [aria-selected="true"] { outline: 2px solid #4338ca; outline-offset: -2px; }
+.invoice-modal-body { scroll-padding-block: 16px; }
+
 .invoice-modal-head {
   flex: 0 0 auto;
   display: flex;
@@ -16296,3 +16317,24 @@ button.currencies-footer-hint:hover {
 
 .data-import-review .import-review-scroll > .mobile-scroll { bottom: 0; }
 .data-import-review .mobile-scroll-content { padding: 18px; }
+
+.business-setup-modal .setup-fields { border: 0; margin: 0; padding: 0; display: grid; gap: 12px; min-width: 0; }
+.business-setup-modal .setup-field { display: grid; gap: 6px; font-size: 12px; min-width: 0; }
+.business-setup-modal .setup-field input, .business-setup-modal .setup-field select { width: 100%; min-width: 0; height: 42px; border: 1px solid #cbd5e1; border-radius: 9px; padding: 0 10px; background: var(--nasqo-surface, #fff); color: inherit; font: inherit; }
+.business-setup-modal .setup-check { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.business-setup-modal .setup-help { font-size: 11px; color: #64748b; line-height: 1.8; margin: 0; }
+.business-setup-modal .setup-import, .business-setup-modal .setup-review { background: #eef2ff; color: #1e293b; padding: 12px; border-radius: 12px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.business-setup-modal .invoice-modal-footer { display: flex; justify-content: space-between; gap: 8px; }
+.business-setup-modal .invoice-modal-header h2 { font-size: 17px; margin: 0; }
+.business-setup-modal .invoice-modal-header small { font-size: 11px; }
+.business-setup-modal .invoice-modal-body { min-height: 0; overflow-x: hidden; }
+.user-action-shortcuts { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 10px; }
+.user-action-shortcuts button { min-height: 38px; padding: 5px 10px; border: 1px solid #c7d2fe; border-radius: 9px; font: inherit; color: #3730a3; background: #eef2ff; font-size: 11px; }
+.user-action-shortcuts strong { flex-basis: 100%; font-size: 11px; }
+.business-setup-modal .ref-btn { min-height: 40px; background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; border-radius: 9px; padding: 5px 12px; font: inherit; font-size: 12px; }
+.business-setup-modal .ref-btn.blue { color: white; background: #4338ca; border-color: #4338ca; }
+.business-setup-modal .ref-btn:disabled { opacity: .5; }
+.user-action-shortcuts { grid-column: 1 / -1; }
+:root.dark .business-setup-modal .setup-field input, :root.dark .business-setup-modal .setup-field select { background: #182337; border-color: #3b4a63; color: #f1f5f9; }
+:root.dark .business-setup-modal .setup-import, :root.dark .business-setup-modal .setup-review { background: #24304a; color: #f1f5f9; }
+:root.dark .business-setup-modal .setup-help { color: #cbd5e1; }
