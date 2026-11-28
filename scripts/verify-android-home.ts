@@ -39,7 +39,7 @@ async function connect() {
 }
 async function command(page:Page,action:string,payload:unknown) {
   return page.evaluate(({action,payload})=>new Promise<any>((resolve,reject)=>{
-    const w=window as any, prior=w.__nasqoHybridReceive, id=`home-qa-${Date.now()}-${Math.random()}`;
+    const w=window as any, prior=w.__nasqoHybridReceive, id=`home-qa-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const timer=setTimeout(()=>{w.__nasqoHybridReceive=prior;reject(new Error(`Native timeout: ${action}`));},20000);
     w.__nasqoHybridReceive=(raw:unknown)=>{
       const r=typeof raw==='string'?JSON.parse(raw):raw as any;
