@@ -11,6 +11,8 @@ test.beforeEach(async({page})=>{
 
 test('first-run wizard validates, retains failed saves, provisions once and persists preferences',async({page})=>{
   test.setTimeout(90_000);
+  // Match the missing JS intrinsic on WebView 83 without replacing the browser.
+  await page.addInitScript(() => Reflect.deleteProperty(Object, 'hasOwn'));
   await page.goto('/?autostart=1'); const modal=page.getByTestId('business-setup-modal');
   await expect(modal).toBeVisible({timeout:30_000});
   await modal.getByRole('button',{name:'التالي',exact:true}).click();

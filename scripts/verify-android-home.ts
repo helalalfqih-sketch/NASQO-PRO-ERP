@@ -56,7 +56,11 @@ try {
   const setup=page.getByTestId('business-setup-modal');
   await expect(setup).toBeVisible({timeout:60000});
   await setup.getByLabel('اسم المنشأة',{exact:true}).fill('QA Home Android');
-  for(let i=0;i<3;i++) await setup.getByRole('button',{name:'التالي',exact:true}).click();
+  const next = setup.getByRole('button',{name:'التالي',exact:true});
+  for (const heading of ['إعداد التشغيل', 'تفضيلاتي', 'المراجعة']) {
+    await next.click();
+    await expect(setup.locator('header small')).toContainText(heading);
+  }
   await setup.getByRole('button',{name:'إكمال التهيئة',exact:true}).click();
   await expect(setup).toBeHidden({timeout:30000});
   await expect(page.getByTestId('home-freshness')).toContainText('محدّث من السجلات');
@@ -67,9 +71,19 @@ try {
   const customer=customerResult.snapshot.accounts.find((a:any)=>a.name==='QA Home Customer'); assert(customer);
   const vendorResult=await command(page,'saveAccount',{workspaceId,payload:{name:'QA Home Vendor',category:'purchases',currency:'ريال',isCashAccount:false}});
   const vendor=vendorResult.snapshot.accounts.find((a:any)=>a.name==='QA Home Vendor'); assert(vendor);
-  const today=await page.evaluate(()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()));
-  for(const [account,amount,direction] of [[customer,320,'debit'],[vendor,120,'credit']] as const) {
-    await command(page,'createLedgerEntry',{workspaceId,payload:{id:`home-qa-${direction}`,accountId:account.id,accountName:account.name,kind:'invoice',invoiceContent:'free',payment:'credit',direction,currency:'ريال',amount,entryDate:today,warehouseId:'',lines:[{itemName:'QA service',unit:'خدمة',quantity:1,price:amount,total:amount}]}});
+  const today=await page.evaluate(()=>{
+    const parts = new Intl.DateTimeFormat('en', {timeZone:'Asia/Aden',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    return ['year','month','day'].map(type=>parts.find(part=>part.type===type)!.value).join('-');
+  });
+  assert.match(today,/^\d{4}-\d{2}-\d{2}$/);
+  // The native document command requires a unique positive integer entryNumber.
+  // A textual documentNumber is a reference, not a substitute for entryNumber.
+  for(const [account,amount,direction,entryNumber] of [[customer,320,'debit',1001],[vendor,120,'credit',1002]] as const) {
+    const id = `home-qa-${direction}`;
+    const saved = await command(page,'createLedgerEntry',{workspaceId,payload:{id,accountId:account.id,accountName:account.name,kind:'invoice',invoiceContent:'free',payment:'credit',direction,currency:'ريال',amount,entryDate:today,entryNumber,documentNumber:`QA-HOME-${entryNumber}`,warehouseId:'',lines:[{itemName:'QA service',unit:'خدمة',quantity:1,price:amount,total:amount}]}});
+    assert.equal(saved.entry.id,id);
+    assert.equal(saved.entry.entryNumber,entryNumber);
+    assert.equal(saved.entry.amount,amount);
   }
   await command(page,'saveWorkspaceSettings',{workspaceId,updates:{userPreferences:{...initial.workspace.userPreferences,defaultWarehouseId:''}}});
   await page.reload();
@@ -103,6 +117,7 @@ try {
   assert.equal(before.ledger.length,2); assert.equal(before.inventory.length,0);
   await browser.close();adb('shell','am','force-stop',pkg);adb('shell','am','start','-W','-n',`${pkg}/.MainActivity`);
   ({browser,page}=await connect());
+  page.on('pageerror',e=>errors.push(e.message));
   await expect(page.getByTestId('home-kpi-sales')).toContainText('320');
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
   const after=await command(page,'getSnapshot',{workspaceId});
@@ -111,6 +126,7 @@ try {
   assert.deepEqual(errors,[]);
   fs.writeFileSync(`${out}/result.json`,JSON.stringify({sdk,webview,passed:true,offline:true,records:after.ledger.length,widths:[320,360,412,768],productionDataTouched:false},null,2));
 } catch(e) {
+  fs.writeFileSync(`${out}/page-errors.json`,JSON.stringify(errors,null,2));
   diagnostics();
   await page.screenshot({path:`${out}/failure.png`}).catch(()=>{});
   fs.writeFileSync(`${out}/failure.html`,await page.content().catch(()=>''));

@@ -50,7 +50,8 @@ export function validateUserPreferences(value: unknown): asserts value is UserPr
   if (p.version !== 1 || !['light', 'dark', 'system'].includes(p.theme) || !['auto', 1, 2, 3].includes(p.homeColumns) ||
       !['', 'main'].includes(p.defaultBranchId) || p.defaultCashboxId !== null && (!Number.isSafeInteger(p.defaultCashboxId) || p.defaultCashboxId <= 0)) fail();
   text(p.defaultWarehouseId, 150, true); text(p.defaultCurrency, 64);
-  for (const list of [p.favoriteActions, p.recentActions]) if (!Array.isArray(list) || list.length > 6 || new Set(list).size !== list.length || list.some(a => !Object.hasOwn(ACTION_LABELS, a))) fail();
+  // Android WebView 83 has no Object.hasOwn; keep the own-property check.
+  for (const list of [p.favoriteActions, p.recentActions]) if (!Array.isArray(list) || list.length > 6 || new Set(list).size !== list.length || list.some(a => !Object.prototype.hasOwnProperty.call(ACTION_LABELS, a))) fail();
 }
 export function validatePreferenceReferences(p: UserPreferences, currencies: string[], warehouses: Pick<WarehouseRecord, 'id'>[], cashboxes: Pick<CashboxRecord, 'id' | 'currencyCode' | 'state' | 'isActive'>[]) {
   validateUserPreferences(p);
