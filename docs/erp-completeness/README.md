@@ -95,3 +95,20 @@ npm run lint
 npx tsc -p tsconfig.server.json --noEmit
 npm run check:runtime
 ```
+
+## Priorities on agent/erp-complete-system
+
+| Priority | Area | Remaining acceptance work |
+| --- | --- | --- |
+| P0 | Posting, GL, currency and fiscal control | The web trial balance now includes explicit journals. Automatic invoice, stock and cash journals, control mapping, currency precision, subledger reconciliation and Android fiscal enforcement remain open. |
+| P0 | First run, authorization and approvals | Add persisted setup and PASS / MISSING / WARNING results from actual records. Gate posting transactionally on both runtimes. Implement scoped permissions and approval history. |
+| P0 | Inventory transfers and master identity | Implement canonical product/location links and authorized request, issue, transit, partial receipt and reversal with carried cost and accounting. |
+| P0 | Offline sync and recovery | Verify replay, conflicts, durable acknowledgements and backup/restore through the real Android bridge. |
+| P1 | Commercial, stock and cash operations | Integrate order/fulfillment/settlement, procurement/receipt/matching, reservations, counts, reconciliation, tax and FX after shared posting rules. |
+| P2 | Extended ERP | Connect fixed assets, budgets, projects, payroll and advanced stock tracking to shared masters, workflows and the GL. |
+
+The working branch also repairs currency creation while preserving existing currency names as financial identities. Web fiscal checks compare calendar dates, reject invalid dates when a lock applies, and require an explicit unlock on the fiscal-lock endpoint. The current strict probe still reports that a posted web sale creates zero journal headers. Current build evidence covers the hybrid bundle, not an actual Android/WebView 83 device.
+
+## Follow-up journal validation
+
+The web SQLite journal service validates real Gregorian dates and rejects journal lines or totals that exceed the exact integer minor-unit range. Rejections preserve the database snapshot. The regression also posts and reverses a journal with 0.10 + 0.20 debits and a 0.30 credit. This check uses the existing two-decimal journal model. Configured currency precision and historical FX reconciliation remain open.

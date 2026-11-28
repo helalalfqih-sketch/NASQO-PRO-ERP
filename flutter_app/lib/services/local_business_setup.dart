@@ -6,7 +6,7 @@ import 'local_workspace_settings.dart';
 import 'automatic_posting_setup.dart';
 
 class LocalBusinessSetup {
-  static const actions = {'sale','purchase','inventory','accounts','backup'};
+  static const actions = {'sale','purchase','inventory','accounts','backup','receipt','payment','journal'};
   static const zones = {'UTC','Asia/Aden','Asia/Riyadh','Asia/Dubai','Asia/Baghdad','Asia/Amman','Asia/Beirut','Africa/Cairo','Africa/Khartoum','Africa/Casablanca','Europe/London','Europe/Paris','America/New_York'};
   static void keys(dynamic value, Set<String> expected) {
     if(value is! Map<String,dynamic> || value.length != expected.length || value.keys.any((k)=>!expected.contains(k))) throw ArgumentError('Invalid setup fields');
@@ -30,7 +30,7 @@ class LocalBusinessSetup {
     if(p['version']!=1 || !{'light','dark','system'}.contains(p['theme']) || !{'auto',1,2,3}.contains(p['homeColumns']) || !{'','main'}.contains(p['defaultBranchId']) ||
       p['defaultCashboxId']!=null && (p['defaultCashboxId'] is! int || p['defaultCashboxId']<=0)) throw ArgumentError('Invalid preferences');
     text(p['defaultWarehouseId'],150,empty:true); text(p['defaultCurrency'],64);
-    for(final k in ['favoriteActions','recentActions']) { final a=p[k]; if(a is! List || a.length>5 || a.toSet().length!=a.length || a.any((x)=>!actions.contains(x))) throw ArgumentError('Invalid shortcuts'); }
+    for(final k in ['favoriteActions','recentActions']) { final a=p[k]; if(a is! List || a.length>6 || a.toSet().length!=a.length || a.any((x)=>!actions.contains(x))) throw ArgumentError('Invalid shortcuts'); }
     if(!references) return;
     if(!(await LocalMasterCatalog.read(t,'currencies')).any((c)=>c['name']==p['defaultCurrency'])) throw ArgumentError('Invalid preferred currency');
     if(p['defaultWarehouseId']!='' && !(await LocalWorkspaceSettings.records(t,'warehouses','warehouses')).containsKey(p['defaultWarehouseId'])) throw ArgumentError('Invalid preferred warehouse');

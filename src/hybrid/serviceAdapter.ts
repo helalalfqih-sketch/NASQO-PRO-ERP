@@ -1,3 +1,4 @@
+import { removeUiState } from "./resumeState";
 import {
   createEmptyErpData,
   hydrateErpWorkspaceCache,
@@ -444,7 +445,7 @@ export async function completeBusinessSetup(uid: string, input: import("../utils
 
 export async function saveWorkspaceSettings(
   uid: string,
-  updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">> & WorkspaceSettings,
+  updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">>,
 ): Promise<void> {
   return runWithBrandLoader("جاري حفظ إعدادات النظام...", async () => {
     try {
@@ -1332,6 +1333,7 @@ export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Pr
         { workspaceId: uid || LOCAL_WORKSPACE_UID, mode: "empty" },
         { idempotencyKey: createIdempotencyKey("resetWorkspace", "empty") },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else {
@@ -1354,6 +1356,7 @@ export async function seedDemoWorkspace(uid = LOCAL_WORKSPACE_UID): Promise<void
         { workspaceId: uid || LOCAL_WORKSPACE_UID, mode: "demo" },
         { idempotencyKey: createIdempotencyKey("resetWorkspace", "demo") },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else {
@@ -1475,6 +1478,7 @@ export async function importSmartProSqlIntoServer(
         },
         { idempotencyKey: createIdempotencyKey("restoreWorkspace", fileName) },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) applyHybridSnapshot(res.snapshot);
       return res?.report ?? { ok: true };
     } catch (err) {
@@ -1517,6 +1521,7 @@ export async function importSqliteLegacyIntoServer(
         },
         { idempotencyKey: createIdempotencyKey("restoreWorkspace", fileName) },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) applyHybridSnapshot(res.snapshot);
       return res;
     } catch (err) {
@@ -1548,6 +1553,7 @@ export async function restoreJsonBackupIntoServer(
         },
         { idempotencyKey: createIdempotencyKey("restoreWorkspace", "json") },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) applyHybridSnapshot(res.snapshot);
       return res;
     } catch (err) {
@@ -1647,3 +1653,25 @@ export async function deleteWarehouse(uid:string,warehouseId:string):Promise<voi
 }
 
 export async function executeErpAction(_uid:string,_payload:{action:string;id?:string;expectedRevision?:string|number;currency?:string;month?:string}):Promise<void>{throw new Error('استخدم شاشة المستند الأصلية لترحيل هذه العملية.');}
+
+export async function fetchHomeDashboard(uid: string, raw: Partial<import('../dashboard/model').HomeScope>) {
+  if(uid!==LOCAL_WORKSPACE_UID || !activeBundle) throw new Error('لم تكتمل قراءة بيانات العمل.');
+  const {buildHomeSnapshot,resolveHomeScope}=await import('../dashboard/model');
+  const requested=resolveHomeScope(activeBundle,raw);
+  // Obtain one native snapshot: the host computes the matching cash report in the same read.
+  const result=await hybridBridge.invoke<'getHomeDashboardInput',{snapshot:HybridWorkspaceSnapshot;cash:import('../dashboard/model').HomeCashReport}>('getHomeDashboardInput',{workspaceId:uid,options:requested});
+  const input=normalizeSnapshotToBundle(result.snapshot),scope=resolveHomeScope(input,raw);
+  return buildHomeSnapshot(input,scope,result.cash,{id:`${uid}:owner`,workspaceId:uid,role:'manager'});
+}
+export async function savePersonalPreferences(uid: string, preferences: import('../utils/businessSetup').UserPreferences) {
+  if(uid!==LOCAL_WORKSPACE_UID) throw new Error('مساحة العمل غير متاحة.');
+  return saveWorkspaceSettings(uid,{userPreferences:preferences});
+}
+
+export async function fetchHomeDetail(uid:string,scope:import('../dashboard/model').HomeScope,detail:import('../dashboard/model').HomeMetric) {
+  if(uid!==LOCAL_WORKSPACE_UID) throw new Error('مساحة العمل غير متاحة.');
+  const result=await hybridBridge.invoke<'getHomeDashboardInput',{snapshot:HybridWorkspaceSnapshot;cash:import('../dashboard/model').HomeCashReport}>('getHomeDashboardInput',{workspaceId:uid,options:scope});
+  const {buildHomeDetail,resolveHomeScope}=await import('../dashboard/model');
+  const input=normalizeSnapshotToBundle(result.snapshot);
+  return buildHomeDetail(input,resolveHomeScope(input,scope),result.cash,{id:`${uid}:owner`,workspaceId:uid,role:'manager'},detail);
+}

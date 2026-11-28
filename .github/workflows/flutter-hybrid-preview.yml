@@ -251,6 +251,7 @@ jobs:
           npm run check:runtime
           npm run sync:flutter-hybrid
           npx tsx --test tests/hybrid.test.ts tests/hybrid-message-limits.test.ts tests/backupFormat.test.ts tests/import-restore-safety.test.ts tests/tabular-import.test.ts tests/erp-crud.test.ts tests/erp-input.test.ts tests/sqlite-local-production.test.mjs tests/smartpro-policy.test.ts tests/workspace-isolation.test.ts
+          npx tsx --test tests/home-dashboard.test.ts tests/business-setup.test.ts tests/financial-read-model.test.ts
 
       - name: Verify rendered CRUD against isolated SQLite
         run: |
@@ -258,6 +259,7 @@ jobs:
           export PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)"
           export CRUD_UI_OUTPUT="$RUNNER_TEMP/nasqo-crud-ui"
           npx tsx scripts/verify-crud-ui.ts
+          MOBILE_RUNTIME_TEST_PORT=4186 npx playwright test tests/home-dashboard.spec.ts tests/invoice-onboarding.spec.ts --reporter=line
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -445,6 +447,50 @@ jobs:
           path: flutter_app/play-output/
           if-no-files-found: error
           retention-days: 14
+
+  home-android:
+    name: Home Android API ${{ matrix.api }}
+    needs: flutter-hybrid
+    if: github.event_name == 'pull_request' && inputs.signed_candidate != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 36]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          name: nasqo-hybrid-debug-apk
+          path: home-apk
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048 -cores 2 -feature -Vulkan
+          script: |
+            adb install home-apk/app-debug.apk
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            npx tsx scripts/verify-android-home.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nasqo-home-android-${{ matrix.api }}
+          path: home-android-evidence/
 
   publish-preview:
     needs: flutter-hybrid

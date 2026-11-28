@@ -567,13 +567,13 @@ test("5. empty ERP workspace starts clean, restores .back/.sqlite + native snaps
   }
 });
 
-test("6. schema v5 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
+test("6. schema v6 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
   const { dir, filePath } = makeTempDbPath();
   try {
     // Verify current schema retains v3 indexes and upgrades non-destructively
     const db = getSqliteDb(filePath);
     const uv = db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(uv.user_version, 5);
+    assert.equal(uv.user_version, 6);
     const workspaceColumns = db.prepare('PRAGMA table_info(workspaces)').all().map(row => row.name);
     for (const column of ['business_profile_json','user_preferences_json','setup_fingerprint']) assert(workspaceColumns.includes(column));
     const idx = db
@@ -1024,23 +1024,22 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
       `INSERT INTO stock_transfer_lines (workspace_id, transfer_id, inventory_item_id, quantity, unit, unit_num)
        VALUES (?, ?, ?, 3, 'حبة', 1)`,
     ).run(DEFAULT_WORKSPACE_ID, Number(txRes.lastInsertRowid), itemFlow.id);
-    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
-      accountId: accClient.id,
-      accountName: accClient.name,
-      kind: "invoice",
-      typeLabel: "فاتورة بيع آجل",
-      payment: "credit",
-      direction: "debit",
-      amount: 360,
-      currency: "ريال",
-      warehouseId: whMain.id,
-      invoiceContent: "items",
-      entryNumber: 507,
-      entryDate: "2026-06-10",
-      lines: [
-        { inventoryItemId: itemFlow.id, warehouseId: whMain.id, itemName: itemFlow.name, unit: "حبة", quantity: 4, price: 90, total: 360 },
-      ],
-    });
+    // Imported historical sales remain reportable even when quantity is unverified.
+    // Seed those stored rows, rather than using the stricter new-sale command.
+    const historicalSale = (id: string, number: number, date: string, warehouse: string,
+      item: {id: string; name: string}, quantity: number, price: number) => {
+      const total = quantity * price;
+      db.prepare(`INSERT INTO ledger_entries
+        (id,workspace_id,account_id,account_name,kind,type_label,payment,direction,amount,warehouse_id,
+         invoice_content,entry_number,entry_date,doc_type,source_origin,created_at_ms)
+        VALUES (?,?,?,?,'invoice','فاتورة بيع آجل','credit','debit',?,?,'items',?,?,2,'legacy',?)`)
+        .run(id,DEFAULT_WORKSPACE_ID,accClient.id,accClient.name,total,warehouse,number,date,Date.parse(date));
+      db.prepare(`INSERT INTO invoice_lines
+        (workspace_id,entry_id,inventory_item_id,warehouse_id,item_name,unit,quantity,price,total)
+        VALUES (?,?,?,?,?,'حبة',?,?,?)`)
+        .run(DEFAULT_WORKSPACE_ID,id,item.id,warehouse,item.name,quantity,price,total);
+    };
+    historicalSale('qa-historical-sale',507,'2026-06-10',whMain.id,itemFlow,4,90);
 
     const juneReport = getInventoryMovementsReport(db, DEFAULT_WORKSPACE_ID, {
       warehouseId: whMain.id,
@@ -1114,23 +1113,7 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
       `INSERT INTO stock_transfer_lines (workspace_id, transfer_id, inventory_item_id, quantity, unit, unit_num)
        VALUES (?, ?, ?, 4, 'حبة', 1)`,
     ).run(DEFAULT_WORKSPACE_ID, Number(txLighter.lastInsertRowid), lighter.id);
-    insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
-      accountId: accClient.id,
-      accountName: accClient.name,
-      kind: "invoice",
-      typeLabel: "فاتورة بيع آجل",
-      payment: "credit",
-      direction: "debit",
-      amount: 3500,
-      currency: "ريال",
-      warehouseId: whBranch.id,
-      invoiceContent: "items",
-      entryNumber: 508,
-      entryDate: "2026-06-15",
-      lines: [
-        { inventoryItemId: lighter.id, warehouseId: whBranch.id, itemName: lighter.name, unit: "حبة", quantity: 1, price: 3500, total: 3500 },
-      ],
-    });
+    historicalSale('qa-historical-lighter',508,'2026-06-15',whBranch.id,lighter,1,3500);
     const branchReport = getInventoryMovementsReport(db, DEFAULT_WORKSPACE_ID, {
       warehouseId: whBranch.id,
       profitBasis: "avg",

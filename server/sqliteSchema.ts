@@ -1,4 +1,4 @@
-export const SQLITE_SCHEMA_VERSION = 5;
+export const SQLITE_SCHEMA_VERSION = 6;
 
 export const UNIFIED_SQLITE_TABLES = [
   "workspaces",

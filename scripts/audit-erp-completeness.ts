@@ -46,10 +46,21 @@ fixture(db => {
   const entry = insertLedgerEntryRow(db, workspace, invoice);
   const quantity = () => Number(db.prepare('SELECT quantity FROM inventory_items WHERE id=?').get(item.id)?.quantity);
   record('sale-stock', quantity() === 8, 'A sale of 2 reduces available quantity from 10 to 8.', { quantity: quantity() });
-  const journals = db.prepare('SELECT * FROM journal_entries WHERE workspace_id=?').all(workspace);
-  record('sale-to-gl', journals.length > 0, 'A posted sale creates an explicit balanced journal, including inventory/COGS.', { postedDocument: entry.postingStatus, journalCount: journals.length });
-  insertLedgerEntryRow(db, workspace, invoice);
-  record('identical-retry', quantity() === 8, 'An identical retry never posts a second stock change.', { quantity: quantity() });
+  const journalState = () => db.prepare(`SELECT j.source_ledger_id, l.debit_minor, l.credit_minor, a.note,
+      l.account_id FROM journal_entries j JOIN journal_entry_lines l ON l.journal_id=j.id AND l.workspace_id=j.workspace_id
+      JOIN accounts a ON a.id=l.account_id AND a.workspace_id=l.workspace_id
+      WHERE j.workspace_id=? ORDER BY l.id`).all(workspace);
+  const journals = journalState();
+  const actual = journals.map(l => [l.account_id === customer.id ? 'AR' : l.note, l.debit_minor, l.credit_minor]).sort();
+  const expected = [['AR', 30000, 0], ['nasqo:system:cost', 20000, 0], ['nasqo:system:inventory', 0, 20000], ['nasqo:system:revenue', 0, 30000]];
+  const trial = getTrialBalanceReport(db, workspace, {currency:'ريال', fromDate:'2026-11-27', toDate:'2026-11-27'});
+  record('sale-to-gl', actual.length === 4 && journals.every(l => l.source_ledger_id === entry.id) &&
+    JSON.stringify(actual) === JSON.stringify(expected) && trial.totalDebitTurnover === 500 && trial.totalCreditTurnover === 500,
+    'One document-linked sale journal posts AR and revenue 300, COGS and inventory 200, once in the real trial balance.',
+    { postedDocument: entry.postingStatus, legs: actual, trialDebit: trial.totalDebitTurnover, trialCredit: trial.totalCreditTurnover });
+  const retry = insertLedgerEntryRow(db, workspace, invoice);
+  record('identical-retry', retry.id === entry.id && quantity() === 8 && JSON.stringify(journalState()) === JSON.stringify(journals),
+    'An identical retry returns the original invoice without changing stock or the linked journal.', { quantity: quantity(), sameDocument: retry.id === entry.id });
   let changedRetryRejected = false;
   try { insertLedgerEntryRow(db, workspace, { ...invoice, amount: 450, lines: [{ ...invoice.lines[0], quantity: 3, total: 450 }] }); }
   catch { changedRetryRejected = true; }

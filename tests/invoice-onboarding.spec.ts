@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { defaultBusinessProfile, defaultUserPreferences } from '../src/utils/businessSetup';
-test.use({ launchOptions: { executablePath: process.env.TEST_BROWSER_EXECUTABLE } });
+test.use({ launchOptions: { executablePath: process.env.TEST_BROWSER_EXECUTABLE ?? process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } });
 const ws='/api/db/workspace/local-erp-workspace', headers={'X-NASQO-CSRF':'1'};
 
 test.beforeEach(async({page})=>{
@@ -11,6 +11,8 @@ test.beforeEach(async({page})=>{
 
 test('first-run wizard validates, retains failed saves, provisions once and persists preferences',async({page})=>{
   test.setTimeout(90_000);
+  // Match the missing JS intrinsic on WebView 83 without replacing the browser.
+  await page.addInitScript(() => Reflect.deleteProperty(Object, 'hasOwn'));
   await page.goto('/?autostart=1'); const modal=page.getByTestId('business-setup-modal');
   await expect(modal).toBeVisible({timeout:30_000});
   await modal.getByRole('button',{name:'التالي',exact:true}).click();

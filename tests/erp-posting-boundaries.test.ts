@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   closeSqliteDb, getSqliteDb, ensureEmptyWorkspace, upsertAccountRow,
   upsertWarehouseRow, insertInventoryItemRow, insertLedgerEntryRow,
-  exportWorkspaceJsonBackup, postDraftLedgerEntryRow, restoreUnifiedJsonBundle,
+  exportWorkspaceJsonBackup, postDraftLedgerEntryRow, restoreUnifiedJsonBundle, setWorkspaceClosedUntilDate,
 } from '../server/sqliteDb.ts';
 const w = 'qa-erp-posting';
 function fixture(run: (db: ReturnType<typeof getSqliteDb>, data: ReturnType<typeof seed>) => void) {
@@ -109,4 +109,19 @@ test('free invoice retries preserve their descriptions, units and delivery terms
   assert.throws(() => insertLedgerEntryRow(db, w, { ...request,
     lines: [{ ...request.lines[0], itemName: 'QA Changed After Upgrade' }] }), /معرّف الطلب/);
   assert.equal(snapshot(db), old);
+}));
+
+test('fiscal lock rejects impossible cutoff dates and compares noncanonical posting dates by calendar day', () => fixture((db, s) => {
+  const draft = insertLedgerEntryRow(db, w, { ...s.sale, entryDate: '27/11/2026', postingStatus: 'draft' });
+  setWorkspaceClosedUntilDate(db, w, '2026-11-27');
+  const before = snapshot(db);
+  assert.throws(() => setWorkspaceClosedUntilDate(db, w, '2026-02-30'), /تاريخ/);
+  for (const entryDate of ['2026-11-27', '2026/11/26', '٢٦/١١/٢٠٢٦', 'undated']) {
+    assert.throws(() => insertLedgerEntryRow(db, w, { ...s.sale, entryDate }), /فترة مالية|الفترة المالية/);
+  }
+  assert.throws(() => postDraftLedgerEntryRow(db, w, draft.id), /فترة مالية/);
+  assert.equal(snapshot(db), before);
+  assert.equal(insertLedgerEntryRow(db, w, { ...s.sale, entryDate: '2026-11-28' }).postingStatus, 'posted');
+  assert.equal(db.prepare('PRAGMA integrity_check').get()?.integrity_check, 'ok');
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 }));
