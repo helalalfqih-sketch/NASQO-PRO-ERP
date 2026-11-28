@@ -44,14 +44,21 @@ test('first-run wizard validates, retains failed saves, provisions once and pers
 
 test('invoice search, locked controls, mobile viewport, draft recovery and real save without duplicate stock',async({page})=>{
   test.setTimeout(120_000);
-  const setup={companyName:'Invoice UI acceptance',currency:'ريال',warehouseName:'Warehouse',cashboxName:'Cashbox',bankName:'',profile:defaultBusinessProfile(),preferences:defaultUserPreferences()};
+  const setup={companyName:'Invoice UI acceptance',currency:'ريال',warehouseName:'Warehouse',cashboxName:'Cashbox',bankName:'Preferred bank',profile:defaultBusinessProfile(),preferences:defaultUserPreferences()};
   expect((await page.request.post(ws+'/setup',{headers,data:setup})).status()).toBe(200);
   let bundle=await (await page.request.get(ws)).json();const warehouse=bundle.warehouses[0].id;
+  const preferredBox=bundle.cashboxes.find((b:any)=>b.boxType===2).id;
+  expect((await page.request.put(ws,{headers,data:{userPreferences:{...bundle.workspace.userPreferences,defaultCashboxId:preferredBox}}})).status()).toBe(200);
   for(const name of ['قلم قبول','دفتر قبول']) {
     const res=await page.request.post(ws+'/inventory',{headers,data:{item:{name,warehouseId:warehouse,unit:'حبة',quantity:0,avgCost:0,sku:name==='قلم قبول'?'000123':'000124',currencyCode:'ريال'}}});expect(res.status()).toBe(201);
   }
   await page.goto('/?autostart=1');await page.getByTestId('user-action-shortcuts').getByRole('button',{name:'فاتورة شراء',exact:true}).click();
   const modal=page.getByTestId('invoice-modal'); await expect(modal).toBeVisible();
+  await expect(modal.getByLabel('صندوق النقدية',{exact:true})).toHaveValue(String(preferredBox));
+  // A mode switch picks the corresponding default party without losing the user's cashbox.
+  await modal.getByRole('radio',{name:'فاتورة بيع',exact:true}).check();
+  await modal.getByRole('radio',{name:'فاتورة شراء',exact:true}).check();
+  await expect(modal.getByLabel('صندوق النقدية',{exact:true})).toHaveValue(String(preferredBox));
   const locks=await modal.evaluate(node=>{
     const selectors=['.invoice-modal-head','.invoice-meta-grid .invoice-field-box','.invoice-meta-grid input','.invoice-erp-table','.invoice-erp-row','.invoice-modal-footer','.invoice-actions-erp .save'];
     return selectors.map(s=>{const e=node.querySelector(s)!;const c=getComputedStyle(e);return {s,height:(e as HTMLElement).offsetHeight,radius:c.borderRadius,padding:c.padding,background:c.backgroundColor};});
@@ -67,6 +74,18 @@ test('invoice search, locked controls, mobile viewport, draft recovery and real 
   await search.fill('غيرموجود');await expect(modal.locator('#invoice-search-results')).toContainText('لا توجد أصناف');
   await search.fill('000123');await modal.getByRole('option').filter({hasText:'قلم قبول'}).click();
   await modal.getByLabel('كمية السطر 1',{exact:true}).fill('2');await modal.getByLabel('سعر السطر 1',{exact:true}).fill('7.5');
+  await modal.getByLabel('بيان الفاتورة').fill('مسودة اختبار محفوظة');
+  await expect(page.getByTestId('invoice-draft-status')).toContainText('حُفظت المسودة');
+  await page.evaluate(()=>{
+    const original=Storage.prototype.setItem;
+    (window as any).__restoreDraftStorage=()=>{Storage.prototype.setItem=original;};
+    Storage.prototype.setItem=function(key,value){if(key.includes('invoice-draft'))throw new DOMException('Synthetic full storage','QuotaExceededError');return original.call(this,key,value);};
+  });
+  await modal.getByLabel('بيان الفاتورة').fill('مسودة محفوظة بعد فشل التخزين');
+  await expect(page.getByTestId('invoice-draft-status')).toContainText('تعذر حفظ المسودة');
+  await expect(modal.getByLabel('بيان الفاتورة')).toHaveValue('مسودة محفوظة بعد فشل التخزين');
+  await page.evaluate(()=>(window as any).__restoreDraftStorage());
+  await page.getByTestId('invoice-draft-status').getByRole('button',{name:'إعادة المحاولة'}).click();
   await modal.getByLabel('بيان الفاتورة').fill('مسودة اختبار محفوظة');
   await expect(page.getByTestId('invoice-draft-status')).toContainText('حُفظت المسودة');
   await page.reload();await expect(modal).toBeVisible();await expect(modal.getByLabel('بيان الفاتورة')).toHaveValue('مسودة اختبار محفوظة');await expect(modal.getByLabel('كمية السطر 1',{exact:true})).toHaveValue('2');

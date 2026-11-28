@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths:
       - "flutter_app/**"
-      - "src/hybrid/**"
+      - "src/**"
       - "scripts/build-hybrid.mjs"
       - "scripts/sync-hybrid-to-flutter.mjs"
       - ".github/workflows/flutter-hybrid-preview.yml"

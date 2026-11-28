@@ -6464,7 +6464,7 @@ function InvoiceModal({
   const chooseCashbox = (id:number|undefined) => { manualCashbox.current=true;setCashboxId(id); };
   const chooseAccount = (id:string) => {
     setAccountId(id);
-    if(!manualCashbox.current) setCashboxId(resolveCashbox(defaults,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id),cashierPrefs?.cashboxId));
+    if(!manualCashbox.current) setCashboxId(resolveCashbox(defaults,ctx.cashboxes,currency,ctx.accounts.find(a=>a.id===id),cashierPrefs?.cashboxId ?? userPrefs?.defaultCashboxId));
   };
   const chooseKind = (value:"purchase"|"sale") => {
     setKind(value);
@@ -6478,7 +6478,7 @@ function InvoiceModal({
   const chooseCurrency = (value:CurrencyCode) => {
     setCurrency(value);
     if(manualCashbox.current) setCashboxId(eligibleCashbox(ctx.cashboxes,cashboxId,value));
-    else setCashboxId(resolveCashbox(defaults,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId),cashierPrefs?.cashboxId));
+    else setCashboxId(resolveCashbox(defaults,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId),cashierPrefs?.cashboxId ?? userPrefs?.defaultCashboxId));
   };
   const [itemSearch, setItemSearch] = useState(restoreField("itemSearch", ""));
   const [searchSelection, setSearchSelection] = useState(0);
