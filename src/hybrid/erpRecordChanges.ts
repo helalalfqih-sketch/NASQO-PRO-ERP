@@ -1,5 +1,5 @@
-import type { ErpWorkspaceData } from '../erp';
-import { ERP_COLLECTIONS, erpRows, type ErpRecordChange } from '../erpRecordRules';
+import type { ErpWorkspaceData } from '../erp.ts';
+import { ERP_COLLECTIONS, erpRows, type ErpRecordChange } from '../erpRecordRules.ts';
 export function buildErpRecordChanges(before:ErpWorkspaceData,after:ErpWorkspaceData):ErpRecordChange[]{
   const changes:ErpRecordChange[]=[];
   if(before.lastPayrollRunMonth!==after.lastPayrollRunMonth)throw new Error('اعتماد مسير الرواتب يتم من عملية الترحيل المخصصة.');

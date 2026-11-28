@@ -1,3 +1,4 @@
+import { getTrialBalanceReport } from "./financialReports.ts";
 import { executeErpAction } from "./erpActions.ts";
 import { deleteMasterRecord, saveCashboxRecord } from "./masterCrud.ts";
 import { saveErpRecords } from "./erpRecords.ts";
@@ -110,7 +111,7 @@ function route(fn: (req: Request, res: Response, db: DatabaseSync) => Promise<vo
         return;
       }
       if (error instanceof SqliteValidationError) {
-        res.status(400).json({ error: error.message });
+        res.status(error.status).json({ error: error.message });
         return;
       }
       const message = error instanceof Error ? error.message : "خطأ غير متوقع في قاعدة البيانات.";
@@ -204,10 +205,10 @@ export function mountSqliteApi(app: Express): void {
     "/workspace/:uid/fiscal-lock",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      const closedUntilDate =
-        typeof req.body?.closedUntilDate === "string" && req.body.closedUntilDate.trim()
-          ? req.body.closedUntilDate.trim()
-          : null;
+      const closedUntilDate = req.body?.closedUntilDate;
+      if (closedUntilDate !== null && (typeof closedUntilDate !== "string" || !closedUntilDate.trim())) {
+        throw new HttpError(400, "حدد تاريخ إقفال صالحًا، أو أرسل null لفتح الفترة صراحةً.");
+      }
       const workspace = setWorkspaceClosedUntilDate(db, uid, closedUntilDate);
       res.json({ workspace });
     }),
@@ -333,6 +334,22 @@ export function mountSqliteApi(app: Express): void {
       res.status(201).json({ ...result, inventory });
     }),
   );
+
+  router.get('/workspace/:uid/reports/trial-balance', route((req, res, db) => {
+    const options: {currency?: string; fromDate?: string; toDate?: string} = {};
+    for (const key of ['currency', 'fromDate', 'toDate'] as const) {
+      const value = req.query[key];
+      if (value !== undefined && typeof value !== 'string') throw new SqliteValidationError('مرشح التقرير غير صالح.');
+      if (value) options[key] = value as string;
+    }
+    for (const date of [options.fromDate, options.toDate]) {
+      if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0,10) !== date)) {
+        throw new SqliteValidationError('تاريخ التقرير غير صالح.');
+      }
+    }
+    if (options.fromDate && options.toDate && options.fromDate > options.toDate) throw new SqliteValidationError('بداية الفترة يجب ألا تتجاوز نهايتها.');
+    res.json(getTrialBalanceReport(db, validWsId(paramStr(req, 'uid')), options));
+  }));
 
   router.post(
     "/workspace/:uid/journals",

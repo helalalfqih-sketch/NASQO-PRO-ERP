@@ -51,6 +51,7 @@ import {
   updateLedgerEntryRow,
   upsertAccountGroupRow,
   upsertAccountRow,
+  upsertCurrencyRow,
   upsertWarehouseRow,
 } from "../server/sqliteDb.ts";
 import { requireSqliteAccess } from "../server/sqliteAccess.ts";
@@ -73,6 +74,7 @@ function withIsolatedDb(fn: (db: DatabaseSync, dir: string) => void | Promise<vo
 }
 
 function seedCoreEntities(db: DatabaseSync) {
+  upsertCurrencyRow(db, DEFAULT_WORKSPACE_ID, {name: 'دولار', ratePrimary: 4, rateSecondary: 4});
   const wh = upsertWarehouseRow(db, DEFAULT_WORKSPACE_ID, {
     name: "المخزن الرئيسي",
     isDefault: true,
@@ -113,7 +115,7 @@ function seedCoreEntities(db: DatabaseSync) {
   const cashAccUsd = upsertAccountRow(db, DEFAULT_WORKSPACE_ID, {
     name: "صندوق الدولار",
     category: "transfers",
-    groupId: grpCash.id,
+    groupId: upsertAccountGroupRow(db, DEFAULT_WORKSPACE_ID, {name: 'نقدية الدولار', category: 'transfers', currencyCode: 'دولار'}).id,
     currency: "دولار",
     isCashAccount: true,
     codeNumber: 1003,
@@ -666,7 +668,7 @@ test(
 test(
   "T14. عكس قيد مرحّل ومنع تعديل أو حذف القيد المرحّل مباشرةً (Immutability & Reversal)",
   withIsolatedDb((db) => {
-    const { wh, clientA, item } = seedCoreEntities(db);
+    const { wh, clientA, item, salesAcc } = seedCoreEntities(db);
     const sale = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
       accountId: clientA.id,
       accountName: clientA.name,
@@ -708,7 +710,7 @@ test(
       entryDate: "2026-03-17",
       lines: [
         { accountId: clientA.id, debit: 200 },
-        { accountId: seedCoreEntities(db).salesAcc.id, credit: 200 },
+        { accountId: salesAcc.id, credit: 200 },
       ],
     });
     const jRev = reverseJournalEntryRow(db, DEFAULT_WORKSPACE_ID, j.id, { reversalDate: "2026-03-18" });

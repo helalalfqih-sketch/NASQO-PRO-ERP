@@ -925,6 +925,12 @@ export async function fetchInventoryMovementsReport(
   return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/inventory/report${suffix}`);
 }
 
+export async function fetchTrialBalanceReport(uid: string, params?: {currency?: string; fromDate?: string; toDate?: string}): Promise<import('./erp').TrialBalanceReport> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params ?? {})) if (value) query.set(key, value);
+  return dbFetch(`/workspace/${encodeURIComponent(effectiveUid(uid))}/reports/trial-balance?${query}`);
+}
+
 export async function fetchCashboxesReport(
   uid: string,
   params?: { currency?: string; fromDate?: string; toDate?: string },

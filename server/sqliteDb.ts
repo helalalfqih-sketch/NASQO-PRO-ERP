@@ -1,4 +1,7 @@
+import { parseNormalizedDate } from "../src/utils/dateUtils.ts";
 import { assertMasterNotReferenced } from "./masterCrud.ts";
+import { requireStockPostingLocations } from "./stockPostingGuards.ts";
+import { ledgerPostingFingerprint, storedLedgerFingerprint, journalPostingFingerprint, postingOperationKey } from "./postingIdentity.ts";
 import { revisionedErpData } from "./erpRecordRevisions.ts";
 import { MAX_IMPORT_ROWS } from "../src/utils/tabularImportLimits.ts";
 import { captureWorkspaceSnapshot, restoreWorkspaceSnapshot } from "./workspaceSnapshot.ts";
@@ -38,7 +41,7 @@ import {
   SQLITE_SCHEMA_MIGRATION_V2_DDL,
   SQLITE_SCHEMA_MIGRATION_V3_DDL,
   SQLITE_SCHEMA_V2,
-  SQLITE_SCHEMA_V3,
+  SQLITE_SCHEMA_VERSION,
   UNIFIED_SQLITE_DDL,
   UNIFIED_SQLITE_TABLES,
   type UnifiedSqliteTableName,
@@ -59,9 +62,11 @@ import {
 export const DEFAULT_WORKSPACE_ID = "local-erp-workspace";
 
 export class SqliteValidationError extends Error {
-  constructor(message: string) {
+  readonly status: number;
+  constructor(message: string, status = 400) {
     super(message);
     this.name = "SqliteValidationError";
+    this.status = status;
   }
 }
 
@@ -132,6 +137,8 @@ function openAndInit(filePath: string): DatabaseSync {
   if (!ledgerCols.some((c) => c.name === "idempotency_key")) {
     db.exec("ALTER TABLE ledger_entries ADD COLUMN idempotency_key TEXT;");
   }
+  if (!ledgerCols.some(c => c.name === 'request_fingerprint')) db.exec('ALTER TABLE ledger_entries ADD COLUMN request_fingerprint TEXT;');
+  if (!(db.prepare('PRAGMA table_info(journal_entries)').all() as {name:string}[]).some(c => c.name === 'request_fingerprint')) db.exec('ALTER TABLE journal_entries ADD COLUMN request_fingerprint TEXT;');
   if (!ledgerCols.some((c) => c.name === "reversed_entry_id")) {
     db.exec("ALTER TABLE ledger_entries ADD COLUMN reversed_entry_id TEXT;");
   }
@@ -212,8 +219,8 @@ function openAndInit(filePath: string): DatabaseSync {
     db.exec("ALTER TABLE inventory_items ADD COLUMN catalog_reference_cost REAL");
   }
   const verRow = db.prepare("PRAGMA user_version").get() as { user_version?: number } | undefined;
-  if (Number(verRow?.user_version ?? 0) < SQLITE_SCHEMA_V3) {
-    db.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_V3};`);
+  if (Number(verRow?.user_version ?? 0) < SQLITE_SCHEMA_VERSION) {
+    db.exec(`PRAGMA user_version = ${SQLITE_SCHEMA_VERSION};`);
   }
   return db;
 }
@@ -944,7 +951,7 @@ export function getDbStats(db: DatabaseSync, workspaceId: string) {
   return {
     engine: "SQLite (node:sqlite WAL)",
     dbName: filePath === ":memory:" ? ":memory:" : path.relative(process.cwd(), filePath).replace(/\\/g, "/"),
-    schemaVersion: SQLITE_SCHEMA_V3,
+    schemaVersion: SQLITE_SCHEMA_VERSION,
     tablesCount: UNIFIED_SQLITE_TABLES.length,
     fileSizeBytes,
     accountsCount,
@@ -1130,7 +1137,7 @@ export function upsertCurrencyRow(
     if (!existing) {
       throw new SqliteValidationError("العملة المحددة غير موجودة.");
     }
-    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
+    if (existing.name !== name) throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ? AND id <> ?")
       .get(workspaceId, name, targetId) as { id: number } | undefined;
@@ -1144,7 +1151,6 @@ export function upsertCurrencyRow(
     ).run(name, name, symbol, ratePrimary, rateSecondary, nameSecondary, workspaceId, targetId);
     writeAudit(db, workspaceId, workspaceId, "currencies", String(targetId), "update", { name, ratePrimary, rateSecondary });
   } else {
-    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ?")
       .get(workspaceId, name) as { id: number } | undefined;
@@ -1227,7 +1233,7 @@ export function saveWorkspaceSettingsRow(
   const clean = sanitizeWorkspacePayload({ ...current, ...updates, ownerId: workspaceId });
   const rawClosedUntil =
     updates.closedUntilDate !== undefined ? String(updates.closedUntilDate ?? "").trim() : (current.closedUntilDate ?? "");
-  if (rawClosedUntil && !/^\d{4}-\d{2}-\d{2}$/.test(rawClosedUntil)) {
+  if (rawClosedUntil && parseNormalizedDate(rawClosedUntil).iso !== rawClosedUntil) {
     throw new SqliteValidationError("تاريخ إقفال الفترة المالية يجب أن يكون بصيغة YYYY-MM-DD.");
   }
   const closedUntilDate = rawClosedUntil || null;
@@ -1276,8 +1282,12 @@ function assertNotInClosedPeriod(db: DatabaseSync, workspaceId: string, entryDat
     .prepare("SELECT closed_until_date FROM workspaces WHERE id = ?")
     .get(workspaceId) as { closed_until_date?: string | null } | undefined;
   const closedUntil = String(row?.closed_until_date ?? "").trim();
-  const normalizedDate = String(entryDate ?? "").trim().slice(0, 10);
-  if (closedUntil && normalizedDate && normalizedDate <= closedUntil) {
+  if (!closedUntil) return;
+  const normalizedDate = parseNormalizedDate(entryDate).iso;
+  if (!normalizedDate) {
+    throw new SqliteValidationError("يلزم تاريخ ميلادي صالح للتحقق من الفترة المالية المغلقة.");
+  }
+  if (normalizedDate <= closedUntil) {
     throw new SqliteValidationError(
       `لا يمكن الترحيل أو التسجيل في فترة مالية مغلقة (الفترة مغلقة حتى ${closedUntil}، وتاريخ المستند ${normalizedDate}).`,
     );
@@ -1440,6 +1450,7 @@ function applyEntryLinesStockDelta(
   options?: { updateWacOnInbound?: boolean },
 ): void {
   if (!signFactor) return;
+  requireStockPostingLocations(db, workspaceId, entryId, options?.updateWacOnInbound === true);
   const lineRows = db
     .prepare(
       `SELECT il.id AS line_id, il.inventory_item_id, il.quantity, il.bonus, il.unit_num,
@@ -1621,7 +1632,8 @@ function normalizeAndReconcileInvoiceLines(
     }
     const total = computeExactLineNet(qty, price, roundedDiscount, 2);
     const unitNumRaw = Number(line.unitNum ?? 1);
-    const unitNum: 1 | 2 | 3 = unitNumRaw === 2 || unitNumRaw === 3 ? unitNumRaw : 1;
+    if (![1, 2, 3].includes(unitNumRaw)) throw new SqliteValidationError('رقم وحدة الصنف غير صالح؛ اختر وحدة معرفة في بطاقته.');
+    const unitNum = unitNumRaw as 1 | 2 | 3;
 
     lines.push({
       ...(line.inventoryItemId ? { inventoryItemId: line.inventoryItemId } : {}),
@@ -1693,10 +1705,14 @@ function insertInvoiceLinesForEntry(
     const matchedItem = line.inventoryItemId
       ? (findItem.get(workspaceId, line.inventoryItemId) as { id: string; avg_cost: number } | undefined)
       : undefined;
+    if (line.inventoryItemId && !matchedItem) {
+      throw new SqliteValidationError('الصنف المرتبط ببند الفاتورة غير موجود في مساحة العمل.');
+    }
     const lineWhIdRaw = line.warehouseId || defaultWarehouseId;
     const matchedWh = lineWhIdRaw
       ? (findWh.get(workspaceId, lineWhIdRaw) as { id: string } | undefined)
       : undefined;
+    if (lineWhIdRaw && !matchedWh) throw new SqliteValidationError('مخزن بند الفاتورة غير موجود في مساحة العمل.');
 
     insLine.run(
       workspaceId,
@@ -1801,10 +1817,7 @@ export function insertLedgerEntryRow(
 ): LedgerEntryRecord {
   ensureEmptyWorkspace(db, workspaceId);
 
-  const idempotencyKey =
-    typeof input.idempotencyKey === "string" && input.idempotencyKey.trim()
-      ? input.idempotencyKey.trim().slice(0, 128)
-      : null;
+  const idempotencyKey = postingOperationKey(input.idempotencyKey);
 
   const explicitId = input.id && !input.id.includes("/") ? String(input.id).trim() : "";
 
@@ -1845,13 +1858,30 @@ export function insertLedgerEntryRow(
     clean.kind === "invoice" &&
     (docType === 3 || docType === 9 || (docType === null && clean.direction === "credit"));
 
+  const requestFingerprint = ledgerPostingFingerprint({ ...clean, amount: finalAmount,
+    discount: cleanDiscount, taxAmount: cleanTaxAmount, paidAmount, docType, postingStatus,
+    dueDate: clean.dueDate || null, expenseCategory: clean.expenseCategory || null,
+    cashboxId: input.cashboxId ?? null,
+  }, lines);
+  const requireSameRequest = (row: Record<string, unknown>) => {
+    if ((row.request_fingerprint || storedLedgerFingerprint(db, workspaceId, row)) !== requestFingerprint ||
+        input.settledOnReceipt !== undefined && Boolean(row.settled_on_receipt) !== Boolean(input.settledOnReceipt)) {
+      throw new SqliteValidationError('معرّف الطلب مستخدم لبيانات مختلفة؛ راجع المستند المحفوظ قبل إنشاء طلب جديد.', 409);
+    }
+  };
+
   const runWrite = (): LedgerEntryRecord => {
     // 1. Idempotency checks inside BEGIN IMMEDIATE so duplicate retries never double-post
     if (explicitId) {
+      if (idempotencyKey) {
+        const byKey = db.prepare('SELECT id FROM ledger_entries WHERE workspace_id=? AND idempotency_key=?').get(workspaceId, idempotencyKey);
+        if (byKey && byKey.id !== explicitId) throw new SqliteValidationError('معرّف الطلب مرتبط بمستند آخر؛ راجع المستند المحفوظ.', 409);
+      }
       const existingRow = db
         .prepare("SELECT * FROM ledger_entries WHERE workspace_id = ? AND id = ?")
         .get(workspaceId, explicitId) as Record<string, unknown> | undefined;
       if (existingRow) {
+        requireSameRequest(existingRow);
         const cntRow = db
           .prepare("SELECT COUNT(*) AS cnt FROM invoice_lines WHERE workspace_id = ? AND entry_id = ?")
           .get(workspaceId, explicitId) as { cnt: number } | undefined;
@@ -1863,6 +1893,7 @@ export function insertLedgerEntryRow(
         .prepare("SELECT * FROM ledger_entries WHERE workspace_id = ? AND idempotency_key = ?")
         .get(workspaceId, idempotencyKey) as Record<string, unknown> | undefined;
       if (existingByKey) {
+        requireSameRequest(existingByKey);
         const cntRow = db
           .prepare("SELECT COUNT(*) AS cnt FROM invoice_lines WHERE workspace_id = ? AND entry_id = ?")
           .get(workspaceId, String(existingByKey.id)) as { cnt: number } | undefined;
@@ -1929,6 +1960,7 @@ export function insertLedgerEntryRow(
       clean.invoiceContent, clean.entryNumber, clean.deleted ? 1 : 0, clean.entryDate, clean.dueDate ?? null,
       clean.expenseCategory ?? null, clean.deliveryDays ?? null, docType, postingStatus, idempotencyKey, paidAmount, createdAtMs, clean.legacyRef ?? null,
     );
+    db.prepare('UPDATE ledger_entries SET request_fingerprint=? WHERE workspace_id=? AND id=?').run(requestFingerprint, workspaceId, id);
 
     if (lines.length > 0) {
       insertInvoiceLinesForEntry(db, workspaceId, id, clean.warehouseId, lines);
@@ -2497,10 +2529,7 @@ export function insertJournalEntryRow(
   }
   const exchangeRate = Number(rateRaw);
   const postingStatus: "draft" | "posted" = input.postingStatus === "draft" ? "draft" : "posted";
-  const idempotencyKey =
-    typeof input.idempotencyKey === "string" && input.idempotencyKey.trim()
-      ? input.idempotencyKey.trim().slice(0, 128)
-      : null;
+  const idempotencyKey = postingOperationKey(input.idempotencyKey);
 
   if (!Array.isArray(input.lines) || input.lines.length < 2) {
     throw new SqliteValidationError("يجب أن يحتوي القيد اليومي على سطرين على الأقل (طرف مدين وطرف دائن).");
@@ -2542,15 +2571,24 @@ export function insertJournalEntryRow(
     );
   }
 
+  const description = String(input.description ?? '').trim().slice(0, 500);
+  const fingerprint = journalPostingFingerprint({entryDate, description, currency, exchangeRate, postingStatus}, parsedLines);
   return withTransaction(db, () => {
-    if (idempotencyKey) {
-      const existing = db
-        .prepare("SELECT id FROM journal_entries WHERE workspace_id = ? AND idempotency_key = ?")
-        .get(workspaceId, idempotencyKey) as { id: string } | undefined;
-      if (existing) {
-        return fetchJournalEntryById(db, workspaceId, existing.id)!;
+    const existing = input.id?.trim()
+      ? db.prepare('SELECT * FROM journal_entries WHERE workspace_id=? AND id=?').get(workspaceId, input.id.trim())
+      : undefined;
+    const byKey = idempotencyKey
+      ? db.prepare('SELECT * FROM journal_entries WHERE workspace_id=? AND idempotency_key=?').get(workspaceId, idempotencyKey)
+      : undefined;
+    for (const row of [existing, byKey]) {
+      if (!row) continue;
+      const saved = fetchJournalEntryById(db, workspaceId, String(row.id))!;
+      const savedFingerprint = row.request_fingerprint || journalPostingFingerprint({...saved, postingStatus: saved.postingStatus === 'reversed' ? 'posted' : saved.postingStatus}, saved.lines.map(l => ({...l, debitMinor: toMinorUnits(l.debit), creditMinor: toMinorUnits(l.credit)})));
+      if (savedFingerprint !== fingerprint || (input.entryNumber !== undefined && input.entryNumber !== saved.entryNumber) || (input.id?.trim() && input.id.trim() !== saved.id)) {
+        throw new SqliteValidationError('معرّف الطلب مستخدم لقيد يومية ببيانات مختلفة؛ راجع القيد المحفوظ.', 409);
       }
     }
+    if (existing || byKey) return fetchJournalEntryById(db, workspaceId, String((existing || byKey)!.id))!;
 
     if (postingStatus === "posted") {
       assertNotInClosedPeriod(db, workspaceId, entryDate);
@@ -2597,6 +2635,7 @@ export function insertJournalEntryRow(
       totalCreditMinor,
       now,
     );
+    db.prepare('UPDATE journal_entries SET request_fingerprint=? WHERE workspace_id=? AND id=?').run(fingerprint, workspaceId, id);
 
     const insLine = db.prepare(
       `INSERT INTO journal_entry_lines (workspace_id, journal_id, account_id, account_name, debit_minor, credit_minor, description)
@@ -3917,7 +3956,7 @@ export function importAccountCardsRows(db: DatabaseSync, workspaceId: string, ac
     for (const row of accounts) {
       if (!row || Object.keys(row).some(k => !["name","phone","category","currency","openingBalance","openingDirection"].includes(k)) ||
           typeof row.name !== "string" || !row.name.trim() || row.name.length > 100 ||
-          typeof row.phone !== "string" || row.phone.length > 32 || !isValidCategory(row.category) ||
+          typeof row.phone !== "string" || row.phone.length > 32 || !isValidCategory(row.category ?? "") ||
           (row.openingBalance ?? 0) !== 0 || !["credit","debit"].includes(row.openingDirection ?? "")) {
         throw new SqliteValidationError("حقول بطاقة الحساب غير صالحة؛ الأرصدة الافتتاحية تحتاج قيدًا منفصلًا. لم تُحفظ الدفعة.");
       }
