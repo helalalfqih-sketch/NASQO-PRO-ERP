@@ -1,4 +1,5 @@
 import { validateBusinessProfile, validatePreferenceReferences, validateUserPreferences } from "../src/utils/businessSetup.ts";
+import { parseNormalizedDate } from "../src/utils/dateUtils.ts";
 import { assertMasterNotReferenced } from "./masterCrud.ts";
 import { requireStockPostingLocations } from "./stockPostingGuards.ts";
 import { ledgerPostingFingerprint, storedLedgerFingerprint, journalPostingFingerprint, postingOperationKey } from "./postingIdentity.ts";
@@ -1144,7 +1145,7 @@ export function upsertCurrencyRow(
     if (!existing) {
       throw new SqliteValidationError("العملة المحددة غير موجودة.");
     }
-    if(existing.name!==name)throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
+    if (existing.name !== name) throw new SqliteValidationError("اسم العملة هوية مالية لا يتغير.");
     const dup = db
       .prepare("SELECT id FROM currencies WHERE workspace_id = ? AND name = ? AND id <> ?")
       .get(workspaceId, name, targetId) as { id: number } | undefined;
@@ -1267,7 +1268,7 @@ export function saveWorkspaceSettingsRow(
   const clean = sanitizeWorkspacePayload({ ...current, ...updates, ownerId: workspaceId });
   const rawClosedUntil =
     updates.closedUntilDate !== undefined ? String(updates.closedUntilDate ?? "").trim() : (current.closedUntilDate ?? "");
-  if (rawClosedUntil && !/^\d{4}-\d{2}-\d{2}$/.test(rawClosedUntil)) {
+  if (rawClosedUntil && parseNormalizedDate(rawClosedUntil).iso !== rawClosedUntil) {
     throw new SqliteValidationError("تاريخ إقفال الفترة المالية يجب أن يكون بصيغة YYYY-MM-DD.");
   }
   const closedUntilDate = rawClosedUntil || null;
@@ -1320,8 +1321,12 @@ function assertNotInClosedPeriod(db: DatabaseSync, workspaceId: string, entryDat
     .prepare("SELECT closed_until_date FROM workspaces WHERE id = ?")
     .get(workspaceId) as { closed_until_date?: string | null } | undefined;
   const closedUntil = String(row?.closed_until_date ?? "").trim();
-  const normalizedDate = String(entryDate ?? "").trim().slice(0, 10);
-  if (closedUntil && normalizedDate && normalizedDate <= closedUntil) {
+  if (!closedUntil) return;
+  const normalizedDate = parseNormalizedDate(entryDate).iso;
+  if (!normalizedDate) {
+    throw new SqliteValidationError("يلزم تاريخ ميلادي صالح للتحقق من الفترة المالية المغلقة.");
+  }
+  if (normalizedDate <= closedUntil) {
     throw new SqliteValidationError(
       `لا يمكن الترحيل أو التسجيل في فترة مالية مغلقة (الفترة مغلقة حتى ${closedUntil}، وتاريخ المستند ${normalizedDate}).`,
     );
@@ -2553,8 +2558,8 @@ export function insertJournalEntryRow(
 ): JournalEntryRecord {
   ensureEmptyWorkspace(db, workspaceId);
   const entryDate = String(input.entryDate ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
-    throw new SqliteValidationError("تاريخ القيد اليومي يجب أن يكون بصيغة YYYY-MM-DD.");
+  if (parseNormalizedDate(entryDate).iso !== entryDate) {
+    throw new SqliteValidationError("تاريخ القيد اليومي يجب أن يكون تاريخًا ميلاديًا صالحًا بصيغة YYYY-MM-DD.");
   }
   const currency = String(input.currency ?? "ريال").trim() || "ريال";
   const rateRaw = input.exchangeRate === undefined ? 1 : input.exchangeRate;
@@ -2584,8 +2589,12 @@ export function insertJournalEntryRow(
     if (debitNum < 0 || creditNum < 0) {
       throw new SqliteValidationError("لا يُسمح بقيم سالبة في سطور القيد اليومي.");
     }
-    const dMinor = toMinorUnits(debitNum, 2);
-    const cMinor = toMinorUnits(creditNum, 2);
+    const dMinor = toMinorUnits(debitRaw, 2);
+    const cMinor = toMinorUnits(creditRaw, 2);
+    if ([dMinor, cMinor].some(minor =>
+      !Number.isSafeInteger(minor) || toMinorUnits(fromMinorUnits(minor, 2), 2) !== minor)) {
+      throw new SqliteValidationError("مبلغ سطر القيد اليومي يتجاوز نطاق الدقة النقدية المدعوم.");
+    }
     if ((dMinor > 0 && cMinor > 0) || (dMinor === 0 && cMinor === 0)) {
       throw new SqliteValidationError("كل سطر في القيد اليومي يجب أن يحتوي على قيمة موجبة في المدين فقط أو الدائن فقط.");
     }
@@ -2599,6 +2608,9 @@ export function insertJournalEntryRow(
     });
   }
 
+  if (!Number.isSafeInteger(totalDebitMinor) || !Number.isSafeInteger(totalCreditMinor)) {
+    throw new SqliteValidationError("إجمالي القيد اليومي يتجاوز نطاق الدقة النقدية المدعوم.");
+  }
   if (totalDebitMinor <= 0 || totalDebitMinor !== totalCreditMinor) {
     throw new SqliteValidationError(
       `القيد اليومي غير متوازن: مجموع المدين (${fromMinorUnits(totalDebitMinor, 2)}) لا يساوي مجموع الدائن (${fromMinorUnits(totalCreditMinor, 2)}).`,

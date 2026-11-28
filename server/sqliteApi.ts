@@ -225,10 +225,10 @@ export function mountSqliteApi(app: Express): void {
     "/workspace/:uid/fiscal-lock",
     route((req, res, db) => {
       const uid = validWsId(paramStr(req, "uid"));
-      const closedUntilDate =
-        typeof req.body?.closedUntilDate === "string" && req.body.closedUntilDate.trim()
-          ? req.body.closedUntilDate.trim()
-          : null;
+      const closedUntilDate = req.body?.closedUntilDate;
+      if (closedUntilDate !== null && (typeof closedUntilDate !== "string" || !closedUntilDate.trim())) {
+        throw new HttpError(400, "حدد تاريخ إقفال صالحًا، أو أرسل null لفتح الفترة صراحةً.");
+      }
       const workspace = setWorkspaceClosedUntilDate(db, uid, closedUntilDate);
       res.json({ workspace });
     }),
