@@ -1,5 +1,5 @@
 /** Real bundled React -> Android bridge -> SQLite acceptance on a fresh CI emulator. */
-import { chromium, expect, type Page } from '@playwright/test';
+import { _android, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
@@ -15,20 +15,27 @@ fs.writeFileSync(`${out}/webview.txt`,webview);
 if(sdk==='30') assert.match(webview,/Current WebView package.*83\./, 'API 30 must exercise WebView 83, not a newer substitute');
 adb('shell','svc','wifi','disable'); adb('shell','svc','data','disable');
 adb('shell','am','start','-W','-n',`${pkg}/.MainActivity`);
-const pause = (ms:number) => new Promise(r=>setTimeout(r,ms));
-async function connect() {
-  for(let attempt=0;attempt<60;attempt++) {
-    try {
-      const pid=adb('shell','pidof',pkg).split(' ')[0];
-      adb('forward','tcp:9222',`localabstract:webview_devtools_remote_${pid}`);
-      const browser=await chromium.connectOverCDP('http://127.0.0.1:9222',{timeout:4000});
-      const page=browser.contexts()[0]?.pages().find(p=>p.url().includes('appassets'));
-      if(page) { page.setDefaultTimeout(20000); return {browser,page}; }
-      await browser.close();
-    } catch { /* WebView starts after Flutter and SQLite. */ }
-    await pause(1000);
+function diagnostics() {
+  for (const [name, args] of [
+    ['activity.txt', ['shell', 'dumpsys', 'activity', 'activities']],
+    ['logcat.txt', ['logcat', '-d', '-t', '1500']],
+    ['sockets.txt', ['shell', 'cat', '/proc/net/unix']],
+  ] as const) {
+    try { fs.writeFileSync(`${out}/${name}`, execFileSync('adb', [...args], {timeout:15000,maxBuffer:8*1024*1024})); } catch { /* Best-effort diagnostics on this synthetic emulator. */ }
   }
-  throw new Error('Android WebView debug endpoint did not start');
+  try { fs.writeFileSync(`${out}/device.png`,execFileSync('adb',['exec-out','screencap','-p'],{timeout:15000,maxBuffer:8*1024*1024})); } catch { /* Emulator may already have exited. */ }
+}
+async function connect() {
+  // WebView exposes an Android DevTools socket, not Chrome's HTTP browser endpoint.
+  const [device] = await _android.devices({omitDriverInstall:true});
+  assert(device, 'The isolated Android emulator must be attached');
+  try {
+    const view=await device.webView({pkg},{timeout:60000});
+    const page=await view.page();
+    page.setDefaultTimeout(20000);
+    await page.waitForURL(/appassets\.androidplatform\.net/, {timeout:30000});
+    return {browser:{close:()=>device.close()},page};
+  } catch(error) { diagnostics();await device.close();throw error; }
 }
 async function command(page:Page,action:string,payload:unknown) {
   return page.evaluate(({action,payload})=>new Promise<any>((resolve,reject)=>{
@@ -104,6 +111,7 @@ try {
   assert.deepEqual(errors,[]);
   fs.writeFileSync(`${out}/result.json`,JSON.stringify({sdk,webview,passed:true,offline:true,records:after.ledger.length,widths:[320,360,412,768],productionDataTouched:false},null,2));
 } catch(e) {
+  diagnostics();
   await page.screenshot({path:`${out}/failure.png`}).catch(()=>{});
   fs.writeFileSync(`${out}/failure.html`,await page.content().catch(()=>''));
   throw e;
