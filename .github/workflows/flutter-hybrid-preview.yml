@@ -318,6 +318,26 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Build ARM64 APK for isolated device acceptance
+        if: inputs.signed_candidate != true
+        working-directory: flutter_app
+        env:
+          NASQO_FIREBASE_API_KEY: ${{ secrets.NASQO_FIREBASE_API_KEY }}
+          NASQO_SYNC_ENDPOINT: ${{ vars.NASQO_SYNC_ENDPOINT }}
+        run: |
+          bash ../scripts/build-android-with-retry.sh flutter build apk --debug --split-per-abi --target-platform android-arm64 \
+            --dart-define=NASQO_FIREBASE_API_KEY="$NASQO_FIREBASE_API_KEY" \
+            --dart-define=NASQO_SYNC_ENDPOINT="$NASQO_SYNC_ENDPOINT"
+
+      - name: Upload ARM64 device acceptance artifact
+        if: inputs.signed_candidate != true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nasqo-hybrid-arm64-debug-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Build signed versioned APK
         if: ((github.ref == 'refs/heads/dev/offline-first-android-phase2' && github.event_name != 'pull_request' && vars.NASQO_ANDROID_PREVIEW_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.signed_candidate == true))
         working-directory: flutter_app
