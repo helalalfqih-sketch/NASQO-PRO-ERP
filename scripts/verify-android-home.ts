@@ -49,6 +49,13 @@ async function command(page:Page,action:string,payload:unknown) {
     (w.NasqoHome??w.NasqoFlutterBridge).postMessage(JSON.stringify({protocolVersion:'1.0.0',kind:'request',requestId:id,action,payload,idempotencyKey:id}));
   }),{action,payload});
 }
+// Loading the local SQLite bridge after WebView reload can take more than
+// Playwright's default five seconds on a cold CI emulator. Wait for a fresh
+// projection, not a cached number or a fixed sleep, before inspecting values.
+async function expectFreshHome(page: Page) {
+  await expect(page.getByTestId('dashboard-screen')).toBeVisible({timeout:30000});
+  await expect(page.getByTestId('home-freshness')).toContainText('محدّث من السجلات',{timeout:30000});
+}
 const workspaceId='local-erp-workspace';
 let {browser,page}=await connect();
 const errors:string[]=[]; page.on('pageerror',e=>errors.push(e.message));
@@ -63,7 +70,7 @@ try {
   }
   await setup.getByRole('button',{name:'إكمال التهيئة',exact:true}).click();
   await expect(setup).toBeHidden({timeout:30000});
-  await expect(page.getByTestId('home-freshness')).toContainText('محدّث من السجلات');
+  await expectFreshHome(page);
   const initial=await command(page,'getSnapshot',{workspaceId});
   assert.equal(initial.ledger.length,0,'Only a new synthetic workspace is permitted');
   assert.equal(initial.inventory.length,0);
@@ -87,6 +94,7 @@ try {
   }
   await command(page,'saveWorkspaceSettings',{workspaceId,updates:{userPreferences:{...initial.workspace.userPreferences,defaultWarehouseId:''}}});
   await page.reload();
+  await expectFreshHome(page);
   await expect(page.getByTestId('home-kpi-sales')).toContainText('320');
   await expect(page.getByTestId('home-kpi-purchases')).toContainText('120');
   await expect(page.getByTestId('home-kpi-receivables')).toContainText('320');
@@ -104,6 +112,7 @@ try {
   }
   await page.getByTestId('home-action-journal').click();await expect(page.getByTestId('simple-entry-screen')).toBeVisible();
   await page.getByRole('button',{name:'رجوع',exact:true}).last().click();
+  await expectFreshHome(page);
   for(const width of [320,360,412,768]) {
     await page.setViewportSize({width,height:1024});
     const home=page.getByTestId('dashboard-screen');
@@ -118,6 +127,7 @@ try {
   await browser.close();adb('shell','am','force-stop',pkg);adb('shell','am','start','-W','-n',`${pkg}/.MainActivity`);
   ({browser,page}=await connect());
   page.on('pageerror',e=>errors.push(e.message));
+  await expectFreshHome(page);
   await expect(page.getByTestId('home-kpi-sales')).toContainText('320');
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
   const after=await command(page,'getSnapshot',{workspaceId});
