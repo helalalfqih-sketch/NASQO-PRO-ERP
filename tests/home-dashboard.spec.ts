@@ -53,6 +53,21 @@ test('personal theme/layout/defaults persist after restart, failed save retains 
  await prefs.getByRole('button',{name:'حفظ التفضيلات'}).click();await expect(prefs).toBeHidden();await page.reload();await expect(page.locator('html')).toHaveAttribute('data-theme','dark');await expect(page.getByTestId('dashboard-screen')).toHaveAttribute('data-columns','1');
  const current=await(await page.request.get(ws)).json();expect(current.workspace.businessProfile).toEqual(original.workspace.businessProfile);expect(current.workspace.companyName).toBe(original.workspace.companyName);expect(current.ledger).toEqual(original.ledger);
 });
+test('home preferences save sits above fixed navigation at narrow Android dimensions',async({page})=>{
+ await page.setViewportSize({width:360,height:682});await seed(page);
+ await page.getByRole('button',{name:'تفضيلات الرئيسية',exact:true}).click();
+ const layer=page.getByTestId('home-preferences');
+ await expect(layer.getByRole('dialog')).toBeVisible();
+ expect(await layer.evaluate(node=>node.parentElement?.classList.contains('nasqo-app'))).toBe(true);
+ await layer.getByRole('combobox',{name:'المظهر',exact:true}).selectOption('dark');
+ const save=layer.getByRole('button',{name:'حفظ التفضيلات',exact:true});
+ expect(await save.evaluate(button=>{
+  const r=button.getBoundingClientRect();
+  return button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));
+ })).toBe(true);
+ await save.click();await expect(layer).toBeHidden();
+ await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
+});
 test('offline summary remains visible with freshness and a failed query never replaces values with zero',async({page})=>{
  test.setTimeout(90000);await seed(page);await page.route('**/home?*',r=>r.abort());await page.getByRole('button',{name:'تحديث الرئيسية',exact:true}).click();await expect(page.getByTestId('home-freshness')).toContainText('نسخة محفوظة');await expect(page.getByTestId('home-kpi-sales')).toContainText('320');
  await page.unroute('**/home?*');await page.getByRole('button',{name:'تحديث الرئيسية',exact:true}).click();await expect(page.getByTestId('home-freshness')).toContainText('محدّث من السجلات');

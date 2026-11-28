@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeftIcon, BarChartIcon, CheckCircledIcon, CubeIcon, FilePlusIcon, FileTextIcon, GearIcon, PersonIcon, ReloadIcon, RowsIcon, SewingPinIcon } from '@radix-ui/react-icons';
-import { MobileScroll, KeyboardInput, useKeyboard } from '../mobile';
+import { MobileScroll, KeyboardInput, useKeyboard, useScreenPortal } from '../mobile';
 import { formatAmount } from '../accounting';
 import { savePersonalPreferences } from '../firebase';
 import { defaultUserPreferences, validatePreferenceReferences, type UserPreferences } from '../utils/businessSetup';
@@ -55,10 +56,14 @@ export function SmartHome(props:SmartHomeProps) {
 function HomePreferences(props:SmartHomeProps&{allowedActions:HomeAction[];onClose:()=>void;onSaved:()=>void}) {
   const [draft,setDraft]=useState(()=>({...props.input.workspace.userPreferences??defaultUserPreferences(props.input.workspace.defaultCurrency)}));
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);const keyboard=useKeyboard();
+  const { screenRef } = useScreenPortal();
+  // A FlowStack scene forms a stacking context below its fixed bottom bar.
+  // Mount the existing dialog above that scene without changing its styling.
+  const overlayRoot = screenRef.current?.querySelector('.nasqo-app') ?? screenRef.current;
   useBackLayer(true,()=>{if(!busy)props.onClose();return true;},220);
   const update=(v:Partial<UserPreferences>)=>setDraft(p=>({...p,...v}));
   async function save(){setError('');setBusy(true);keyboard.hide();try{validatePreferenceReferences(draft,props.input.currencies.flatMap(c=>[c.code,c.name]),props.input.warehouses,props.input.cashboxes);await savePersonalPreferences(props.uid,draft);props.onTheme(draft.theme);props.onNotify('حُفظت تفضيلاتك الشخصية.');props.onSaved();}catch(e){setError(e instanceof Error?e.message:'تعذر حفظ التفضيلات.');}finally{setBusy(false);}}
-  return <div className="center-modal-layer erp-home-preferences" data-testid="home-preferences"><section className="warehouse-modal" role="dialog" aria-modal="true" aria-label="تفضيلات الرئيسية" dir="rtl"><header><h2>تفضيلات الرئيسية</h2><button disabled={busy} aria-label="إغلاق التفضيلات" onClick={props.onClose}>×</button></header><div className="erp-home-preferences-body"><p>تخص استخدامك والمستندات الجديدة؛ لا تغيّر حسابات الشركة أو الأرصدة.</p><fieldset disabled={busy}>
+  const dialog = <div className="center-modal-layer erp-home-preferences" data-testid="home-preferences"><section className="warehouse-modal" role="dialog" aria-modal="true" aria-label="تفضيلات الرئيسية" dir="rtl"><header><h2>تفضيلات الرئيسية</h2><button disabled={busy} aria-label="إغلاق التفضيلات" onClick={props.onClose}>×</button></header><div className="erp-home-preferences-body"><p>تخص استخدامك والمستندات الجديدة؛ لا تغيّر حسابات الشركة أو الأرصدة.</p><fieldset disabled={busy}>
     <label>المظهر<select value={draft.theme} onChange={e=>update({theme:e.target.value as UserPreferences['theme']})}><option value="system">حسب الجهاز</option><option value="light">فاتح</option><option value="dark">داكن</option></select></label>
     <label>تخطيط البطاقات<select value={draft.homeColumns} onChange={e=>update({homeColumns:e.target.value==='auto'?'auto':Number(e.target.value) as 1|2|3})}><option value="auto">تلقائي</option><option value="1">عمود واحد</option><option value="2">عمودان</option><option value="3">ثلاثة أعمدة عند اتساع الشاشة</option></select></label>
     <label>العملة الافتراضية<select value={draft.defaultCurrency} onChange={e=>update({defaultCurrency:e.target.value,defaultCashboxId:null})}>{props.input.currencies.map(c=><option key={c.code} value={c.name}>{c.name}</option>)}</select></label>
@@ -67,4 +72,5 @@ function HomePreferences(props:SmartHomeProps&{allowedActions:HomeAction[];onClo
     <label>الصندوق الافتراضي<select value={draft.defaultCashboxId??''} onChange={e=>update({defaultCashboxId:e.target.value?Number(e.target.value):null})}><option value="">دون تفضيل</option>{props.input.cashboxes.filter(b=>b.currencyCode===draft.defaultCurrency&&b.state!==0&&b.isActive!==false).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
     <legend>الإجراءات المفضلة أولًا</legend>{props.allowedActions.map(a=><label className="erp-home-check" key={a}><input type="checkbox" checked={draft.favoriteActions.includes(a)} onChange={e=>update({favoriteActions:e.target.checked?[...draft.favoriteActions.filter(v=>props.allowedActions.includes(v as HomeAction)),a]:draft.favoriteActions.filter(v=>v!==a)})}/>{HOME_ACTIONS[a]}</label>)}
   </fieldset>{error&&<p role="alert" className="erp-home-error">{error}</p>}</div><footer><button disabled={busy} onClick={props.onClose}>إلغاء</button><button disabled={busy} onClick={()=>void save()}>{busy?'جارٍ الحفظ…':'حفظ التفضيلات'}</button></footer></section></div>;
+  return overlayRoot ? createPortal(dialog, overlayRoot) : dialog;
 }
