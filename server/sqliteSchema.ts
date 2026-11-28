@@ -1,4 +1,4 @@
-export const SQLITE_SCHEMA_VERSION = 3;
+export const SQLITE_SCHEMA_VERSION = 4;
 
 export const UNIFIED_SQLITE_TABLES = [
   "workspaces",
@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   source_origin TEXT NOT NULL DEFAULT 'native',
   posting_status TEXT NOT NULL DEFAULT 'posted',
   idempotency_key TEXT,
+  request_fingerprint TEXT,
   reversed_entry_id TEXT,
   reversal_entry_id TEXT,
   paid_amount REAL NOT NULL DEFAULT 0,
@@ -249,6 +250,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
   exchange_rate REAL NOT NULL DEFAULT 1,
   posting_status TEXT NOT NULL DEFAULT 'posted' CHECK(posting_status IN ('draft','posted','reversed')),
   idempotency_key TEXT,
+  request_fingerprint TEXT,
   reversed_journal_id TEXT,
   reversal_journal_id TEXT,
   total_debit_minor INTEGER NOT NULL DEFAULT 0,

@@ -15,6 +15,7 @@ import {
 import {
   LOCAL_WORKSPACE_UID,
   fetchCashboxesReport,
+  fetchTrialBalanceReport,
   fetchInventoryMovementsReport,
 } from "../../firebase";
 import { MobileScroll } from "../../mobile";
@@ -154,7 +155,7 @@ export function ErpFinanceScreen({
     };
   }, [activeFrom, activeTo, ledger.length, selectedCurrency, uid]);
 
-  const trial = useMemo(
+  const localTrial = useMemo(
     () =>
       computeTrialBalance(accounts, ledger, {
         currency: selectedCurrency,
@@ -163,6 +164,21 @@ export function ErpFinanceScreen({
       }),
     [accounts, activeFrom, activeTo, ledger, selectedCurrency],
   );
+
+  const [trialRead, setTrialRead] = useState<{report?: Awaited<ReturnType<typeof fetchTrialBalanceReport>>; error?: string; key: string}>({key: ''});
+  const [trialRetry, setTrialRetry] = useState(0);
+  const trialKey = JSON.stringify([uid, selectedCurrency, activeFrom, activeTo, trialRetry]);
+  useEffect(() => {
+    let active = true;
+    setTrialRead(current => current.key === trialKey ? current : {key: trialKey});
+    void fetchTrialBalanceReport(uid, {currency: selectedCurrency, fromDate: activeFrom, toDate: activeTo})
+      .then(report => { if (active) setTrialRead({key: trialKey, report}); })
+      .catch(error => { if (active) setTrialRead({key: trialKey, error: error instanceof Error ? error.message : 'تعذر قراءة ميزان المراجعة.'}); });
+    return () => { active = false; };
+  }, [uid, selectedCurrency, activeFrom, activeTo, trialKey, accounts, ledger]);
+  const trialReady = trialRead.key === trialKey && Boolean(trialRead.report);
+  const trialError = trialRead.key === trialKey ? trialRead.error : undefined;
+  const trial = trialReady ? trialRead.report! : localTrial;
 
   const income = useMemo(
     () =>
@@ -276,6 +292,7 @@ export function ErpFinanceScreen({
   };
 
   const exportCsv = () => {
+    if (!trialReady) return;
     void runWithBrandLoader("جاري تجهيز مصنف ميزان المراجعة...",async()=>{
       const ok=await exportReport({kind:"trial-balance",title:"ميزان المراجعة",scope:{currency:selectedCurrency,from:fromDate,to:toDate},
         columns:["الرقم","الحساب","التصنيف","العملة","حركة مدين","حركة دائن","رصيد مدين","رصيد دائن"],
@@ -403,7 +420,13 @@ export function ErpFinanceScreen({
           </div>
         </section>
 
-        {tab === "trial" ? (
+        {tab === "trial" && !trialReady ? (
+          <section className="erp-card" role={trialError ? 'alert' : 'status'}>
+            <p>{trialError || 'جاري قراءة ميزان المراجعة…'}</p>
+            {trialError ? <button type="button" className="erp-chip-btn" onClick={() => setTrialRetry(value => value + 1)}>إعادة المحاولة</button> : null}
+          </section>
+        ) : null}
+        {tab === "trial" && trialReady ? (
           <section className="erp-card" data-testid="erp-trial-balance-card">
             <div className="erp-card-head">
               <div>

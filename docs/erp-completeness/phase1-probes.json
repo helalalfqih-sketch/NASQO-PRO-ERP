@@ -1,0 +1,68 @@
+{
+  "source": "synthetic isolated SQLite probes",
+  "readiness": "gaps-found",
+  "observations": [
+    {
+      "id": "sale-stock",
+      "status": "verified",
+      "expected": "A sale of 2 reduces available quantity from 10 to 8.",
+      "observed": {
+        "quantity": 8
+      }
+    },
+    {
+      "id": "sale-to-gl",
+      "status": "gap",
+      "expected": "A posted sale creates an explicit balanced journal, including inventory/COGS.",
+      "observed": {
+        "postedDocument": "posted",
+        "journalCount": 0
+      }
+    },
+    {
+      "id": "identical-retry",
+      "status": "verified",
+      "expected": "An identical retry never posts a second stock change.",
+      "observed": {
+        "quantity": 8
+      }
+    },
+    {
+      "id": "changed-retry",
+      "status": "verified",
+      "expected": "Reusing an operation key with changed business fields is rejected.",
+      "observed": {
+        "rejected": true,
+        "quantity": 8
+      }
+    },
+    {
+      "id": "warehouse-boundary",
+      "status": "verified",
+      "expected": "A document for warehouse B cannot consume the stock location in A.",
+      "observed": {
+        "rejected": true,
+        "quantityBefore": 8,
+        "quantityAfter": 8
+      }
+    },
+    {
+      "id": "journal-to-report",
+      "status": "verified",
+      "expected": "A posted 500/500 journal appears in the normal trial balance data path.",
+      "observed": {
+        "debit": 500,
+        "credit": 500
+      }
+    },
+    {
+      "id": "journal-backup-roundtrip",
+      "status": "verified",
+      "expected": "Full table-snapshot backup preserves exact journal legs.",
+      "observed": {
+        "before": 2,
+        "after": 2
+      }
+    }
+  ]
+}

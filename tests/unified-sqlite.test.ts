@@ -567,13 +567,13 @@ test("5. empty ERP workspace starts clean, restores .back/.sqlite + native snaps
   }
 });
 
-test("6. schema v3 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
+test("6. schema v4 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
   const { dir, filePath } = makeTempDbPath();
   try {
-    // Verify schema v3 indexes & PRAGMA user_version upgrade non-destructively
+    // Verify current schema retains v3 indexes and upgrades non-destructively
     const db = getSqliteDb(filePath);
     const uv = db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(uv.user_version, 3);
+    assert.equal(uv.user_version, 4);
     const idx = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_inv_lines_ws_entry'")
       .get() as { name?: string } | undefined;
@@ -652,9 +652,11 @@ test("6. schema v3 migration, multi-unit stock math, draft edit + posted reversa
       warehouseId: whMain.id,
       entryNumber: 101,
       entryDate: "2026-01-05",
-      lines: [],
+      invoiceContent: 'items',
+      lines: [{inventoryItemId: 'prod_multi', warehouseId: whMain.id, itemName: 'لمبة ليد متعددة', unit: 'كرتون', unitNum: 3, quantity: 2, price: 1200, total: 2400}],
     });
     assert.equal(retryPurchase.id, purchaseEntry.id);
+    assert.throws(() => insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {...retryPurchase, lines: []}), /معرّف الطلب/);
 
     const stockAfterBuy = db.prepare("SELECT quantity FROM inventory_items WHERE id = 'prod_multi'").get() as { quantity: number };
     assert.equal(stockAfterBuy.quantity, 24);
@@ -1093,6 +1095,7 @@ test("7. exact negative stock reversals, invoice line/total enforcement, and per
     // SmartPro movement formula match (#19 ولاعه مع اضاءة in المخزن الجديد: buy=0, sell=1 @ 3500, transferIn=4, catalogCost=2500 -> available=3, remaining=7500, profit=1000)
     const lighter = insertInventoryItemRow(db, DEFAULT_WORKSPACE_ID, {
       name: "ولاعه مع اضاءة",
+      warehouseId: whBranch.id,
       unit: "حبة",
       quantity: 0,
       avgCost: 2500,
@@ -1266,7 +1269,7 @@ test("8. full JSON export/restore roundtrip preserves invoice lines & ERP entiti
     db.prepare(
       `INSERT INTO inventory_items (id, workspace_id, warehouse_id, name, unit, quantity, avg_cost, selling_price, unit2, count2, sprice2, default_unit, quantity_unverified, created_at, updated_at)
        VALUES ('prod_json_1', ?, ?, 'كابل شحن سريع', 'حبة', 0, 50, 80, 'باكت', 5, 380, 1, 0, ?, ?)`,
-    ).run(DEFAULT_WORKSPACE_ID, wh1.id, new Date().toISOString(), new Date().toISOString());
+    ).run(DEFAULT_WORKSPACE_ID, wh2.id, new Date().toISOString(), new Date().toISOString());
 
     const inv1 = insertLedgerEntryRow(db, DEFAULT_WORKSPACE_ID, {
       accountId: accSupp.id,
@@ -1309,15 +1312,15 @@ test("8. full JSON export/restore roundtrip preserves invoice lines & ERP entiti
       direction: "credit",
       amount: 80,
       currency: "ريال",
-      warehouseId: wh1.id,
-      warehouseName: wh1.name,
+      warehouseId: wh2.id,
+      warehouseName: wh2.name,
       invoiceContent: "items",
       entryNumber: 502,
       entryDate: "2026-10-02",
       lines: [
         {
           inventoryItemId: "prod_json_1",
-          warehouseId: wh1.id,
+          warehouseId: wh2.id,
           itemName: "كابل شحن سريع",
           unit: "حبة",
           unitNum: 1,

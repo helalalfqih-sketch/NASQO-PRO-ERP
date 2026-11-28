@@ -968,6 +968,13 @@ export async function fetchInventoryMovementsReport(
   }
 }
 
+export async function fetchTrialBalanceReport(uid: string, params?: {currency?: string; fromDate?: string; toDate?: string}) {
+  if (!activeBundle || activeBundle.workspace.id !== (uid || LOCAL_WORKSPACE_UID)) throw new Error('لم تكتمل قراءة بيانات العمل؛ أعد فتح التقرير.');
+  const { computeTrialBalance } = await import('../erp');
+  // Native operational documents already carry their persisted journal legs.
+  return computeTrialBalance(activeBundle.accounts, activeBundle.ledger, params);
+}
+
 export async function fetchCashboxesReport(
   uid: string,
   params?: { currency?: string; fromDate?: string; toDate?: string },
