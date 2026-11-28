@@ -1,4 +1,4 @@
-import { validateBusinessProfile, validatePreferenceReferences } from "../src/utils/businessSetup.ts";
+import { validateBusinessProfile, validatePreferenceReferences, validateUserPreferences } from "../src/utils/businessSetup.ts";
 import { assertMasterNotReferenced } from "./masterCrud.ts";
 import { requireStockPostingLocations } from "./stockPostingGuards.ts";
 import { ledgerPostingFingerprint, storedLedgerFingerprint, journalPostingFingerprint, postingOperationKey } from "./postingIdentity.ts";
@@ -5464,6 +5464,11 @@ export function restoreUnifiedJsonBundle(
     }
     if (wsIn.userPreferences) {
       const p=wsIn.userPreferences;
+      validateUserPreferences(p);
+      if ((p.defaultWarehouseId && !whMap.has(p.defaultWarehouseId)) ||
+          (p.defaultCashboxId !== null && !cashboxMap.has(p.defaultCashboxId))) {
+        throw new SqliteValidationError("مراجع التفضيلات لا تطابق سجلات النسخة؛ لم تتغير بيانات العمل.");
+      }
       saveWorkspaceSettingsRow(db,workspaceId,{userPreferences:{...p,defaultWarehouseId:whMap.get(p.defaultWarehouseId)??'',
         defaultCashboxId:p.defaultCashboxId===null?null:cashboxMap.get(p.defaultCashboxId)??null}});
     }

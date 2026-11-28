@@ -44,6 +44,15 @@ test('atomic setup, retry, rollback, preferences, master guards and backup round
     assert.deepEqual(bundle.workspace.businessProfile,settings.businessProfile);
     assert.deepEqual(bundle.workspace.userPreferences,settings.userPreferences);
     assert.equal(bundle.ledger.length,0);
+    const portable={...backup} as Record<string,any>;delete portable.sqliteSnapshot;
+    restoreUnifiedJsonBundle(db,w,portable);
+    const portablyRestored=getFullWorkspaceBundle(db,w);
+    assert.deepEqual(portablyRestored.workspace.businessProfile,settings.businessProfile);
+    assert.equal(portablyRestored.workspace.userPreferences?.defaultWarehouseId,portablyRestored.warehouses[0].id);
+    assert(portablyRestored.cashboxes.some(b=>b.id===portablyRestored.workspace.userPreferences?.defaultCashboxId));
+    const portableBefore=captureWorkspaceSnapshot(db,w);
+    assert.throws(()=>restoreUnifiedJsonBundle(db,w,{...portable,workspace:{...portable.workspace,userPreferences:{...portable.workspace.userPreferences,defaultWarehouseId:'missing'}}}));
+    assert.deepEqual(captureWorkspaceSnapshot(db,w),portableBefore);
     // A different business keeps its explicitly created master rather than resetting it.
     ensureEmptyWorkspace(db,'other'); const existing=upsertWarehouseRow(db,'other',{name:'Existing',details:'keep',isDefault:true});
     const other=completeBusinessSetup(db,'other',{...input,bankName:''});
