@@ -361,6 +361,26 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     const jsonExport = await (await fetch(prefix + "/export/json")).json();
     assert.equal(jsonExport.format, "nasqo-unified-sqlite-export-v2");
     assert.equal(jsonExport.ledger[0].lines.length, 1);
+    const businessTables = ['accounts', 'inventory_items', 'ledger_entries', 'invoice_lines', 'journal_entries', 'journal_entry_lines'];
+    const businessRows = (backup) => Object.fromEntries(businessTables.map((table) => {
+      assert.ok(Array.isArray(backup.sqliteSnapshot?.tables[table]), `Missing backup table ${table}`);
+      return [table, backup.sqliteSnapshot.tables[table]];
+    }));
+    const expected = businessRows(jsonExport);
+    const linked = expected.journal_entries.filter((journal) => journal.source_ledger_id === liveEntry.id);
+    assert.equal(linked.length, 1, 'Expected one journal linked to the stock sale');
+    const journalLines = expected.journal_entry_lines.filter((line) => line.journal_id === linked[0].id);
+    assert.equal(journalLines.length, 4);
+    assert.equal(journalLines.reduce((sum, line) => sum + line.debit_minor, 0), linked[0].total_debit_minor);
+    assert.equal(journalLines.reduce((sum, line) => sum + line.credit_minor, 0), linked[0].total_debit_minor);
+    assert.deepEqual(expected.accounts.filter((row) => !row.system_posting_role).map((row) => row.id), [account.id]);
+    assert.deepEqual(expected.accounts.map((row) => row.system_posting_role).filter(Boolean).sort(), ['cost', 'inventory', 'revenue']);
+    assert.equal(expected.ledger_entries.length, 2);
+    async function checkBusinessRows(label) {
+      const response = await fetch(prefix + "/export/json");
+      assert.equal(response.status, 200);
+      assert.deepEqual(businessRows(await response.json()), expected, label);
+    }
 
     // Export native SQLite bytes via HTTP
     const sqliteBuf = Buffer.from(await (await fetch(prefix + "/export/sqlite")).arrayBuffer());
@@ -373,9 +393,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
         body: JSON.stringify(badBody),
       });
       assert.equal(badRes.status, 400);
-      const stillThere = await (await fetch(prefix)).json();
-      assert.equal(stillThere.accounts.length, 1);
-      assert.equal(stillThere.ledger.length, 2);
+      await checkBusinessRows("Rejected JSON restore must leave all accounting/inventory rows unchanged");
     }
 
     // Reset, restore JSON via HTTP -> confirm invoice line survives!
@@ -394,6 +412,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     const detailAfter = await (await fetch(`${prefix}/invoices/${liveEntry.id}`)).json();
     assert.equal(detailAfter.lines.length, 1);
     assert.equal(detailAfter.lines[0].itemName, "صنف HTTP");
+    await checkBusinessRows("JSON restore must preserve the linked journal and stock sale");
 
     // Import native SQLite with replaceExisting: false -> must reject 400 and keep existing account!
     const mergeReview = await (await fetch(prefix + "/restore/prepare", {method: "POST", headers: jsonHeaders})).json();
@@ -409,9 +428,7 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
       }),
     });
     assert.equal(nativeMergeRes.status, 400);
-    const preserved = await (await fetch(prefix)).json();
-    assert.equal(preserved.accounts.length, 1);
-    assert.equal(preserved.ledger.length, 2);
+    await checkBusinessRows("Rejected SQLite append must leave all accounting/inventory rows unchanged");
 
     // Malformed JSON request must return JSON error (never Express HTML)
     const malformedRes = await fetch(prefix + "/restore/json", {
@@ -453,8 +470,9 @@ test("HTTP API preserves invoice lines on JSON export/restore, rejects {}, honor
     });
     assert.equal(commitRes.status, 200);
     const afterChunked = await commitRes.json();
-    assert.equal(afterChunked.bundle.accounts.length, 1);
-    assert.equal(afterChunked.bundle.ledger.length, 2);
+    assert.equal(afterChunked.bundle.accounts.length, expected.accounts.length);
+    assert.equal(afterChunked.bundle.ledger.length, expected.ledger_entries.length);
+    await checkBusinessRows("Chunked SQLite restore must preserve the linked journal and stock sale");
   } finally {
     if (srv) await stopServer(srv.child);
     rmSync(dir, { recursive: true, force: true });
