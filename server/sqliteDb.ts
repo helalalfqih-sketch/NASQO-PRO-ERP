@@ -2519,8 +2519,8 @@ export function insertJournalEntryRow(
 ): JournalEntryRecord {
   ensureEmptyWorkspace(db, workspaceId);
   const entryDate = String(input.entryDate ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
-    throw new SqliteValidationError("تاريخ القيد اليومي يجب أن يكون بصيغة YYYY-MM-DD.");
+  if (parseNormalizedDate(entryDate).iso !== entryDate) {
+    throw new SqliteValidationError("تاريخ القيد اليومي يجب أن يكون تاريخًا ميلاديًا صالحًا بصيغة YYYY-MM-DD.");
   }
   const currency = String(input.currency ?? "ريال").trim() || "ريال";
   const rateRaw = input.exchangeRate === undefined ? 1 : input.exchangeRate;
@@ -2550,8 +2550,12 @@ export function insertJournalEntryRow(
     if (debitNum < 0 || creditNum < 0) {
       throw new SqliteValidationError("لا يُسمح بقيم سالبة في سطور القيد اليومي.");
     }
-    const dMinor = toMinorUnits(debitNum, 2);
-    const cMinor = toMinorUnits(creditNum, 2);
+    const dMinor = toMinorUnits(debitRaw, 2);
+    const cMinor = toMinorUnits(creditRaw, 2);
+    if ([dMinor, cMinor].some(minor =>
+      !Number.isSafeInteger(minor) || toMinorUnits(fromMinorUnits(minor, 2), 2) !== minor)) {
+      throw new SqliteValidationError("مبلغ سطر القيد اليومي يتجاوز نطاق الدقة النقدية المدعوم.");
+    }
     if ((dMinor > 0 && cMinor > 0) || (dMinor === 0 && cMinor === 0)) {
       throw new SqliteValidationError("كل سطر في القيد اليومي يجب أن يحتوي على قيمة موجبة في المدين فقط أو الدائن فقط.");
     }
@@ -2565,6 +2569,9 @@ export function insertJournalEntryRow(
     });
   }
 
+  if (!Number.isSafeInteger(totalDebitMinor) || !Number.isSafeInteger(totalCreditMinor)) {
+    throw new SqliteValidationError("إجمالي القيد اليومي يتجاوز نطاق الدقة النقدية المدعوم.");
+  }
   if (totalDebitMinor <= 0 || totalDebitMinor !== totalCreditMinor) {
     throw new SqliteValidationError(
       `القيد اليومي غير متوازن: مجموع المدين (${fromMinorUnits(totalDebitMinor, 2)}) لا يساوي مجموع الدائن (${fromMinorUnits(totalCreditMinor, 2)}).`,

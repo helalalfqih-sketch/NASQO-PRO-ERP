@@ -27,6 +27,29 @@ function setup(db: ReturnType<typeof getSqliteDb>) {
 }
 const snapshot = (db: ReturnType<typeof getSqliteDb>) => exportWorkspaceJsonBackup(db, w).sqliteSnapshot;
 
+test('journal rejects invalid dates and amounts outside exact minor-unit range atomically', async () => fixture(db => {
+  const {debit, credit, journal} = setup(db);
+  const before = snapshot(db);
+  assert.throws(() => insertJournalEntryRow(db, w, {...journal, entryDate: '2026-02-30'}), /تاريخًا/);
+  assert.throws(() => insertJournalEntryRow(db, w, {...journal, lines: [
+    {accountId: debit.id, debit: 100_000_000_000_000},
+    {accountId: credit.id, credit: 100_000_000_000_000},
+  ]}), /الدقة النقدية/);
+  assert.throws(() => insertJournalEntryRow(db, w, {...journal, lines: [
+    {accountId: debit.id, debit: 50_000_000_000_000},
+    {accountId: debit.id, debit: 50_000_000_000_000},
+    {accountId: credit.id, credit: 50_000_000_000_000},
+    {accountId: credit.id, credit: 50_000_000_000_000},
+  ]}), /إجمالي القيد اليومي/);
+  assert.deepEqual(snapshot(db), before);
+  const saved = insertJournalEntryRow(db, w, {...journal, lines: [
+    {accountId: debit.id, debit: 0.1}, {accountId: debit.id, debit: 0.2},
+    {accountId: credit.id, credit: 0.3},
+  ]});
+  assert.equal(saved.totalDebit, 0.3);
+  assert.equal(reverseJournalEntryRow(db, w, saved.id).reversal.totalCredit, 0.3);
+}));
+
 test('trial balance includes journals once, excludes drafts and preserves all stored rows', async () => fixture(db => {
   const {debit, credit, journal} = setup(db);
   insertJournalEntryRow(db, w, journal);
