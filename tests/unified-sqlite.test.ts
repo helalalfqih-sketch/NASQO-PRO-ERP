@@ -567,13 +567,15 @@ test("5. empty ERP workspace starts clean, restores .back/.sqlite + native snaps
   }
 });
 
-test("6. schema v4 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
+test("6. schema v5 migration, multi-unit stock math, draft edit + posted reversal, transfers report, cashboxes, and dated statement previous balance", () => {
   const { dir, filePath } = makeTempDbPath();
   try {
     // Verify current schema retains v3 indexes and upgrades non-destructively
     const db = getSqliteDb(filePath);
     const uv = db.prepare("PRAGMA user_version").get() as { user_version: number };
-    assert.equal(uv.user_version, 4);
+    assert.equal(uv.user_version, 5);
+    const workspaceColumns = db.prepare('PRAGMA table_info(workspaces)').all().map(row => row.name);
+    for (const column of ['business_profile_json','user_preferences_json','setup_fingerprint']) assert(workspaceColumns.includes(column));
     const idx = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_inv_lines_ws_entry'")
       .get() as { name?: string } | undefined;
