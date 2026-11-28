@@ -132,6 +132,21 @@ function openAndInit(filePath: string): DatabaseSync {
     db.exec("ALTER TABLE erp_meta ADD COLUMN vat_config_json TEXT NOT NULL DEFAULT '{}';");
   }
   if (!(db.prepare("PRAGMA table_info(cashboxes)").all() as {name:string}[]).some(c=>c.name==='account_id')) db.exec('ALTER TABLE cashboxes ADD COLUMN account_id TEXT REFERENCES accounts(id);');
+  // V6 adds nullable links/roles without replaying or changing existing postings.
+  withTransaction(db, () => {
+    for (const [table, name, definition] of [
+      ['journal_entries', 'source_ledger_id', 'TEXT REFERENCES ledger_entries(id) ON DELETE RESTRICT'],
+      ['accounts', 'system_posting_role', 'TEXT'],
+      ['invoice_lines', 'posted_base_units', 'REAL'],
+    ] as const) {
+      if (!db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === name))
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+    }
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_journal_source_ledger
+      ON journal_entries(workspace_id, source_ledger_id) WHERE source_ledger_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_posting_role
+      ON accounts(workspace_id, currency, system_posting_role) WHERE system_posting_role IS NOT NULL;`);
+  });
   const ledgerCols = db.prepare("PRAGMA table_info(ledger_entries)").all() as { name: string }[];
   if (!ledgerCols.some((c) => c.name === "tax_amount")) {
     db.exec("ALTER TABLE ledger_entries ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0;");
@@ -1348,9 +1363,10 @@ export function upsertAccountRow(
   const clean = sanitizeAccountPayload({ ...input, ownerId: workspaceId });
   const now = nowIso();
   const existing = existingId
-    ? (db.prepare("SELECT code_number, group_id FROM accounts WHERE workspace_id = ? AND id = ?").get(workspaceId, id) as { code_number: number; group_id: number | null } | undefined)
+    ? (db.prepare("SELECT code_number, group_id, system_posting_role FROM accounts WHERE workspace_id = ? AND id = ?").get(workspaceId, id) as { code_number: number; group_id: number | null; system_posting_role: string | null } | undefined)
     : undefined;
 
+  if (existing?.system_posting_role) throw new SqliteValidationError('حساب الترحيل النظامي غير قابل للتعديل المباشر.');
   if(existingId&&!existing)throw new SqliteValidationError('الحساب غير موجود.');
   if(input.groupId!=null&&!db.prepare('SELECT id FROM account_groups WHERE workspace_id=? AND id=? AND category=? AND currency_code=?').get(workspaceId,input.groupId,clean.category,clean.currency))throw new SqliteValidationError('مجموعة الحساب لا تطابق التصنيف أو العملة.');
   if(existing&&db.prepare('SELECT 1 FROM accounts WHERE id=? AND workspace_id=? AND currency<>?').get(id,workspaceId,clean.currency))throw new SqliteValidationError('عملة الحساب هوية مالية لا تتغير.');
@@ -1493,7 +1509,7 @@ function applyEntryLinesStockDelta(
   const lineRows = db
     .prepare(
       `SELECT il.id AS line_id, il.inventory_item_id, il.quantity, il.bonus, il.unit_num,
-              il.price, il.total,
+              il.price, il.total, il.posted_base_units,
               ii.name AS item_name, ii.quantity AS item_qty, ii.avg_cost AS item_avg_cost,
               ii.quantity_unverified, ii.count2, ii.count3
        FROM invoice_lines il
@@ -1512,6 +1528,7 @@ function applyEntryLinesStockDelta(
       item_qty: number;
       item_avg_cost: number;
       quantity_unverified: number;
+      posted_base_units: number | null;
       count2: number | null;
       count3: number | null;
     }>;
@@ -1532,7 +1549,7 @@ function applyEntryLinesStockDelta(
 
   for (const r of lineRows) {
     const mult = unitMultiplierForItem(r.unit_num, r.count2, r.count3);
-    const baseUnits = roundMoney(
+    const baseUnits = r.posted_base_units ?? roundMoney(
       mulMoney(Number(r.quantity ?? 0), mult, 4) + Number(r.bonus ?? 0),
       4,
     );
@@ -1849,6 +1866,82 @@ function assertStrictFinancialNumbers(
   }
 }
 
+const salePostingRoles = {
+  revenue: { name: 'إيراد المبيعات', category: 'sales' },
+  cost: { name: 'تكلفة البضاعة المباعة', category: 'purchases' },
+  inventory: { name: 'المخزون', category: 'shop' },
+} as const;
+
+function stockSaleRole(db: DatabaseSync, workspace: string, role: keyof typeof salePostingRoles) {
+  const row = db.prepare(`SELECT id, is_cash_account, category FROM accounts
+    WHERE workspace_id=? AND currency='ريال' AND system_posting_role=?`).get(workspace, role);
+  const { name, category } = salePostingRoles[role];
+  if (row) {
+    if (row.is_cash_account || row.category !== category) throw new SqliteValidationError('حساب الترحيل النظامي غير صالح.');
+    return String(row.id);
+  }
+  const nextCode = Number(db.prepare('SELECT COALESCE(MAX(code_number),0)+1 AS n FROM accounts WHERE workspace_id=?').get(workspace)?.n);
+  const account = upsertAccountRow(db, workspace, {
+    name: `${name} — ريال`, category, currency: 'ريال', openingBalance: 0, codeNumber: nextCode,
+    note: `nasqo:system:${role}`,
+  });
+  db.prepare('UPDATE accounts SET system_posting_role=? WHERE workspace_id=? AND id=?').run(role, workspace, account.id);
+  return account.id;
+}
+
+/** First supported web slice only: local YER stock credit sale with no tax, FX or settlement. */
+function postSupportedStockSaleJournal(db: DatabaseSync, workspace: string, id: string) {
+  const e = db.prepare('SELECT * FROM ledger_entries WHERE workspace_id=? AND id=?').get(workspace, id)!;
+  if (e.source_origin !== 'native' || e.deleted || e.kind !== 'invoice' || e.direction !== 'debit' ||
+      e.invoice_content !== 'items' || e.currency !== 'ريال' || e.payment !== 'credit' ||
+      e.exchange_rate !== 1 || e.tax_amount !== 0 || e.paid_amount !== 0) return;
+  const rows = db.prepare(`SELECT l.id, l.inventory_item_id, l.quantity, l.bonus, l.unit_num, l.line_kind,
+      i.count2, i.count3, i.avg_cost, i.currency_code, i.quantity_unverified
+    FROM invoice_lines l LEFT JOIN inventory_items i ON i.id=l.inventory_item_id AND i.workspace_id=l.workspace_id
+    WHERE l.workspace_id=? AND l.entry_id=? ORDER BY l.id`).all(workspace,id);
+  if (!rows.some(r => r.line_kind === 'item')) return;  // Historical amount-only compatibility; no inventory effect.
+  if (e.settled_on_receipt || e.cashbox_id != null)
+    throw new SqliteValidationError('لا تربط فاتورة بيع آجلة غير مسددة بصندوق أو تسوية نقدية.');
+  const date = parseNormalizedDate(String(e.entry_date)).iso;
+  if (!date) throw new SqliteValidationError('أدخل تاريخ بيع ميلاديًا صالحًا قبل ترحيل القيد.');
+  const buyer = db.prepare('SELECT id FROM accounts WHERE id=? AND workspace_id=? AND currency=? AND is_cash_account=0 AND system_posting_role IS NULL')
+    .get(String(e.account_id), workspace, 'ريال');
+  if (!buyer) throw new SqliteValidationError('حساب العميل يجب أن يكون غير نقدي ومن نفس عملة الفاتورة.');
+  const unitsByItem = new Map<string, {units: number; cost: number}>();
+  const updateLine = db.prepare('UPDATE invoice_lines SET unit_cost_at_sale=?, posted_base_units=? WHERE workspace_id=? AND id=?');
+  for (const r of rows.filter(r => r.line_kind === 'item')) {
+    const cost = Number(r.avg_cost);
+    if (r.currency_code !== 'ريال' || r.quantity_unverified || !Number.isFinite(cost) || cost < 0)
+      throw new SqliteValidationError('تحقق من عملة الصنف واعتماد رصيده وتكلفته قبل البيع.');
+    const units = roundMoney(mulMoney(Number(r.quantity), unitMultiplierForItem(Number(r.unit_num),Number(r.count2),Number(r.count3)),4)+Number(r.bonus),4);
+    if (!Number.isFinite(units) || units <= 0) throw new SqliteValidationError('كمية الصنف غير صالحة للترحيل.');
+    const itemId = String(r.inventory_item_id);
+    unitsByItem.set(itemId, {units: addMoney(unitsByItem.get(itemId)?.units ?? 0, units, 4), cost});
+    updateLine.run(cost, units, workspace, r.id);
+  }
+  let costs = 0;
+  for (const {units, cost} of unitsByItem.values()) {
+    const leg = toMinorUnits(mulMoney(units, cost, 2), 2);
+    costs += leg;
+    if (!Number.isSafeInteger(leg) || !Number.isSafeInteger(costs))
+      throw new SqliteValidationError('تكلفة البيع تتجاوز نطاق الدقة المدعوم.');
+  }
+  const revenue = stockSaleRole(db, workspace, 'revenue');
+  if (e.counterpart_account_id && e.counterpart_account_id !== revenue)
+    throw new SqliteValidationError('حساب إيراد البيع يحدده النظام؛ راجع الحساب المقابل.');
+  const amount = Number(e.amount);
+  if (!Number.isSafeInteger(toMinorUnits(amount, 2))) throw new SqliteValidationError('إجمالي البيع يتجاوز نطاق الدقة المدعوم.');
+  const journal = insertJournalEntryRow(db, workspace, {
+    entryDate: date, description: `ترحيل فاتورة بيع #${e.entry_number}`, currency: 'ريال',
+    lines: [
+      {accountId: String(buyer.id), debit: amount}, {accountId: revenue, credit: amount},
+      ...(costs ? [{accountId: stockSaleRole(db, workspace, 'cost'), debit: fromMinorUnits(costs, 2)},
+        {accountId: stockSaleRole(db, workspace, 'inventory'), credit: fromMinorUnits(costs, 2)}] : []),
+    ],
+  });
+  db.prepare('UPDATE journal_entries SET source_ledger_id=? WHERE workspace_id=? AND id=?').run(id, workspace, journal.id);
+}
+
 export function insertLedgerEntryRow(
   db: DatabaseSync,
   workspaceId: string,
@@ -2008,6 +2101,7 @@ export function insertLedgerEntryRow(
         applyEntryLinesStockDelta(db, workspaceId, id, sign, nowIso(), {
           updateWacOnInbound: isPurchaseInbound,
         });
+        postSupportedStockSaleJournal(db, workspaceId, id);
       }
     }
 
@@ -2110,6 +2204,7 @@ export function postDraftLedgerEntryRow(
       applyEntryLinesStockDelta(db, workspaceId, entryId, sign, nowIso(), {
         updateWacOnInbound: isPurchaseInbound,
       });
+      postSupportedStockSaleJournal(db, workspaceId, entryId);
     }
 
     db.prepare(
@@ -2221,6 +2316,11 @@ export function reverseLedgerEntryRow(
     );
 
     // Copy original invoice lines onto reversal entry & reverse stock impact atomically
+    const saleJournalRow = db.prepare('SELECT id FROM journal_entries WHERE workspace_id=? AND source_ledger_id=?').get(workspaceId,entryId);
+    const saleJournal = saleJournalRow ? fetchJournalEntryById(db, workspaceId, String(saleJournalRow.id))! : null;
+    if (saleJournal && db.prepare(`SELECT 1 FROM invoice_lines l JOIN inventory_items i ON i.id=l.inventory_item_id AND i.workspace_id=l.workspace_id
+       WHERE l.workspace_id=? AND l.entry_id=? AND l.line_kind='item' AND (i.avg_cost<>l.unit_cost_at_sale OR i.currency_code<>'ريال' OR i.quantity_unverified<>0)`).get(workspaceId,entryId))
+      throw new SqliteValidationError('تغير تقييم رصيد الصنف بعد البيع؛ لا يمكن عكس الفاتورة دون تسوية مخزنية معتمدة.');
     const origLines = db
       .prepare("SELECT * FROM invoice_lines WHERE workspace_id = ? AND entry_id = ?")
       .all(workspaceId, entryId) as Array<Record<string, unknown>>;
@@ -2228,8 +2328,8 @@ export function reverseLedgerEntryRow(
       const insLine = db.prepare(
         `INSERT INTO invoice_lines (
            workspace_id, entry_id, line_kind, inventory_item_id, warehouse_id, item_name,
-           price, quantity, total, discount, bonus, unit, unit_num, unit_cost_at_sale, details
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           price, quantity, total, discount, bonus, unit, unit_num, unit_cost_at_sale, details, posted_base_units
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const l of origLines) {
         insLine.run(
@@ -2248,11 +2348,23 @@ export function reverseLedgerEntryRow(
           Number(l.unit_num ?? 1),
           Number(l.unit_cost_at_sale ?? 0),
           `عكس: ${String(l.details ?? "")}`.slice(0, 300),
+          l.posted_base_units == null ? null : Number(l.posted_base_units),
         );
       }
       if (origSign !== 0) {
         applyEntryLinesStockDelta(db, workspaceId, revId, -origSign, now);
       }
+    }
+
+    if (saleJournal) {
+      const reversingJournal = insertJournalEntryRow(db, workspaceId, {
+        entryDate: reversalDate, description: revDetails, currency: saleJournal.currency,
+        lines: saleJournal.lines.map(l => ({accountId: l.accountId, debit: l.credit, credit: l.debit})),
+      });
+      db.prepare('UPDATE journal_entries SET source_ledger_id=?, reversed_journal_id=? WHERE workspace_id=? AND id=?')
+        .run(revId, saleJournal.id, workspaceId, reversingJournal.id);
+      db.prepare("UPDATE journal_entries SET posting_status='reversed', reversal_journal_id=? WHERE workspace_id=? AND id=?")
+        .run(reversingJournal.id, workspaceId, saleJournal.id);
     }
 
     // Mark original entry as reversed while keeping it immutable in DB
@@ -2714,6 +2826,8 @@ export function reverseJournalEntryRow(
     if (!original) {
       throw new SqliteValidationError("القيد اليومي المطلوب عكسه غير موجود.");
     }
+    if (db.prepare('SELECT 1 FROM journal_entries WHERE workspace_id=? AND id=? AND source_ledger_id IS NOT NULL').get(workspaceId,journalId))
+      throw new SqliteValidationError('اعكس المستند الأصلي حتى يُعكس القيد والمخزون معًا.');
     if (original.postingStatus !== "posted") {
       throw new SqliteValidationError("يمكن عكس القيود اليومية المرحلة فقط.");
     }

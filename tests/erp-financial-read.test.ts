@@ -9,6 +9,7 @@ import { getTrialBalanceReport } from '../server/financialReports.ts';
 import { mountSqliteApi } from '../server/sqliteApi.ts';
 import { closeSqliteDb, getSqliteDb, ensureEmptyWorkspace, upsertAccountRow, upsertCurrencyRow,
   insertJournalEntryRow, reverseJournalEntryRow, insertLedgerEntryRow, exportWorkspaceJsonBackup,
+  upsertWarehouseRow, insertInventoryItemRow,
   restoreUnifiedJsonBundle, setWorkspaceClosedUntilDate, DEFAULT_WORKSPACE_ID as w } from '../server/sqliteDb.ts';
 
 async function fixture(run: (db: ReturnType<typeof getSqliteDb>) => void | Promise<void>) {
@@ -120,13 +121,19 @@ test('opening a schema v3 database upgrades additively without replacing busines
   const {journal} = setup(db);
   const saved = insertJournalEntryRow(db, w, {...journal, idempotencyKey: 'migration-request'});
   const before = db.prepare('SELECT * FROM journal_entry_lines').all();
+  db.exec(`DROP INDEX idx_journal_source_ledger; DROP INDEX idx_accounts_posting_role;
+    ALTER TABLE journal_entries DROP COLUMN source_ledger_id;
+    ALTER TABLE accounts DROP COLUMN system_posting_role;
+    ALTER TABLE invoice_lines DROP COLUMN posted_base_units;`);
   db.exec('ALTER TABLE ledger_entries DROP COLUMN request_fingerprint; ALTER TABLE journal_entries DROP COLUMN request_fingerprint; ALTER TABLE workspaces DROP COLUMN business_profile_json; ALTER TABLE workspaces DROP COLUMN user_preferences_json; ALTER TABLE workspaces DROP COLUMN setup_fingerprint; PRAGMA user_version=3;');
   closeSqliteDb();
   const upgraded = getSqliteDb();
-  assert.equal(upgraded.prepare('PRAGMA user_version').get()?.user_version, 5);
+  assert.equal(upgraded.prepare('PRAGMA user_version').get()?.user_version, 6);
   const columns=upgraded.prepare('PRAGMA table_info(workspaces)').all().map(row=>row.name);
   for(const column of ['business_profile_json','user_preferences_json','setup_fingerprint']) assert(columns.includes(column));
   assert.deepEqual(upgraded.prepare('SELECT * FROM journal_entry_lines').all(), before);
+  assert.equal(upgraded.prepare('SELECT source_ledger_id FROM journal_entries WHERE id=?').get(saved.id)?.source_ledger_id, null);
+  assert.deepEqual(upgraded.prepare('PRAGMA foreign_key_check').all(), []);
   assert.equal(insertJournalEntryRow(upgraded, w, {...journal, idempotencyKey: 'migration-request'}).id, saved.id);
 }));
 test('HTTP report and posting use real SQLite with scope validation, CSRF and conflict status', async () => fixture(async db => {
@@ -156,4 +163,36 @@ test('HTTP report and posting use real SQLite with scope validation, CSRF and co
     assert.equal((await fetch(`${url}/ledger`, {method: 'POST', headers, body: JSON.stringify({entry: sale})})).status, 201);
     assert.equal((await fetch(`${url}/ledger`, {method: 'POST', headers, body: JSON.stringify({entry: {...sale, amount: 60}})})).status, 409);
   } finally { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); }
+}));
+
+test('stock invoice API rejects foreign references and forged totals and posts one linked journal', async () => fixture(async db => {
+  const party = upsertAccountRow(db, w, {name:'QA Sale Customer', category:'clients', currency:'ريال'});
+  const wh = upsertWarehouseRow(db, w, {name:'QA Sale Warehouse'});
+  const item = insertInventoryItemRow(db, w, {name:'QA Sale Inventory', warehouseId:wh.id, unit:'حبة', avgCost:100, quantity:10});
+  const app = express(); app.use(express.json()); mountSqliteApi(app);
+  const server = app.listen(0,'127.0.0.1'); await new Promise<void>(r=>server.once('listening',r));
+  const api = `http://127.0.0.1:${(server.address() as {port:number}).port}/api/db/workspace/`;
+  const entry = {kind:'invoice', invoiceContent:'items', payment:'credit', direction:'debit', accountId:party.id, accountName:party.name,
+    currency:'ريال', amount:300, entryDate:'2026-11-27', warehouseId:wh.id, idempotencyKey:'api-sale',
+    lines:[{inventoryItemId:item.id, itemName:item.name, quantity:2, price:150, total:1, unit:'حبة'}]};
+  const post = (workspace: string, body: object, csrf = true) => fetch(api+workspace+'/ledger',
+    {method:'POST',headers:{'content-type':'application/json', ...(csrf?{'x-nasqo-csrf':'1'}:{})},body:JSON.stringify({entry:body})});
+  try {
+    const before=snapshot(db);
+    assert.equal((await post(w,entry,false)).status,403);
+    const foreign = await post('other-workspace',entry);
+    assert.equal(foreign.status,400);
+    assert.match((await foreign.json() as {error:string}).error, /الحساب المرتبط/);
+    assert.equal((await post(w,{...entry,amount:1})).status,400);
+    assert.deepEqual(snapshot(db),before);
+    const response=await post(w,entry); assert.equal(response.status,201);
+    const saved=(await response.json() as {entry:{id:string}}).entry;
+    assert.equal((await post(w,entry)).status,201);
+    const report=await (await fetch(api+w+'/reports/trial-balance?fromDate=2026-11-27&toDate=2026-11-27')).json() as {totalDebitTurnover:number;totalCreditTurnover:number};
+    assert.equal(report.totalDebitTurnover,500);
+    assert.equal(report.totalCreditTurnover,500);
+    const linked=db.prepare('SELECT source_ledger_id FROM journal_entries WHERE workspace_id=?').all(w);
+    assert.deepEqual(linked.map(l=>l.source_ledger_id),[saved.id]);
+    assert.equal(db.prepare('SELECT quantity FROM inventory_items WHERE id=?').get(item.id)?.quantity,8);
+  } finally { await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve())); }
 }));

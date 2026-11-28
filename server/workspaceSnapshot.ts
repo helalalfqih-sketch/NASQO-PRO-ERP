@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { SQLITE_SCHEMA_VERSION, UNIFIED_SQLITE_TABLES } from "./sqliteSchema.ts";
 import { SqliteValidationError, withTransaction } from "./sqliteDb.ts";
+import { parseNormalizedDate } from "../src/utils/dateUtils.ts";
 import { validateBusinessProfile, validatePreferenceReferences } from "../src/utils/businessSetup.ts";
 
 type Row = Record<string, string | number | null>;
@@ -33,7 +34,7 @@ export function captureWorkspaceSnapshot(db: DatabaseSync, workspaceId: string):
 }
 
 function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
-  if (!object(input) || input.format !== "nasqo-workspace-tables-v1" || typeof input.schemaVersion !== 'number' || ![3, 4, SQLITE_SCHEMA_VERSION].includes(input.schemaVersion) || !object(input.tables)) {
+  if (!object(input) || input.format !== "nasqo-workspace-tables-v1" || typeof input.schemaVersion !== 'number' || ![3, 4, 5, SQLITE_SCHEMA_VERSION].includes(input.schemaVersion) || !object(input.tables)) {
     return fail("صيغة قائمة الجداول أو إصدارها غير مدعوم");
   }
   const tables = input.tables;
@@ -95,7 +96,17 @@ function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
     total.count++; total.debit += Number(line.debit_minor); total.credit += Number(line.credit_minor);
     journalTotals.set(line.journal_id,total);
   }
+  const ledgerById = new Map(snapshot.tables.ledger_entries.map(row => [row.id,row]));
+  const linkedDocuments = new Set<unknown>();
   for (const journal of snapshot.tables.journal_entries) {
+    if (journal.source_ledger_id != null) {
+      const doc = ledgerById.get(journal.source_ledger_id);
+      if (!doc || doc.kind !== "invoice" || doc.deleted !== 0 || doc.posting_status !== journal.posting_status ||
+          journal.posting_status === "draft" || doc.currency !== journal.currency || doc.exchange_rate !== journal.exchange_rate ||
+          parseNormalizedDate(String(doc.entry_date)).iso !== journal.entry_date || linkedDocuments.has(doc.id))
+        return fail("رابط قيد اليومية بمستند المصدر غير متطابق");
+      linkedDocuments.add(doc.id);
+    }
     if (journal.posting_status === "draft") continue;
     const {count,debit,credit} = journalTotals.get(journal.id) ?? {count:0,debit:0,credit:0};
     if (count < 2 || !Number.isSafeInteger(debit) || debit <= 0 || debit !== credit ||
