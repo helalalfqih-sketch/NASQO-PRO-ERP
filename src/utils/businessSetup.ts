@@ -1,7 +1,7 @@
 import type { CashboxRecord, WarehouseRecord } from '../types.ts';
 
 export const SETUP_TIMEZONES = ['UTC', 'Asia/Aden', 'Asia/Riyadh', 'Asia/Dubai', 'Asia/Baghdad', 'Asia/Amman', 'Asia/Beirut', 'Africa/Cairo', 'Africa/Khartoum', 'Africa/Casablanca', 'Europe/London', 'Europe/Paris', 'America/New_York'] as const;
-export const ACTION_LABELS = { sale: 'فاتورة بيع', purchase: 'فاتورة شراء', inventory: 'المخزون', accounts: 'الحسابات', backup: 'نسخة احتياطية' } as const;
+export const ACTION_LABELS = { sale: 'فاتورة بيع', purchase: 'فاتورة شراء', inventory: 'المخزون', accounts: 'الحسابات', backup: 'نسخة احتياطية', receipt: 'سند قبض', payment: 'سند صرف', journal: 'قيد يومية' } as const;
 export type QuickAction = keyof typeof ACTION_LABELS;
 export type BusinessProfile = {
   version: 1; completedAt: string; businessType: 'retail' | 'wholesale' | 'services' | 'mixed';
@@ -50,7 +50,7 @@ export function validateUserPreferences(value: unknown): asserts value is UserPr
   if (p.version !== 1 || !['light', 'dark', 'system'].includes(p.theme) || !['auto', 1, 2, 3].includes(p.homeColumns) ||
       !['', 'main'].includes(p.defaultBranchId) || p.defaultCashboxId !== null && (!Number.isSafeInteger(p.defaultCashboxId) || p.defaultCashboxId <= 0)) fail();
   text(p.defaultWarehouseId, 150, true); text(p.defaultCurrency, 64);
-  for (const list of [p.favoriteActions, p.recentActions]) if (!Array.isArray(list) || list.length > 5 || new Set(list).size !== list.length || list.some(a => !Object.hasOwn(ACTION_LABELS, a))) fail();
+  for (const list of [p.favoriteActions, p.recentActions]) if (!Array.isArray(list) || list.length > 6 || new Set(list).size !== list.length || list.some(a => !Object.hasOwn(ACTION_LABELS, a))) fail();
 }
 export function validatePreferenceReferences(p: UserPreferences, currencies: string[], warehouses: Pick<WarehouseRecord, 'id'>[], cashboxes: Pick<CashboxRecord, 'id' | 'currencyCode' | 'state' | 'isActive'>[]) {
   validateUserPreferences(p);

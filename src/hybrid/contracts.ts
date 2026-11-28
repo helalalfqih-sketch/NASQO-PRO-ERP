@@ -77,6 +77,7 @@ export const HYBRID_ALLOWED_COMMANDS = [
   "batchUpdateInventoryItems",
   "getInventoryMovementsReport",
   "getCashboxesReport",
+  "getHomeDashboardInput",
   "getInvoiceDetail",
   "getProductPriceStats",
   "saveErpData",
@@ -316,6 +317,7 @@ export interface HybridCommandPayloadMap {
       movementLimit?: number;
     };
   };
+  getHomeDashboardInput: { workspaceId: string; options: Partial<import("../dashboard/model").HomeScope> };
   getCashboxesReport: {
     workspaceId: string;
     options?: { currency?: string; fromDate?: string; toDate?: string; includeInactive?: boolean };

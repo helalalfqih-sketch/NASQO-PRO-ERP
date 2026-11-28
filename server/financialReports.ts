@@ -8,6 +8,12 @@ import { getFullWorkspaceBundle, withTransaction } from './sqliteDb.ts';
 export function getTrialBalanceReport(db: DatabaseSync, workspace: string, options?: FinancialReportScopeOptions) {
   return withTransaction(db, () => {
     const bundle = getFullWorkspaceBundle(db, workspace);
+    const journals = readJournalProjections(db, workspace);
+    return computeTrialBalance(bundle.accounts, [...bundle.ledger, ...journals], options);
+  });
+}
+
+export function readJournalProjections(db: DatabaseSync, workspace: string): LedgerEntryRecord[] {
     const legs = new Map<string, NonNullable<LedgerEntryRecord['journalLines']>>();
     for (const row of db.prepare('SELECT * FROM journal_entry_lines WHERE workspace_id=? ORDER BY id').all(workspace)) {
       const id = String(row.journal_id), list = legs.get(id) ?? [];
@@ -24,6 +30,5 @@ export function getTrialBalanceReport(db: DatabaseSync, workspace: string, optio
       postingStatus: row.posting_status as LedgerEntryRecord['postingStatus'],
       journalLines: legs.get(String(row.id)) ?? [], createdAtMs: Date.parse(String(row.created_at)),
     }));
-    return computeTrialBalance(bundle.accounts, [...bundle.ledger, ...journals], options);
-  });
+    return journals;
 }

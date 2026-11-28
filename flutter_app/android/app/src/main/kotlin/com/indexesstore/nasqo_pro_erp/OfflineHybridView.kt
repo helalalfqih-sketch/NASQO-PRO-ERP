@@ -84,6 +84,10 @@ private class OfflineHybridView(
     private val cameraStopListener: () -> Unit = { stopCameraCapture() }
 
     init {
+        // Inspect the bundled UI only in debuggable test builds; release remains closed.
+        if ((context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true)
+        }
         HybridLifecycleDiagnostics.log("webview-created", instance)
         cameraHost.registerCameraStopListener(cameraStopListener)
         webView.settings.apply {

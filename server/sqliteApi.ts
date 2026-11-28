@@ -1,3 +1,4 @@
+import { loadHomeDashboard, localHomePrincipal } from "./homeDashboard.ts";
 import { completeBusinessSetup, recordRecentAction } from "./businessSetup.ts";
 import { getTrialBalanceReport } from "./financialReports.ts";
 import { executeErpAction } from "./erpActions.ts";
@@ -192,6 +193,24 @@ export function mountSqliteApi(app: Express): void {
       res.json(getFullWorkspaceBundle(db, uid));
     }),
   );
+
+  router.get('/workspace/:uid/home', route(async (req,res) => {
+    res.setHeader('Cache-Control','no-store');
+    const scope: Record<string,string>={};
+    for(const [key,value] of Object.entries(req.query)) {
+      if(key==='detail') continue;
+      if(!['currency','warehouseId','branchId','fromDate','toDate'].includes(key) || typeof value!=='string' || value.length>150) throw new SqliteValidationError('مرشح الرئيسية غير صالح.');
+      scope[key]=value;
+    }
+    const detail=req.query.detail;
+    if(detail!==undefined&&(typeof detail!=='string'||!['sales','purchases','cash','receivables','payables','receipts','payments','invoices','customers','vendors','stockItems','lowStock','warehouses','outOfStock','vouchers'].includes(detail))) throw new SqliteValidationError('التقرير غير صالح.');
+    res.json(await loadHomeDashboard(paramStr(req,'uid'),scope,detail as import('../src/dashboard/model.ts').HomeMetric | undefined));
+  }));
+  router.put('/workspace/:uid/personal-preferences', route((req,res,db) => {
+    const uid=paramStr(req,'uid'); localHomePrincipal(uid);
+    if(!req.body || Object.keys(req.body).join()!=='preferences') throw new SqliteValidationError('تفضيلات شخصية فقط؛ لا يمكن تعديل إعدادات الشركة هنا.');
+    res.json({workspace:saveWorkspaceSettingsRow(db,uid,{userPreferences:req.body.preferences})});
+  }));
 
   router.put(
     "/workspace/:uid",

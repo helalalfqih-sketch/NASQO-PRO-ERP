@@ -980,9 +980,10 @@ export function getDbStats(db: DatabaseSync, workspaceId: string) {
   };
 }
 
-export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
-  ensureEmptyWorkspace(db, workspaceId);
+export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string, readOnly = false) {
+  if (!readOnly) ensureEmptyWorkspace(db, workspaceId);
   const wsRow = db.prepare("SELECT * FROM workspaces WHERE id = ?").get(workspaceId) as Record<string, unknown>;
+  if (!wsRow) throw new SqliteValidationError("مساحة العمل غير متاحة.", 404);
   const groupRows = db
     .prepare(
       `SELECT id, name, category, currency_code, has_bill, is_employee, sort_order, legacy_id
@@ -1033,7 +1034,7 @@ export function getFullWorkspaceBundle(db: DatabaseSync, workspaceId: string) {
   let currencyRows = db
     .prepare("SELECT id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id FROM currencies WHERE workspace_id = ? ORDER BY id ASC")
     .all(workspaceId) as Record<string, unknown>[];
-  if (currencyRows.length === 0) {
+  if (currencyRows.length === 0 && !readOnly) {
     db.prepare(
       `INSERT INTO currencies (workspace_id, code, name, symbol, rate_primary, rate_secondary, name_secondary, legacy_id)
        VALUES (?, 'ريال', 'ريال', '_', 1, 1, '', 1)`,
@@ -2860,7 +2861,7 @@ export function getInventoryMovementsReport(
   const invWhereParts = [
     "le.workspace_id = ?",
     "le.deleted = 0",
-    "le.posting_status != 'draft'",
+    "le.posting_status IN ('posted', 'reversed')",
     "il.line_kind = 'item'",
     "il.inventory_item_id IS NOT NULL",
   ];
@@ -3012,7 +3013,7 @@ export function getInventoryMovementsReport(
   const allTimeWhereParts = [
     "le.workspace_id = ?",
     "le.deleted = 0",
-    "le.posting_status != 'draft'",
+    "le.posting_status IN ('posted', 'reversed')",
     "il.line_kind = 'item'",
     "il.inventory_item_id IS NOT NULL",
   ];
@@ -3075,7 +3076,7 @@ export function getInventoryMovementsReport(
     const priorInvParts = [
       "le.workspace_id = ?",
       "le.deleted = 0",
-      "le.posting_status != 'draft'",
+      "le.posting_status IN ('posted', 'reversed')",
       "il.line_kind = 'item'",
       "il.inventory_item_id IS NOT NULL",
       "le.entry_date < ?",
@@ -3659,7 +3660,7 @@ export function getCashboxesReport(
 
   const scopeParts = [
     "le.deleted = 0",
-    "le.posting_status != 'draft'",
+    "le.posting_status IN ('posted', 'reversed')",
     "(le.settled_on_receipt = 1 OR le.payment = 'cash')",
     "(le.kind IN ('voucher', 'invoice', 'return') OR le.cashbox_id IS NOT NULL)",
   ];

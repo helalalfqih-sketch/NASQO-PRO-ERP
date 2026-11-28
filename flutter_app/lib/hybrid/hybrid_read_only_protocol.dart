@@ -268,6 +268,34 @@ class HybridReadOnlyProtocol {
         return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
       }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر قراءة التقرير المحلي.');}
     }
+    if(actionName=='getHomeDashboardInput'){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic> || p['workspaceId']!='local-erp-workspace' || p.keys.any((k)=>!['workspaceId','options'].contains(k)) || p['options'] is! Map<String,dynamic>)
+        return _error(id,actionName,'VALIDATION_ERROR','نطاق الرئيسية غير صالح.');
+      final options=p['options'] as Map<String,dynamic>;
+      if(options.keys.any((k)=>!['currency','warehouseId','branchId','fromDate','toDate'].contains(k)) || options.values.any((v)=>v is! String||v.length>150) || options['branchId']!='main' || options['currency']=='الكل')
+        return _error(id,actionName,'VALIDATION_ERROR','نطاق الرئيسية غير صالح.');
+      try {
+        final snapshot=await readSnapshot();
+        if(snapshot['backupReview']==true) return _error(id,actionName,'UNAUTHORIZED_ACTION','هذه نسخة للمراجعة وليست مساحة عمل نشطة.');
+        final currencies=snapshot['currencies'] as List? ?? const [];
+        final warehouses=snapshot['warehouses'] as List? ?? const [];
+        bool validDate(dynamic value) {
+          if(value is! String||!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return false;
+          final parsed=DateTime.tryParse(value);
+          return parsed!=null&&parsed.toIso8601String().substring(0,10)==value;
+        }
+        if(!currencies.any((c)=>c is Map&&c['name']==options['currency'])||
+           !validDate(options['fromDate'])||!validDate(options['toDate'])||
+           (options['fromDate'] as String).compareTo(options['toDate'] as String)>0||
+           options['warehouseId'] is! String||
+           options['warehouseId']!=''&&!warehouses.any((w)=>w is Map&&w['id'].toString()==options['warehouseId'])) {
+          return _error(id,actionName,'VALIDATION_ERROR','راجع العملة والتاريخ والمخزن في نطاق الرئيسية.');
+        }
+        final cash=LegacyHistoryReports.cashboxes(snapshot,{'currency':options['currency'],'toDate':options['toDate']});
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':{'snapshot':snapshot,'cash':cash}});
+      }catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر تحديث الرئيسية من البيانات المحلية.');}
+    }
     if(actionName=='getCashboxesReport'){
       final p=request['payload'];
       if(p is! Map<String,dynamic>||p['workspaceId']!='local-erp-workspace'||

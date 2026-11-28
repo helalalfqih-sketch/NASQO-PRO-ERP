@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { defaultBusinessProfile, defaultUserPreferences } from '../src/utils/businessSetup';
-test.use({ launchOptions: { executablePath: process.env.TEST_BROWSER_EXECUTABLE } });
+test.use({ launchOptions: { executablePath: process.env.TEST_BROWSER_EXECUTABLE ?? process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } });
 const ws='/api/db/workspace/local-erp-workspace', headers={'X-NASQO-CSRF':'1'};
 
 test.beforeEach(async({page})=>{

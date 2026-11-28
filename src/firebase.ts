@@ -1645,3 +1645,18 @@ export async function deleteAccountGroup(uid:string,id:number){await deleteMaste
 export async function deleteWarehouse(uid:string,id:string){await deleteMasterRecord(uid,'warehouses',id);}
 
 export async function executeErpAction(uid:string,payload:{action:string;id?:string;expectedRevision?:string|number;currency?:string;month?:string}){const result=await dbFetch<{bundle:WorkspaceBundle}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/erp/actions`,{method:'POST',body:JSON.stringify(payload)});applyBundle(result.bundle);}
+
+export async function fetchHomeDashboard(uid: string, scope: Partial<import('./dashboard/model').HomeScope>) {
+  const query=new URLSearchParams(); for(const [key,value] of Object.entries(scope)) if(value!==undefined) query.set(key,String(value));
+  return dbFetch<import('./dashboard/model').HomeSnapshot>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/home?${query}`);
+}
+export async function savePersonalPreferences(uid: string, preferences: import('./utils/businessSetup').UserPreferences) {
+  const result=await dbFetch<{workspace:WorkspaceSettings}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/personal-preferences`,{method:'PUT',body:JSON.stringify({preferences})});
+  if(activeBundle) applyBundle({...activeBundle,workspace:result.workspace});
+  return result.workspace;
+}
+
+export async function fetchHomeDetail(uid:string,scope:import('./dashboard/model').HomeScope,detail:import('./dashboard/model').HomeMetric) {
+  const query=new URLSearchParams({...scope,detail});
+  return dbFetch<import('./dashboard/model').HomeDetail>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/home?${query}`);
+}

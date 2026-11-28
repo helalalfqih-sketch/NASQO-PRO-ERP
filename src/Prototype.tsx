@@ -1,3 +1,6 @@
+import { SmartHome } from "./components/SmartHome";
+import { fetchHomeDetail } from "./firebase";
+import type { HomeAction, HomeModule, HomeTarget, HomeScope, HomeMetric, HomeDetail } from "./dashboard/model";
 import { BusinessSetupModal } from "./components/BusinessSetupModal";
 import { ACTION_LABELS, businessToday, defaultUserPreferences, type QuickAction } from "./utils/businessSetup";
 import { DeleteRecordDialog } from "./components/DeleteRecordDialog";
@@ -415,7 +418,7 @@ type LiveWorkspaceState = {
   openAccountPicker: () => void;
   openQuickSearch: () => void;
   openAccountEdit: (account?: AccountRecord, sourceKey?: string) => void;
-  openTransaction: (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => void;
+  openTransaction: (account?: AccountRecord, editingEntry?: LedgerEntryRecord, direction?: "debit" | "credit") => void;
   openAccountCreate: (mode?: AccountCreateMode, defaultCategory?: AccountCategory) => void;
   openAccountReference: (select:(id:string)=>void, cash?:boolean, currency?:string)=>void;
   openCashboxReference: (select:((id:number)=>void)|undefined,currency:string)=>void;
@@ -1170,6 +1173,7 @@ export function AuthenticatedWorkspace({
   const [editingAccount, setEditingAccount] = useState<AccountRecord | undefined>();
   const [accountCreateCategory, setAccountCreateCategory] = useState<AccountCategory>("purchases");
   const [transactionTarget, setTransactionTarget] = useState<{
+    direction?: "debit" | "credit";
     account?: AccountRecord;
     editingEntry?: LedgerEntryRecord;
   }>({});
@@ -1563,10 +1567,10 @@ export function AuthenticatedWorkspace({
   );
 
   const openTransaction = useCallback(
-    (account?: AccountRecord, editingEntry?: LedgerEntryRecord) => {
+    (account?: AccountRecord, editingEntry?: LedgerEntryRecord, direction?: "debit" | "credit") => {
       dismissKeyboard();
       const targetAccount = account ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
-      setTransactionTarget({ account: targetAccount, editingEntry });
+      setTransactionTarget({ account: targetAccount, editingEntry, direction });
       setOverlay("transaction");
       hybrid.notifyOpenVoucher({ accountId: targetAccount?.id, entryId: editingEntry?.id });
     },
@@ -2793,6 +2797,7 @@ export function AuthenticatedWorkspace({
         <TransactionModal
           open={overlay === "transaction"}
           initialAccount={transactionTarget.account}
+          initialDirection={transactionTarget.direction}
           editingEntry={transactionTarget.editingEntry}
           onClose={() => setOverlay(null)}
         />
@@ -3355,8 +3360,6 @@ function DashboardHeader() {
       subtitle=""
       onMenu={ctx.openDrawer}
       actions={[
-        { label: "واتساب", icon: WhatsAppIcon, onClick: ctx.openWhatsAppPicker },
-        { label: "سلة المحذوفات", icon: TrashIcon, onClick: ctx.openTrash },
         { label: "بحث", icon: MagnifyingGlassIcon, onClick: ctx.openQuickSearch },
         {
           label: "التنبيهات",
@@ -3364,7 +3367,6 @@ function DashboardHeader() {
           badge: ctx.unreadNotificationsCount > 0 ? String(ctx.unreadNotificationsCount) : undefined,
           onClick: ctx.openNotifications,
         },
-        { label: "إضافة", icon: PlusIcon, onClick: ctx.openDashboardMenu },
       ]}
     />
   );
@@ -4901,12 +4903,12 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
   );
 }
 
-function inventoryReportScreen(warehouseId?: string): FlowScreen {
+function inventoryReportScreen(warehouseId?: string, itemId?: string, currency?: string): FlowScreen {
   return {
     id: `inventory-report-${warehouseId ?? "all"}`,
     headerHeight: 58,
     header: (flow) => <InventoryHeader flow={flow} />,
-    render: (flow) => <InventoryReportPage flow={flow} initialWarehouseId={warehouseId} />,
+    render: (flow) => <InventoryReportPage flow={flow} initialWarehouseId={warehouseId} initialItemId={itemId} initialCurrency={currency} />,
   };
 }
 
@@ -5030,10 +5032,10 @@ function InventoryFooter({ initialWarehouseId }: { initialWarehouseId?: string }
 
 function InventoryReportPage({
   flow,
-  initialWarehouseId,
+  initialWarehouseId, initialItemId, initialCurrency,
 }: {
   flow: FlowControls;
-  initialWarehouseId?: string;
+  initialWarehouseId?: string; initialItemId?: string; initialCurrency?: string;
 }) {
   const ctx = useWorkspace();
   ctx.flowRef.current = flow;
@@ -5043,10 +5045,10 @@ function InventoryReportPage({
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState(initialWarehouseId ?? "");
-  const [selectedCurrency, setSelectedCurrency] = useState("الكل");
+  const [selectedCurrency, setSelectedCurrency] = useState(initialCurrency ?? "الكل");
   const [profitBasis, setProfitBasis] = useState<"avg" | "cost" | "last">("avg");
-  const [onlyMoved, setOnlyMoved] = useState(true);
-  const [searchState, setSearchState] = useState(() => createInitialSearchState());
+  const [onlyMoved, setOnlyMoved] = useState(!initialItemId);
+  const [searchState, setSearchState] = useState<ReturnType<typeof createInitialSearchState>>(() => ({...createInitialSearchState(), query: ctx.inventory.find(i=>i.id===initialItemId)?.name??"", activePanel: initialItemId?"search" as const:null}));
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [movementReport, setMovementReport] = useState<Awaited<ReturnType<typeof fetchInventoryMovementsReport>> | null>(null);
@@ -8434,7 +8436,54 @@ function HomeHeroBuildingArt() {
   );
 }
 
-function DashboardPage({ flow }: { flow: FlowControls }) {
+function DashboardPage({flow}:{flow:FlowControls}) {
+  const ctx=useWorkspace(); ctx.flowRef.current=flow;
+  if(!ctx.workspace) return <MobileScroll className="app-screen erp-home-scroll"><main className="erp-home" data-testid="dashboard-screen"><h1>نظرة اليوم</h1><div className="erp-home-kpis" aria-busy="true">{[1,2,3,4].map(i=><div className="exec-kpi-card erp-home-card erp-home-kpi" key={i}>جارٍ قراءة السجلات…</div>)}</div></main></MobileScroll>;
+  const onAction=(id:HomeAction)=>{
+    if(id==='sale'||id==='purchase')ctx.openInvoice(id==='sale'?'sales':'purchases');
+    else if(id==='receipt'||id==='payment')ctx.openTransaction(undefined,undefined,id==='receipt'?'credit':'debit');
+    else if(id==='journal')flow.push(simpleEntryScreen());
+    void recordRecentAction(ctx.uid,id).catch(()=>ctx.showToast('تعذر حفظ ترتيب الإجراءات الأخيرة.'));
+  };
+  const onModule=(id:HomeModule)=>{
+    if(id==='accounts')ctx.openChartOfAccounts();
+    else if(id==='sales'||id==='purchases'||id==='customers'||id==='vendors') {
+      const category=id==='customers'?'clients':id==='vendors'?'purchases':id;
+      ctx.setCategoryCurrency(category,ctx.workspace?.userPreferences?.defaultCurrency??ctx.workspace!.defaultCurrency);
+      flow.push(purchasesScreen(category));
+    } else if(id==='inventory')flow.push(inventoryReportScreen());
+    else if(id==='cashboxes')ctx.openCashboxesReport();else ctx.openReportsHub();
+  };
+  return <SmartHome uid={ctx.uid} input={{workspace:ctx.workspace,accounts:ctx.accounts,ledger:ctx.ledger,inventory:ctx.inventory,cashboxes:ctx.cashboxes,warehouses:ctx.warehouses,currencies:ctx.currencies}} ready={!ctx.syncing} revision={[ctx.workspace,ctx.ledger,ctx.accounts,ctx.inventory,ctx.cashboxes]} onAction={onAction} onModule={onModule} onTarget={(target,scope)=>openHomeTarget(ctx,flow,target,scope)} onMore={ctx.openDrawer} onTheme={ctx.setThemeMode} onNotify={ctx.showToast}/>;
+}
+function openHomeTarget(ctx:LiveWorkspaceState,flow:FlowControls,target:HomeTarget,scope:HomeScope) {
+  if(target.kind==='journal') {
+    const doc=target.document;
+    flow.push({id:`home-journal-${doc.id}`,headerHeight:58,header:f=><SimpleAppHeader title={`قيد يومية #${doc.number}`} onBack={f.pop}/>,render:()=> <MobileScroll className="app-screen"><main className="erp-home-detail" dir="rtl" data-testid="home-journal-detail"><h2>قيد يومية #{doc.number}</h2><p>{doc.date} · {doc.currency}</p><p>{doc.description}</p>{doc.lines.map((l,i)=><section className="erp-home-row" key={i}><span><strong>{l.accountName}</strong><small>مدين: {formatAmount(l.debit)} · دائن: {formatAmount(l.credit)} {doc.currency}</small></span></section>)}</main></MobileScroll>});
+  } else if(target.kind==='warehouse')flow.push(inventoryReportScreen(target.id,undefined,scope.currency));
+  else if(target.kind==='metric')flow.push(homeDetailScreen(target.metric,scope));
+  else if(target.kind==='account'){ctx.setStatementCurrency(target.id,scope.currency);flow.push(supplierScreen(target.id));}
+  else if(target.kind==='item'){
+    const item=ctx.inventory.find(i=>i.id===target.id);
+    if(item)flow.push(inventoryReportScreen(item.warehouseId,item.id,scope.currency));
+  }else{
+    const entry=ctx.ledger.find(e=>e.id===target.id&&!e.deleted);
+    if(entry && (entry.kind==='invoice'||entry.kind==='return'))flow.push(cashInvoicePreviewScreen(entry.id));
+    else if(entry)ctx.openTransaction(ctx.accounts.find(a=>a.id===entry.accountId),entry);
+    else ctx.showToast('لم يعد المستند متاحًا؛ حدّث الرئيسية.');
+  }
+}
+function homeDetailScreen(metric:HomeMetric,scope:HomeScope):FlowScreen {
+  return {id:`home-detail-${metric}`,headerHeight:58,header:flow=><SimpleAppHeader title="تفاصيل المؤشر" onBack={flow.pop}/>,render:flow=><HomeDetailPage metric={metric} scope={scope} flow={flow}/>};
+}
+function HomeDetailPage({metric,scope,flow}:{metric:HomeMetric;scope:HomeScope;flow:FlowControls}) {
+  const ctx=useWorkspace();ctx.flowRef.current=flow;
+  const [data,setData]=useState<HomeDetail|null>(null),[error,setError]=useState(''),[limit,setLimit]=useState(60),[retry,setRetry]=useState(0);
+  useEffect(()=>{let live=true;setError('');void fetchHomeDetail(ctx.uid,scope,metric).then(d=>{if(live)setData(d);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[ctx.uid,scope,metric,ctx.ledger,ctx.accounts,ctx.cashboxes,retry]);
+  return <MobileScroll className="app-screen erp-home-scroll"><main className="erp-home-detail" dir="rtl" data-testid="home-detail"><h2>{data?.title??'قراءة التفاصيل…'}</h2><p>{scope.currency} · {scope.fromDate} – {scope.toDate}</p>{data&&<p data-testid="home-detail-total">الإجمالي: <b>{formatAmount(data.total??0)} {data.unit}</b> · {data.rows.length} سجل</p>}{error&&<p role="alert">{error}<button onClick={()=>setRetry(r=>r+1)}>إعادة المحاولة</button></p>}{data?.rows.slice(0,limit).map(row=><button key={row.id} className="erp-home-row" disabled={metric==='cash'} onClick={()=>openHomeTarget(ctx,flow,row.target,scope)}><span><strong>{row.title}</strong><small>{row.subtitle}</small></span><b>{row.amount!==undefined?formatAmount(row.amount):''} {row.currency}</b></button>)}{data&&!data.rows.length&&<p>لا توجد سجلات ضمن النطاق.</p>}{data&&limit<data.rows.length&&<button onClick={()=>setLimit(n=>n+60)}>عرض المزيد</button>}</main></MobileScroll>;
+}
+
+function WorkspaceToolsPage({ flow }: { flow: FlowControls }) {
   const keyboard = useKeyboard();
   const ctx = useWorkspace();
   const hybrid = useHybridPresentation();
@@ -8790,6 +8839,8 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     keyboard.hide();
     void recordRecentAction(ctx.uid,action).catch(() => ctx.showToast("تعذر حفظ قائمة الإجراءات الأخيرة."));
     if(action === "sale" || action === "purchase") ctx.openInvoice(action === "sale" ? "sales" : "purchases");
+    else if(action === "receipt" || action === "payment") ctx.openTransaction(undefined,undefined,action === "receipt" ? "credit" : "debit");
+    else if(action === "journal") flow.push(simpleEntryScreen());
     else if(action === "inventory") flow.push(inventoryReportScreen());
     else if(action === "accounts") ctx.openChartOfAccounts();
     else ctx.openBackupModal();
@@ -11155,6 +11206,7 @@ function AppDrawer({
     {
       items: [
         { label: "الرئيسية", icon: HomeIcon, target: "dashboard" },
+        { label: "أدوات العمل الموسعة", icon: LayersIcon, action:()=>{onClose();ctx.flowRef.current?.push({id:"workspace-tools",headerHeight:58,header:flow=><SimpleAppHeader title="أدوات العمل" onBack={flow.pop}/>,render:flow=><WorkspaceToolsPage flow={flow}/>});} },
         { label: "لوحة المبيعات والمخزون", icon: CardStackIcon, target: "analytics-dashboard" },
         { label: "الحركة اليومية", icon: ActivityLogIcon, target: "daily-journal" },
         { label: "الرسائل الفورية واتساب", icon: MobileIcon, target: "whatsapp" },
@@ -11515,11 +11567,13 @@ function AccountPickerModal({
 function TransactionModal({
   open,
   initialAccount,
+  initialDirection,
   editingEntry,
   onClose,
 }: {
   open: boolean;
   initialAccount?: AccountRecord;
+  initialDirection?: "debit" | "credit";
   editingEntry?: LedgerEntryRecord;
   onClose: () => void;
 }) {
@@ -11546,7 +11600,7 @@ function TransactionModal({
   const [payment, setPayment] = useState<"cash" | "balance">(
     editingEntry?.payment === "balance" ? "balance" : "cash",
   );
-  const [direction, setDirection] = useState<"debit" | "credit">(editingEntry?.direction ?? "debit");
+  const [direction, setDirection] = useState<"debit" | "credit">(editingEntry?.direction ?? initialDirection ?? "debit");
   const [expenseCategory, setExpenseCategory] = useState(editingEntry?.expenseCategory ?? "");
   const [saving, setSaving] = useState(false);
   const [txError, setTxError] = useState<{ field?: "account" | "amount" | "submit"; message: string } | null>(null);
@@ -11601,7 +11655,7 @@ function TransactionModal({
       currency: referenceCurrency,
       amount: editingEntry ? String(editingEntry.amount) : "", note: editingEntry?.details ?? "",
       payment: editingEntry?.payment === "balance" ? "balance" as const : "cash" as const,
-      direction: editingEntry?.direction ?? "debit", expenseCategory: editingEntry?.expenseCategory ?? "",
+      direction: editingEntry?.direction ?? initialDirection ?? "debit", expenseCategory: editingEntry?.expenseCategory ?? "",
     };
     const saved = hybridLocal ? readUiState<typeof draft | null>(scope, "transaction-draft", null, (value) => {
       if (!value || typeof value !== "object") return false;
@@ -11626,7 +11680,7 @@ function TransactionModal({
     setAmount(next.amount); setNote(next.note); setPayment(next.payment); setDirection(next.direction);
     setExpenseCategory(next.expenseCategory); setDraftReady(true);
     // Snapshot refreshes must not reset an open user's fields or operation ID.
-  }, [open, scope, editingEntry?.id, initialAccount?.id]);
+  }, [open, scope, editingEntry?.id, initialAccount?.id, initialDirection]);
 
   useEffect(() => {
     if (!hybridLocal || !open || !dirty || completed.current) return;

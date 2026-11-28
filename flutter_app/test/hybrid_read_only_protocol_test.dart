@@ -24,6 +24,28 @@ Map<String, dynamic> emptySnapshot() => {
 };
 
 void main() {
+  test('home reads one snapshot, matches committed cash and rejects foreign or invalid scope', () async {
+    var reads=0;
+    final data={...emptySnapshot(), 'currencies':[{'code':'YER','name':'ريال'}], 'warehouses':[{'id':'w1','name':'QA'}],
+      'cashboxes':[{'id':1,'name':'QA cash','currencyCode':'ريال','isActive':true}],
+      'ledger':[
+        for(final status in ['posted','draft','historical_unposted']) {'id':status,'kind':'voucher','payment':'cash','direction':'credit','amount':80,'currency':'ريال','entryDate':'2026-11-28','cashboxId':1,'postingStatus':status,'localCashboxPosting':true}
+      ]};
+    final endpoint=HybridReadOnlyProtocol(readSnapshot:() async {reads++;return data;});
+    final scope={'currency':'ريال','warehouseId':'w1','branchId':'main','fromDate':'2026-01-01','toDate':'2026-11-28'};
+    Future<Map<String,dynamic>> call(Map<String,dynamic> options,{String workspace='local-erp-workspace'}) async =>
+      jsonDecode(await endpoint.handle(jsonEncode(request('getHomeDashboardInput',payload:{'workspaceId':workspace,'options':options}))));
+    final result=await call(scope);
+    expect(result['ok'],true);expect(reads,1);
+    expect(result['data']['cash']['cashboxes'][0]['netBalance'],80);
+    expect(result['data']['snapshot']['ledger'].length,3);
+    expect((await call(scope,workspace:'foreign'))['ok'],false);expect(reads,1);
+    for(final invalid in [{'currency':'الكل'},{'currency':'missing'},{'warehouseId':'missing'},{'fromDate':'2026-02-30'},{'fromDate':'2026-12-01'},{'role':'manager'}]) {
+      expect((await call({...scope,...invalid}))['ok'],false);
+    }
+    data['backupReview']=true;expect((await call(scope))['ok'],false);
+  });
+
   test('large valid batches reach handlers; oversized controls retain request correlation',()async{
     var calls=0;
     final endpoint=HybridReadOnlyProtocol(readSnapshot:()async=>emptySnapshot(),

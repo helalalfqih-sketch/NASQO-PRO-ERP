@@ -1,5 +1,13 @@
 # Mobile Prototype Agent Guide
 
+## Fixed ERP home (user direction, 2026-11-28)
+
+- The existing home route must use four real scoped KPIs, four to six working quick actions, at most eight core modules, five alerts and five recent transactions, in that order. Secondary destinations stay behind More. This supersedes older dense home reference layouts below.
+- Latest user correction: preserve the existing card shapes and colors. Reuse smart-tile/exec-kpi-card styling and saved appearance/tone preferences; only rearrange the home and add missing functions. Do not apply a new green/blue palette. Preserve invoice styling and protected mobile runtime.
+- Read committed records only; show currency and scope, never combine currencies implicitly or invent a value on failure. Read financial projections off the HTTP event loop and retain explicitly dated offline summaries.
+- Personal preferences cannot update business accounting configuration. A profile title is not authorization; current local SQLite authentication is proprietor-only and must not pretend to support employee role switching.
+
+
 ## Invoice interaction and first-run setup (user direction, 2026-11-28)
 
 - Keep the invoice's existing colors, card radius/padding, row and control heights. Adapt the available modal height for the keyboard, with fixed header/footer, a scrolling body and no horizontal overflow. Keep light/dark contrast and RTL.
