@@ -89,3 +89,24 @@ test('an operation key or explicit document ID cannot acknowledge different fina
   assert.throws(() => insertLedgerEntryRow(db, w, { ...request, payment: 'cash' }), /طلب|تكرار/);
   assert.throws(() => insertLedgerEntryRow(db, w, { ...request, id: 'another-document' }), /طلب/);
 }));
+
+test('free invoice retries preserve their descriptions, units and delivery terms', () => fixture((db, s) => {
+  const request = { ...s.sale, warehouseId: '', invoiceContent: 'free' as const,
+    idempotencyKey: 'qa-free-request', deliveryDays: 3,
+    lines: [{ itemName: 'QA Delivery Service', unit: 'ساعة', quantity: 2, price: 150, total: 300 }] };
+  const saved = insertLedgerEntryRow(db, w, request), before = snapshot(db);
+  assert.equal(insertLedgerEntryRow(db, w, request).id, saved.id);
+  for (const patch of [
+    { lines: [{ ...request.lines[0], itemName: 'QA Different Service' }] },
+    { lines: [{ ...request.lines[0], unit: 'يوم' }] },
+    { deliveryDays: 4 },
+  ]) assert.throws(() => insertLedgerEntryRow(db, w, { ...request, ...patch }), /معرّف الطلب/);
+  assert.equal(snapshot(db), before);
+  // Old backups have no request fingerprint; compare their persisted free-line intent too.
+  db.prepare('UPDATE ledger_entries SET request_fingerprint=NULL WHERE id=?').run(saved.id);
+  const old = snapshot(db);
+  assert.equal(insertLedgerEntryRow(db, w, request).id, saved.id);
+  assert.throws(() => insertLedgerEntryRow(db, w, { ...request,
+    lines: [{ ...request.lines[0], itemName: 'QA Changed After Upgrade' }] }), /معرّف الطلب/);
+  assert.equal(snapshot(db), old);
+}));
