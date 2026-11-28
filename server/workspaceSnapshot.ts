@@ -32,7 +32,7 @@ export function captureWorkspaceSnapshot(db: DatabaseSync, workspaceId: string):
 }
 
 function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
-  if (!object(input) || input.format !== "nasqo-workspace-tables-v1" || input.schemaVersion !== SQLITE_SCHEMA_VERSION || !object(input.tables)) {
+  if (!object(input) || input.format !== "nasqo-workspace-tables-v1" || typeof input.schemaVersion !== 'number' || ![3, SQLITE_SCHEMA_VERSION].includes(input.schemaVersion) || !object(input.tables)) {
     return fail("صيغة قائمة الجداول أو إصدارها غير مدعوم");
   }
   const tables = input.tables;

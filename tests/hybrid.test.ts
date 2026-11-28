@@ -22,6 +22,8 @@ import {
 import {
   createLedgerEntry,
   createOrUpdateAccount,
+  applyHybridSnapshot,
+  fetchTrialBalanceReport,
   fetchCashboxesReport,
   fetchInventoryMovementsReport,
   LOCAL_WORKSPACE_UID,
@@ -871,4 +873,22 @@ it('cashbox metadata needs catalog capability and an idempotency key in read-onl
   await bridge.invoke('saveCashbox',payload,{idempotencyKey:'cashbox-attempt'});
   assert.equal(sent.length,1);assert.equal(sent[0].action,'saveCashbox');assert.equal(sent[0].idempotencyKey,'cashbox-attempt');
   assert.equal(validateHybridRequestEnvelope({...sent[0],idempotencyKey:undefined}).valid,false);
+});
+
+it('finance adapter reads native journal legs once and refuses another workspace', async () => {
+  const snap = createHybridHomeFixtureSnapshot();
+  const debit = {...snap.accounts[0], id:'qa-native-debit', currency:'ريال', openingBalance:0};
+  const credit = {...debit, id:'qa-native-credit'};
+  const entry = {...snap.ledger[0], id:'qa-native-journal', accountId:debit.id,
+    counterpartAccountId:credit.id, kind:'simple-entry' as const, payment:'balance' as const,
+    postingStatus:'posted' as const, currency:'ريال', exchangeRate:1, deleted:false,
+    entryDate:'2026-11-01', amount:500, journalLines:[
+      {accountId:debit.id,debitMinor:50000,creditMinor:0},
+      {accountId:credit.id,debitMinor:0,creditMinor:50000},
+    ]};
+  applyHybridSnapshot({...snap, accounts:[debit,credit], ledger:[entry]});
+  const report = await fetchTrialBalanceReport(LOCAL_WORKSPACE_UID, {currency:'ريال'});
+  assert.equal(report.totalDebitTurnover,500); assert.equal(report.totalCreditTurnover,500);
+  assert.equal((await fetchTrialBalanceReport(LOCAL_WORKSPACE_UID, {toDate:'2026-10-31'})).totalClosingDebit,0);
+  await assert.rejects(() => fetchTrialBalanceReport('foreign-workspace'));
 });
