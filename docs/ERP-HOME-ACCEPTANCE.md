@@ -8,12 +8,13 @@ The current home route now orders four financial KPIs, five working quick action
 - Sales/purchases net returns and reversals on their effective date; stock invoices use recorded net-before-tax value. Drafts, quotes, deleted and historical unposted documents do not enter financial KPIs. Standalone posted journals contribute to account balances and open their actual lines from recent activity.
 - Currency is explicit; no implicit conversion or cross-currency total. Dates use the business timezone and fiscal start. Warehouse filters apply to attributed documents/stock; cash and receivables explicitly show company balances across warehouses through the selected date.
 - Preferences save only the current proprietor's personal settings. References are validated. Theme/layout/defaults/favorites survive SQLite reopen; company accounting settings remain unchanged.
-- Last successful summaries are scoped to proprietor, restored source, filters and default settings, with visible freshness. Failures show the error and cached value rather than fabricated zeros. Generation guards reject stale responses; commits refresh the summary without a full-page reload.
+- Last successful summaries are scoped to proprietor, restored source, filters and default settings, with visible date/time freshness. Successful restore/reset invalidates the previous summary. Failures show the error and cached value rather than fabricated zeros. Generation guards reject stale responses; commits refresh the summary without a full-page reload.
 
 ## Verified locally
 
-- 10 Playwright scenarios: actual HTTP/SQLite values and drill-down, five correct workflow forms, all eight destinations, persistence/failure handling, offline fallback, exact journal lines, preserved card appearance, first-run and actual invoice posting/recovery.
+- 11 Playwright scenarios: actual HTTP/SQLite values and drill-down, five correct workflow forms, all eight destinations, persistence/failure handling, offline fallback, first-load failure and cache invalidation after database reset, exact journal lines, preserved card appearance, first-run and actual invoice posting/recovery.
 - Light/dark RTL at 320, 360, 412 and 768 px, plus enlarged text; no horizontal overflow.
+- 13 existing navigation/startup/financial/restore browser scenarios passed, including both full SQLite end-to-end flows through More.
 - 19 existing rendered CRUD scenarios through More, actual HTTP and isolated SQLite, including reference-protected deletion.
 - 107 Flutter tests passed; two existing deferred tests remain skipped. Native dashboard boundary verifies one snapshot, committed cash and invalid/foreign scopes.
 - Financial, setup, bridge and SQLite regressions passed, including returns/reversals, independent cash/trial-balance reconciliation and unchanged source rows.

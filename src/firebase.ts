@@ -1,3 +1,4 @@
+import { removeUiState } from "./hybrid/resumeState";
 import { requestRestoreApproval } from "./utils/restoreApproval";
 import { initializeApp } from "firebase/app";
 import {
@@ -1249,6 +1250,7 @@ export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Pr
       method: "POST",
       body: JSON.stringify({ confirmation: "RESET:" + effectiveUid(uid) }),
     });
+    removeUiState(`${effectiveUid(uid)}:owner`, "home-summary");
     applyBundle(bundle);
   });
 }
@@ -1258,6 +1260,7 @@ export async function seedDemoWorkspace(uid = LOCAL_WORKSPACE_UID): Promise<void
     const { bundle } = await dbFetch<{ bundle: WorkspaceBundle }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/seed-demo`, {
       method: "POST",
     });
+    removeUiState(`${effectiveUid(uid)}:owner`, "home-summary");
     applyBundle(bundle);
   });
 }
@@ -1394,6 +1397,7 @@ export async function importSmartProSqlIntoServer(
             },
             120_000,
           );
+    removeUiState(`${effectiveUid(uid)}:owner`, "home-summary");
     applyBundle(res.bundle);
     return res.report;
   });
@@ -1429,6 +1433,7 @@ export async function importSqliteBytesIntoServer(
         mode !== "inspect",
       );
       if (res.bundle) {
+        removeUiState(`${effectiveUid(uid)}:owner`, "home-summary");
         applyBundle(res.bundle as WorkspaceBundle, true);
       }
       return res;
@@ -1490,6 +1495,7 @@ export async function importSqliteLegacyIntoServer(
             { mutating: mode !== "inspect" },
           );
     if (res.bundle) {
+      removeUiState(`${effectiveUid(uid)}:owner`, "home-summary");
       applyBundle(res.bundle as WorkspaceBundle, true);
     }
     return res;
@@ -1520,6 +1526,7 @@ export async function restoreJsonBackupIntoServer(
             },
             120_000,
           );
+    removeUiState(`${effectiveUid(uid)}:owner`, "home-summary");
     applyBundle(res.bundle, true);
     return res;
   });

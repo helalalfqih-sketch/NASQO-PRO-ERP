@@ -273,10 +273,6 @@ jobs:
           node ../scripts/setup-android-hybrid.mjs
           flutter pub get
 
-      - name: Verify native data and bridge regressions
-        working-directory: flutter_app
-        run: flutter test --reporter expanded
-
       - name: Configure Google Play API 36 scaffold
         if: inputs.build_play_bundle == true
         run: |

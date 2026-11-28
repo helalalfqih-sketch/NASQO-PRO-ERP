@@ -8858,7 +8858,7 @@ function WorkspaceToolsPage({ flow }: { flow: FlowControls }) {
       <MobileScroll className="app-screen dashboard-scroll smart-workbench-scroll">
         <main
           className={`dashboard-page page-with-footer smart-home-workbench${isCustomLayout ? " custom-tile-layout" : ""}${tileEditMode ? " is-editing-tiles" : ""}`}
-          data-testid="dashboard-screen"
+          data-testid="workspace-tools-screen"
         >
           {ctx.workspace?.userPreferences && <section className="user-action-shortcuts" data-testid="user-action-shortcuts">
             <strong>المفضلة</strong>{ctx.workspace.userPreferences.favoriteActions.map(a=><button key={a} onClick={()=>launchUserAction(a)}>{ACTION_LABELS[a]}</button>)}
@@ -11206,7 +11206,7 @@ function AppDrawer({
     {
       items: [
         { label: "الرئيسية", icon: HomeIcon, target: "dashboard" },
-        { label: "أدوات العمل الموسعة", icon: LayersIcon, action:()=>{onClose();ctx.flowRef.current?.push({id:"workspace-tools",headerHeight:58,header:flow=><SimpleAppHeader title="أدوات العمل" onBack={flow.pop}/>,render:flow=><WorkspaceToolsPage flow={flow}/>});} },
+        { label: "أدوات العمل الموسعة", icon: LayersIcon, action:()=>{onClose();ctx.flowRef.current?.push({id:"workspace-tools",footerHeight:68,footer:flow=><DashboardBottomNav flow={flow}/>,headerHeight:58,header:flow=><SimpleAppHeader title="أدوات العمل" onBack={flow.pop}/>,render:flow=><WorkspaceToolsPage flow={flow}/>});} },
         { label: "لوحة المبيعات والمخزون", icon: CardStackIcon, target: "analytics-dashboard" },
         { label: "الحركة اليومية", icon: ActivityLogIcon, target: "daily-journal" },
         { label: "الرسائل الفورية واتساب", icon: MobileIcon, target: "whatsapp" },

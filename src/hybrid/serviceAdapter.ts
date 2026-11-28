@@ -1,3 +1,4 @@
+import { removeUiState } from "./resumeState";
 import {
   createEmptyErpData,
   hydrateErpWorkspaceCache,
@@ -1332,6 +1333,7 @@ export async function resetLocalWorkspaceDatabase(uid = LOCAL_WORKSPACE_UID): Pr
         { workspaceId: uid || LOCAL_WORKSPACE_UID, mode: "empty" },
         { idempotencyKey: createIdempotencyKey("resetWorkspace", "empty") },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else {
@@ -1354,6 +1356,7 @@ export async function seedDemoWorkspace(uid = LOCAL_WORKSPACE_UID): Promise<void
         { workspaceId: uid || LOCAL_WORKSPACE_UID, mode: "demo" },
         { idempotencyKey: createIdempotencyKey("resetWorkspace", "demo") },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) {
         applyHybridSnapshot(res.snapshot);
       } else {
@@ -1475,6 +1478,7 @@ export async function importSmartProSqlIntoServer(
         },
         { idempotencyKey: createIdempotencyKey("restoreWorkspace", fileName) },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) applyHybridSnapshot(res.snapshot);
       return res?.report ?? { ok: true };
     } catch (err) {
@@ -1517,6 +1521,7 @@ export async function importSqliteLegacyIntoServer(
         },
         { idempotencyKey: createIdempotencyKey("restoreWorkspace", fileName) },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) applyHybridSnapshot(res.snapshot);
       return res;
     } catch (err) {
@@ -1548,6 +1553,7 @@ export async function restoreJsonBackupIntoServer(
         },
         { idempotencyKey: createIdempotencyKey("restoreWorkspace", "json") },
       );
+      removeUiState(`${uid || LOCAL_WORKSPACE_UID}:owner`, "home-summary");
       if (res?.snapshot) applyHybridSnapshot(res.snapshot);
       return res;
     } catch (err) {

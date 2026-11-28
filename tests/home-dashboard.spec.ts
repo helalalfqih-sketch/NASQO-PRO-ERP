@@ -86,3 +86,19 @@ test('a recent standalone journal opens its exact lines instead of a generic mod
  await page.getByRole('button',{name:'النطاق',exact:true}).click();await page.getByRole('combobox',{name:'مخزن المستندات والأصناف',exact:true}).selectOption('');
  const row=page.getByTestId('home-recent').getByRole('button').filter({hasText:'قيد يومية'});await row.click();await expect(page.getByTestId('home-journal-detail')).toContainText('قيد قبول الرئيسية');await expect(page.getByTestId('home-journal-detail')).toContainText(customer.name);await expect(page.getByTestId('home-journal-detail')).toContainText(vendor.name);
 });
+
+test('a failed first summary has no fabricated cache or financial values, and reset invalidates the previous workspace summary',async({page})=>{
+ test.setTimeout(90000);await seed(page);
+ await page.route('**/home?*',r=>r.abort());
+ await page.evaluate(()=>{for(const key of Object.keys(localStorage))if(key.endsWith(':home-summary'))localStorage.removeItem(key);});
+ await page.reload();await expect(page.getByTestId('home-freshness')).toContainText('تعذر تحديث الملخص');
+ await expect(page.getByTestId('home-freshness')).not.toContainText('نسخة محفوظة');
+ await expect(page.getByTestId('home-kpi-sales')).toBeDisabled();await expect(page.getByTestId('home-kpi-sales')).toContainText('—');
+ await page.unroute('**/home?*');await page.getByRole('button',{name:'تحديث الرئيسية',exact:true}).click();await expect(page.getByTestId('home-kpi-sales')).toContainText('320');
+ await page.route('**/home?*',r=>r.abort());
+ // The actual service performs the confirmed reset against this suite's isolated SQLite fixture.
+ await page.evaluate(async()=>{const api=await import('/src/firebase.ts');await api.resetLocalWorkspaceDatabase('local-erp-workspace');});
+ expect(await page.evaluate(()=>Object.keys(localStorage).filter(key=>key.endsWith(':home-summary')))).toHaveLength(0);
+ expect((await(await page.request.get(ws)).json()).ledger).toHaveLength(0);
+ await expect(page.getByTestId('home-kpi-sales')).not.toContainText('320');
+});
