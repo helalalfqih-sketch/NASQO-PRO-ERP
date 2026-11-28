@@ -72,6 +72,7 @@ try {
   await expect(setup).toBeHidden({timeout:30000});
   await expectFreshHome(page);
   const initial=await command(page,'getSnapshot',{workspaceId});
+  assert.notEqual(initial.workspace.userPreferences?.theme,'dark','Start without a saved dark theme so persistence must come from the UI action');
   assert.equal(initial.ledger.length,0,'Only a new synthetic workspace is permitted');
   assert.equal(initial.inventory.length,0);
   const customerResult=await command(page,'saveAccount',{workspaceId,payload:{name:'QA Home Customer',category:'clients',currency:'ريال',isCashAccount:false}});
@@ -121,8 +122,13 @@ try {
   }
   await page.getByRole('button',{name:'تفضيلات الرئيسية',exact:true}).click();
   const prefs=page.getByTestId('home-preferences');await prefs.getByRole('combobox',{name:'المظهر',exact:true}).selectOption('dark');
-  await prefs.getByRole('button',{name:'حفظ التفضيلات',exact:true}).click();await expect(prefs).toBeHidden();
+  await prefs.getByRole('button',{name:'حفظ التفضيلات',exact:true}).click();
+  // The Android evidence showed this dialog closing with a success toast
+  // after the default 5s assertion, within the native settings round-trip.
+  await expect(prefs).toBeHidden({timeout:20000});
+  await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
   const before=await command(page,'getSnapshot',{workspaceId});
+  assert.equal(before.workspace.userPreferences.theme,'dark','The real UI save must persist the selected theme');
   assert.equal(before.ledger.length,2); assert.equal(before.inventory.length,0);
   await browser.close();adb('shell','am','force-stop',pkg);adb('shell','am','start','-W','-n',`${pkg}/.MainActivity`);
   ({browser,page}=await connect());
@@ -131,6 +137,7 @@ try {
   await expect(page.getByTestId('home-kpi-sales')).toContainText('320');
   await expect(page.locator('html')).toHaveAttribute('data-theme','dark');
   const after=await command(page,'getSnapshot',{workspaceId});
+  assert.equal(after.workspace.userPreferences.theme,'dark','SQLite must retain the theme after offline process restart');
   assert.deepEqual(after.ledger,before.ledger);assert.deepEqual(after.inventory,before.inventory);
   await page.screenshot({path:`${out}/restart-dark-offline.png`});
   assert.deepEqual(errors,[]);
