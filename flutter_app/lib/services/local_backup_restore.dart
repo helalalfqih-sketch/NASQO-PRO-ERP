@@ -364,6 +364,8 @@ class LocalBackupRestore {
     for(final e in extra.entries){data['source_${e.key}']=e.value;}
     return BackupCandidate(name,str(root['format']),bytes,hash,data,{
       'workspace':{'companyName':str(ws['companyName']),'defaultCurrency':defaultCurrency,
+        if(ws.containsKey('businessProfile'))'businessProfile':ws['businessProfile'],
+        if(ws.containsKey('userPreferences'))'userPreferences':ws['userPreferences'],
         if(ws.containsKey('referenceDefaults'))'referenceDefaults':ws['referenceDefaults'],
         if(ws.containsKey('cashierSettings'))'cashierSettings':ws['cashierSettings']},
       'invoiceLines':lineCount,'missingReferences':missingRefs,

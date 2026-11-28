@@ -19,7 +19,7 @@ class LocalReferenceGuards {
     for(final row in await t.query('erp_state',where:"stateKey LIKE 'erp-record:%' OR stateKey = 'workspace_settings_v1' OR stateKey LIKE 'account_meta:%'")){
       final value=jsonDecode(row['payloadJson'] as String);
       if(value is Map&&value['_deleted']==true)continue;
-      if(contains(value,id,keys))throw StateError('السجل مستخدم في بيانات إدارية أو إعدادات؛ عدّل المرجع أولًا');
+      if(contains(value,id,{...keys,for(final k in keys) 'default${k[0].toUpperCase()}${k.substring(1)}'}))throw StateError('السجل مستخدم في بيانات إدارية أو إعدادات؛ عدّل المرجع أولًا');
       if(value is Map){
         final defaults=value['referenceDefaults'];
         if(defaults is Map){

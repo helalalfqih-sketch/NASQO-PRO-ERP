@@ -75,6 +75,8 @@ export type ReferenceDefaults = {
 };
 
 export type WorkspaceSettings = {
+  businessProfile?: import("./utils/businessSetup.ts").BusinessProfile;
+  userPreferences?: import("./utils/businessSetup.ts").UserPreferences;
   referenceDefaults?: ReferenceDefaults;
   cashierSettings?: CashierSettings;
   /** Identity of immutable imported evidence; never a mutable company setting. */

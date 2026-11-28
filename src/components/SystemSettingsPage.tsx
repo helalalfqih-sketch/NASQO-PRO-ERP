@@ -35,6 +35,7 @@ import { triggerHaptic } from "../utils/haptics";
 import type { ThemeMode } from "../utils/theme";
 
 interface SystemSettingsPageProps {
+  onOpenBusinessSetup?: () => void;
   onOpenReferenceDefaults?: () => void;
   onOpenCashierSettings?: () => void;
   uid: string;
@@ -69,6 +70,7 @@ interface SystemSettingsPageProps {
 }
 
 export function SystemSettingsPage({
+  onOpenBusinessSetup,
   onOpenReferenceDefaults,
   onOpenCashierSettings,
   uid,
@@ -204,6 +206,9 @@ export function SystemSettingsPage({
       if(!workspace){onNotify("تم حفظ الإعدادات");return;}
       const nextWorkspace: WorkspaceSettings = {
         ...workspace,
+        ...(workspace.userPreferences ? {userPreferences:{...workspace.userPreferences,theme:themeMode,
+          homeColumns:draft.homeColumns === "auto" ? "auto" : Number(draft.homeColumns) as 1 | 2 | 3}} : {}),
+        ...(workspace.businessProfile ? {businessProfile:{...workspace.businessProfile,backupReminderOnExit:draft.backupReminderOnExit}} : {}),
         companyName: companyName.trim() || workspace.companyName,
         defaultCurrency,
         whatsappPhone: whatsappPhone.trim(),
@@ -230,6 +235,7 @@ export function SystemSettingsPage({
     <MobileScroll className="app-screen sys-settings-scroll">
       <main className="sys-settings-page page-with-footer" data-testid="system-settings-screen">
         {onOpenReferenceDefaults ? <button className="ref-btn blue" onClick={onOpenReferenceDefaults}>مراجع المستندات الافتراضية</button> : null}
+      {onOpenBusinessSetup ? <button className="ref-btn blue" onClick={onOpenBusinessSetup} data-testid="settings-business-setup">المنشأة وتفضيلاتي</button> : null}
       {onOpenCashierSettings ? <button className="ref-btn blue" onClick={onOpenCashierSettings} data-testid="settings-cashier">إعدادات الكاشير</button> : null}
         {/* Top Real Backup Status Card */}
         <section

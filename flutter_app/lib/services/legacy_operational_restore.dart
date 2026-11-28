@@ -1,3 +1,4 @@
+import 'local_business_setup.dart';
 import 'local_workspace_settings.dart';
 import 'local_workspace_readiness.dart';
 import 'stock_quantity_approval_state.dart';
@@ -157,6 +158,12 @@ class LegacyOperationalRestore {
       if(unified){
         final ws=LocalBackupRestore.object(candidate.meta['workspace']);
         final preferences=<String,dynamic>{'defaultCurrency':s(ws['defaultCurrency'],'ريال')};
+        if(ws.containsKey('businessProfile')){
+          LocalBusinessSetup.profile(ws['businessProfile']); preferences['businessProfile']=ws['businessProfile'];
+        }
+        if(ws.containsKey('userPreferences')){
+          await LocalBusinessSetup.preferences(t,ws['userPreferences']); preferences['userPreferences']=ws['userPreferences'];
+        }
         if(ws.containsKey('referenceDefaults')){
           await LocalWorkspaceSettings.validateReferences(t,ws['referenceDefaults'],preferences['defaultCurrency']);
           preferences['referenceDefaults']=ws['referenceDefaults'];

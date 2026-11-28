@@ -1,0 +1,42 @@
+{
+  "companyName": "Synthetic Company",
+  "currency": "ريال",
+  "warehouseName": "Synthetic Warehouse",
+  "cashboxName": "Synthetic Cashbox",
+  "bankName": "Synthetic Bank",
+  "profile": {
+    "version": 1,
+    "completedAt": "",
+    "businessType": "retail",
+    "language": "ar",
+    "timezone": "Asia/Aden",
+    "fiscalYearStartMonth": 1,
+    "branch": {
+      "id": "main",
+      "name": "الفرع الرئيسي"
+    },
+    "adminName": "المدير",
+    "valuationMethod": "weighted-average",
+    "defaultUnit": "حبة",
+    "salesPayment": "cash",
+    "purchasePayment": "cash",
+    "taxRateBps": 0,
+    "backupReminderOnExit": true,
+    "notificationsEnabled": true
+  },
+  "preferences": {
+    "version": 1,
+    "theme": "system",
+    "homeColumns": "auto",
+    "defaultBranchId": "main",
+    "defaultWarehouseId": "",
+    "defaultCashboxId": null,
+    "defaultCurrency": "ريال",
+    "favoriteActions": [
+      "sale",
+      "purchase",
+      "inventory"
+    ],
+    "recentActions": []
+  }
+}

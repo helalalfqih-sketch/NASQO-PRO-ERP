@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { SQLITE_SCHEMA_VERSION, UNIFIED_SQLITE_TABLES } from "./sqliteSchema.ts";
 import { SqliteValidationError, withTransaction } from "./sqliteDb.ts";
+import { validateBusinessProfile, validatePreferenceReferences } from "../src/utils/businessSetup.ts";
 
 type Row = Record<string, string | number | null>;
 export type WorkspaceSnapshot = {
@@ -32,7 +33,7 @@ export function captureWorkspaceSnapshot(db: DatabaseSync, workspaceId: string):
 }
 
 function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
-  if (!object(input) || input.format !== "nasqo-workspace-tables-v1" || typeof input.schemaVersion !== 'number' || ![3, SQLITE_SCHEMA_VERSION].includes(input.schemaVersion) || !object(input.tables)) {
+  if (!object(input) || input.format !== "nasqo-workspace-tables-v1" || typeof input.schemaVersion !== 'number' || ![3, 4, SQLITE_SCHEMA_VERSION].includes(input.schemaVersion) || !object(input.tables)) {
     return fail("صيغة قائمة الجداول أو إصدارها غير مدعوم");
   }
   const tables = input.tables;
@@ -75,6 +76,18 @@ function validate(db: DatabaseSync, input: unknown): WorkspaceSnapshot {
       }
     }
   }
+  // Settings references must resolve inside the incoming snapshot as well.
+  // Validate before replacement, including snapshots with a recomputed checksum.
+  try {
+    const settings = workspaces[0];
+    if (settings.business_profile_json) validateBusinessProfile(JSON.parse(String(settings.business_profile_json)));
+    if (settings.user_preferences_json) validatePreferenceReferences(
+      JSON.parse(String(settings.user_preferences_json)),
+      snapshot.tables.currencies.flatMap(row => [String(row.name), String(row.code)]),
+      snapshot.tables.warehouses.map(row => ({id: String(row.id)})),
+      snapshot.tables.cashboxes.map(row => ({id: Number(row.id), currencyCode: String(row.currency_code), state: Number(row.state)})),
+    );
+  } catch { return fail("إعدادات المنشأة أو مراجع التفضيلات غير صالحة"); }
   const journalTotals = new Map<unknown, {count: number; debit: number; credit: number}>();
   for (const line of snapshot.tables.journal_entry_lines) {
     if (![line.debit_minor,line.credit_minor].every(n => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)) return fail("مبلغ بند اليومية ليس بوحدات نقدية صحيحة");

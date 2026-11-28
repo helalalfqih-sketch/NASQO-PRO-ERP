@@ -431,6 +431,17 @@ export async function getUnifiedDbStats(uid = LOCAL_WORKSPACE_UID): Promise<Unif
   return activeBundle!.stats;
 }
 
+export async function recordRecentAction(uid: string, action: import("../utils/businessSetup").QuickAction): Promise<void> {
+  const res=await hybridBridge.invoke<"recordRecentAction",{snapshot:HybridWorkspaceSnapshot}>("recordRecentAction",{workspaceId:uid,action});
+  applyHybridSnapshot(res.snapshot);
+}
+
+export async function completeBusinessSetup(uid: string, input: import("../utils/businessSetup").BusinessSetupInput): Promise<void> {
+  const res = await hybridBridge.invoke<"completeBusinessSetup", {snapshot: HybridWorkspaceSnapshot}>("completeBusinessSetup",
+    {workspaceId:uid, input}, {idempotencyKey:"business-setup-v1"});
+  applyHybridSnapshot(res.snapshot);
+}
+
 export async function saveWorkspaceSettings(
   uid: string,
   updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">> & WorkspaceSettings,

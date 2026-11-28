@@ -35,7 +35,7 @@ jobs:
           npx tsx --test tests/unified-sqlite.test.ts
           npx tsx --test tests/erp-crud.test.ts tests/erp-input.test.ts tests/hybrid-message-limits.test.ts tests/tabular-import.test.ts tests/import-restore-safety.test.ts
           npx tsx --test tests/erp-posting-boundaries.test.ts tests/erp-financial-read.test.ts tests/accounting-audit-25.test.ts
-          npx tsx --test tests/invoiceCatalog.test.ts
+          npx tsx --test tests/invoiceCatalog.test.ts tests/invoice-search.test.ts tests/business-setup.test.ts
           npm run build
           PLAYWRIGHT_CHROMIUM_EXECUTABLE="$(command -v google-chrome)" CRUD_UI_OUTPUT="$RUNNER_TEMP/crud-ui" npx tsx scripts/verify-crud-ui.ts
           # Rebuild only the client with an isolated URL prefix for ERP domain routing.
@@ -50,7 +50,7 @@ jobs:
       - name: Verify Android Back navigation in Chromium
         run: |
           npx playwright install --with-deps chromium
-          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts tests/smartpro-admin-ui.spec.ts tests/unified-sqlite-e2e.spec.ts tests/erp-financial-ui.spec.ts --reporter=line
+          npx playwright test tests/android-back-navigation.spec.ts tests/legacy-ui-binding.spec.ts tests/erp-startup-loading.spec.ts tests/smartpro-admin-ui.spec.ts tests/unified-sqlite-e2e.spec.ts tests/erp-financial-ui.spec.ts tests/invoice-onboarding.spec.ts --reporter=line
           npx playwright test tests/legacy-real-data.spec.ts --reporter=line
           npx playwright test tests/public-deployment-mobile.spec.ts --reporter=line
       - name: Prepare release

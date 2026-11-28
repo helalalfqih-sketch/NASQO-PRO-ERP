@@ -1,3 +1,4 @@
+import {defaultBusinessProfile,defaultUserPreferences} from "../src/utils/businessSetup";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -251,6 +252,16 @@ describe("Hybrid Bridge Contracts & Security Validation", () => {
 });
 
 describe("NasqoHybridBridge Runtime & Duplicate Prevention", () => {
+  it("permits atomic setup only when the local catalog capability is available", async () => {
+    const bridge=new NasqoHybridBridge();bridge.setReadOnlyFinancialMode(true);
+    const payload={workspaceId:LOCAL_WORKSPACE_UID,input:{companyName:'Synthetic',currency:'ريال',warehouseName:'Warehouse',cashboxName:'Cashbox',bankName:'',profile:defaultBusinessProfile(),preferences:defaultUserPreferences()}};
+    await assert.rejects(bridge.invoke('completeBusinessSetup',payload,{idempotencyKey:'business-setup-v1'}), (e:unknown)=>e instanceof HybridBridgeError && e.code==='UNAUTHORIZED_ACTION');
+    bridge.setLocalCatalogEditing(true);
+    bridge.setTransportForTesting({postMessage:raw=>{const r=JSON.parse(raw);queueMicrotask(()=>bridge.handleInbound({protocolVersion:HYBRID_PROTOCOL_VERSION,kind:'response',requestId:r.requestId,action:r.action,ok:true,data:{completed:true}}));}});
+    assert.deepEqual(await bridge.invoke('completeBusinessSetup',payload,{idempotencyKey:'business-setup-v1'}),{completed:true});
+    bridge.resetForTesting();
+  });
+
   it("blocks duplicate concurrent financial mutations with DUPLICATE_REQUEST", async () => {
     const bridge = new NasqoHybridBridge();
     const sent: HybridRequestEnvelope[] = [];

@@ -1,3 +1,4 @@
+import { completeBusinessSetup, recordRecentAction } from "./businessSetup.ts";
 import { getTrialBalanceReport } from "./financialReports.ts";
 import { executeErpAction } from "./erpActions.ts";
 import { deleteMasterRecord, saveCashboxRecord } from "./masterCrud.ts";
@@ -228,6 +229,11 @@ export function mountSqliteApi(app: Express): void {
       res.json(getFullWorkspaceBundle(db, uid));
     }),
   );
+
+  router.post("/workspace/:uid/recent-action", route((req, res, db) => { res.json({workspace:recordRecentAction(db,validWsId(paramStr(req,"uid")),req.body?.action)}); }));
+  router.post("/workspace/:uid/setup", route((req, res, db) => {
+    res.json({ bundle: completeBusinessSetup(db, validWsId(paramStr(req, "uid")), req.body) });
+  }));
 
   router.post(
     "/workspace/:uid/seed-demo",

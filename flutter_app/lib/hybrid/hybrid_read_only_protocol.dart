@@ -33,6 +33,8 @@ class HybridReadOnlyProtocol {
     required this.readSnapshot,
     this.saveUiPreferences,
     this.saveWorkspaceSettings,
+    this.completeBusinessSetup,
+    this.recordRecentAction,
     this.createAccount,
     this.updateAccount,
     this.postDocument,
@@ -59,6 +61,8 @@ class HybridReadOnlyProtocol {
   final Future<Map<String, dynamic>> Function() readSnapshot;
   final Future<void> Function(Map<String, dynamic>)? saveUiPreferences;
   final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? saveWorkspaceSettings;
+  final Future<Map<String,dynamic>> Function(Map<String,dynamic>)? completeBusinessSetup;
+  final Future<Map<String,dynamic>> Function(String)? recordRecentAction;
   final Future<Map<String, dynamic>> Function(String, Map<String, dynamic>)? createAccount;
   final Future<Map<String, dynamic>> Function(String, String, Map<String, dynamic>)? updateAccount;
   final Future<Map<String,dynamic>> Function(String,Map<String,dynamic>)? postDocument;
@@ -307,6 +311,21 @@ class HybridReadOnlyProtocol {
           'ok':true,'data':result??{'cancelled':true,'fileName':'','mimeType':'','sizeBytes':0,'base64Content':''}});
       }on FormatException catch(e){return _error(id,actionName,'VALIDATION_ERROR',e.message);}
       catch(_){return _error(id,actionName,'SERVICE_UNAVAILABLE','تعذر اختيار الملف؛ لم تُستورد بيانات.');}
+    }
+    if(actionName=='recordRecentAction' && recordRecentAction!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic> || p.length!=2 || p['workspaceId']!='local-erp-workspace' || p['action'] is! String)
+        return _error(id,actionName,'VALIDATION_ERROR','إجراء غير صالح.');
+      try {final result=await recordRecentAction!(p['action']);return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});}
+      catch(_){return _error(id,actionName,'VALIDATION_ERROR','تعذر حفظ الإجراء الأخير.');}
+    }
+    if(actionName=='completeBusinessSetup' && completeBusinessSetup!=null){
+      final p=request['payload'];
+      if(p is! Map<String,dynamic> || p.length!=2 || p['workspaceId']!='local-erp-workspace' || p['input'] is! Map<String,dynamic> || request['idempotencyKey']!='business-setup-v1')
+        return _error(id,actionName,'VALIDATION_ERROR','طلب التهيئة غير صالح.');
+      try { final result=await completeBusinessSetup!(p['input']);
+        return jsonEncode({'protocolVersion':version,'kind':'response','requestId':id,'action':actionName,'ok':true,'data':result});
+      }catch(_){return _error(id,actionName,'VALIDATION_ERROR','تعذر إكمال التهيئة. راجع الحقول؛ لم تُحفظ تغييرات جزئية.');}
     }
     if(actionName=='saveWorkspaceSettings'&&saveWorkspaceSettings!=null){
       final p=request['payload'];

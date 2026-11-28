@@ -583,6 +583,16 @@ export async function getUnifiedDbStats(uid = LOCAL_WORKSPACE_UID): Promise<Unif
   return dbFetch<UnifiedDbStats>(`/status?uid=${encodeURIComponent(effectiveUid(uid))}`);
 }
 
+export async function recordRecentAction(uid: string, action: import("./utils/businessSetup").QuickAction): Promise<void> {
+  const {workspace}=await dbFetch<{workspace:WorkspaceSettings}>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/recent-action`,{method:"POST",body:JSON.stringify({action})});
+  if(activeBundle) applyBundle({...activeBundle,workspace});
+}
+
+export async function completeBusinessSetup(uid: string, input: import("./utils/businessSetup").BusinessSetupInput): Promise<void> {
+  const { bundle } = await dbFetch<{ bundle: WorkspaceBundle }>(`/workspace/${encodeURIComponent(effectiveUid(uid))}/setup`, { method: "POST", body: JSON.stringify(input) });
+  applyBundle(bundle);
+}
+
 export async function saveWorkspaceSettings(
   uid: string,
   updates: Partial<Omit<WorkspaceSettings, "id" | "ownerId">> & WorkspaceSettings,

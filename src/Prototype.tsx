@@ -1,3 +1,5 @@
+import { BusinessSetupModal } from "./components/BusinessSetupModal";
+import { ACTION_LABELS, businessToday, defaultUserPreferences, type QuickAction } from "./utils/businessSetup";
 import { DeleteRecordDialog } from "./components/DeleteRecordDialog";
 import { catalogCardsForReport } from "./utils/catalogWorkbook";
 import { emptyReferenceDefaults, eligibleCashbox, resolveCashbox } from "./utils/documentReferences";
@@ -117,7 +119,9 @@ import {
   computeInvoiceLineNet,
   stepInvoiceQuantity,
 } from "./utils/invoiceGridUtils";
-import { findInvoiceCatalogItems, invoiceItemAtWarehouse, invoiceItemStockLocations, invoiceUnitMatches } from "./utils/invoiceCatalog";
+import { invoiceItemAtWarehouse, invoiceItemStockLocations, invoiceUnitMatches } from "./utils/invoiceCatalog";
+import { useInvoiceSearch } from "./hooks/useInvoiceSearch";
+import { useInvoiceViewport } from "./hooks/useInvoiceViewport";
 import { getCatalogReferenceCost, approvedInventoryValue } from "./utils/catalogCosts";
 import {
   countActiveFilters,
@@ -199,6 +203,7 @@ import {
   deleteWarehouse,
   saveCurrencyRecord,
   saveWarehouse,
+  recordRecentAction,
   saveWorkspaceSettings,
   setLedgerDeleted,
   setLocalWorkspaceSession,
@@ -436,6 +441,7 @@ type LiveWorkspaceState = {
   openInventoryAdd: () => void;
   openInventoryEdit: (item: InventoryItemRecord) => void;
   openSettings: () => void;
+  openBusinessSetup: () => void;
   openTrash: () => void;
   openNotifications: () => void;
   openQrScanner: () => void;
@@ -1217,6 +1223,8 @@ export function AuthenticatedWorkspace({
   const [hapticsEnabled, setHapticsEnabledState] = useState<boolean>(() => readHapticsEnabled());
   const [widgetOrder, setWidgetOrderState] = useState<DashboardWidgetId[]>(() => readWidgetOrder());
   const [homeMetricOrder, setHomeMetricOrderState] = useState<HomeMetricId[]>(() => readHomeMetricOrder());
+  const [businessSetupOpen, setBusinessSetupOpen] = useState(false);
+  const didOfferSetup = useRef(false);
   const [favorites, setFavoritesState] = useState<PinnedFavoriteItem[]>(() => readPinnedFavorites());
   const [lastBackupIso, setLastBackupIso] = useState<string | null>(() => readLastBackupIso());
   const [readNotifIds, setReadNotifIds] = useState<Set<string>>(() => {
@@ -1576,12 +1584,16 @@ export function AuthenticatedWorkspace({
   );
 
   const recoverExistingInvoiceDraft = useCallback(() => {
-    if (!hybrid.isHybrid) return false;
     const saved = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
     if (!saved) return false;
+    if (!saved.editingEntryId && ledger.some(entry => entry.id === saved.entryId)) {
+      if (removeUiState(user.uid, "invoice-draft")) { showToast("الفاتورة محفوظة بالفعل؛ أُزيلت مسودتها دون تكرار الحفظ."); return false; }
+      showToast("الفاتورة محفوظة، لكن تعذر تنظيف المسودة المحلية. أعد فتح التطبيق للتحقق.");
+      return true;
+    }
     const account = accounts.find((item) => item.id === saved.accountId);
     const entry = saved.editingEntryId ? ledger.find((item) => item.id === saved.editingEntryId && !item.deleted) : undefined;
-    if (!canRestoreInvoiceDraft(saved, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+    if (!canRestoreInvoiceDraft(saved, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.flatMap((item) => [item.code, item.name]), ...CURRENCIES] })) {
       setUnavailableDraft(true);
       return true;
     }
@@ -1596,9 +1608,10 @@ export function AuthenticatedWorkspace({
     (defaultCategory?: AccountCategory, intent: InvoiceIntent = "invoice") => {
       dismissKeyboard();
       if (recoverExistingInvoiceDraft()) return;
+      const preferredCurrency = workspace?.userPreferences?.defaultCurrency ?? workspace?.defaultCurrency;
       const matchingAccount = defaultCategory !== "sales" && accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)?.note?.startsWith("nasqo:default:")
-        ? accounts.find(a=>a.note === "nasqo:default:cash-supplier" && a.currency === workspace?.defaultCurrency) ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId)
-        : accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId);
+        ? accounts.find(a=>a.note === "nasqo:default:cash-supplier" && a.currency === preferredCurrency) ?? accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId && a.currency===preferredCurrency)
+        : accounts.find(a=>a.id===workspace?.referenceDefaults?.accountId && a.currency===preferredCurrency) ?? accounts.find(a=>a.note==="nasqo:default:cash-customer" && a.currency===preferredCurrency);
       const kindOverride =
         defaultCategory === "sales" ? "sale" : defaultCategory === "purchases" ? "purchase" : undefined;
       setInvoiceSeed((value) => ({
@@ -1694,7 +1707,7 @@ export function AuthenticatedWorkspace({
     if (recoverExistingInvoiceDraft()) return;
     try {
       const draft = legacyRecordDraft(record, { accounts, inventory, warehouses, ledger, cashboxes,
-        currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] });
+        currencyCodes: [...currencies.flatMap((item) => [item.code, item.name]), ...CURRENCIES] });
       const existing = ledger.find((item) => item.id === draft.entryId);
       if (existing) {
         if (existing.deleted) throw new Error("سبق إنشاء نسخة من هذا السجل وهي في السلة؛ استعدها من السلة المحلية.");
@@ -1704,7 +1717,7 @@ export function AuthenticatedWorkspace({
         return;
       }
       if (!isInvoiceUiDraft(draft) || !canRestoreInvoiceDraft(draft, { accounts, inventory, warehouses, ledger, cashboxes, workspace,
-        currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) throw new Error("لا يمكن نقل جميع مراجع المستند إلى مسودة آمنة.");
+        currencyCodes: [...currencies.flatMap((item) => [item.code, item.name]), ...CURRENCIES] })) throw new Error("لا يمكن نقل جميع مراجع المستند إلى مسودة آمنة.");
       if (!writeUiState(user.uid, "invoice-draft", draft)) throw new Error("تعذر حفظ المسودة المحلية؛ لم يُغيّر المستند الأصلي.");
       setInvoiceSeed((seed) => ({ account: accounts.find((item) => item.id === draft.accountId),
         editingEntry: undefined, intent: draft.intent, kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
@@ -2160,7 +2173,30 @@ export function AuthenticatedWorkspace({
 
   const syncing = !(syncFlags.accounts && syncFlags.ledger && syncFlags.inventory);
 
+  useEffect(() => {
+    if (syncing || !workspace || didOfferSetup.current) return;
+    didOfferSetup.current = true;
+    const fresh = !workspace.businessProfile && !workspace.legacySourceSha && !ledger.length && !inventory.length &&
+      accounts.every(a => a.note?.startsWith("nasqo:system:") || a.note?.startsWith("nasqo:default:"));
+    if (fresh && !readUiState(user.uid, "invoice-draft", null, isInvoiceUiDraft)) { keyboard.hide(); setBusinessSetupOpen(true); }
+  }, [syncing, workspace, ledger.length, inventory.length, accounts, user.uid]);
+  const appliedPreferences = useRef("");
+  useEffect(() => {
+    if (!workspace?.userPreferences) return;
+    const p = workspace.userPreferences, b = workspace.businessProfile;
+    const identity = JSON.stringify([workspace.id, p.theme, p.homeColumns, b?.backupReminderOnExit]);
+    if (appliedPreferences.current === identity) return;
+    appliedPreferences.current = identity;
+    setThemeMode(p.theme);
+    setExtendedSettings({ ...readExtendedSettings(), homeColumns: String(p.homeColumns) as ExtendedAppSettings["homeColumns"], ...(b ? { backupReminderOnExit: b.backupReminderOnExit } : {}) });
+  }, [workspace?.userPreferences, workspace?.businessProfile, workspace?.id, setThemeMode, setExtendedSettings]);
+
   const didRestoreUi = useRef(false);
+  useEffect(() => {
+    if (hybrid.isHybrid || syncing || !workspace || workspace.id !== user.uid || didRestoreUi.current) return;
+    didRestoreUi.current = true;
+    recoverExistingInvoiceDraft();
+  }, [hybrid.isHybrid, syncing, workspace, user.uid, recoverExistingInvoiceDraft]);
   useEffect(() => {
     if (!hybrid.isHybrid || syncing || !workspace || workspace.id !== user.uid || !flowRef.current || didRestoreUi.current) return;
     const resolve = (id: string): FlowScreen | null => {
@@ -2203,7 +2239,7 @@ export function AuthenticatedWorkspace({
       if (screen) flowRef.current.push(screen);
     }
     const draft = readUiState<InvoiceUiDraft | null>(user.uid, "invoice-draft", null, isInvoiceUiDraft);
-    if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.map((item) => item.code), ...CURRENCIES] })) {
+    if (draft && canRestoreInvoiceDraft(draft, { accounts, ledger, warehouses, inventory, cashboxes, workspace, currencyCodes: [...currencies.flatMap((item) => [item.code, item.name]), ...CURRENCIES] })) {
       setInvoiceSeed((seed) => ({ account: accounts.find((a) => a.id === draft.accountId),
         editingEntry: ledger.find((e) => e.id === draft.editingEntryId), intent: draft.intent, cashier: draft.cashier,
         kindOverride: draft.kindOverride, revision: seed.revision + 1 }));
@@ -2248,9 +2284,9 @@ export function AuthenticatedWorkspace({
 
   const notifications = useMemo(
     () =>
-      computeWorkspaceNotifications(accounts, ledger, warehouses, inventory, workspace, new Date(), {
+      (workspace?.businessProfile?.notificationsEnabled === false ? [] : computeWorkspaceNotifications(accounts, ledger, warehouses, inventory, workspace, new Date(), {
         lastBackupIso,
-      }).filter((n) => !dismissedNotifIds.has(n.id)),
+      })).filter((n) => !dismissedNotifIds.has(n.id)),
     [accounts, dismissedNotifIds, inventory, lastBackupIso, ledger, warehouses, workspace],
   );
 
@@ -2415,6 +2451,7 @@ export function AuthenticatedWorkspace({
         setInventoryEditing(item);
         setOverlay("inventory-add");
       },
+      openBusinessSetup: () => { keyboard.hide(); setBusinessSetupOpen(true); },
       openSettings: () => {
         dismissKeyboard();
         flowRef.current?.push(systemSettingsScreen());
@@ -2647,6 +2684,7 @@ export function AuthenticatedWorkspace({
   useBackLayer(dashboardMenuOpen, () => { setDashboardMenuOpen(false); return true; }, 30);
   useBackLayer(exportState.open, () => { setExportState((state) => ({ ...state, open: false })); return true; }, 30);
   const handleSystemBack = () => {
+    if (businessSetupOpen) { window.dispatchEvent(new Event("nasqo:setup-back")); return true; }
     if (keyboard.visible) { keyboard.hide(); return true; }
     if (consumeBackLayer()) return true;
     if (overlay) { closeOverlay(); return true; }
@@ -2662,6 +2700,9 @@ export function AuthenticatedWorkspace({
       <UiResumeWorkspaceContext.Provider value={hybrid.isHybrid ? workspace?.id ?? "" : ""}>
       <div ref={referenceAppRoot} className={`nasqo-app${referenceCashbox || referenceAccount ? " has-reference-manager" : ""}`} dir="rtl">
         <FlowStack initial={initial} onSystemBack={handleSystemBack} />
+        {businessSetupOpen && workspace ? <BusinessSetupModal workspace={workspace} warehouses={warehouses} cashboxes={cashboxes} currencies={currencyCodes}
+          onClose={() => setBusinessSetupOpen(false)} onSaved={() => showToast("تم حفظ التهيئة والتفضيلات")}
+          onImport={() => { setBusinessSetupOpen(false); ctx.openFullSqliteImport(); }} /> : null}
         {importReview ? <DataImportReview review={importReview} busy={importBusy} onCancel={() => { if (!importInFlight.current) setImportReview(null); }} onConfirm={confirmTableImport} /> : null}
         {restoreReview ? <RestoreReviewDialog review={restoreReview} onFinish={finishRestoreReview} /> : null}
         {unavailableDraft ? <div className="center-modal-layer" style={{ zIndex: 1000 }}>
@@ -4172,7 +4213,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     setSelectedId(null);
     setName("");
     setSku("");
-    setUnit("حبة");
+    setUnit(ctx.workspace?.businessProfile?.defaultUnit ?? "حبة");
     setAvgCost("");
     setSellingPrice("");
     setUnit2("");
@@ -4186,7 +4227,7 @@ function ItemsCatalogPage({ flow }: { flow: FlowControls }) {
     setCurrencyCode("ريال");
     setIsActive(true);
     setFormError("");
-  }, []);
+  }, [ctx.workspace?.businessProfile?.defaultUnit]);
 
   const selectItemForEdit = (item: InventoryItemRecord) => {
     keyboard.hide();
@@ -6352,12 +6393,13 @@ function InvoiceModal({
 }) {
   const ctx = useWorkspace();
   const cashierPrefs = cashier && !editingEntry ? ctx.workspace?.cashierSettings : undefined;
+  const userPrefs = ctx.workspace?.userPreferences;
+  const business = ctx.workspace?.businessProfile;
   const defaults = useRef(ctx.workspace?.referenceDefaults).current;
-  const initialReferenceAccount = initialAccount ?? ctx.accounts.find(a=>a.id===(cashier ? cashierPrefs?.accountId ?? defaults?.accountId : defaults?.accountId));
-  const initialCurrency = editingEntry?.currency ?? cashierPrefs?.currency ?? initialReferenceAccount?.currency ?? ctx.workspace?.defaultCurrency ?? "ريال";
+  const initialReferenceAccount = initialAccount ?? ctx.accounts.find(a=>a.id===(cashier ? cashierPrefs?.accountId ?? defaults?.accountId : defaults?.accountId) && (!userPrefs?.defaultCurrency || cashier || a.currency===userPrefs.defaultCurrency));
+  const initialCurrency = editingEntry?.currency ?? cashierPrefs?.currency ?? initialAccount?.currency ?? userPrefs?.defaultCurrency ?? initialReferenceAccount?.currency ?? ctx.workspace?.defaultCurrency ?? "ريال";
 
   const [restoredDraft] = useState(() => {
-    if (import.meta.env.VITE_NASQO_HYBRID !== "1") return null;
     const saved = readUiState<InvoiceUiDraft | null>(ctx.uid, "invoice-draft", null, isInvoiceUiDraft);
     if (!saved || saved.intent !== intent || saved.editingEntryId !== editingEntry?.id ||
         saved.accountId !== (editingEntry?.accountId ?? initialAccount?.id ?? initialReferenceAccount?.id ?? "")) return null;
@@ -6371,7 +6413,7 @@ function InvoiceModal({
     ? editingEntry.payment === "cash"
       ? "cash"
       : "credit"
-    : cashier ? "cash" : initialAccount?.isCashAccount || initialAccount?.note?.startsWith("nasqo:default:")
+    : cashier ? "cash" : business ? (kindOverride === "sale" || initialAccount?.category === "sales" ? business.salesPayment : business.purchasePayment) : initialAccount?.isCashAccount || initialAccount?.note?.startsWith("nasqo:default:")
       ? "cash"
       : "credit";
   const initialKind: "purchase" | "sale" =
@@ -6383,8 +6425,8 @@ function InvoiceModal({
   const localDraft=hybridLocal&&draftKind!==null&&!editingEntry?.deleted&&(!editingEntry||editingEntry.localDraft===true);
   const metadataOnly=hybridLocal&&editingEntry?.kind==="invoice"&&editingEntry.postingStatus==="posted"&&
     !editingEntry.deleted&&editingEntry.journalLines?.length;
-  const [localTaxAmount,setLocalTaxAmount] = useState(restoreField("localTaxAmount", editingEntry?.taxAmount==null?"":String(editingEntry.taxAmount)));
-  const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">(restoreField("localTaxMode", "amount"));
+  const [localTaxAmount,setLocalTaxAmount] = useState(restoreField("localTaxAmount", editingEntry?.taxAmount==null ? (business?.taxRateBps ? String(business.taxRateBps / 100) : "") : String(editingEntry.taxAmount)));
+  const [localTaxMode,setLocalTaxMode] = useState<"amount"|"rate">(restoreField("localTaxMode", !editingEntry && business?.taxRateBps ? "rate" : "amount"));
   const [localOriginalId,setLocalOriginalId] = useState(restoreField("localOriginalId", ""));
   const [localReturnQty,setLocalReturnQty] = useState<Record<string,string>>(restoreField("localReturnQty", {}));
   const [content, setContent] = useState<"items" | "free">(restoreField("content", initialContent));
@@ -6396,7 +6438,7 @@ function InvoiceModal({
   const [documentNumber, setDocumentNumber] = useState(restoreField("documentNumber", editingEntry?.documentNumber ?? ""));
   const [entryNumber, setEntryNumber] = useState(restoreField("entryNumber", editingEntry ? String(editingEntry.entryNumber) : ""));
   const [entryDate, setEntryDate] = useState(
-    restoreField("entryDate", editingEntry?.entryDate || new Date().toISOString().slice(0, 10)),
+    restoreField("entryDate", editingEntry?.entryDate || businessToday(business?.timezone)),
   );
   const [expenseCategory, setExpenseCategory] = useState(restoreField("expenseCategory", editingEntry?.expenseCategory ?? ""));
   const [currency, setCurrency] = useState<CurrencyCode>(
@@ -6406,11 +6448,11 @@ function InvoiceModal({
     restoreField("exchangeRate", editingEntry ? String(editingEntry.exchangeRate || 1) : "1"),
   );
   const [cashboxId, setCashboxId] = useState<number | undefined>(
-    () => restoredDraft ? restoredDraft.fields.cashboxId as number | undefined : editingEntry ? editingEntry.cashboxId : resolveCashbox(defaults,ctx.cashboxes,initialCurrency,initialReferenceAccount,cashierPrefs?.cashboxId),
+    () => restoredDraft ? restoredDraft.fields.cashboxId as number | undefined : editingEntry ? editingEntry.cashboxId : resolveCashbox(defaults,ctx.cashboxes,initialCurrency,initialReferenceAccount,cashierPrefs?.cashboxId ?? userPrefs?.defaultCashboxId),
   );
   const [warehouseId, setWarehouseId] = useState(
     restoreField("warehouseId", editingEntry ? editingEntry.warehouseId ?? "" : (cashier ? cashierPrefs?.warehouseId ?? defaults?.warehouseId ?? "" :
-      (defaults ? defaults.warehouseId : ctx.warehouses.find((w) => w.isDefault)?.id) ||
+      (userPrefs?.defaultWarehouseId || (defaults ? defaults.warehouseId : ctx.warehouses.find((w) => w.isDefault)?.id)) ||
       "")),
   );
   const [accountId, setAccountId] = useState(
@@ -6426,6 +6468,7 @@ function InvoiceModal({
   };
   const chooseKind = (value:"purchase"|"sale") => {
     setKind(value);
+    if (!editingEntry && business) setPayment(value === "sale" ? business.salesPayment : business.purchasePayment);
     const current = ctx.accounts.find(a=>a.id===accountId);
     if (!editingEntry && current?.note?.startsWith("nasqo:default:")) {
       const target = ctx.accounts.find(a=>a.currency===currency && a.note===`nasqo:default:cash-${value==="purchase"?"supplier":"customer"}`);
@@ -6438,13 +6481,14 @@ function InvoiceModal({
     else setCashboxId(resolveCashbox(defaults,ctx.cashboxes,value,ctx.accounts.find(a=>a.id===accountId),cashierPrefs?.cashboxId));
   };
   const [itemSearch, setItemSearch] = useState(restoreField("itemSearch", ""));
+  const [searchSelection, setSearchSelection] = useState(0);
   const [quickPage, setQuickPage] = useState(0);
   const quickItems = (cashierPrefs?.quickItemIds ?? []).map(id => ctx.inventory.find(i => i.id === id && i.isActive !== false)).filter((i): i is InventoryItemRecord => Boolean(i));
   const [rows, setRows] = useState<DraftInvoiceRow[]>(restoreField("rows", [
-    { rowId: "row_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
+    { rowId: "row_1", itemName: "", unit: business?.defaultUnit ?? "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
   ]));
   const [freeRows, setFreeRows] = useState<DraftInvoiceRow[]>(restoreField("freeRows", [
-    { rowId: "free_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
+    { rowId: "free_1", itemName: "", unit: business?.defaultUnit ?? "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
   ]));
   const [freeAmountOnly, setFreeAmountOnly] = useState(restoreField("freeAmountOnly",
     Boolean(editingEntry?.invoiceContent === "free" || (restoredDraft?.fields.content === "free" && !restoredDraft.fields.freeRows))));
@@ -6476,6 +6520,8 @@ function InvoiceModal({
   const rowPriceRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const draftNewEntryIdRef = useRef<string>(restoredDraft?.entryId ?? `inv_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
   const keyboard = useKeyboard();
+  const invoiceViewport = useInvoiceViewport(open);
+  const [draftSaveState, setDraftSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>(restoredDraft ? 'saved' : 'idle');
   const now = useMemo(
     () => new Intl.DateTimeFormat("ar", { weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date()),
     [],
@@ -6491,18 +6537,24 @@ function InvoiceModal({
   const dirty = Boolean(restoredDraft) || fieldJson !== initialFields.current;
   const completed = useRef(false);
   const currentDraft: InvoiceUiDraft = { version: 1, cashier, intent, kindOverride, accountId,
-    sourceSha: restoredDraft?.sourceSha ?? legacyCopySourceSha(editingEntry?.id),
+    sourceSha: restoredDraft?.sourceSha ?? legacyCopySourceSha(editingEntry?.id) ?? ctx.workspace?.legacySourceSha,
     editingEntryId: editingEntry?.id, entryId: draftNewEntryIdRef.current, fields };
   const latestDraft = useRef(currentDraft);
   latestDraft.current = currentDraft;
-  const persistDraft = () => writeUiState(ctx.uid, "invoice-draft", latestDraft.current);
+  const persistDraft = () => {
+    const saved = writeUiState(ctx.uid, "invoice-draft", latestDraft.current);
+    setDraftSaveState(saved ? 'saved' : 'error');
+    return saved;
+  };
   const pendingReceipt = () => {
     try { return hybridLocal && new PendingSubmissionStore().has(ctx.uid, draftNewEntryIdRef.current); }
     catch { return true; }
   };
-  const finishClose = () => {
+  const finishClose = (posted = false) => {
+    const removed = removeUiState(ctx.uid, "invoice-draft");
+    if (!removed && !posted) { setDraftSaveState('error'); ctx.showToast("تعذر إزالة المسودة؛ بقيت الفاتورة مفتوحة."); return; }
     completed.current = true;
-    if (hybridLocal) removeUiState(ctx.uid, "invoice-draft");
+    if (!removed) ctx.showToast("حُفظت الفاتورة، وسيجري التحقق من مسودتها عند إعادة الفتح.");
     onClose();
   };
   const requestClose = () => {
@@ -6519,19 +6571,27 @@ function InvoiceModal({
     else requestClose();
     return true;
   }, 100);
-  useLayoutEffect(() => {
-    if (!hybridLocal || !open || !dirty || completed.current) return;
-    persistDraft();
-    const checkpoint = () => { if (!completed.current) persistDraft(); };
+  const dirtyDraft = useRef(dirty);
+  dirtyDraft.current = dirty;
+  useEffect(() => {
+    if (!open || !dirty || completed.current) return;
+    setDraftSaveState('saving');
+    const timer = setTimeout(persistDraft, 200);
+    return () => clearTimeout(timer);
+  }, [open, dirty, fieldJson, ctx.uid]);
+  useEffect(() => {
+    if (!open) return;
+    const checkpoint = () => { if (dirtyDraft.current && !completed.current) persistDraft(); };
     window.addEventListener("pagehide", checkpoint);
     window.addEventListener("nasqo:checkpoint", checkpoint);
     document.addEventListener("visibilitychange", checkpoint);
     return () => {
+      checkpoint();
       window.removeEventListener("pagehide", checkpoint);
       window.removeEventListener("nasqo:checkpoint", checkpoint);
       document.removeEventListener("visibilitychange", checkpoint);
     };
-  }, [hybridLocal, open, dirty, fieldJson, ctx.uid]);
+  }, [open, ctx.uid]);
 
   useEffect(() => {
     if (!open) {
@@ -6602,12 +6662,16 @@ function InvoiceModal({
     [ctx.inventory, open],
   );
 
-  const matchingInventory = useMemo(() => {
-    if (!open) return [];
-    // Item master selection is independent of warehouse balance verification.
-    // Posting validates the selected warehouse later, without leaving this form.
-    return findInvoiceCatalogItems(ctx.inventory, itemSearch, warehouseId, hybridLocal);
-  }, [ctx.inventory, itemSearch, open, warehouseId, hybridLocal]);
+  const itemLookup = useInvoiceSearch(ctx.inventory, itemSearch, warehouseId, hybridLocal, open);
+  const matchingInventory = itemLookup.results;
+  useEffect(() => {
+    const option = document.getElementById(`invoice-search-option-${searchSelection}`);
+    const list = option?.parentElement;
+    if (!option || !list) return;
+    if (option.offsetTop < list.scrollTop) list.scrollTop = option.offsetTop;
+    else if (option.offsetTop + option.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = option.offsetTop + option.offsetHeight - list.clientHeight;
+  }, [searchSelection, matchingInventory]);
+  useEffect(() => setSearchSelection(0), [itemSearch, warehouseId]);
 
   const chooseWarehouse = (nextWarehouseId: string) => {
     setWarehouseId(nextWarehouseId);
@@ -6708,11 +6772,12 @@ function InvoiceModal({
   const computedItemsQty = validLines.reduce((sum, l) => sum + l.quantity, 0);
   const parsedTax = parseArabicNumber(localTaxAmount);
   const taxBps = Math.round(parsedTax*100);
-  const validTaxRate = Number.isFinite(parsedTax) && parsedTax>=0 && parsedTax<=100 && Math.abs(parsedTax*100-taxBps)<0.000001;
+  const validTaxText = !localTaxAmount.trim() || /^(?:[0-9٠-٩۰-۹]+(?:[.٫][0-9٠-٩۰-۹]+)?|[.٫][0-9٠-٩۰-۹]+)$/.test(localTaxAmount.replace(/[,٬\s]/g,""));
+  const validTaxRate = validTaxText && Number.isFinite(parsedTax) && parsedTax>=0 && parsedTax<=100 && Math.abs(parsedTax*100-taxBps)<0.000001;
   const netMinor = Math.round(computedItemsTotal*100);
   const calculatedTax = validTaxRate && Number.isSafeInteger(netMinor) && netMinor>=0
     ? Number((BigInt(netMinor)*BigInt(taxBps)+5000n)/10000n)/100 : 0;
-  const taxTotal = hybridLocal && content === "items" && !isReturn
+  const taxTotal = content === "items" && !isReturn
     ? localTaxMode==="rate"?calculatedTax:Math.max(0,parsedTax):0;
   const effectiveAmount = content === "items" && validLines.length > 0
     ? Math.round((computedItemsTotal + taxTotal)*100)/100 : content === "free" && !freeAmountOnly ? freeTotal : parseArabicNumber(amount);
@@ -6857,7 +6922,7 @@ function InvoiceModal({
     const newRowId = `row_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     setRows((prev) => [
       ...prev,
-      { rowId: newRowId, itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
+      { rowId: newRowId, itemName: "", unit: business?.defaultUnit ?? "حبة", unitNum: 1, quantity: "1", price: "", discount: "" },
     ]);
     if (focusNewRow) {
       requestAnimationFrame(() => {
@@ -6903,7 +6968,7 @@ function InvoiceModal({
   const removeRow = (rowId: string) => {
     setRows((prev) =>
       prev.length <= 1
-        ? [{ rowId: "row_1", itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" }]
+        ? [{ rowId: "row_1", itemName: "", unit: business?.defaultUnit ?? "حبة", unitNum: 1, quantity: "1", price: "", discount: "" }]
         : prev.filter((r) => r.rowId !== rowId),
     );
   };
@@ -6914,7 +6979,7 @@ function InvoiceModal({
       setFormError({ field: "submit", message: "تغير مصدر النسخة المستوردة؛ لا يمكن حفظ هذه المسودة في قاعدة أخرى. بقيت المسودة محفوظة." });
       return;
     }
-    if (hybridLocal && !persistDraft()) {
+    if (!persistDraft()) {
       setFormError({ field: "submit", message: "تعذر حفظ حالة المستند محليًا؛ لم تُرسل عملية مالية." });
       return;
     }
@@ -6924,7 +6989,7 @@ function InvoiceModal({
         // The durable receipt guard only reads a fresh snapshot for this known ID.
         await createLedgerEntry(ctx.uid, { id: draftNewEntryIdRef.current, accountId,
           accountName: ctx.accounts.find((account) => account.id === accountId)?.name ?? "" });
-        finishClose();
+        finishClose(true);
         ctx.showToast("تم التحقق من المستند المحفوظ سابقًا دون إعادة ترحيل.");
       } catch (error) {
         setFormError({ field: "submit", message: error instanceof Error ? error.message : "تعذر التحقق من نتيجة الحفظ" });
@@ -6959,7 +7024,7 @@ function InvoiceModal({
           originalInvoiceId:original.id,accountId:original.accountId,accountName:original.accountName,
           returnLines:returnLines.filter(l=>l.quantity>0),
           entryNumber:nextNum,entryDate:entryDate.trim()||new Date().toISOString().slice(0,10)});
-        triggerHaptic("success");ctx.showToast("تم ترحيل الكميات المرتجعة وعكس قيدها ومخزونها");finishClose();
+        triggerHaptic("success");ctx.showToast("تم ترحيل الكميات المرتجعة وعكس قيدها ومخزونها");finishClose(true);
       }catch(err){setFormError({field:"submit",message:err instanceof Error?err.message:"تعذر حفظ المرتجع"});}
       finally{setSaving(false);}
       return;
@@ -6985,7 +7050,7 @@ function InvoiceModal({
           details:note.trim()===stripAutoLineSummary(editingEntry.details)?editingEntry.details:note.trim(),
           documentNumber:documentNumber.trim()});
         ctx.showToast("تم حفظ البيان والمرجع فقط؛ لم تتغير القيود أو الكميات.");
-        finishClose();
+        finishClose(true);
       }catch(err){ctx.showToast(err instanceof Error?err.message:"تعذر حفظ البيان");}
       finally{setSaving(false);}
       return;
@@ -7023,6 +7088,9 @@ function InvoiceModal({
         focusInvalid(accountSelectRef.current,{field:"submit",message:"اختر المخزن ووحدات الأصناف المعتمدة وكميات حتى ثلاث منازل عشرية وضريبة صالحة؛ العملة المحلية ريال."});
         return;
       }
+    }
+    if (content === "items" && !isReturn && (!validTaxText || (localTaxMode === "rate" && !validTaxRate) || !Number.isFinite(parsedTax) || parsedTax < 0)) {
+      setFormError({field:"submit",message:"أدخل ضريبة صالحة غير سالبة، ونسبة لا تتجاوز 100%."}); return;
     }
     if (content === "free") {
       if (!freeAmountOnly) {
@@ -7133,8 +7201,8 @@ function InvoiceModal({
         payment,
         direction,
         amount: effectiveAmount,
-        ...(hybridLocal && content==="items" ? {taxAmount:taxTotal,
-          ...(localTaxMode==="rate"?{taxRateBps:taxBps}:{})}:{}),
+        ...(content==="items" ? {taxAmount:taxTotal,
+          ...(hybridLocal && localTaxMode==="rate"?{taxRateBps:taxBps}:{})}:{}),
         settledOnReceipt: payment === "cash" && !localDraft,
         currency,
         exchangeRate: parseArabicNumber(exchangeRate) || 1,
@@ -7154,7 +7222,7 @@ function InvoiceModal({
       if (editingEntry) {
         await updateLedgerEntry(ctx.uid, editingEntry.id, payload);
         triggerHaptic("success");
-        finishClose();
+        finishClose(true);
         ctx.showToast(`تم تعديل ${typeLabel} رقم #${nextNum} بنجاح`);
       } else {
         targetId = await createLedgerEntry(ctx.uid, {
@@ -7162,7 +7230,7 @@ function InvoiceModal({
           ...payload,
         });
         triggerHaptic("success");
-        finishClose();
+        finishClose(true);
         ctx.showToast(`تم حفظ ${typeLabel} رقم #${nextNum} بنجاح`);
       }
       if (mode === "print" && targetId) {
@@ -7258,9 +7326,10 @@ function InvoiceModal({
   }${editingEntry ? ` #${editingEntry.entryNumber}` : ""}`;
 
   return (
-    <div className="center-modal-layer" data-testid="invoice-modal">
+    <div ref={invoiceViewport.ref} className="center-modal-layer invoice-adaptive-layer" data-testid="invoice-modal"
+      style={invoiceViewport.height === undefined ? undefined : { '--invoice-available-height': `${invoiceViewport.height}px` } as React.CSSProperties}>
       <button className="center-modal-backdrop" aria-label="إغلاق الفاتورة" onClick={requestClose} />
-      <section className="invoice-modal invoice-modal-pro" role="dialog" aria-modal="true" aria-labelledby="invoice-title">
+      <section className="invoice-modal invoice-modal-pro" role="dialog" aria-modal="true" aria-labelledby="invoice-title" inert={leavePrompt} aria-hidden={leavePrompt || undefined}>
         <header className="invoice-modal-head">
           <div className="invoice-modal-head-title">
             <h2 id="invoice-title">{modalTitleText}</h2>
@@ -7297,6 +7366,10 @@ function InvoiceModal({
 
         <fieldset disabled={saving || pendingReceipt()} style={{ display: "contents", border: 0 }}>
         <div className="invoice-modal-body">
+          <div className={`invoice-draft-status ${draftSaveState}`} role="status" aria-live="polite" data-testid="invoice-draft-status">
+            {draftSaveState === 'error' ? 'تعذر حفظ المسودة على هذا الجهاز. أبقِ الفاتورة مفتوحة وأعد المحاولة.' : draftSaveState === 'saving' ? 'جارٍ حفظ المسودة…' : draftSaveState === 'saved' ? 'حُفظت المسودة تلقائيًا على هذا الجهاز' : 'تُحفظ التعديلات تلقائيًا كمسودة دون ترحيل'}
+            {draftSaveState === 'error' ? <button type="button" onClick={persistDraft}>إعادة المحاولة</button> : null}
+          </div>
           <div className="invoice-radio-bar invoice-segment-row">
             <div className="invoice-radio-group">
               {(
@@ -7409,7 +7482,7 @@ function InvoiceModal({
               {localOriginal&&<button type="button" onClick={()=>setLocalReturnQty(Object.fromEntries((localOriginal.returnableLines??[]).map(l=>[l.itemId,String(l.quantity)])))}>إرجاع كامل الكمية المتبقية</button>}
               <small>المرتجع يستخدم السعر والخصم والضريبة والتكلفة الأصلية تلقائيًا. مرتجع الشراء يتطلب رصيدًا وتقييمًا كافيين.</small>
             </label>}
-            {hybridLocal && !editingEntry && !isReturn && content==="items" && (
+            {Boolean(hybridLocal || business?.taxRateBps) && !editingEntry && !isReturn && content==="items" && (
               <details className="invoice-field-box">
                 <summary>الضريبة (اختياري){taxTotal>0?" — "+formatAmount(taxTotal)+" "+currency:""}</summary>
                 <label className="invoice-field-box"><span>طريقة إدخال الضريبة</span>
@@ -7591,25 +7664,36 @@ function InvoiceModal({
                 </div>
               ) : null}
 
+              <div className="invoice-search-panel">
               <div className="invoice-item-search-row">
                 <KeyboardInput
                   ref={itemSearchInputRef}
                   data-testid="invoice-item-search"
                   aria-label="بحث عن صنف أو باركود"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={Boolean(itemSearch.trim())}
+                  aria-controls="invoice-search-results"
+                  aria-activedescendant={matchingInventory[searchSelection] ? `invoice-search-option-${searchSelection}` : undefined}
                   placeholder="ابحث في ملف الأصناف بالاسم أو الرقم أو الباركود..."
                   value={itemSearch}
                   onFocus={(e) => {
-                    e.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" });
+                    e.currentTarget.scrollIntoView({ block: "nearest", behavior: "instant" });
                   }}
                   onChange={(e) => {
                     if (formError?.field === "items") setFormError(null);
                     setItemSearch(e.target.value);
                   }}
                   onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setSearchSelection(index => Math.max(0, Math.min(matchingInventory.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1))));
+                    }
+                    if (e.key === 'Escape') { e.preventDefault(); setItemSearch(''); keyboard.hide(); }
                     if (e.key === "Enter" && matchingInventory.length > 0) {
                       e.preventDefault();
                       keyboard.hide();
-                      pickProductIntoInvoice(matchingInventory[0]);
+                      pickProductIntoInvoice(matchingInventory[searchSelection] ?? matchingInventory[0]);
                     }
                   }}
                 />
@@ -7618,7 +7702,7 @@ function InvoiceModal({
                     type="button"
                     className="invoice-item-search-clear"
                     aria-label="مسح بحث الصنف"
-                    onClick={() => setItemSearch("")}
+                    onClick={() => { setItemSearch(""); keyboard.hide(); }}
                   >
                     <Cross2Icon />
                   </button>
@@ -7635,19 +7719,23 @@ function InvoiceModal({
               {itemSearch.trim() ? (
                 <div
                   className="invoice-item-suggestions"
+                  id="invoice-search-results"
                   role={matchingInventory.length > 0 ? "listbox" : "status"}
                   aria-label="نتائج الأصناف"
+                  aria-busy={itemLookup.loading}
                 >
-                  {matchingInventory.length === 0 ? (
+                  {itemLookup.loading ? <p className="instant-search-empty">جارٍ البحث…</p> : itemLookup.error ? <p className="instant-search-empty">{itemLookup.error} <button type="button" onClick={itemLookup.retry}>إعادة المحاولة</button></p> : matchingInventory.length === 0 ? (
                     <p className="instant-search-empty">لا توجد أصناف مطابقة لـ «{itemSearch.trim()}»</p>
                   ) : (
-                    matchingInventory.map((item) => {
+                    matchingInventory.map((item, index) => {
                       const stockQty = invoiceStockQty(item);
                       return (
                         <button
                           type="button"
                           key={item.id}
                           role="option"
+                          id={`invoice-search-option-${index}`}
+                          aria-selected={index === searchSelection}
                           onClick={() => pickProductIntoInvoice(item)}
                         >
                           <span>
@@ -7664,6 +7752,7 @@ function InvoiceModal({
                   )}
                 </div>
               ) : null}
+              </div>
 
               {priceHint ? (
                 <div className="invoice-price-hint" data-testid="invoice-price-hint">
@@ -7967,7 +8056,7 @@ function InvoiceModal({
                 </div>)}
                 <button type="button" className="invoice-add-line-btn" disabled={freeRows.length >= 150} onClick={() => {
                   setFormError(null); setFreeRows((current) => [...current, { rowId: `free_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                    itemName: "", unit: "حبة", unitNum: 1, quantity: "1", price: "", discount: "" }]);
+                    itemName: "", unit: business?.defaultUnit ?? "حبة", unitNum: 1, quantity: "1", price: "", discount: "" }]);
                 }}>+ بند حر</button>
                 <div className="invoice-totals-bar"><span>الإجمالي</span><b data-testid="invoice-free-total">{formatAmount(freeTotal)} {currency}</b></div>
                 {formError?.field === "items" ? <div className="field-inline-error" role="alert">{formError.message}</div> : null}
@@ -8039,7 +8128,7 @@ function InvoiceModal({
                 try {
                   await setLedgerDeleted(ctx.uid, editingEntry.id, true);
                   triggerHaptic("warning");
-                  finishClose();
+                  finishClose(true);
                   ctx.showToast(`تم نقل العملية #${editingEntry.entryNumber} إلى سلة المحذوفات`);
                 } catch (err) {
                   ctx.showToast(err instanceof Error ? err.message : "تعذر نقل العملية إلى السلة");
@@ -8093,7 +8182,7 @@ function InvoiceModal({
             <p>يمكنك متابعة التحرير أو تجاهل التعديلات أو حفظ مسودة محلية دون ترحيل.</p>
             <div className="form-modal-actions">
               <button onClick={() => setLeavePrompt(false)}>متابعة التحرير</button>
-              <button onClick={finishClose}>تجاهل التعديلات</button>
+              <button onClick={() => finishClose()}>تجاهل التعديلات</button>
               <button onClick={() => {
                 if (!persistDraft()) { ctx.showToast("تعذر حفظ المسودة محليًا. بقيت التعديلات مفتوحة."); return; }
                 completed.current = true;
@@ -8346,6 +8435,7 @@ function HomeHeroBuildingArt() {
 }
 
 function DashboardPage({ flow }: { flow: FlowControls }) {
+  const keyboard = useKeyboard();
   const ctx = useWorkspace();
   const hybrid = useHybridPresentation();
   ctx.flowRef.current = flow;
@@ -8696,6 +8786,14 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
     );
   };
 
+  const launchUserAction = (action: QuickAction) => {
+    keyboard.hide();
+    void recordRecentAction(ctx.uid,action).catch(() => ctx.showToast("تعذر حفظ قائمة الإجراءات الأخيرة."));
+    if(action === "sale" || action === "purchase") ctx.openInvoice(action === "sale" ? "sales" : "purchases");
+    else if(action === "inventory") flow.push(inventoryReportScreen());
+    else if(action === "accounts") ctx.openChartOfAccounts();
+    else ctx.openBackupModal();
+  };
   const defaultOpsBlue = allTiles.filter((t) => t.defaultGroup === "ops-blue");
   const defaultOpsAmber = allTiles.filter((t) => t.defaultGroup === "ops-amber");
   const defaultAdminBlue = allTiles.filter((t) => t.defaultGroup === "admin-blue");
@@ -8711,6 +8809,10 @@ function DashboardPage({ flow }: { flow: FlowControls }) {
           className={`dashboard-page page-with-footer smart-home-workbench${isCustomLayout ? " custom-tile-layout" : ""}${tileEditMode ? " is-editing-tiles" : ""}`}
           data-testid="dashboard-screen"
         >
+          {ctx.workspace?.userPreferences && <section className="user-action-shortcuts" data-testid="user-action-shortcuts">
+            <strong>المفضلة</strong>{ctx.workspace.userPreferences.favoriteActions.map(a=><button key={a} onClick={()=>launchUserAction(a)}>{ACTION_LABELS[a]}</button>)}
+            {!!ctx.workspace.userPreferences.recentActions.length && <><strong>استخدمت مؤخرًا</strong>{ctx.workspace.userPreferences.recentActions.map(a=><button key={`recent-${a}`} onClick={()=>launchUserAction(a)}>{ACTION_LABELS[a]}</button>)}</>}
+          </section>}
           {/* Right / Primary Quick Operations Column */}
           {!isCustomLayout ? (
             <aside className="smart-panel smart-panel-ops" aria-label="العمليات والتقارير">
@@ -14028,6 +14130,7 @@ function SystemSettingsScreenBody({ flow }: { flow: FlowControls }) {
   ctx.flowRef.current = flow;
   return (
     <SystemSettingsPage
+      onOpenBusinessSetup={ctx.openBusinessSetup}
       onOpenReferenceDefaults={() => flow.push(referenceDefaultsScreen())}
       onOpenCashierSettings={() => flow.push(cashierSettingsScreen())}
       uid={ctx.uid}
